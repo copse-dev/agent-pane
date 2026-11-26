@@ -7,6 +7,7 @@ import '../../../tests/setup-dom.ts'
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
+import { projectPortBindingApproval } from '@shared/approval-copy.ts'
 import { mountApprovalDialog } from './approval-dialog.ts'
 import { mountSettingsDialog } from './settings-dialog.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -148,6 +149,14 @@ function shimDialog(dialog: HTMLDialogElement): { showCalls: number } {
 
 const COALESCE_MS = 120
 const SETTLE_MS = 500
+
+function projectPreviewRequest(id: string, root = '/projects/harbor-board'): EmitReq {
+  return {
+    id,
+    type: 'shell',
+    ...projectPortBindingApproval(root, 'npm run dev'),
+  }
+}
 
 describe('approval dialog coalescing', () => {
   let dialog: HTMLDialogElement
@@ -662,6 +671,104 @@ describe('approval dialog coalescing', () => {
     input.checked = true
     dialog.querySelector<HTMLButtonElement>('.approval-approve')?.click()
     assert.ok(responses.every((r) => r.remember))
+  })
+
+  it('emphasizes one-time consent while keeping the project grant explicit and Reject focused', () => {
+    emit(projectPreviewRequest('preview'))
+    fireWindow()
+
+    const once = qsRequired<HTMLButtonElement>(dialog, '.approval-approve-once')
+    assert.equal(once.hidden, false)
+    assert.equal(once.classList.contains('ui-btn-primary'), true)
+    assert.equal(once.classList.contains('ui-btn-secondary'), false)
+    assert.equal(approve().classList.contains('ui-btn-secondary'), true)
+    assert.equal(approve().classList.contains('ui-btn-primary'), false)
+    assert.equal(document.activeElement, qsRequired(dialog, '.approval-reject'))
+  })
+
+  it('emphasizes the narrower command only when its read-access details are visible', () => {
+    emit({
+      id: 'read-access',
+      title: 'Read outside the project?',
+      body: 'cat ../notes.txt',
+      collapseDetails: true,
+      approveOnceLabel: 'Approve this command',
+      approveLabel: 'Allow reads for this chat',
+    })
+    fireWindow()
+    const once = qsRequired<HTMLButtonElement>(dialog, '.approval-approve-once')
+    assert.equal(once.hidden, true)
+    assert.equal(approve().classList.contains('ui-btn-primary'), true)
+
+    qsRequired<HTMLButtonElement>(dialog, '.approval-details-toggle').click()
+    assert.equal(once.hidden, false)
+    assert.equal(once.classList.contains('ui-btn-primary'), true)
+    assert.equal(approve().classList.contains('ui-btn-secondary'), true)
+    once.click()
+    assert.deepEqual(responses, [{ id: 'read-access', approved: true, remember: false }])
+  })
+
+  for (const choice of [
+    { button: '.approval-approve', approved: true, remember: true },
+    { button: '.approval-approve-once', approved: true, remember: false },
+    { button: '.approval-reject', approved: false, remember: false },
+  ]) {
+    it(`offers explicit project preview choices and settles ${choice.button} with its stated scope`, () => {
+      emit(projectPreviewRequest('preview'))
+      fireWindow()
+
+      assert.equal(approve().textContent, 'Allow for this project')
+      const once = qsRequired<HTMLButtonElement>(dialog, '.approval-approve-once')
+      assert.equal(once.hidden, false)
+      assert.equal(once.textContent, 'Allow once')
+      assert.equal(qsRequired(dialog, '.approval-remember').hidden, true)
+      assert.equal(qsRequired(dialog, '.approval-body').hidden, false)
+      assert.deepEqual(bodies(), ['npm run dev'])
+
+      qsRequired<HTMLButtonElement>(dialog, choice.button).click()
+      assert.deepEqual(responses, [
+        { id: 'preview', approved: choice.approved, remember: choice.remember },
+      ])
+    })
+  }
+
+  it('keeps a project preview grant out of a mixed-command batch', () => {
+    emit(projectPreviewRequest('preview'))
+    emit({ id: 'other', title: 'Run command?', body: 'npm test' })
+    fireWindow()
+
+    assert.equal(approve().textContent, 'Approve all (2)')
+    assert.equal(qsRequired(dialog, '.approval-approve-once').hidden, true)
+    assert.equal(qsRequired(dialog, '.approval-remember').hidden, true)
+    approve().click()
+    assert.deepEqual(responses, [
+      { id: 'preview', approved: true, remember: false },
+      { id: 'other', approved: true, remember: false },
+    ])
+  })
+
+  it('offers one checkbox only for previews sharing the same project grant', () => {
+    emit(projectPreviewRequest('first'))
+    emit(projectPreviewRequest('second'))
+    fireWindow()
+
+    assert.equal(qsRequired(dialog, '.approval-approve-once').hidden, true)
+    assert.equal(qsRequired(dialog, '.approval-remember').hidden, false)
+    assert.equal(qsRequired<HTMLInputElement>(dialog, '.approval-remember-input').checked, false)
+    approve().click()
+    assert.equal(responses.length, 2)
+    assert.ok(responses.every((response) => !response.remember))
+  })
+
+  it('does not offer one ambiguous remember checkbox for different project previews', () => {
+    emit(projectPreviewRequest('first', '/projects/harbor-board'))
+    emit(projectPreviewRequest('second', '/projects/market-desk'))
+    fireWindow()
+
+    assert.equal(qsRequired(dialog, '.approval-remember').hidden, true)
+    approve().click()
+    assert.equal(responses.length, 2)
+    assert.ok(responses.every((response) => !response.remember))
   })
 
   it('defaults automation remembering on and preserves an explicit opt-out on append', () => {

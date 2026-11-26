@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { LLMMessage } from '@copse/llm/wire-types.ts'
 import {
+  emptyTurnHook,
   loopNudgeHook,
   malformedToolCallHook,
   planVerifiedFinalizeHook,
@@ -18,6 +19,7 @@ import { createHookRegistry, FIRST_PARTY_HOOKS, type HookEmitResult } from './ho
 import type { StepBoundaryEscalation, StepBoundaryPayload } from './canonical-events.ts'
 import { measureConversationPressure, type EscalationInput } from '../agent-loop-escalation.ts'
 import {
+  EMPTY_TURN_NUDGE,
   EXPLORE_REPEAT_USE_EXCERPTS_NUDGE,
   EXPLORE_WITHOUT_READ_NUDGE,
   EXPLORE_WITHOUT_READ_NUDGE_THRESHOLD,
@@ -116,6 +118,7 @@ describe('STEP_BOUNDARY_HOOKS registration', () => {
         'reasoning-runaway',
         'malformed-tool-call',
         'plan-verified-finalize',
+        'empty-turn',
       ],
     )
     assert.deepEqual(
@@ -375,5 +378,16 @@ describe('stepBoundary emit — per-hook nudge selection by id (as the loop read
       (await registry.emit('stepBoundary', postStream({ stopReason: 'end_turn' }), {})).outcomes,
       [],
     )
+  })
+})
+
+describe('empty-turn (#4294 dogfood)', () => {
+  it('selects the empty-turn nudge only at postStream when the loop flags an empty turn', async () => {
+    assert.deepEqual(await emptyTurnHook.run(postStream({ emptyTurn: true }), {}), {
+      injectContext: EMPTY_TURN_NUDGE,
+    })
+    assert.equal(await emptyTurnHook.run(postStream(), {}), undefined)
+    assert.equal(await emptyTurnHook.run(postStream({ emptyTurn: false }), {}), undefined)
+    assert.equal(await emptyTurnHook.run(preStream({ emptyTurn: true }), {}), undefined)
   })
 })

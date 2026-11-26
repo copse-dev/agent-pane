@@ -23,6 +23,7 @@ import { perfSpan } from '../diagnostics/perf-trace.ts'
 import { acpSessionActivity } from './acp-session-activity.ts'
 import { registerAcpSessionProcess } from './acp-process-registry.ts'
 import { errorMessage } from '@shared/errors.ts'
+import type { AcpTurnEndReason } from './turn-end.ts'
 
 /**
  * Per-thread pool of persistent ACP sessions (issue #605).
@@ -92,10 +93,12 @@ const MAX_WARM_IDLE_SESSIONS = 4
 const WARM_IDLE_GRACE_MS = 60 * 1000
 
 /**
- * How long an agent process must run before descriptor exhaustion reads as
- * something it did to itself. Past this age it plausibly leaked its way to the
- * ceiling, so a replacement — starting from an empty descriptor table — is
- * worth spawning. Under it, the process was in trouble almost from birth.
+ * How long an agent process must have run when it reports descriptor
+ * exhaustion for the fault to read as something it did to itself. Past this
+ * age it plausibly leaked its way to the ceiling, so a replacement — starting
+ * from an empty descriptor table — is worth spawning. Under it, the process was
+ * in trouble almost from birth. Measured at the fault, not at the next turn:
+ * turns are usually minutes apart, which would make every fault look old.
  */
 const FAULT_REPLACE_MIN_AGE_MS = 60 * 1000
 
@@ -103,8 +106,9 @@ const FAULT_REPLACE_MIN_AGE_MS = 60 * 1000
  * Threads whose last agent process was replaced over a fault it hit young, and
  * so must not be replaced again for the same thing: a fresh process was already
  * tried and did no better, which means the ceiling both started from is the
- * problem and respawning is just churn. Cleared whenever a process survives
- * past {@link FAULT_REPLACE_MIN_AGE_MS}, so a slow leak keeps being repaired.
+ * problem and respawning is just churn. Cleared whenever a process faults only
+ * after surviving past {@link FAULT_REPLACE_MIN_AGE_MS}, so a slow leak keeps
+ * being repaired.
  */
 const youngFaultReplaced = new Set<string>()
 
@@ -346,15 +350,26 @@ async function acquireAcpSessionUnlocked(
     // resume path below hands the same agent session to the fresh process, so
     // the descriptors come back without the thread losing the agent's memory.
     const fault = existing.open.resourceFault()
-    const leakedIntoIt = Date.now() - existing.openedAt >= FAULT_REPLACE_MIN_AGE_MS
+    const leakedIntoIt =
+      fault !== null && fault.observedAt - existing.openedAt >= FAULT_REPLACE_MIN_AGE_MS
+    // Work the process is still doing dies with it: a background tool the last
+    // turn started, or a turn the agent began on its own. The idle reaper
+    // protects the same work, so the swap waits for a turn where it is quiet.
+    const busy = fault !== null && sessionHasActiveTurn(existing)
     // A faulted process never serves another turn if a fresh one could do
     // better — the user's next prompt would go to an agent that cannot open a
     // file. The one case where it is kept is when a replacement was already
     // tried for this thread and ran out just as fast: nothing Copse spawns will
     // clear that, so the alternative to reusing it is refusing to run at all.
-    const replaceable = fault !== null && (leakedIntoIt || !youngFaultReplaced.has(opts.threadId))
+    const replaceable =
+      fault !== null && !busy && (leakedIntoIt || !youngFaultReplaced.has(opts.threadId))
     if (leakedIntoIt) youngFaultReplaced.delete(opts.threadId)
-    if (fault && !replaceable) {
+    if (fault && busy) {
+      console.warn(
+        `[acp-pool] keeping thread ${opts.threadId}'s agent process for now: it reported ` +
+          `${fault.code}, but work it started is still running`,
+      )
+    } else if (fault && !replaceable) {
       noteUnrepairableOpenFileFault(opts.config.command, fault)
       if (!ceilingWarned) {
         ceilingWarned = true
@@ -515,7 +530,7 @@ async function acquireAcpSessionUnlocked(
       // reap, acquire or checkout change asks again, and so either confirms
       // the writer stopped or reports why it still cannot.
       if (disposal) return disposal
-      open.agentInitiated?.end()
+      open.agentInitiated?.end('session-closed')
       const agentDisposal = open.dispose()
       bridgeAbort.abort()
       disposal = Promise.all([agentDisposal, bridge?.close() ?? Promise.resolve()])
@@ -610,10 +625,14 @@ function sessionHasActiveTurn(entry: PooledAcpSession): boolean {
 /**
  * Stop the turn a thread's agent started on its own, if one is running. Stop
  * otherwise only reaches runs Copse dispatched. Returns whether one was stopped.
+ * Pass `'send-now'` when send-now, not Stop, interrupts it.
  */
-export function cancelAgentInitiatedAcpTurn(threadId: string): boolean {
+export function cancelAgentInitiatedAcpTurn(
+  threadId: string,
+  reason: AcpTurnEndReason = 'stopped',
+): boolean {
   const entry = pool.get(threadId)
-  return entry ? cancelAgentInitiatedTurn(entry.open) : false
+  return entry ? cancelAgentInitiatedTurn(entry.open, undefined, reason) : false
 }
 
 /** Runtime ownership includes self-started turns and tools reported between prompts. */

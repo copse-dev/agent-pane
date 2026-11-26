@@ -2,7 +2,11 @@ import { renderMarkdown } from '@copse/streaming-markdown'
 import { el, qsRequired } from '../dom/helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { sameItems, type AppStore } from '@shared/store/store.ts'
-import { isSettingsDialogOpen, onSettingsDialogClose } from './settings-dialog.ts'
+import {
+  closeSettingsDialog,
+  isSettingsDialogOpen,
+  onSettingsDialogClose,
+} from './settings-dialog.ts'
 import { setAttentionThreads } from '../controller/attention.ts'
 import { attentionThreadId, proposingThreadId, threadRelationsKey } from '../controller/projects.ts'
 import { sideChatPromptOrigin } from '../controller/side-chat.ts'
@@ -287,6 +291,18 @@ export function mountApprovalDialog(
   // isolation have no app shell, so body is the harmless fallback host.
   const chatPane = document.getElementById('pane-chat') ?? document.body
   chatPane.append(chatScrim, dialog)
+  const settingsPending = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary approval-settings-pending', hidden: '' },
+    'Review approval',
+  )
+  const settingsDialog = document.getElementById('settings-dialog')
+  settingsDialog
+    ?.querySelector('.settings-header')
+    ?.insertBefore(settingsPending, settingsDialog.querySelector('#settings-close'))
+  settingsPending.addEventListener('click', () => {
+    closeSettingsDialog()
+  })
 
   const rememberInput = qsRequired<HTMLInputElement>(rememberLabel, '.approval-remember-input')
   const turnTreeLeaseInput = qsRequired<HTMLInputElement>(
@@ -408,8 +424,22 @@ export function mountApprovalDialog(
     // A side chat's request flags its parent: the side chat has no sidebar row.
     const waiting = queue
       .map((req) => (req.threadId ? attentionThreadId(store, req.threadId) : undefined))
-      .filter((id): id is string => !!id && (hidden || id !== activeThreadId))
+      .filter(
+        (id): id is string => !!id && (hidden || isSettingsDialogOpen() || id !== activeThreadId),
+      )
     setAttentionThreads(store, 'approval', waiting)
+    // Requests that would surface over the thread on screen (see isShowable),
+    // including those from a thread it proposed, but Settings is holding back.
+    const hiddenBySettings = queue.filter(
+      (req) =>
+        !req.showWhileSettingsOpen &&
+        (!req.threadId ||
+          attentionThreadId(store, req.threadId) === activeThreadId ||
+          (activeThreadId !== null && proposingThreadId(store, req.threadId) === activeThreadId)),
+    ).length
+    settingsPending.hidden = !isSettingsDialogOpen() || hiddenBySettings === 0
+    settingsPending.textContent =
+      hiddenBySettings === 1 ? 'Review approval' : `Review ${String(hiddenBySettings)} approvals`
     // Every queue/batch mutation ends here, so this is the one place the
     // pending set is announced to other surfaces.
     for (const listener of [...changeListeners]) listener()
@@ -597,6 +627,12 @@ export function mountApprovalDialog(
     const showOnce = onceLabel !== '' && (!collapseDetails || detailsExpanded)
     approveOnceButton.hidden = !showOnce
     if (showOnce) approveOnceButton.textContent = onceLabel
+    // When both scopes are visible, emphasize the narrower, once-only answer.
+    // Collapsed read-access prompts keep their sole visible action primary.
+    approveOnceButton.classList.toggle('ui-btn-primary', showOnce)
+    approveOnceButton.classList.toggle('ui-btn-secondary', !showOnce)
+    approveButton.classList.toggle('ui-btn-primary', !showOnce)
+    approveButton.classList.toggle('ui-btn-secondary', showOnce)
 
     // A two-tier prompt owns the remember channel through its buttons, so the
     // checkbox stays out of the way rather than offering a second, conflicting
@@ -951,6 +987,11 @@ export function mountApprovalDialog(
     } else show()
   })
 
+  settingsDialog?.addEventListener('settings-open', () => {
+    withdrawUnshowable()
+    syncAttention()
+  })
+
   // Requests that arrived while the user was in Settings were held back by the
   // settings guard; surface them now that settings is closed.
   onSettingsDialogClose(() => {
@@ -961,8 +1002,8 @@ export function mountApprovalDialog(
     // The settle guard disables the button, but honour it defensively in case a
     // click is dispatched anyway (e.g. keyboard activation during the window).
     if (approveButton.disabled) return
-    // On a two-tier prompt the primary button IS the grant — the checkbox is
-    // hidden there, and the secondary button carries the once-only answer.
+    // On a two-tier prompt this explicit scope action IS the grant; the checkbox
+    // is hidden, and the separate once-only action never remembers consent.
     resolve(true, approveOnceGrant() !== '' ? true : rememberInput.checked)
   })
   approveOnceButton.addEventListener('click', () => {

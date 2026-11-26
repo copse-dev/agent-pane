@@ -179,6 +179,27 @@ function dispatchKey(projectId: string, threadId: string): string {
   return `${projectId}\0${threadId}`
 }
 
+/**
+ * The turn tree a self-started ACP turn may bind, or undefined when the
+ * thread's epoch is only the thread-id fallback (hooks plan decision 5: a
+ * missing epoch cannot be synthesized from the thread id).
+ *
+ * The thread id is the marker, not a new field. A dispatch establishes a tree
+ * only from a renderer epoch, which is a fresh random id for every human or
+ * scheduled root, or a root inherited from another thread. The thread-id key is
+ * always the legacy fallback: `claimAgentInitiatedTurn` or the legacy wake in
+ * `executeClaimedMachine` synthesizes it, and the claim persists it so the
+ * budget it spends survives a restart. Reading the id fails closed whoever
+ * wrote the epoch, including a fallback that main already persisted. A dispatch
+ * that ever did carry the thread id would only stay unbound, as every self-start
+ * is on main. A "synthesized" flag would instead be missing from those older
+ * epochs and so read as a real dispatch. The legacy wake still accepts the
+ * thread-id epoch, as on main; only binding a self-start to it is refused.
+ */
+function dispatchedTurnTreeId(threadId: string, epoch: AgentTurnEpoch): string | undefined {
+  return epoch.turnTreeId === threadId ? undefined : epoch.turnTreeId
+}
+
 interface HistoryCheckpointWriter {
   /** Record the newest snapshot; never throws and never blocks the caller. */
   submit: (messages: LLMMessage[]) => void
@@ -326,7 +347,9 @@ export class AgentDispatcher {
    * {@link dispatchMachine} this does not take the thread's dispatch slot and
    * does not run anything: it only decides whether the turn may use bridged
    * tools. `override` is a human's explicit go-ahead and skips the cap, but the
-   * turn still counts, so later self-resumes are held again.
+   * turn still counts, so later self-resumes are held again. A grant names the
+   * turn tree to bind only when a dispatch established the thread's epoch; a
+   * thread without one is charged under the thread-id fallback and binds none.
    */
   async claimAgentInitiatedTurn(
     projectId: string,
@@ -353,8 +376,10 @@ export class AgentDispatcher {
     await this.dependencies.saveEpoch(projectId, threadId, next)
     this.epochs.set(key, next)
     await this.recordMachineStart(request, next.continuationUsed)
+    const turnTreeId = dispatchedTurnTreeId(threadId, epoch)
     return {
       status: 'granted',
+      ...(turnTreeId === undefined ? {} : { turnTreeId }),
       release: () => this.recordMachineFinish(request, 'completed', next.continuationUsed),
     }
   }
