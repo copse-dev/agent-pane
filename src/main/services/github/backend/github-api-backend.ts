@@ -35,6 +35,11 @@ import type { GitHubBackend, PrCreateInput, PrRef } from './backend.ts'
 import { githubApiHost, githubNoTokenMessage, resolveGitHubApiToken } from './github-token.ts'
 import { PR_ACTIVITY_QUERY, parsePrActivity, unavailablePrActivity } from './pr-activity.ts'
 import {
+  replyToReviewThread,
+  setReviewThreadResolved,
+  type ReviewThreadGraphql,
+} from './pr-review-thread-actions.ts'
+import {
   chooseAutoMergeStrategy,
   type AutoMergeStrategy,
   type RepoMergeConfig,
@@ -139,6 +144,11 @@ interface GraphqlResult {
   errorMessage: string | null
   /** No token for the backend's host, or no usable `GH_HOST`: nothing was sent. */
   noToken?: true
+}
+
+const apiGraphql: ReviewThreadGraphql = async (query, variables) => {
+  const result = await graphql(query, variables)
+  return { data: result.data, errorMessage: result.errorMessage ?? undefined }
 }
 
 async function graphql(query: string, variables: Record<string, unknown>): Promise<GraphqlResult> {
@@ -709,6 +719,14 @@ export const githubApiBackend: GitHubBackend = {
       number: pull.number,
       message: `Opened PR #${String(pull.number)}: ${pull.html_url}`,
     }
+  },
+
+  replyToReviewThread(_root, ref, threadId, body) {
+    return replyToReviewThread(apiGraphql, 'api', ref, threadId, body)
+  },
+
+  setReviewThreadResolved(_root, ref, threadId, resolved) {
+    return setReviewThreadResolved(apiGraphql, 'api', ref, threadId, resolved)
   },
 
   async approvePr(_root: string | null, ref: PrRef): Promise<PrActionResult> {

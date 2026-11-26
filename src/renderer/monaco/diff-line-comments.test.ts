@@ -238,6 +238,7 @@ function fakeDiff(after: string): FakeDiff {
   const models = { original: model(() => ''), modified: model(() => modifiedText) }
   const modified: GitDiffCodeEditor = {
     onKeyDown: () => disposable,
+    onDidFocusEditorText: () => disposable,
     getSelection: () => null,
     getModel: () => null,
     revealLineInCenterIfOutsideViewport(): void {},
