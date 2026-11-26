@@ -42,6 +42,9 @@ process.exit(failed ? 7 : 0);
           COPSE_E2E_ATTEMPT: undefined,
           COPSE_E2E_DIAGNOSTICS_DIR: undefined,
           COPSE_E2E_HEADLESS: '0',
+          // The fake wdio needs no sandbox; keep a root runner from stopping
+          // for a missing bwrap or re-executing in a user namespace.
+          COPSE_ROOT_USERNS: '0',
           DISPLAY: ':fixture',
         },
         encoding: 'utf8',
@@ -93,6 +96,9 @@ process.exit(failed ? 7 : 0);
           ...process.env,
           COPSE_E2E_ATTEMPT: '1',
           COPSE_E2E_HEADLESS: '0',
+          // The fake wdio needs no sandbox; keep a root runner from stopping
+          // for a missing bwrap or re-executing in a user namespace.
+          COPSE_ROOT_USERNS: '0',
           DISPLAY: ':fixture',
         },
         encoding: 'utf8',
