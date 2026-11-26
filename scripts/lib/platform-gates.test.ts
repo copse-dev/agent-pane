@@ -191,6 +191,17 @@ describe('conditionally registered tests', () => {
     assert.deepEqual(scan(text).inventory, {})
   })
 
+  it('leaves .skip registrations out of the inventory', () => {
+    const text = [
+      header,
+      "if (process.platform === 'darwin') it.skip('a', () => {})",
+      "describe.skip('suite', () => {",
+      "  if (process.platform === 'darwin') it('b', () => {})",
+      '})',
+    ].join('\n')
+    assert.deepEqual(scan(text).inventory, {})
+  })
+
   it('follows a platform-selected registration alias', () => {
     const text = [
       header,

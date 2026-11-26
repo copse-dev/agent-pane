@@ -250,6 +250,8 @@ function runsOn(skip: ts.Expression, ctx: Context): Set<HostPlatform> {
 
 interface Registration {
   kind: 'test' | 'suite'
+  /** False for `it.skip`/`describe.todo`: reported skipped on every host. */
+  live: boolean
   call: ts.CallExpression
   /** The `skip` option, when it reads the host platform. */
   gate?: ts.Expression
@@ -276,10 +278,6 @@ function directCallee(expression: ts.Expression): Callee | undefined {
   if (TEST_NAMES.has(callee.text)) return { kind: 'test', live }
   if (SUITE_NAMES.has(callee.text)) return { kind: 'suite', live }
   return undefined
-}
-
-function registrationKind(call: ts.CallExpression): 'test' | 'suite' | undefined {
-  return directCallee(call.expression)?.kind
 }
 
 /** A local `const` that selects a registration function by host platform. */
@@ -340,8 +338,9 @@ function skipOption(call: ts.CallExpression, ctx: Context): ts.Expression | unde
 
 function registration(node: ts.Node, ctx: Context): Registration | undefined {
   if (!ts.isCallExpression(node)) return undefined
-  const alias = registrationKind(node) ? undefined : platformAlias(node, ctx)
-  const kind = registrationKind(node) ?? alias?.kind
+  const direct = directCallee(node.expression)
+  const alias = direct ? undefined : platformAlias(node, ctx)
+  const kind = direct?.kind ?? alias?.kind
   if (!kind) return undefined
   const skip = skipOption(node, ctx)
   let body: ts.ArrowFunction | ts.FunctionExpression | undefined
@@ -353,6 +352,7 @@ function registration(node: ts.Node, ctx: Context): Registration | undefined {
   }
   return {
     kind,
+    live: direct?.live ?? true,
     call: node,
     ...(skip && readsPlatform(skip, ctx) ? { gate: skip } : {}),
     ...(body ? { body } : {}),
@@ -573,7 +573,8 @@ export function scanPlatformGates(file: ts.SourceFile): PlatformGateScan {
       })
       return
     }
-    let here: ReadonlySet<HostPlatform> = allowed
+    // A `.skip`/`.todo` registration runs nowhere, so neither it nor its tests are single-host.
+    let here: ReadonlySet<HostPlatform> = found.live ? allowed : new Set()
     if (found.alias) {
       here = intersect(here, found.alias.runs)
       const hidden = HOST_PLATFORMS.filter(
