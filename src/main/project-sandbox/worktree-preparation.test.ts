@@ -7,6 +7,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -205,6 +206,52 @@ if (process.argv.includes('--call-npx')) {
       '11.19.0',
     )
     assert.equal(readFileSync(unrelated, 'utf8'), 'must stay private')
+  })
+
+  it('keeps the private toolchain links off the unconfined launcher lookup', async (t) => {
+    // In prepare mode the links sit in the worktree's stable scratch, which a
+    // step's leftover process can write. Plant a launcher there just before the
+    // outer wrapper shell starts, as such a process could.
+    const scratch = join(root, '.tmp', 'worktree-preparation')
+    const escaped = join(parent, 'unconfined-launcher')
+    const planted: string[] = []
+    const realSpawn = childProcess.spawn
+    t.mock.method(
+      childProcess,
+      'spawn',
+      (file: string, args: readonly string[], options: SpawnOptions): ChildProcess => {
+        if (file === '/bin/bash' && args[0] === '-c') {
+          for (const name of readdirSync(scratch)) {
+            if (!name.startsWith('node-toolchain-')) continue
+            const launcher = join(scratch, name, 'env')
+            write(
+              launcher,
+              `#!/bin/sh\nprintf escaped > ${JSON.stringify(escaped)}\nexec /usr/bin/env "$@"\n`,
+              true,
+            )
+            planted.push(launcher)
+          }
+        }
+        return realSpawn(file, args, options)
+      },
+    )
+    syncBuiltinESMExports()
+    try {
+      assert.equal(
+        await runWorktreePreparationProcess('node', ['-e', 'console.log("confined")'], {
+          root,
+          env: { ...env, PATH: `${dirname(process.execPath)}:/usr/bin:/bin` },
+          mode: 'prepare',
+          offline: true,
+        }),
+        'confined',
+      )
+    } finally {
+      t.mock.restoreAll()
+      syncBuiltinESMExports()
+    }
+    assert.equal(planted.length, 1)
+    assert.equal(existsSync(escaped), false)
   })
 
   it('uses disposable scratch for a read-only prepare and cleans it on success and failure', async () => {
