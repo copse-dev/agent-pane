@@ -100,9 +100,10 @@ describe('landing cupcake walkthrough', () => {
     await expect($('h1')).toHaveText(expect.stringContaining('Big feelings.'))
     await expect($('.signup')).toBeDisplayed()
     await expect($('.hero-art')).toBeDisplayed()
-    // Click the field before typing, as a user would. From Chrome 158 the driver
-    // reports the preview's field as not interactable until it has been clicked,
-    // even once it is scrolled into view.
+    // Click into the field first, as a person would. Chrome 158's chromedriver
+    // refuses Element Clear (the first half of setValue) on a field in the
+    // cross-origin preview frame that has not been interacted with, reporting
+    // "element not interactable"; a click scrolls it into view and focuses it.
     const email = $('.signup input[type="email"]')
     await email.click()
     await email.setValue('demo@example.com')
