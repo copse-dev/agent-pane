@@ -62,6 +62,8 @@ export interface AgentDispatchPayload {
   model?: string
   /** Per-chat reasoning dial for this turn; absent means the model's own level. */
   reasoning?: ReasoningLevel
+  /** Named agent profile the thread uses; its instructions join the turn's prompt. */
+  profileId?: string
   turnTreeId?: string
   continuationBudgetUsed?: number
   /** Summary of reviews the user ran since the model's last reply (#2519). */
@@ -841,6 +843,7 @@ export class AgentDispatcher {
       ...(payload.workingBrief !== undefined ? { workingBrief: payload.workingBrief } : {}),
       ...(payload.model !== undefined ? { model: payload.model } : {}),
       ...(payload.reasoning !== undefined ? { reasoning: payload.reasoning } : {}),
+      ...(payload.profileId !== undefined ? { profileId: payload.profileId } : {}),
       ...(payload.turnTreeId !== undefined ? { turnTreeId: payload.turnTreeId } : {}),
       ...(payload.continuationBudgetUsed !== undefined
         ? { continuationBudgetUsed: payload.continuationBudgetUsed }
