@@ -1060,7 +1060,9 @@ Inside an approved folder, credentials stay unreadable: the overlay adds `denyRe
 `.env.*`, key and keystore suffixes, `id_*`, `*secret*`, `*credential*`, `.npmrc`, `.netrc` and the
 other `SENSITIVE_BASENAMES`, and for `.ssh`, `.aws`, `.gnupg`, `.kube`, `.docker` and the other
 credential directories at any depth. ASRT emits glob denies after its allow block on macOS, so they
-win (seatbelt is last-match-wins); on Linux it expands them to the files that exist at spawn time.
+win (seatbelt is last-match-wins); on Linux it expands them to the files that exist at spawn time. A
+directory listing still shows a denied file's name, since seatbelt allows directory metadata reads
+once any deny exists; its contents stay unreadable.
 The classifier never treats a credential path as a contained read, even inside a contained root, so
 `cat ../sibling/.env` asks instead of failing EPERM.
 
