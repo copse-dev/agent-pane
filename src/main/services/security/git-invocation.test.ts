@@ -104,6 +104,26 @@ describe('internal Git policy', () => {
     }
   })
 
+  it('admits apply only to the index, with the patch on stdin', () => {
+    for (const args of [
+      ['apply', '--cached', '--unidiff-zero', '--whitespace=nowarn', '-'],
+      ['apply', '--cached', '--unidiff-zero', '--whitespace=nowarn', '--reverse', '-'],
+    ]) {
+      assert.deepEqual(withGitInvocationArgs(args).slice(-args.length), args)
+    }
+    for (const args of [
+      // Without --cached the patch would write working-tree files.
+      ['apply', '--unidiff-zero', '--whitespace=nowarn', '-'],
+      ['apply', '--index', '--unidiff-zero', '--whitespace=nowarn', '-'],
+      ['apply', '--cached', '--unidiff-zero', '--whitespace=nowarn', 'patch.diff'],
+      ['apply', '--cached', '--unidiff-zero', '--whitespace=nowarn', '-', 'extra.diff'],
+      ['apply', '--cached', '--unidiff-zero', '--whitespace=fix', '-'],
+      ['apply', '--cached', '--unidiff-zero', '--whitespace=nowarn', '--directory=x', '-'],
+    ]) {
+      assert.throws(() => withGitInvocationArgs(args), /Unsupported internal Git apply/)
+    }
+  })
+
   it('admits grep only in the LFS-scan shapes the hosted transfer uses', () => {
     const sha = 'a'.repeat(40)
     for (const args of [
