@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import sys
 import time
@@ -292,6 +293,7 @@ def main(argv=None):
     ap.add_argument("--max-len", type=int, default=160)
     ap.add_argument("--hf-sample", type=int, default=12000)
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--save", action="store_true", help="write the trained gbdt model to --out")
     ap.add_argument("--device", default="cpu", help="cpu, or mps for the Apple GPU (host runs only)")
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args(argv)
@@ -346,6 +348,12 @@ def main(argv=None):
         elif name == "encoder":
             models.append(EncoderModel(args.encoder, args.epochs, args.max_len, args.seed, args.device).fit(tiered_train, risk_train))
         print(f"trained {name} in {time.monotonic() - started:.0f}s", flush=True)
+        if args.save and name == "gbdt":
+            import joblib
+
+            # Trained on private labels when --train-private is set: the file stays private.
+            joblib.dump(models[-1], args.out / "gbdt.joblib")
+            os.chmod(args.out / "gbdt.joblib", 0o600)
 
     for set_name, rows in eval_sets.items():
         entry = {"rows": len(rows), "policies": {}, "models": {}}
