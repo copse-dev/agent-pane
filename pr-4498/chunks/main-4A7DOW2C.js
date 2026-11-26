@@ -493,8 +493,12 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-Q7IKYLEL.js";
+} from "./chunk-KFSIK2OM.js";
 import "./chunk-X6JZSFJR.js";
+import {
+  createSshWorkspaceConsent,
+  init_ssh_workspace_consent
+} from "./chunk-FWVGBPA5.js";
 import {
   StreamingMarkdownRenderer,
   appLinkDecorator,
@@ -1044,21 +1048,6 @@ var init_popout = __esm({
   }
 });
 
-// src/renderer/controller/ssh-workspace-ui.ts
-async function isSshWorkspaceEnabled(api2) {
-  try {
-    const settings = api2.settings;
-    if (!settings?.get) return false;
-    return await settings.get("sshWorkspaceEnabled") === true;
-  } catch {
-    return false;
-  }
-}
-var init_ssh_workspace_ui = __esm({
-  "src/renderer/controller/ssh-workspace-ui.ts"() {
-  }
-});
-
 // src/renderer/views/welcome.ts
 function mountWelcome(root, store2, api2) {
   const heading = el("h1", { class: "welcome-heading" }, "Copse");
@@ -1104,13 +1093,6 @@ function mountWelcome(root, store2, api2) {
       showErrorToast("Could not open remote folder", err);
     });
   });
-  const syncRemoteOpenVisibility = () => {
-    void isSshWorkspaceEnabled(api2).then((enabled) => {
-      openRemoteBtn.hidden = !enabled;
-    });
-  };
-  syncRemoteOpenVisibility();
-  store2.on("settings_changed", syncRemoteOpenVisibility);
   return () => {
     root.classList.remove("visible");
     card.remove();
@@ -1120,7 +1102,6 @@ var init_welcome = __esm({
   "src/renderer/views/welcome.ts"() {
     init_helpers();
     init_projects();
-    init_ssh_workspace_ui();
     init_toast();
   }
 });
@@ -7196,7 +7177,7 @@ function mountProjectsPane(root, store2, api2) {
     {
       class: "projects-add-btn",
       "aria-label": "Add project",
-      "data-tooltip": "New thread, new project or open a folder"
+      "data-tooltip": "New project, open a folder, or connect remotely"
     },
     plusIcon("ui-icon ui-icon-sm")
   );
@@ -7348,7 +7329,6 @@ function mountProjectsPane(root, store2, api2) {
     list,
     el("div", { class: "projects-settings-actions" }, settingsBtn)
   );
-  let sshWorkspaceEnabled = false;
   const SORT_LABELS = {
     activity: "Activity order",
     created: "Created",
@@ -7507,16 +7487,15 @@ function mountProjectsPane(root, store2, api2) {
           void addProject(store2, api2);
         }
       },
-      ...sshWorkspaceEnabled ? [
-        {
-          label: "Open remote project",
-          onSelect: () => {
-            void addRemoteProject(store2, api2).catch((err) => {
-              showErrorToast("Could not open remote folder", err);
-            });
-          }
+      {
+        // Always offered: with SSH workspaces off, the dialog asks to turn them on.
+        label: "Open remote project",
+        onSelect: () => {
+          void addRemoteProject(store2, api2).catch((err) => {
+            showErrorToast("Could not open remote folder", err);
+          });
         }
-      ] : [],
+      },
       {
         label: "New group",
         onSelect: () => {
@@ -7527,17 +7506,6 @@ function mountProjectsPane(root, store2, api2) {
       }
     ]);
   });
-  const syncRemoteOpenAvailability = () => {
-    void isSshWorkspaceEnabled(api2).then((enabled) => {
-      sshWorkspaceEnabled = enabled;
-      addBtn.setAttribute(
-        "data-tooltip",
-        enabled ? "New project, open a folder, or connect remotely" : "New project or open a folder"
-      );
-    });
-  };
-  syncRemoteOpenAvailability();
-  store2.on("settings_changed", syncRemoteOpenAvailability);
   const visibleThreadCounts = /* @__PURE__ */ new Map();
   const prBackfillRequested = /* @__PURE__ */ new Map();
   const prBackfillRetryAttempts = /* @__PURE__ */ new Map();
@@ -9407,7 +9375,6 @@ var init_projects_pane = __esm({
     init_thread_history_editor();
     init_automation_fold();
     init_automations();
-    init_ssh_workspace_ui();
     init_thread_naming();
     init_persistence();
     init_project_tree();
@@ -84298,6 +84265,8 @@ function createVncSshHostForm(api2, onSaved, onClose) {
   function close2() {
     root.hidden = true;
     status.textContent = "";
+    consent?.remove();
+    consent = null;
     onClose();
   }
   async function loadConfigHosts() {
@@ -84333,18 +84302,24 @@ function createVncSshHostForm(api2, onSaved, onClose) {
     configSelect.disabled = value;
     cancel.disabled = value;
   }
-  async function requireSshEnabled() {
+  let consent = null;
+  async function requireSshEnabled(retry) {
     if (await api2.settings.get("sshWorkspaceEnabled") === true) return true;
-    setInlineStatus(
-      status,
-      "error",
-      "Enable SSH workspaces in Settings before adding or importing an SSH machine."
-    );
+    if (!consent) {
+      const ask = createSshWorkspaceConsent(api2, {
+        onEnabled: () => {
+          ask.root.remove();
+          consent = null;
+          retry();
+        }
+      });
+      consent = ask.root;
+      status.after(consent);
+    }
     return false;
   }
   cancel.addEventListener("click", close2);
-  root.addEventListener("submit", (event) => {
-    event.preventDefault();
+  const submit = () => {
     void (async () => {
       busy(true);
       try {
@@ -84354,7 +84329,7 @@ function createVncSshHostForm(api2, onSaved, onClose) {
           setInlineStatus(status, "error", parsed.error);
           return;
         }
-        if (!await requireSshEnabled()) return;
+        if (!await requireSshEnabled(submit)) return;
         await api2.settings.set("sshWorkspaceHosts", upsertHost(existing, parsed.host));
         close2();
         await onSaved(parsed.host.id);
@@ -84364,14 +84339,18 @@ function createVncSshHostForm(api2, onSaved, onClose) {
         busy(false);
       }
     })();
+  };
+  root.addEventListener("submit", (event) => {
+    event.preventDefault();
+    submit();
   });
-  configSelect.addEventListener("change", () => {
+  const saveConfigHost = () => {
     const chosen = configHosts.find((host) => host.host === configSelect.value);
     if (!chosen) return;
     void (async () => {
       busy(true);
       try {
-        if (!await requireSshEnabled()) return;
+        if (!await requireSshEnabled(saveConfigHost)) return;
         const existing = parseSshWorkspaceHosts(await api2.settings.get("sshWorkspaceHosts"));
         const saved = saveSshConfigHost(existing, chosen);
         await api2.settings.set("sshWorkspaceHosts", saved.hosts);
@@ -84383,7 +84362,8 @@ function createVncSshHostForm(api2, onSaved, onClose) {
         busy(false);
       }
     })();
-  });
+  };
+  configSelect.addEventListener("change", saveConfigHost);
   return { root, open, close: close2 };
 }
 var init_vnc_ssh_host_form = __esm({
@@ -84393,6 +84373,7 @@ var init_vnc_ssh_host_form = __esm({
     init_ipc_error_message();
     init_ssh_host_helpers();
     init_ssh_host_fields();
+    init_ssh_workspace_consent();
   }
 });
 
