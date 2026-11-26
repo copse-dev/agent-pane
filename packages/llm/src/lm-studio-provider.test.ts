@@ -1,8 +1,16 @@
+import { isRecord } from '@copse/std/unknown-value.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { ToolCallRequestError, type Chat, type LLMRespondOpts } from '@lmstudio/sdk'
 import { LMStudioProvider, lmStudioWebSocketUrl } from './lm-studio-provider.ts'
-import type { LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
+import type {
+  LLMMessage,
+  LLMProvider,
+  LLMStreamOptions,
+  LLMTool,
+  ModelUsage,
+  ProviderStreamChunk,
+} from './wire-types.ts'
 
 class FakePrediction {
   private readonly opts: LLMRespondOpts
@@ -172,6 +180,32 @@ class FakeToolFailureClient {
   }
 }
 
+/** Stands in for LM Studio's OpenAI-compatible route and records what it was asked. */
+class FakeReasoningOffProvider implements LLMProvider {
+  lastUsage: ModelUsage | null = null
+  readonly calls: Array<{
+    readonly tools: readonly string[]
+    readonly options: LLMStreamOptions | undefined
+  }> = []
+
+  async *stream(
+    _messages: LLMMessage[],
+    tools: LLMTool[],
+    _signal?: AbortSignal,
+    options?: LLMStreamOptions,
+  ): AsyncIterable<ProviderStreamChunk> {
+    await Promise.resolve()
+    this.calls.push({ tools: tools.map((tool) => tool.name), options })
+    yield {
+      type: 'tool_call',
+      toolCall: { id: 'call-off', name: 'finish_review', args: { findings: [] } },
+    }
+    this.lastUsage = { inputTokens: 40, outputTokens: 5 }
+    yield { type: 'usage', model: 'local-model', inputTokens: 40, outputTokens: 5 }
+    yield { type: 'done', stopReason: 'tool_use' }
+  }
+}
+
 class FakeClient {
   readonly modelHandle: FakeModel
 
@@ -276,6 +310,70 @@ async function collect(provider: LMStudioProvider): Promise<ProviderStreamChunk[
 }
 
 describe('LMStudioProvider', () => {
+  it('forces a named tool by offering only it, with the SDK told a tool call is required', async () => {
+    const client = new FakeClient()
+    const provider = new LMStudioProvider('local-model', { client })
+    const tools = [
+      { name: 'report_finding', description: 'Report', parameters: { type: 'object' } },
+      { name: 'finish_review', description: 'Finish', parameters: { type: 'object' } },
+    ]
+    for await (const _ of provider.stream([{ role: 'user', content: 'Finish' }], tools, undefined, {
+      toolChoice: { name: 'finish_review' },
+    })) {
+      // Drain the stream so the provider sends and captures the request options.
+    }
+    assert.deepEqual(Reflect.get(client.modelHandle.opts ?? {}, 'toolChoice'), {
+      type: 'generic',
+      mode: 'required',
+    })
+    const rawTools: unknown = Reflect.get(client.modelHandle.opts ?? {}, 'rawTools')
+    assert.ok(isRecord(rawTools) && Array.isArray(rawTools['tools']))
+    assert.deepEqual(
+      rawTools['tools'].map((tool: unknown) =>
+        isRecord(tool) && isRecord(tool['function']) ? tool['function']['name'] : null,
+      ),
+      ['finish_review'],
+    )
+  })
+
+  it('sends a call that asks for no reasoning where reasoning can be turned off', async () => {
+    // The SDK has no field that turns thinking off, so the agent loop's
+    // last-chance runaway recovery would otherwise think again on the SDK.
+    const client = new FakeClient()
+    const reasoningOff = new FakeReasoningOffProvider()
+    const provider = new LMStudioProvider('local-model', { client, reasoningOff })
+    const tools = [
+      { name: 'report_finding', description: 'Report', parameters: { type: 'object' } },
+      { name: 'finish_review', description: 'Finish', parameters: { type: 'object' } },
+    ]
+    for await (const _ of provider.stream([{ role: 'user', content: 'Review' }], tools)) {
+      // An ordinary call stays on the SDK.
+    }
+    const sdkCall = client.modelHandle.opts
+    assert.ok(sdkCall)
+    assert.equal(reasoningOff.calls.length, 0)
+    assert.deepEqual(provider.lastUsage, { inputTokens: 123, outputTokens: 9 })
+
+    const options = { toolChoice: { name: 'finish_review' }, suppressReasoning: true }
+    const chunks: ProviderStreamChunk[] = []
+    for await (const chunk of provider.stream(
+      [{ role: 'user', content: 'Finish' }],
+      tools,
+      undefined,
+      options,
+    )) {
+      chunks.push(chunk)
+    }
+
+    assert.equal(client.modelHandle.opts, sdkCall, 'no second SDK prediction')
+    assert.deepEqual(reasoningOff.calls, [{ tools: ['report_finding', 'finish_review'], options }])
+    assert.deepEqual(
+      chunks.map((chunk) => chunk.type),
+      ['tool_call', 'usage', 'done'],
+    )
+    assert.deepEqual(provider.lastUsage, { inputTokens: 40, outputTokens: 5 })
+  })
+
   it('retains union actions, shared required fields and branch constraints in SDK tools', async () => {
     const client = new FakeClient()
     const provider = new LMStudioProvider('local-model', { client })

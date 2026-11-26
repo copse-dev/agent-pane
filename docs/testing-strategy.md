@@ -64,27 +64,50 @@ The loop, cheapest first:
 
 `.copse/hooks.json`, `.cursor/hooks.json` and `.claude/settings.json` wire
 `scripts/hook-file-check.mts` to the post-edit hook, so **every file you edit is
-already reformatted and lint-checked** before you read the tool result. Don't
-spend a turn running the formatter on a file you just touched — and if the hook said
-nothing at all, it is clean.
+reformatted, then lint-checked**. Don't spend a turn running the formatter on a
+file you just touched. What reaches you, and when, depends on the harness:
 
-**Formatting is auto-applied; ESLint is not.** Formatting is deterministic and
+- **Claude Code:** one hook formats and lints before you read the tool result.
+  Its report, a rewrite included, comes back with that result; silence means clean.
+- **Copse:** the awaited entry only formats (`--no-lint`), so the formatter lands
+  before you continue. Copse reads a hook's `queueMessage` only from an `async`
+  hook, so that entry's rewrite notice never reaches you: re-read a file before
+  an exact-match edit if formatting may have changed it. Lint findings come
+  from the `async` entry, as a queued message shortly after the edit.
+- **Cursor:** the hook only formats (`--no-lint`). Cursor's `afterFileEdit`
+  cannot return data to the agent, and Copse also discovers `.cursor/hooks.json`
+  and runs its hooks as blocking, where a lint would only make the agent wait.
+
+**Formatting is auto-applied; lint fixes are not.** Formatting is deterministic and
 semantically neutral, so fixing it costs an agent turn and buys nothing —
 `afterFileEdit` is the formatter event, and `after-file-edit.ts` awaits blocking
-hooks precisely so a formatter lands before the agent proceeds. `eslint --fix`
+hooks precisely so a formatter lands before the agent proceeds. `oxlint --fix`
 is a different animal: it makes real code changes (`prefer-const`, import
 rewrites), so those are reported with the command to run rather than applied
 behind you.
 
-A rewrite is **always** reported, even when there is nothing else to say, because
-it makes your copy of the file stale — a later edit matching against remembered
-text would fail against content you never saw. Re-read the file when you see it.
+Where a report reaches you, a rewrite is **always** in it, even when there is
+nothing else to say, because it makes your copy of the file stale — a later edit
+matching against remembered text would fail against content you never saw.
+Re-read the file when you see it. A lint that could not run (oxlint not
+installed yet, a crash, a config it rejects) is reported too, as
+`[oxlint] skipped — …` with the fix, rather than left silent.
 
-Coverage is a fast subset by construction: oxfmt plus the **type-unaware**
-ESLint rules (`eslint.hook.config.mjs`). Type-aware rules and `tsc` need the whole
-TypeScript program — ~10s for a single file — which is too slow to run per edit,
-so they stay in `npm run check:local` (and therefore `npm run check`). The hook says so in its own output; treat a
-silent hook as "no cheap problems", never as "verified".
+Coverage is a fast subset by construction: oxfmt plus **oxlint**, type-aware
+rules included, with `.oxlintrc.json` (a port of `eslint.config.mjs`, held to
+it by `scripts/oxlint-config-parity.test.ts`). Typed ESLint needs ~10s per file
+to build the TypeScript program; oxlint's tsgo-based pass does it in ~1–2s, so
+unsafe assertions, floating promises and `??` misses surface per edit. Each run
+still builds the whole program (~0.7–1 GB), so the hook allows one type-aware
+run per checkout at a time; a burst of edits — approving many staged diffs at
+once — lints them in turn. `tsc` still waits for `npm run check:local`, and
+**ESLint stays the lint gate**: the two rule sets are separate implementations,
+so a file the hook passes can still fail `npm run lint`, or the reverse. Two known
+false positives follow a code pattern rather than a file: `no-misused-promises` on
+`.finally(() => promise)` (which does wait for the promise), and, until oxlint
+1.95, `explicit-function-return-type` on an arrow function used as a default
+parameter value. The hook says so in its own output; treat a silent hook as "no
+cheap problems", never as "verified".
 
 ### While iterating: `npm test -- <filter>`
 
@@ -607,6 +630,25 @@ loops driven by an actual local model rather than the mock:
   agent evals (`tests/e2e/agent-eval-drive.e2e.ts`), reading `LM_STUDIO_API_KEY`
   / `LM_API_TOKEN` and talking to a local OpenAI-compatible endpoint
   (`createLMStudioProvider`, default `http://localhost:1234/v1`).
+  Set `COPSE_EVAL_BRANCH=<branch>` to choose that branch through the new-thread
+  picker before submitting; otherwise the product's default branch selection
+  applies. The driver confirms dirty-checkout warnings only in a `tempProject`
+  workspace. Any other scenario runs in your own checkout, so a branch request or a
+  dirty checkout fails the run there unless you set
+  `COPSE_EVAL_ALLOW_CURRENT_CHECKOUT=1`. The driver accepts
+  both single-file and bulk proposals through Changes, waits for acceptance wakes,
+  and fails if any proposals remain before judging workspace files. It stops at the
+  first turn whose `turnOutcome` is `failed` and reports that provider error, rather
+  than sending the next prompt. Failed runs preserve a window screenshot, visible
+  composer/error text, and the thread export under `tests/e2e/artifacts/` when
+  available. `requireTools` (driver and `analyze:thread`) needs a call that
+  completed with `done`; an attempted call satisfies only `requireAnyTools`. A
+  sandboxed shell cannot create `.git` (it is an ancestor of the protected
+  `.git/hooks`), so a scenario that needs a repository sets `workspace.initializeGit`,
+  and `commitSeedFiles` to start from the New project scaffold's initial commit;
+  git assertions then count only the commits made after that baseline. An eval
+  prompt must never ask a sandboxed agent to create `.git` (`git init`, "initialize
+  the repository"); `scripts/lib/eval-scenarios.test.ts` enforces this.
 - `npm run validate:local-agent` exercises the agent loop headlessly.
 - `npm run eval:doctrine -- --provider lmstudio --repeats 3 --sections tools`
   holds a fixed task/model/tool set constant and compares the full system prompt

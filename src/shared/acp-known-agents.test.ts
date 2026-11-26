@@ -48,9 +48,10 @@ describe('KNOWN_ACP_AGENTS', () => {
     for (const id of ['claude-acp', 'claude-agent-acp']) {
       const claude = findAcpCatalogEntry(id)
       assert.ok(claude, 'Claude entry is missing from the catalog')
-      assert.equal(claude.setup, 'claude auth login')
-      assert.equal(acpReauthCommand(claude), 'claude auth login')
-      assert.doesNotMatch(claude.note ?? '', /claude-agent-acp|SDK|ACP|--sso/)
+      assert.equal(claude.setup, 'claude-agent-acp --cli auth login')
+      assert.equal(acpReauthCommand(claude), 'claude-agent-acp --cli auth login')
+      assert.match(claude.note ?? '', /claude-agent-acp --cli auth login/)
+      assert.doesNotMatch(claude.note ?? '', /SDK|ACP|--sso/)
     }
   })
   it('uses the adapter-bundled Codex CLI for setup and sign-in recovery', () => {

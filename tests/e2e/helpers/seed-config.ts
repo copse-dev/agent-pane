@@ -1,3 +1,4 @@
+import type { AgentProfile } from '../../../src/shared/agent-profiles.ts'
 import {
   mkdirSync,
   mkdtempSync,
@@ -19,6 +20,7 @@ import { safeJsonParse } from '@copse/std/safe-json.ts'
 import { parseMessageValue } from '../../../packages/thread-store/src/thread-boundary.ts'
 import { PRODUCT_ANNOUNCEMENTS } from '../../../src/renderer/product-announcements.ts'
 import { USAGE_EVENTS_DIR, type UsageEvent } from '../../../src/shared/usage/usage-event.ts'
+import { THREAD_ACTION_LEDGER_FILE } from '../../../src/shared/threads/action-assessment.ts'
 import {
   supervisedTaskMetaSchema,
   type SupervisedTaskMeta,
@@ -270,7 +272,16 @@ export function resetUserData(): void {
   rmSync(CONFIG_PATH, { force: true })
   rmSync(SETTINGS_PATH, { force: true })
   removeE2eTree(USAGE_EVENTS_PATH)
+  rmSync(THREAD_ACTION_LEDGER_PATH, { force: true })
   writeSettings({})
+}
+
+/** The Needs action assessment ledger, which has its own file beside config.json. */
+const THREAD_ACTION_LEDGER_PATH = join(USER_DATA, THREAD_ACTION_LEDGER_FILE)
+
+export function seedThreadActionLedger(ledger: Record<string, unknown>): void {
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(THREAD_ACTION_LEDGER_PATH, JSON.stringify(ledger), 'utf8')
 }
 
 /** The usage ledger directory under userData; see `USAGE_EVENTS_DIR`. */
@@ -610,6 +621,8 @@ export function seedEmptyProject(
      * is shown.
      */
     autoRunSandboxCommands?: boolean
+    /** Saved named agent profiles (Settings > Agent > Profiles). */
+    agentProfiles?: AgentProfile[]
     registeredAcpAgents?: AcpAgentConfig[]
     windowBounds?: { width: number; height: number }
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
@@ -757,6 +770,9 @@ export function seedEmptyProject(
   }
   if (options?.autoRunSandboxCommands !== undefined) {
     settings['autoRunSandboxCommands'] = options.autoRunSandboxCommands
+  }
+  if (options?.agentProfiles !== undefined) {
+    settings['agentProfiles'] = options.agentProfiles
   }
   if (options?.registeredAcpAgents !== undefined) {
     settings['registeredAcpAgents'] = options.registeredAcpAgents
@@ -3218,7 +3234,7 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
     '',
     '**To continue**',
     '',
-    '1. Run `claude auth login` in a terminal.',
+    '1. Run `claude-agent-acp --cli auth login` in a terminal.',
     '2. Finish signing in, then re-send your message.',
     '',
     '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself, or set `ANTHROPIC_API_KEY` for Claude in Settings → General → Coding agents.',
@@ -3283,7 +3299,7 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
     '',
     '**To continue**',
     '',
-    '1. Run `claude auth login` in a terminal.',
+    '1. Run `claude-agent-acp --cli auth login` in a terminal.',
     '2. Finish signing in, then re-send your message.',
     '',
     '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself, or set `ANTHROPIC_API_KEY` for Claude in Settings → General → Coding agents.',

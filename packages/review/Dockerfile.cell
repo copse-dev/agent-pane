@@ -25,4 +25,12 @@ RUN --mount=type=secret,id=proxy_ca apt-get update \
     && npm install -g --no-audit --no-fund "pnpm@${PNPM_VERSION}" \
     && npm cache clean --force
 
+# Apple container has no no-new-privileges flag, so its review cells run every
+# command under `setpriv --no-new-privs` (util-linux). Fail the build rather
+# than produce an image whose cells could not set it, and strip every setuid
+# and setgid bit so there is nothing to escalate through under either engine.
+RUN command -v setpriv >/dev/null \
+    && find / -xdev -type f -perm /6000 -exec chmod ug-s {} + \
+    && test -z "$(find / -xdev -type f -perm /6000 -print -quit)"
+
 WORKDIR /workspace

@@ -76,6 +76,18 @@ test('leaves any other pane alone', () => {
   detach()
 })
 
+test('keeps a split Review panel instead of replacing both panes', () => {
+  const store = storeOnChanges({ rightPanelSplitMode: 'browser' })
+  const { api, announce } = apiWithPrCreated()
+  const detach = attachPrPanelFollow(store, api)
+
+  announce('p', 't1', REF)
+
+  assert.equal(store.getState().rightPanelMode, 'changes')
+  assert.equal(store.getState().rightPanelSplitMode, 'browser')
+  detach()
+})
+
 test('does not reopen a closed panel', () => {
   const store = storeOnChanges({ filesPaneOpen: false })
   const { api, announce } = apiWithPrCreated()

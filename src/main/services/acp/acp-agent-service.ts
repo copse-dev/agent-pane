@@ -1,5 +1,7 @@
 import { checkpointAcpTranscript, unseenAcpTranscript } from './acp-transcript-checkpoint.ts'
 import { canonicalAcpAgentId } from '@shared/acp-known-agents.ts'
+import { abortedTurnEndReason, AcpTurnEnded } from './turn-end.ts'
+import { normalizeStopReason } from '@copse/agent/headless-contract.ts'
 import { AGENT_EXECUTION_GUIDANCE } from '../agent-execution-guidance.ts'
 import * as fsp from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -57,6 +59,7 @@ import {
 import { resolveAcpAgentTurnEnv } from './acp-agent-config-dir.ts'
 import { probeAcpAgentIsolated } from './acp-probe-host.ts'
 import { acquireAcpSession, disposeAcpSession, type PooledAcpSession } from './acp-session-pool.ts'
+import { recordStoredSessionCheckpoint, threadAcpStoredSession } from './acp-stored-session.ts'
 import { createAgentInitiatedTurnLease } from './agent-initiated-turn.ts'
 import { requestUserAnswers } from '../ask-user.ts'
 import { runWithActiveRunIdentity } from '../active-run-identity.ts'
@@ -110,8 +113,10 @@ import {
   awaitStagedDiffDecision,
   captureWorktreeBaseline,
   listWorktreeChangesSince,
+  listWorktreeGitContentStates,
   stageDiff,
 } from '../diff-queue.ts'
+import { auditablePaths, formatBypassedWriteAudit, type BypassedWrite } from './acp-edit-audit.ts'
 import type { WorktreeBaseline } from '../diff-queue.ts'
 import { beginWorktreeWriter } from '../worktree-writers.ts'
 import { networkDenialMarker, networkDenialsSince } from '../../project-sandbox/network-scope.ts'
@@ -129,7 +134,8 @@ import { ensureShellCommandPermitted } from '../security/permission-gate.ts'
 import { currentRunIsUnattendedContainer } from '../security/unattended-run.ts'
 import { recordDecision } from '../security/decision-log-store.ts'
 import { chatReadRootsForThread } from '../security/thread-access.ts'
-import { getActiveRunThread } from '../thread-models.ts'
+import { getActiveRunThread, setActiveRunTurnTreeId } from '../thread-models.ts'
+import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import { isStructurallyReadOnlyShellCommand } from '../security/permission-policy.ts'
 import { detectLanguage } from '../language.ts'
 import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
@@ -484,7 +490,7 @@ function installAgentInitiatedTurnLease(
     projectId,
     threadId,
     bridge: {
-      setExecutionContext: (context) => {
+      setExecutionContext: (context, turnTreeId) => {
         if (!context) {
           bridge.setExecutionContext(null)
           return
@@ -492,6 +498,7 @@ function installAgentInitiatedTurnLease(
         // The bridge captures per-thread scopes from the async context at bind time.
         runWithThreadExecutionContext(context, () => {
           runWithActiveRunIdentity(threadId, () => {
+            if (turnTreeId !== undefined) setActiveRunTurnTreeId(asTurnTreeId(turnTreeId))
             bridge.setExecutionContext(context)
           })
         })
@@ -843,10 +850,11 @@ async function runAcpAgentTurn(
     offeredBridge && acpBridgeToolLoss(offeredBridge) === null
       ? (offeredBridge.listedToolNames() ?? [])
       : []
-  // Once per session: tell the thread its agent never connected to Copse's tools.
-  const noteBridgeUnavailable = (bridge: AcpNativeBridge): boolean => {
+  // Once per session: tell the thread its agent never connected to Copse's
+  // tools. `quiet` records it without the thread notice.
+  const noteBridgeUnavailable = (bridge: AcpNativeBridge, quiet = false): boolean => {
     if (!markAcpBridgeUnavailable(bridge)) return false
-    options.onChunk({ type: 'text', text: acpBridgeUnavailableNotice(agent.title) })
+    if (!quiet) options.onChunk({ type: 'text', text: acpBridgeUnavailableNotice(agent.title) })
     return true
   }
   const handlers: AcpClientHandlers = {
@@ -941,7 +949,17 @@ async function runAcpAgentTurn(
           },
           () =>
             acquireAcpSession({
-              ...(executionContext ? { projectId: executionContext.projectId } : {}),
+              ...(executionContext
+                ? {
+                    projectId: executionContext.projectId,
+                    storedSession: threadAcpStoredSession(
+                      executionContext.projectId,
+                      options.threadId,
+                      agent.id,
+                      { claudeConfigDir: env?.['CLAUDE_CONFIG_DIR'] },
+                    ),
+                  }
+                : {}),
               threadId: options.threadId,
               config: spawnConfig,
               registry: options.registry,
@@ -961,9 +979,7 @@ async function runAcpAgentTurn(
       options.onChunk({ type: 'text', text: acpSessionHandoverNotice(handover, agent.title) })
     }
     const sessionBridge =
-      !remote && entry.bridge !== null && entry.open.mcpCapabilities?.http === true
-        ? entry.bridge
-        : null
+      !remote && entry.bridge !== null && entry.open.bridgeServerName !== null ? entry.bridge : null
     offeredBridge = sessionBridge
     // An offer is not a mount (#4144): the agent has Copse's tools only once
     // it lists them. It normally does so while its session opens; give it the
@@ -1002,7 +1018,11 @@ async function runAcpAgentTurn(
       // mount: the prompt below is never sent, and the next turn decides.
       sessionBridge &&
       bridgeMount === 'unlisted' &&
-      noteBridgeUnavailable(sessionBridge)
+      // An agent without http MCP was offered the bridge over the stdio relay.
+      // One that silently ignores it reads as it did before that offer
+      // existed: no thread notice. Its own report of a failed relay start
+      // (`onBridgeStartupFailure`) still gets one, and so does an http offer.
+      noteBridgeUnavailable(sessionBridge, entry.open.mcpCapabilities?.http !== true)
     ) {
       console.warn(
         `[acp-bridge] thread ${options.threadId}'s agent never listed the native tools it was offered; they are unavailable this session`,
@@ -1039,7 +1059,9 @@ async function runAcpAgentTurn(
     entry.bridge?.setSkillActivationTurn(skillContext.activation)
     entry.bridge?.setAdvisorContext(options.advisorContext ?? null)
     entry.bridge?.setExecutionContext(executionContext)
-    entry.bridge?.setTurnSignal(options.bridgeTurnSignal ?? options.signal)
+    const promptEnd = new AbortController()
+    const parentSignal = options.bridgeTurnSignal ?? options.signal
+    entry.bridge?.setTurnSignal(AbortSignal.any([parentSignal, promptEnd.signal]))
     entry.bridge?.setWorkspaceWriteObserver((path) => queueWrites.add(auditKey(path)))
     entry.open.handlers.current = handlers
     // Issue #831: only attach image content blocks when the agent advertised
@@ -1091,18 +1113,43 @@ async function runAcpAgentTurn(
       // the last confirmed prefix on cancellation or a transport failure so a
       // retry conservatively includes context the agent may never have seen.
       if (outcome.stopReason !== 'cancelled') {
-        entry.transcriptCheckpoint = checkpointAcpTranscript(
-          options.priorMessages,
-          options.userPrompt,
-        )
+        const checkpoint = checkpointAcpTranscript(options.priorMessages, options.userPrompt)
+        entry.transcriptCheckpoint = checkpoint
+        // A saved session link keeps it too, so the first turn after a relaunch
+        // resumes without resending what the session already holds.
+        if (executionContext) {
+          void recordStoredSessionCheckpoint(
+            executionContext.projectId,
+            options.threadId,
+            agent.id,
+            checkpoint,
+          ).catch((err: unknown) => {
+            console.warn(
+              `[acp] could not save thread ${options.threadId}'s session checkpoint: ${acpErrorMessage(err)}`,
+            )
+          })
+        }
       }
+      promptEnd.abort(
+        new AcpTurnEnded(
+          options.signal.aborted
+            ? abortedTurnEndReason(options.signal)
+            : normalizeStopReason(outcome.stopReason.toLowerCase()) === 'end_turn'
+              ? 'completed'
+              : 'failed',
+        ),
+      )
       return outcome
     } catch (err) {
+      promptEnd.abort(
+        new AcpTurnEnded(options.signal.aborted ? abortedTurnEndReason(options.signal) : 'failed'),
+      )
       await disposeAcpSession(options.threadId, {
         preserveForResume: isAcpConnectionDropped(err),
       })
       throw err
     } finally {
+      promptEnd.abort(new AcpTurnEnded('failed'))
       entry.bridge?.setSkillActivationTurn(null)
       entry.bridge?.setAdvisorContext(null)
       entry.bridge?.setExecutionContext(null)
@@ -1491,8 +1538,9 @@ async function respondToPermission(
   // and network or external mutations still prompt there. Delegate only on
   // adapter-authored provenance that agrees across the request and the
   // agent's earlier reports of the same call (#1446), and only when this
-  // session really mounted the bridge — a remote agent, or one without HTTP
-  // MCP, has nothing that would re-gate a call that merely claims to be ours.
+  // session was offered its own bridge, over http or the stdio relay. A remote
+  // agent gets neither, so nothing would re-gate a call that merely claims to
+  // be ours.
   // This session's bridge, narrowed to what is still offered now (a plugin can
   // be disabled mid-session).
   const stillOffered = new Set(bridgedNativeToolsOffered())
@@ -1716,17 +1764,25 @@ async function emitBypassedWriteAudit(
   queueWrites: ReadonlySet<string>,
   onChunk: (chunk: StreamChunk) => void,
 ): Promise<void> {
-  let bypassed: string[]
+  let bypassed: BypassedWrite[]
   try {
-    bypassed = (await listWorktreeChangesSince(baseline)).filter((p) => !queueWrites.has(p))
+    bypassed = (await listWorktreeChangesSince(baseline)).filter((c) => !queueWrites.has(c.path))
   } catch {
     return
   }
   if (bypassed.length === 0) return
+  // Whether git holds each file's content is extra detail; without it the
+  // card still names the files.
+  const auditable = auditablePaths(bypassed)
+  const states = auditable ? await listWorktreeGitContentStates(auditable).catch(() => null) : null
   const id = `acp-edit-audit-${randomUUID()}`
   onChunk({
     type: 'tool_call',
-    toolCall: { id, name: 'workspace_edit_audit', args: { files: bypassed } },
+    toolCall: {
+      id,
+      name: 'workspace_edit_audit',
+      args: { files: bypassed.map((c) => c.path) },
+    },
   })
   // Warn, don't revert: the change may be legitimate (the agent's own shell, a
   // formatter it ran) or external (another editor mid-turn) — the audit can't
@@ -1734,12 +1790,7 @@ async function emitBypassedWriteAudit(
   onChunk({
     type: 'tool_result',
     toolCallId: id,
-    result:
-      'Warning: these files changed on disk during the agent’s turn outside the approved ' +
-      "sphere — no diff was reviewed for them. The write came from the agent's own " +
-      'tools (e.g. its shell) or from something else entirely:\n' +
-      bypassed.map((p) => `- ${p}`).join('\n') +
-      '\nReview them (e.g. git diff) before relying on the workspace state.',
+    result: formatBypassedWriteAudit(bypassed, states),
     isError: false,
   })
 }

@@ -1,6 +1,8 @@
 import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
+import type { AgentProfile } from './agent-profiles.ts'
 import type { MachineSharing, SharedMachineModel } from './machines.ts'
 import type { ReleaseChannel } from './release-channel.mts'
+import type { ThreadSortMode } from './types/state.ts'
 
 /** Validated, nonsecret persisted preferences. Host schemas verify this wire contract. */
 export interface SettingsValues {
@@ -24,7 +26,7 @@ export interface SettingsValues {
   chatGptPlanWelcomeSeen: boolean
   theme: 'system' | 'light' | 'dark'
   updateChannel: ReleaseChannel
-  sidebarThreadSort: 'activity' | 'created' | 'title'
+  sidebarThreadSort: ThreadSortMode
   sidebarThreadSortReverse: boolean
   sidebarThreadGroup: 'project' | 'status' | 'none'
   fontSize: number
@@ -86,7 +88,6 @@ export interface SettingsValues {
   localSubagentsEnabled: boolean
   localTodoItemsEnabled: boolean
   postTurnReviewMinChangedLines: number
-  claudePlanMonthlyFeeUsd: number | null
   bundledCursorSkillsEnabled: boolean
   bundledSkillPluginOverrides: Record<string, boolean>
   skillsEnabled: boolean
@@ -169,6 +170,7 @@ export interface SettingsValues {
   shareTerminalHistoryEnabled: boolean
   developerMode: boolean
   customInstructions: string
+  agentProfiles: AgentProfile[]
   onboardingCompleted: boolean
   envKeyAutoDetectEnabled: boolean
   sshStrictHostKeys: 'accept-new' | 'strict'

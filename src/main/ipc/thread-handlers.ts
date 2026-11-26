@@ -37,6 +37,11 @@ import {
   listOrphanProjectStores,
 } from '../services/thread-store.ts'
 import { deleteThreadResourcesAndStore } from '../services/thread-deletion.ts'
+import {
+  importExternalSessions,
+  listExternalSessions,
+} from '../services/external-sessions/external-session-import.ts'
+import { externalSessionImportDeps } from '../services/external-sessions/external-session-runtime.ts'
 import { buildThreadArchive } from '../services/thread-archive.ts'
 import { archiveStoredThread } from '../services/thread-archiving.ts'
 import {
@@ -61,6 +66,7 @@ import {
   undoThreadHistoryEdit,
 } from '../services/thread-history-edit.ts'
 import { lookupThreadBacklinks } from '../services/thread-store.ts'
+import type { ThreadActionAssessor } from '../services/thread-action-assessment.ts'
 import type { ThreadAutoArchive } from '../services/thread-auto-archive.ts'
 import type { ThreadAutoArchived } from '@shared/threads/auto-archive.ts'
 import type { ThreadArchivingRuntime } from '../services/thread-archiving.ts'
@@ -69,6 +75,7 @@ import type { ThreadHistoryEditRuntime } from '../services/thread-history-edit.t
 
 /** What the thread handlers share with the rest of `registerAllHandlers`. */
 export interface ThreadHandlerDeps {
+  actionAssessor: ThreadActionAssessor
   autoArchive: ThreadAutoArchive
   notifyAutoArchive: (event: ThreadAutoArchived) => void
   threadArchivingRuntime: ThreadArchivingRuntime
@@ -79,6 +86,7 @@ export interface ThreadHandlerDeps {
 export function registerThreadHandlers(
   win: BrowserWindow,
   {
+    actionAssessor,
     autoArchive,
     notifyAutoArchive,
     threadArchivingRuntime,
@@ -86,6 +94,10 @@ export function registerThreadHandlers(
     threadHistoryEditRuntime,
   }: ThreadHandlerDeps,
 ): void {
+  ipcMain.handle('threads:action-state', (event) => {
+    assertMainFrameSender(event, win)
+    return actionAssessor.snapshot()
+  })
   ipcMain.handle('threads:storage-size', (event, projectId: unknown, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
@@ -441,6 +453,28 @@ export function registerThreadHandlers(
     assertMainFrameSender(event, win)
     const videoPath = parseIpcArgs(zPathString, [path])
     return readVideoForPlayback(videoPath)
+  })
+
+  // Saved Claude Code / Codex CLI sessions that ran in this project's folder,
+  // and importing them as threads. Read-only on the tools' own files.
+  ipcMain.handle('threads:list-external-sessions', (event, projectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zProjectId, [projectId])
+    return listExternalSessions(externalSessionImportDeps(), id)
+  })
+  ipcMain.handle('threads:import-external-sessions', (event, projectId: unknown, keys: unknown) => {
+    assertMainFrameSender(event, win)
+    const [id, sessionKeys] = parseIpcArgs(
+      z.tuple([
+        zProjectId,
+        z
+          .array(z.string().regex(/^[0-9a-f]{32}$/))
+          .min(1)
+          .max(100),
+      ]),
+      [projectId, keys],
+    )
+    return importExternalSessions(externalSessionImportDeps(), id, sessionKeys)
   })
 
   ipcMain.handle('threads:list-orphans', (event) => {

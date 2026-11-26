@@ -18,8 +18,8 @@ import {
   replayWindow,
   repairToolUseToolResultPairing,
   CANCELLED_TOOL_RESULT,
-  getLastMeasuredInputTokens,
-  setLastMeasuredInputTokens,
+  getLastInputMeasurement,
+  setLastInputMeasurement,
 } from './trim-history.ts'
 import type { TodoItem } from './wire-types.ts'
 import {
@@ -44,6 +44,7 @@ import {
   isContextOverflowStopReason,
   isMalformedToolCallStopReason,
   isRefusalStopReason,
+  isTruncationStopReason,
   MAX_CONSECUTIVE_MALFORMED_TOOL_CALLS,
   MAX_MALFORMED_TOOL_CALLS_PER_RUN,
   REASONING_RUNAWAY_EXHAUSTED_STOP_REASON,
@@ -67,6 +68,7 @@ import { createHookRegistry, mergeBlockingOutcomes } from './hooks/hook-registry
 import type { HookEmitResult } from './hooks/hook-registry.ts'
 import type { HookContext, StepBoundaryPayload } from './hooks/canonical-events.ts'
 import {
+  EMPTY_TURN_HOOK_ID,
   LOOP_NUDGE_HOOK_ID,
   MALFORMED_TOOL_CALL_HOOK_ID,
   PLAN_VERIFIED_FINALIZE_HOOK_ID,
@@ -142,6 +144,7 @@ interface StepBoundaryNudges {
   malformedToolCall: string | undefined
   artifactCheckpoint: string | undefined
   planVerifiedFinalize: string | undefined
+  emptyTurn: string | undefined
 }
 
 /** Pull one step-boundary hook's selected nudge text (its `injectContext`) by id. */
@@ -212,6 +215,12 @@ export interface AgentLoopOptions {
   /** Explicit historical strategy selected by immutable benchmark profiles. */
   reasoningRunawayRecoveryStrategy?: 'legacy-two-cut-v1' | 'suppression-ladder-v1'
   /**
+   * What follows a stream that landed no text and no tool call. `nudge-v1` (the
+   * default) applies the `empty-turn` nudge; `replay-v1` re-sends the unchanged
+   * request, the behaviour immutable benchmark profiles were defined with.
+   */
+  emptyTurnRecoveryStrategy?: 'replay-v1' | 'nudge-v1'
+  /**
    * Optional per-stream cap for the single retry after a reasoning-runaway
    * nudge. Hosts may allow that bounded recovery more room to reach a tool call
    * while keeping the initial runaway detector tighter.
@@ -255,6 +264,15 @@ export interface AgentLoopOptions {
    * prolonged inspection into a concrete edit without ending the run.
    */
   stuckToolRecoveryNudge?: string
+  /**
+   * Whether conversation pressure (tool-step counts and context fill under
+   * `maxContextTokens`) may select the `loop-nudge` and `stuck-finalize` nudges.
+   * Defaults to true. A host that passes `maxContextTokens` only so history is
+   * trimmed to a loaded context, and whose turns have a step budget of their
+   * own (a headless review), passes false: the pre-stream `stepBoundary` then
+   * carries no escalation signals, as for a host without a context window.
+   */
+  conversationPressureNudges?: boolean
   /** Shared sliding-idle deadline. When omitted, one is created from runTimeoutMs. */
   runDeadline?: AgentRunDeadline
   /** Idle timeout when runDeadline is omitted. */
@@ -464,11 +482,13 @@ function emitStepUsage(
   streamUsage: StepUsage | null,
   getLastUsage: (() => StepUsage | null) | undefined,
   onChunk: (chunk: AgentStreamChunk) => void,
-  usageModel?: string,
+  usageModel: string | undefined,
+  /** The last history message the measured request carried. */
+  requestThrough: LLMMessage | undefined,
 ): void {
   const usage = streamUsage ?? getLastUsage?.()
-  if (usage?.inputTokens) {
-    setLastMeasuredInputTokens(usage.inputTokens)
+  if (usage?.inputTokens && requestThrough !== undefined) {
+    setLastInputMeasurement({ tokens: usage.inputTokens, through: requestThrough })
   }
   if (usage && (usage.inputTokens || usage.outputTokens) && usageModel) {
     onChunk({
@@ -573,6 +593,8 @@ async function streamTextOnlyTurn(
   const signal = budget.signal
   const turnMessages: LLMMessage[] =
     nudge === null ? [...messages] : [...messages, { role: 'user', content: nudge }]
+  // The nudge is not kept in history, so the measurement ends at the history's tail.
+  const requestThrough = messages.at(-1)
   let assistantText = ''
   const pendingToolCalls: ToolCallChunk[] = []
   let stopReason: string | undefined
@@ -646,29 +668,29 @@ async function streamTextOnlyTurn(
       role: 'assistant',
       content: pendingToolCalls.map((tc) => ({ id: tc.id, name: tc.name, args: tc.args })),
     })
-    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
+    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel, requestThrough)
     return { answerText: '', pendingToolCalls, retryAfterTruncation: false }
   }
 
   const trimmed = assistantText.trim()
   if (isRefusalStopReason(stopReason)) {
     const text = trimmed || REFUSAL_USER_MESSAGE
-    if (!trimmed) onChunk({ type: 'text', text })
+    if (!trimmed) onChunk({ type: 'text', text, author: 'loop' })
     messages.push({ role: 'assistant', content: text })
-    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
+    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel, requestThrough)
     return { answerText: text, pendingToolCalls: [], retryAfterTruncation: false }
   }
   const truncationNudge = await resolveTruncationNudge?.(stopReason)
   if (truncationNudge !== undefined) {
     if (trimmed) messages.push({ role: 'assistant', content: assistantText })
     messages.push({ role: 'user', content: truncationNudge })
-    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
+    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel, requestThrough)
     return { answerText: '', pendingToolCalls: [], retryAfterTruncation: true }
   }
   if (trimmed) {
     messages.push({ role: 'assistant', content: assistantText })
   }
-  emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
+  emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel, requestThrough)
   return { answerText: trimmed, pendingToolCalls: [], retryAfterTruncation: false }
 }
 
@@ -720,6 +742,7 @@ async function runToolEnabledNudgeTurn(
   // and each later closeout attempt would stack another user message on it.
   if (!reserveLlmCall(budget)) return { answerText: '', executedTools: false }
   messages.push({ role: 'user', content: nudge })
+  const requestThrough = messages.at(-1)
 
   let assistantText = ''
   const pendingToolCalls: ToolCallChunk[] = []
@@ -766,7 +789,7 @@ async function runToolEnabledNudgeTurn(
     budget.deadline.resume()
   }
   recordRunActivity(budget)
-  emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
+  emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel, requestThrough)
 
   assistantText = applyTextToolCallRecovery(
     assistantText,
@@ -935,11 +958,11 @@ type SettledToolExecution =
  * immediately so an early rejection can't raise an unhandled rejection while
  * the loop is still on an earlier call.
  *
- * Note: concurrent subagents share the `lastMeasuredInputTokens` global, so a
- * subagent's trim heuristic may read a sibling's measurement. Explore
- * histories are small (≤10 steps) and the parent's snapshot/restore around
- * the batch is unaffected, so the worst case is a slightly early/late trim
- * inside one subagent.
+ * Note: concurrent subagents share the `lastInputMeasurement` global, so a
+ * subagent may find a sibling's measurement there. It is anchored to the
+ * sibling's own history message, which this subagent's history does not hold,
+ * so the subagent then sizes by estimate; the parent's snapshot/restore around
+ * the batch is unaffected.
  */
 function startLeadingParallelExplores(
   ctx: ToolBatchContext,
@@ -1011,7 +1034,7 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
     consecutiveExploreWithoutRead,
     repeatVerification,
   } = ctx
-  const measuredInputBeforeTools = getLastMeasuredInputTokens()
+  const measuredInputBeforeTools = getLastInputMeasurement()
   const toolResults: ToolResult[] = []
   budget.deadline.pause()
   try {
@@ -1143,7 +1166,7 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
     budget.deadline.resume()
   }
 
-  setLastMeasuredInputTokens(measuredInputBeforeTools)
+  setLastInputMeasurement(measuredInputBeforeTools)
 
   if (toolResults.length > 0) {
     messages.push({ role: 'tool', toolResults })
@@ -1161,7 +1184,7 @@ function handleContextOverflowInLoop(
   onHistoryTrimmed?: () => void,
 ): boolean {
   if (!maxContextTokens) {
-    onChunk({ type: 'text', text: CONTEXT_OVERFLOW_USER_MESSAGE })
+    onChunk({ type: 'text', text: CONTEXT_OVERFLOW_USER_MESSAGE, author: 'loop' })
     messages.push({ role: 'assistant', content: CONTEXT_OVERFLOW_USER_MESSAGE })
     return true
   }
@@ -1175,13 +1198,13 @@ function handleContextOverflowInLoop(
     onHistoryTrimmed?.()
     return false
   }
-  onChunk({ type: 'text', text: CONTEXT_OVERFLOW_USER_MESSAGE })
+  onChunk({ type: 'text', text: CONTEXT_OVERFLOW_USER_MESSAGE, author: 'loop' })
   messages.push({ role: 'assistant', content: CONTEXT_OVERFLOW_USER_MESSAGE })
   return true
 }
 
 export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
-  setLastMeasuredInputTokens(null)
+  setLastInputMeasurement(null)
   const {
     provider,
     messages,
@@ -1204,6 +1227,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     reasoningCheckpointPolicy,
     allowForcedTextEscalation = true,
     stuckToolRecoveryNudge,
+    conversationPressureNudges = true,
     runDeadline,
     runTimeoutMs = AGENT_RUN_IDLE_TIMEOUT_MS,
     runHardMaxMs = AGENT_RUN_HARD_MAX_MS,
@@ -1289,6 +1313,10 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   // Set after a step whose todo update closed the plan on checks; read once by
   // the `plan-verified-finalize` step-boundary hook (#1433, Fix 4).
   let planClosedSignal = false
+  // Selected after an empty turn, applied only once the next main-loop call is
+  // certain (past the step/call budget check), so no unanswered nudge is left in
+  // history when the budget ends the run instead.
+  let pendingEmptyTurnNudge: string | undefined
   // In explore mode the parent has no read_file; the explore-without-read
   // nudge then points at explore's verbatim excerpts instead (#1433, Fix 0).
   const readFileOffered = tools.some((t) => t.name === 'read_file')
@@ -1322,6 +1350,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       malformedToolCall: nudgeFrom(result, MALFORMED_TOOL_CALL_HOOK_ID),
       artifactCheckpoint: nudgeFrom(result, ARTIFACT_CHECKPOINT_HOOK_ID),
       planVerifiedFinalize: nudgeFrom(result, PLAN_VERIFIED_FINALIZE_HOOK_ID),
+      emptyTurn: nudgeFrom(result, EMPTY_TURN_HOOK_ID),
     }
   }
   const applyArtifactCheckpointNudge = (text: string | undefined): boolean => {
@@ -1430,7 +1459,14 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       const extended = tryExtendRunBudget(
         budget,
         recentToolProgress,
-        { reasoningRunawayStreak, nudged: loopNudgeSent || forceTextAttempted },
+        {
+          reasoningRunawayStreak,
+          // A pending empty-turn nudge means the last stream had no answer and
+          // no tool call. Empty turns add nothing to the tool-progress window,
+          // so without this a run stuck on them keeps earning grants on the
+          // strength of the calls it made before it got stuck.
+          nudged: loopNudgeSent || forceTextAttempted || pendingEmptyTurnNudge !== undefined,
+        },
         maxStepsRef,
       )
       if (!extended) {
@@ -1443,6 +1479,16 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       }
     }
     steps++
+    if (pendingEmptyTurnNudge !== undefined) {
+      messages.push({ role: 'user', content: pendingEmptyTurnNudge })
+      recordAppliedNudge(appliedNudgeSink, {
+        step: budget.llmCalls,
+        hookId: EMPTY_TURN_HOOK_ID,
+        mechanism: 'tool-enabled-message',
+        text: pendingEmptyTurnNudge,
+      })
+      pendingEmptyTurnNudge = undefined
+    }
 
     repairToolUseToolResultPairing(messages)
 
@@ -1466,7 +1512,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       ) {
         const preNudges = await selectStepBoundaryNudges({
           phase: 'preStream',
-          escalation: { input: escalationInput, pressure },
+          ...(conversationPressureNudges
+            ? { escalation: { input: escalationInput, pressure } }
+            : {}),
           loopNudgeSent,
           forceTextAttempted,
           artifactCheckpointSent,
@@ -1591,6 +1639,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     let stopReason: string | undefined
     let malformedToolCall: MalformedToolCallInfo | undefined
     let streamUsage: StepUsage | null = null
+    let requestThrough: LLMMessage | undefined
 
     if (!reserveLlmCall(budget)) {
       runLimitStopReason = runBudgetStopReason(budget)
@@ -1664,6 +1713,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
             }
           : undefined
       initialToolChoice = undefined
+      requestThrough = messages.at(-1)
       for await (const chunk of provider.stream(messages, tools, signal, streamOptions)) {
         if (signal?.aborted) break
         if (chunk.type === 'reasoning') {
@@ -1862,7 +1912,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     }
     recordRunActivity(budget)
 
-    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
+    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel, requestThrough)
 
     if (maxContextTokens) {
       emitContextPressure(
@@ -1920,8 +1970,21 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     // below applies each with its own mechanism (a truncated turn continues; a
     // reasoning-runaway forces an answer, with the streak / give-up terminal
     // still owned by this loop).
+    // Nothing from this stream will land in history and no other post-stream
+    // outcome below claims it, so an unchanged retry would replay the request.
+    const emptyTurn =
+      opts.emptyTurnRecoveryStrategy !== 'replay-v1' &&
+      pendingToolCalls.length === 0 &&
+      !assistantText.trim() &&
+      !streamCappedAsRunaway &&
+      !softBudgetCut &&
+      !isTruncationStopReason(stopReason) &&
+      !isMalformedToolCallStopReason(stopReason) &&
+      !isRefusalStopReason(stopReason) &&
+      !isContextOverflowStopReason(stopReason)
     const postNudges = await selectStepBoundaryNudges({
       phase: 'postStream',
+      ...(emptyTurn ? { emptyTurn } : {}),
       loopNudgeSent,
       forceTextAttempted,
       artifactCheckpointSent,
@@ -2075,7 +2138,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       }
     } else if (isRefusalStopReason(stopReason)) {
       const text = assistantText.trim() ? historyAssistantText : REFUSAL_USER_MESSAGE
-      if (!assistantText.trim()) onChunk({ type: 'text', text })
+      if (!assistantText.trim()) onChunk({ type: 'text', text, author: 'loop' })
       if (text) messages.push({ role: 'assistant', content: text })
       finishedWithAnswer = true
       break
@@ -2129,7 +2192,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           if (
             reasoningRunawayStreak >= (legacyRunawayRecovery ? 2 : MAX_REASONING_RUNAWAY_STREAK)
           ) {
-            onChunk({ type: 'text', text: REASONING_RUNAWAY_GIVEUP_MESSAGE })
+            onChunk({ type: 'text', text: REASONING_RUNAWAY_GIVEUP_MESSAGE, author: 'loop' })
             messages.push({ role: 'assistant', content: REASONING_RUNAWAY_GIVEUP_MESSAGE })
             finishedWithAnswer = true
             reasoningRunawayExhausted = !legacyRunawayRecovery
@@ -2174,12 +2237,15 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         }
         continue
       }
-      // Empty turn (common when context is tight) — keep looping instead of exiting early.
+      // Empty turn (common when context is tight, or a thinking model's reply
+      // stayed in reasoning) — keep looping instead of exiting early, but say so,
+      // or the next request would be byte-identical to this one (#4294 dogfood).
+      pendingEmptyTurnNudge = postNudges.emptyTurn
       continue
     }
 
     // Execute tools and collect results. A tool may run a nested agent loop
-    // (explore subagent, local todo worker), and `setLastMeasuredInputTokens`
+    // (explore subagent, local todo worker), and `setLastInputMeasurement`
     // is a module global that the nested loop resets and repopulates with its
     // own stream sizes. Snapshot this loop's measured input here and restore it
     // after the tools finish so the next iteration's trim/escalation sizing
@@ -2261,7 +2327,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     if (openTodosReader && hasOpenTodos(openTodos)) {
       const closed = await closeOpenTodosBeforeFinalize(stepCtx, openTodosReader)
       if (!closed && !signal?.aborted) {
-        onChunk({ type: 'text', text: OPEN_TODOS_STILL_OPEN_MESSAGE })
+        onChunk({ type: 'text', text: OPEN_TODOS_STILL_OPEN_MESSAGE, author: 'loop' })
         messages.push({ role: 'assistant', content: OPEN_TODOS_STILL_OPEN_MESSAGE })
       }
     }
@@ -2325,7 +2391,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         )
       }
       if (!finalResult.answerText.trim() && !stoppedAtStepLimit) {
-        onChunk({ type: 'text', text: INCOMPLETE_RUN_MESSAGE })
+        onChunk({ type: 'text', text: INCOMPLETE_RUN_MESSAGE, author: 'loop' })
         messages.push({ role: 'assistant', content: INCOMPLETE_RUN_MESSAGE })
       } else if (finalResult.answerText.trim()) {
         finishedWithAnswer = true
@@ -2352,7 +2418,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     : terminalRunLimitStopReason
   if (terminalRunLimitStopReason !== null && !finishedWithAnswer) {
     const message = runLimitMessage(terminalRunLimitStopReason, stoppedAtStepLimit)
-    onChunk({ type: 'text', text: message })
+    onChunk({ type: 'text', text: message, author: 'loop' })
     messages.push({ role: 'assistant', content: message })
   }
 

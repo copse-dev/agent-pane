@@ -76,8 +76,10 @@ const SECTIONS: ShortcutSection[] = [
       { label: 'Toggle panel', keys: ['Mod', 'J'] },
       { label: 'Explorer', keys: ['Mod', 'Shift', 'E'] },
       { label: 'Terminal', keys: ['Mod', '`'] },
-      { label: 'Changes', keys: ['Mod', 'Shift', 'G'] },
+      { label: 'Review', keys: ['Mod', 'Shift', 'G'] },
       { label: 'Browser', keys: ['Mod', 'Shift', 'B'] },
+      { label: 'Open Review beside the open pane', keys: ['Mod', 'Alt', 'Shift', 'G'] },
+      { label: 'Open Browser beside the open pane', keys: ['Mod', 'Alt', 'Shift', 'B'] },
       { label: 'Focus browser address bar', keys: ['Mod', 'L'] },
       // Same physical key as above: while the browser page itself has focus,
       // Mod+L shares its selection (or a screenshot) instead of focusing the

@@ -13,10 +13,12 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
 
 > **The agent is a separate program — it is not bundled with Copse.** Copse ships
 > only `@agentclientprotocol/sdk` (the client/protocol half). The agent half (the
-> thing that wraps Claude/Gemini and speaks ACP) is installed by you, e.g.
-> `npm install -g @agentclientprotocol/claude-agent-acp` for Claude, then
-> authenticated with its own command (e.g. `claude auth login`). The Settings
-> panel shows the exact install and sign-in commands per agent.
+> thing that wraps Claude/Gemini and speaks ACP) is installed separately, e.g.
+> `npm install -g @agentclientprotocol/claude-agent-acp` for Claude. Copse can
+> install curated adapters with approval. The Claude adapter bundles the Claude
+> Code CLI it runs, so sign in with `claude-agent-acp --cli auth login`; a separate
+> `claude` install is unnecessary for Copse. Settings shows the install and
+> sign-in commands per agent.
 
 > Status: client role, second slice (issues #264, #605), with client terminals
 > (#623) — see [Client terminals](#client-terminals) and [Limitations](#limitations).
@@ -44,8 +46,15 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
   shell/background commands, read-only worktree preflight, model-tier advice,
   GitHub/CI, staged-diff visibility, archive extraction, video stills, and
   web/browser) is offered as a per-session
-  localhost MCP server (the **native-tool bridge**, issue #602) when the agent
-  supports http MCP servers. Calls execute through the same `ToolRegistry` as
+  localhost MCP server (the **native-tool bridge**, issue #602). An agent that
+  supports http MCP servers mounts it directly; any other agent gets the same
+  server as a stdio MCP server, a small relay (`acp-bridge-stdio-relay.ts`)
+  that the agent spawns under Copse's own executable and that forwards each
+  message to the bridge with its bearer token. Every ACP agent must support
+  stdio MCP servers, so registry and custom agents get Copse's tools too. The
+  relay only talks to a loopback `http:` URL, and the URL and token travel in
+  its environment, never its arguments. A sandboxed agent may read the Copse
+  runtime and the relay script for this, nothing more. Calls execute through the same `ToolRegistry` as
   built-in model runs, so the normal path validation, diff queue, permission
   policy, sandbox escape, and approval dialogs apply. Disable with the
   `acpNativeBridgeEnabled` setting. Bridged calls arrive on their own async
@@ -136,7 +145,8 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
 
   Every claim on the request and on the agent's earlier reports of the same
   `toolCallId` must agree, and the tool must be one this session's own bridge
-  serves: a local agent with HTTP MCP whose bridge started. Titles match only
+  serves: a local agent whose bridge started, mounted over http or through the
+  stdio relay. Titles match only
   the literal observed shapes, so shell text such as `copse=;. ./run_shell`
   claims nothing. Each delegation is recorded as an `acp` `allowed` decision.
   The bridge's `bridge-request` record repeats its `toolCallId` when the call
@@ -234,7 +244,7 @@ you've already added.
 
 - **Known agents** include Gemini CLI, Claude, Cursor, Codex and GitHub Copilot CLI.
   Select one to see whether it's installed, the **Install** command to get
-  it, the **Sign in** command to authenticate it (e.g. `claude auth login`), and
+  it, the **Sign in** command to authenticate it (e.g. `claude-agent-acp --cli auth login`), and
   an **Add to my agents** button.
 - Once added, selecting an agent's chip opens its editor — change its model /
   permission mode, enable/disable it, or **Remove** it.
@@ -291,13 +301,15 @@ does not establish a sandbox profile. See [registry discovery](acp-registry-disc
 External agents hold their own credentials, and those expire. When a turn fails
 because the agent could not authenticate, Copse now says so in the agent's own
 terms and offers to fix it: the chat message names the command that signs that
-agent in again (`claude auth login`, `cursor-agent login`, `codex login`, …), and a
+agent in again (`claude-agent-acp --cli auth login`, `cursor-agent login`, `codex login`, …), and a
 prompt offers to open a shell in the **Shells** pane already running it. Finish
 the sign-in there, then re-send your message — Copse cannot complete another
 program's login flow for you.
 
-Claude uses `claude auth login` for both first-time sign-in and expired-session
-recovery. The normal login flow chooses the account method; `--sso` is optional
+Claude uses `claude-agent-acp --cli auth login` for both first-time sign-in and
+expired-session recovery. This runs the adapter's bundled Claude Code CLI and
+stores the same account login as the standalone `claude` command. The normal
+login flow chooses the account method; `--sso` is optional
 when you need to force corporate SSO. `claude setup-token` is for headless or CI
 use: it prints a long-lived token without saving a login, so it is not the
 desktop sign-in command.
@@ -545,10 +557,8 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   history preamble.
 - **Text only on input.** Image attachments are dropped before the prompt is
   sent (the agent receives the text blocks).
-- **Native-tool bridge is http-only.** Agents that support only stdio MCP
-  servers don't get Copse's bridged tools this turn — a stdio shim is a
-  possible follow-up (#602). Todo/plan tools remain private. Copse-managed local
-  executors supporting HTTP MCP receive Copse's filtered skill catalog and
+- **Todo/plan tools remain private.** Copse-managed local executors that
+  mounted the bridge (over http or the stdio relay) receive Copse's filtered skill catalog and
   `read_skill` through the authenticated bridge. Each run has a fresh activation
   allowance (four model-selected skills, 128 KiB of instructions/supporting text),
   shared across transport retries and automatic checkout continuations. A fresh
@@ -559,7 +569,7 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   requirements still leaves workflow/model compatibility untested. Explicit skill
   instructions spend the same byte budget. Plugin enablement, trust framing, cancellation and skill-root containment
   still apply; model selection adds no filesystem or shell grants. When the bridge
-  is disabled, unavailable, remote, or the executor cannot negotiate HTTP MCP,
+  is disabled, unavailable, remote, or the executor never mounted it,
   invoked skills' SKILL.md instructions are still inlined with a notice that their
   supporting files and model-selected skills are unavailable; no catalog is sent.
   Agent-managed runs omit the automatic Copse catalog.
@@ -571,8 +581,17 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   the thread-scoped config directory Copse creates for it (read and write), the
   toolchains and git config contained commands get, and, when its preset sets
   `allowMacOsKeychain` (the Claude presets, which keep their macOS login
-  there), `~/Library/Keychains`. It never gets the rest of the home directory:
-  no `~/.ssh`, cloud credentials or other projects.
+  there), `~/Library/Keychains`. It can also read its own executable, as the
+  wrapper shell finds it on `PATH`, and, when that is a symlink, the file it
+  points to, one hop only, file by file and read-only: Cursor's installer puts
+  `cursor-agent` in `~/.local/bin`, and without that grant the agent could not
+  even start. Only regular files are granted, never a directory. A target the
+  agent can already read, such as Cursor's install tree in its home dirs, is
+  not granted again. Nothing is granted for a command found in the workspace,
+  its home dirs or its scratch paths: it is readable there already, and a
+  symlink the repository or the agent can write never chooses a grant. The
+  rest of the bin directory stays unreadable and unwritable. It never gets the
+  rest of the home directory: no `~/.ssh`, cloud credentials or other projects.
 - **A sandboxed Claude agent can read its Keychain login but not renew it.**
   The Keychain grant is read-only, and `security` writes the login keychain
   through a temporary file in that directory, so saving a renewed token fails
@@ -584,7 +603,7 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   message when the check's single, unretried request to Anthropic fails on the
   network, so Copse reports it as a sign-in Claude couldn't verify: usually
   expired (with the Keychain cause only for a sandboxed agent on macOS), or a
-  network failure worth one retry. It offers `claude auth login`, since signing
+  network failure worth one retry. It offers `claude-agent-acp --cli auth login`, since signing
   in from a terminal saves a fresh token, and the note it leaves for the next
   turn does not claim a re-run must fail.
 - **`gh` does not run in a sandboxed agent's own shell.** `~/.config/gh` holds

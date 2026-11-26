@@ -696,6 +696,7 @@ function applyProjectSelection(
     panelTab: view.panelTab,
     filesPaneOpen: view.filesPaneOpen,
     rightPanelMode: view.rightPanelMode,
+    rightPanelSplitMode: view.rightPanelSplitMode,
     // Opening succeeded — lift any prior "folder missing" quarantine (#997).
     projects: projectsWithMissingCleared(store.getState().projects, id),
   })
@@ -1344,7 +1345,7 @@ export async function addProject(store: AppStore, api: ApiClient): Promise<boole
 
 export async function addRemoteProject(store: AppStore, api: ApiClient): Promise<boolean> {
   const { openRemoteFolderDialog } = await import('../views/remote-folder-dialog.ts')
-  const picked = await openRemoteFolderDialog(api)
+  const picked = await openRemoteFolderDialog(api, { projects: store.getState().projects })
   if (!picked) return false
   await addProjectFromRemotePath(store, api, picked.hostId, picked.path)
   return true

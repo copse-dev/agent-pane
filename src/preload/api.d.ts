@@ -84,6 +84,8 @@ import type {
   GitCommittedChanges,
   GitFileDiff,
   GitStatusResult,
+  GitLineSelection,
+  GitStageResult,
   ThreadChangeSummary,
   GitBranchStatus,
   ThreadWorktreeAttachment,
@@ -216,6 +218,11 @@ export interface ApiClient {
   remote: {
     /** Publish the desktop-owned live view to authenticated remote clients. */
     publish: (view: import('@shared/remote-interface.ts').RemoteView) => Promise<void>
+    /** The threads remote clients are showing; only these are published with transcripts. */
+    watched: () => Promise<import('@shared/remote-interface.ts').RemoteWatchedThread[]>
+    onWatchedChanged: (
+      handler: (watched: import('@shared/remote-interface.ts').RemoteWatchedThread[]) => void,
+    ) => () => void
   }
   chatGptPlan: import('@shared/types/chatgpt-plan.ts').ChatGptPlanClient
   mobile: {
@@ -243,6 +250,11 @@ export interface ApiClient {
     /** Delete this Mac's name from the names service and forget its device key. */
     removeName: () => Promise<void>
     recheckNameDns: () => Promise<void>
+    /** Choose whether phones paired at copse.me reach this Mac through the Copse relay. */
+    setRelayEnabled: (enabled: boolean) => Promise<void>
+    /** Show a one-time code that adds this Mac to a copse.me account; it arrives as state. */
+    createShellPairing: () => Promise<void>
+    clearShellPairing: () => Promise<void>
     onChat: (
       handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void,
     ) => () => void
@@ -581,6 +593,7 @@ export interface ApiClient {
     ) => () => void
   }
   sshPrompt: {
+    onDismissed: (handler: (id: string) => void) => () => void
     respond: (id: string, value: string, remember?: boolean) => Promise<void>
     onRequest: (
       handler: (req: {
@@ -720,6 +733,7 @@ export interface ApiClient {
     ) => Promise<import('@copse/thread-store/plan-schema.ts').StoredThreadPlan | null>
   }
   threads: {
+    actionState: () => Promise<import('@shared/threads/action-assessment.ts').ThreadActionState>
     archiveState: (
       projectId: string,
       view: 'review' | 'archived',
@@ -853,6 +867,15 @@ export interface ApiClient {
     ) => Promise<import('@shared/types').ThreadCatalogHit[]>
     /** Store dirs with threads but no project entry — orphans to re-attach (#997). */
     listOrphans: () => Promise<import('@shared/types').OrphanProjectStore[]>
+    /** Saved Claude Code and Codex CLI sessions that ran in this project's folder. */
+    listExternalSessions: (
+      projectId: string,
+    ) => Promise<import('@shared/types').ExternalSessionList>
+    /** Import those sessions (by key) as threads; returns the threads it created. */
+    importExternalSessions: (
+      projectId: string,
+      keys: string[],
+    ) => Promise<import('@shared/types').ExternalSessionImportResult>
   }
   archive: {
     /**
@@ -1184,10 +1207,6 @@ export interface ApiClient {
       threadId: string,
     ) => Promise<import('@shared/usage/classifier-use.ts').ThreadClassifierUse>
     getPlanUsage: (force?: boolean) => Promise<import('@copse/plan-usage').PlanUsageSnapshot>
-    getPlanWorthIt: () => Promise<import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload>
-    setClaudePlanMonthlyFee: (
-      fee: number | null,
-    ) => Promise<import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload>
   }
   decisions: {
     /**
@@ -1620,6 +1639,24 @@ export interface ApiClient {
     /** HEAD commit + dirty state snapshot for a prompt about to be sent. */
     promptState: (projectId: string, threadId: string) => Promise<GitPromptState>
     checkoutBranch: (projectId: string, threadId: string, branch: string) => Promise<void>
+    /** Stage (`staged: true`) or unstage a Changes pane row. Only the index changes. */
+    setPathStaged: (
+      projectId: string,
+      threadId: string,
+      path: string,
+      staged: boolean,
+    ) => Promise<GitStageResult>
+    /**
+     * Stage the unstaged changes (or unstage the staged ones) that a line
+     * selection in the diff touches. Only the index changes.
+     */
+    setLinesStaged: (
+      projectId: string,
+      threadId: string,
+      path: string,
+      staged: boolean,
+      selection: GitLineSelection,
+    ) => Promise<GitStageResult>
     listBranches: (projectId: string, threadId: string) => Promise<GitBranchInfo[]>
     getDefaultBranch: (projectId: string, threadId: string) => Promise<string | null>
     /** The pre-session worktree backup taken this session, or null when none. */
@@ -1673,6 +1710,22 @@ export interface ApiClient {
     rerunFailedRuns: (owner: string, repo: string, number: number) => Promise<PrActionResult>
     /** Approve the pull request. */
     approvePr: (owner: string, repo: string, number: number) => Promise<PrActionResult>
+    /** Reply to an inline review thread on the PR. Never retried automatically. */
+    replyToReviewThread: (
+      owner: string,
+      repo: string,
+      number: number,
+      threadId: string,
+      body: string,
+    ) => Promise<PrActionResult>
+    /** Resolve (`true`) or reopen (`false`) an inline review thread on the PR. */
+    setReviewThreadResolved: (
+      owner: string,
+      repo: string,
+      number: number,
+      threadId: string,
+      resolved: boolean,
+    ) => Promise<PrActionResult>
     /** Mark a draft pull request ready for review. */
     markPrReady: (owner: string, repo: string, number: number) => Promise<PrActionResult>
     /** Enable merge-when-ready (auto-merge) with the repo's preferred strategy. */

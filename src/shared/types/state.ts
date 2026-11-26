@@ -23,8 +23,13 @@ export const RIGHT_PANEL_POSITIONS: readonly RightPanelPosition[] = ['auto', 'si
 export const isRightPanelPosition = memberOf(RIGHT_PANEL_POSITIONS)
 // How the sidebar orders the threads inside each project. `activity` is the store's
 // own order (last prompted, then created); the others re-sort it at render time.
-export type ThreadSortMode = 'activity' | 'created' | 'title'
-export const THREAD_SORT_MODES: readonly ThreadSortMode[] = ['activity', 'created', 'title']
+export type ThreadSortMode = 'activity' | 'created' | 'title' | 'action'
+export const THREAD_SORT_MODES: readonly ThreadSortMode[] = [
+  'activity',
+  'created',
+  'title',
+  'action',
+]
 export const isThreadSortMode = memberOf(THREAD_SORT_MODES)
 // How the sidebar lays threads out: under their projects (the tree), in
 // Needs you / Working / Recent sections across projects, or as one flat list.
@@ -132,6 +137,10 @@ export interface AppState {
   stagedDiffs: StagedDiffEntry[] // multi-file queue (see spec 10)
   filesPaneOpen: boolean // right pane (explorer + file viewer) visibility
   rightPanelMode: RightPanelMode // explorer tree vs terminal column in right pane
+  // A second pane stacked under `rightPanelMode` in the same panel (e.g. Review
+  // over Browser), or null for a single pane. Never equal to `rightPanelMode`,
+  // and only ever a mode `canSplitRightPanel` accepts.
+  rightPanelSplitMode: RightPanelMode | null
   // The open pane fills the window over chat. Session-only (never persisted):
   // a window that reopened with chat already covered would read as broken.
   rightPanelMaximized: boolean

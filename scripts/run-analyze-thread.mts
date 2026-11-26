@@ -13,7 +13,10 @@ await esbuild.build({
   alias: { '@shared': resolve('./src/shared') },
 })
 
-const result = spawnSync('node', [out, ...process.argv.slice(2)], {
+const args = process.argv.slice(2)
+if (args[0] === '--') args.shift()
+
+const result = spawnSync('node', [out, ...args], {
   stdio: 'inherit',
   cwd: process.cwd(),
 })

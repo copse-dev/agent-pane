@@ -2,6 +2,27 @@
 
 Tracking: [#659](https://github.com/copse-dev/agent-pane/issues/659)
 
+## The live state carries only watched transcripts (2026-11-21, #4445)
+
+The desktop published the transcript of every thread it had loaded, inline images included,
+and sent the whole project again on each streamed token, whether or not a phone was connected.
+With a few large transcripts open, one `remote:publish` call passed 1 GB, and the renderer
+aborted while serializing it, so the window reloaded.
+
+Main now records the threads clients poll through the scoped state read. A poll keeps a thread
+watched for 15 s, and at most 8 threads are watched; when all 8 have been polled in the last 5
+s, a newly polled chat stays on its saved view rather than displacing one. Main hands the list
+to every app window (`remote:watched`, `remote:watched-changed`). The desktop publishes
+transcripts for watched threads only, and every other thread as a row in the `messagesLoaded:
+false` shape clients already fill from the saved transcript. It also re-sends a project only
+when that project changed, which includes text and tool calls streamed into a watched thread:
+the store writes those into the message in place, so the publisher marks the watched thread
+rather than relying on a new threads array. With no phone watching, a 962-thread project with
+eight large transcripts loaded publishes 0.2 MB instead of about 640 MB.
+
+The cost: a chat a phone has just opened shows its saved view for one poll, until its live
+view is published.
+
 ## Performance (2026-11-20)
 
 Measured before changing anything, then after, against the same build:
@@ -708,6 +729,14 @@ Non-negotiable controls, all fail-closed, on every request and every SSE connect
   transparent button on Approve — one tap approves a shell command. _Amended 2026-11-20:_
   the page's own script and stylesheet, requested under the hash the page pins with
   Subresource Integrity, are the one `immutable` exception (see Performance above).
+  _Amended November 2026 (decision):_ while the user has chosen to reach this Mac through the
+  Copse relay, responses under its trusted names (`lan.`/`web.<label>.u.copse.me`) send
+  `frame-ancestors https://copse.me` instead, without `X-Frame-Options`, so the copse.me shell
+  can frame the phone client ([remote-access.md](../remote-access.md#framing-and-what-crosses-into-the-shell)).
+  The diagram frame admits its own origin and the shell. Everything else, the bare-IP origin, and
+  every response with the relay off, keep this rule. This trusts one first-party origin not to
+  do exactly the overlay above; [threat-model.md](../threat-model.md) scenario 12 records the
+  risk.
 - **401 before reading any body** (the one thing the ACP bridge gets exactly right), a
   hard body-size cap, `server.maxConnections`, header and idle timeouts, and a temporary
   per-peer cooldown after repeated failed auth attempts. The listener stays enabled.
@@ -838,8 +867,12 @@ by hand, on a device the app cannot reach.
   ACME/DNS service as breaking "no Copse-hosted backend". The Copse names service now runs the
   `u.copse.me` zone and ACME issuance for a per-Mac name
   ([remote-access.md](../remote-access.md)); it sees CSRs and private LAN addresses, never
-  thread data, and the Mac's keys never leave it. A Copse relay for reaching the Mac from
-  outside its network is phase 2 of that work and remains outside this plan.
+  thread data, and the Mac's keys never leave it. _Amended November 2026:_ phase 2 of that work,
+  a Copse relay that passes TLS through to the Mac from outside its network, is built on the Mac
+  side and off by default ([remote-access.md](../remote-access.md#from-anywhere-the-relay-and-copseme)).
+  It serves this plan's phone client, allow-list, device tokens and desktop-approved pairing
+  unchanged. The relayed path replaces the private-peer check with an exact `web.` name, and the
+  relay choice relaxes the header rule for the copse.me shell (Security, amended above).
 - mDNS/Bonjour advertisement. It broadcasts a live control plane to every network the
   laptop ever joins, and `.local` names are spoofable by any peer — which the app's own
   outbound policy already refuses for exactly this reason.

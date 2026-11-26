@@ -1,8 +1,9 @@
 // Named `stepBoundary` hooks — E1 of the hooks platform.
 //
-// These lift the four in-loop nudge *policies* out of `runAgentLoop`: the loop
+// These lift the in-loop nudge *policies* out of `runAgentLoop`: the loop
 // nudge, the stuck-finalize (context-pressure force-text) nudge, the
-// truncation-continue nudge, and the reasoning-runaway force-answer nudge. Each
+// truncation-continue nudge, the reasoning-runaway force-answer nudge, and the
+// later malformed-tool-call, plan-verified-finalize and empty-turn nudges. Each
 // hook reads the step-boundary payload and returns the nudge text
 // (`injectContext`) its policy selects, or abstains. The harness still owns
 // *applying* that text — pushing the user message, running the forced text-only
@@ -20,6 +21,7 @@
 // first-party function hooks that read pure loop signals off the payload.
 import type { BlockingHook } from './canonical-events.ts'
 import {
+  EMPTY_TURN_NUDGE,
   EXPLORE_REPEAT_USE_EXCERPTS_NUDGE,
   EXPLORE_WITHOUT_READ_NUDGE,
   EXPLORE_WITHOUT_READ_NUDGE_THRESHOLD,
@@ -46,6 +48,7 @@ export const TRUNCATION_CONTINUE_HOOK_ID = 'truncation-continue'
 export const REASONING_RUNAWAY_HOOK_ID = 'reasoning-runaway'
 export const MALFORMED_TOOL_CALL_HOOK_ID = 'malformed-tool-call'
 export const PLAN_VERIFIED_FINALIZE_HOOK_ID = 'plan-verified-finalize'
+export const EMPTY_TURN_HOOK_ID = 'empty-turn'
 
 /**
  * Force a text-only answer when the conversation is under enough context
@@ -183,6 +186,23 @@ export const planVerifiedFinalizeHook: BlockingHook<'stepBoundary'> = {
 }
 
 /**
+ * Tell the model its last reply was empty after a stream ended without visible
+ * text or a tool call (`emptyTurn`). Reasoning never lands in history, so the
+ * loop used to re-send the byte-identical request until a sample happened to
+ * answer; a thinking model reviewing a guest edit spent eight such calls. The
+ * harness pushes the text as a user message; the existing step / LLM-call caps
+ * and the run deadline still bound how many empty turns a run can take.
+ */
+export const emptyTurnHook: BlockingHook<'stepBoundary'> = {
+  id: EMPTY_TURN_HOOK_ID,
+  event: 'stepBoundary',
+  run(payload) {
+    if (payload.phase !== 'postStream' || payload.emptyTurn !== true) return undefined
+    return { injectContext: EMPTY_TURN_NUDGE }
+  },
+}
+
+/**
  * Step-boundary hooks in the order the previous inline blocks ran. Order among
  * the pre-stream pair mirrors the inline order (stuck-finalize evaluated before
  * loop-nudge); the harness reads each by id, so cross-nudge order is not itself
@@ -195,4 +215,5 @@ export const STEP_BOUNDARY_HOOKS: readonly BlockingHook<'stepBoundary'>[] = [
   reasoningRunawayHook,
   malformedToolCallHook,
   planVerifiedFinalizeHook,
+  emptyTurnHook,
 ]

@@ -137,6 +137,75 @@ async function waitText(text: string): Promise<void> {
   )
 }
 
+/**
+ * The phone's whole viewport from the top, in light mode, so the chat heading
+ * and its connection state are in frame; local macOS captures stay out of the
+ * references.
+ */
+async function savePhoneScreenshot(filename: string): Promise<void> {
+  const shots =
+    process.platform === 'darwin'
+      ? join(process.cwd(), 'e2e-failure-artifacts', 'paired-browser')
+      : E2E_SCREENSHOT_DIR
+  mkdirSync(shots, { recursive: true })
+  await mobile().sendCommand('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-color-scheme', value: 'light' }],
+  })
+  await mobile().waitUntil(
+    async () => (await mobile().$('html').getAttribute('data-theme')) === 'light',
+  )
+  // The page follows the newest message; the heading is what changed. Scrolling
+  // flashes an overlay scrollbar that fades on its own clock, so hide it.
+  await mobile().sendCommand('Emulation.setScrollbarsHidden', { hidden: true })
+  await mobile().execute(() => {
+    window.scrollTo(0, 0)
+  })
+  await mobile().waitUntil(async () => (await mobile().execute(() => window.scrollY)) === 0)
+  assert.equal(
+    await mobile().execute(() => document.documentElement.scrollWidth <= innerWidth),
+    true,
+  )
+  await mobile().execute(async () => {
+    await document.fonts.ready
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          resolve()
+        })
+      }),
+    )
+  })
+  await withFrozenAnimations(async () => {
+    await mobile().saveScreenshot(join(shots, filename))
+  }, mobile())
+}
+
+const liveStateSchema = z.object({
+  views: z.array(
+    z.object({
+      projectId: z.string(),
+      threads: z.array(
+        z.object({
+          id: z.string(),
+          messages: z.array(z.unknown()),
+          messagesLoaded: z.boolean().optional(),
+        }),
+      ),
+    }),
+  ),
+})
+
+/** How the desktop's live state carries the chat under test, read with the phone's token. */
+async function publishedChat(
+  query: string,
+): Promise<{ messages: number; loaded: boolean | undefined } | undefined> {
+  const state = liveStateSchema.parse((await phoneRequest(`/api/remote/state?${query}`)).body)
+  const chat = state.views
+    .find((view) => view.projectId === projectId)
+    ?.threads.find((thread) => thread.id === threadId)
+  return chat && { messages: chat.messages.length, loaded: chat.messagesLoaded }
+}
+
 function spine(): Array<{ id: string; role: string }> {
   const schema = z.object({ type: z.literal('message'), id: z.string(), role: z.string() })
   const path = join(e2eWorkspaceDir(), projectId, threadId, 'events.jsonl')
@@ -162,6 +231,9 @@ describe('real paired browser chat with the desktop window closed', function () 
       model: 'claude-sonnet-4-6',
       subagentsEnabled: false,
       autoRunSandboxCommands: false,
+      // An idle chat would otherwise ask for a next-step hint, which can land
+      // during a companion-page capture.
+      nextStepSuggestionEnabled: false,
     })
     const lan = join(copseDataRoot(), 'lan')
     mkdirSync(lan, { recursive: true, mode: 0o700 })
@@ -405,6 +477,134 @@ describe('real paired browser chat with the desktop window closed', function () 
       ids,
     )
     assert.equal((await native('window-state')).visible, !shouldUseChromiumHeadless())
+  })
+
+  it('publishes a transcript only while a client watches the chat, showing the saved view until then (#4445)', async () => {
+    // This test's own exchange, so it holds when run alone: a chat with no
+    // transcript is published the same way whether or not it is watched.
+    const prompt = 'Reply once for the saved and live views.'
+    const reply = 'The saved view and the live view both show this reply.'
+    const scenario = await installMockScenario({
+      title: 'Paired browser saved view',
+      turns: [{ user: prompt, responses: [{ text: reply }] }],
+    })
+    await send(prompt)
+    await waitText(reply)
+    await scenario.assertComplete()
+    // The shared chat page has been polling this chat. Leave it so the watch lapses.
+    await mobile().url(origin)
+    await mobile().$('#activity').waitForDisplayed()
+    // A whole-project read watches nothing. Once no client has polled the chat
+    // for the watch period, it is published as a row, while the desktop still
+    // shows its transcript.
+    await mobile().waitUntil(
+      async () => {
+        const chat = await publishedChat(new URLSearchParams({ project: projectId }).toString())
+        return chat?.messages === 0 && chat.loaded === false
+      },
+      {
+        timeout: 45_000,
+        interval: 1_000,
+        timeoutMsg: 'The unwatched chat was still published with its transcript',
+      },
+    )
+    assert.ok((await $('#conversation').getText()).includes(reply))
+
+    const activitySchema = z.object({
+      rows: z.array(z.object({ projectId: z.string(), threadId: z.string(), title: z.string() })),
+    })
+    const row = activitySchema
+      .parse((await phoneRequest('/api/activity')).body)
+      .rows.find((item) => item.projectId === projectId && item.threadId === threadId)
+    assert.ok(row, 'The chat is missing from the phone activity list')
+    // Hold every live poll after the first, so its answer stays on screen to
+    // capture. The first poll is what starts the watch.
+    await mobile().execute(() => {
+      const original = window.fetch.bind(window)
+      let polls = 0
+      const held = new Promise<void>((resolve) => {
+        window.addEventListener(
+          'e2e-release-live-polls',
+          () => {
+            resolve()
+          },
+          { once: true },
+        )
+      })
+      window.fetch = async (input, init): Promise<Response> => {
+        if (typeof input === 'string' && input.startsWith('/api/remote/state')) {
+          polls++
+          if (polls > 1) await held
+        }
+        return original(input, init)
+      }
+    })
+    await mobile().waitUntil(async () =>
+      mobile().execute((title) => {
+        const button = [...document.querySelectorAll('#groups button.row')].find(
+          (item) => item.querySelector('.row-title')?.textContent === title,
+        )
+        if (!(button instanceof HTMLButtonElement)) return false
+        button.click()
+        return true
+      }, row.title),
+    )
+
+    // First poll: the chat was not watched yet, so it arrives as a row and the
+    // page shows the transcript saved on disk.
+    const connection = mobile().$('#remote-connection')
+    await mobile().waitUntil(async () => (await connection.getText()) === 'Saved view', {
+      timeout: 15_000,
+      timeoutMsg: 'The first live poll of an unwatched chat did not fall back to the saved view',
+    })
+    await mobile().waitUntil(async () => (await mobile().$('#messages').getText()).includes(reply))
+    await savePhoneScreenshot('paired-browser-companion-saved-view.png')
+
+    // Later polls: the first one put the transcript back in the published view.
+    await mobile().execute(() => {
+      window.dispatchEvent(new Event('e2e-release-live-polls'))
+    })
+    await mobile().$('#remote-connection[data-connected="true"]').waitForExist({ timeout: 15_000 })
+    assert.equal(await connection.getText(), '● Connected')
+    assert.ok((await mobile().$('#messages').getText()).includes(reply))
+    const watched = await publishedChat(
+      new URLSearchParams({ project: projectId, thread: threadId }).toString(),
+    )
+    assert.ok(
+      watched && watched.messages > 0,
+      'The watched chat was published without its transcript',
+    )
+    await savePhoneScreenshot('paired-browser-companion-live.png')
+
+    // The next test continues on the shared chat page.
+    await mobile().url(`${origin}/remote/?project=${projectId}&thread=${threadId}`)
+    await mobile().$('#connection[data-connected="true"]').waitForExist()
+  })
+
+  it('streams an answer into a chat the phone is watching while it is written (#4445)', async () => {
+    // The store writes streamed text into the message in place. A watched chat
+    // must still go out on each change, so the phone sees the answer grow
+    // rather than all at once when the turn ends.
+    const prompt = 'Stream a long answer to the phone.'
+    const answer = 'Streaming to the phone one character at a time until this turn ends.'
+    const scenario = await installMockScenario({
+      title: 'Paired browser streaming',
+      turns: [{ user: prompt, responses: [{ text: answer, chunkDelayMs: 150 }] }],
+    })
+    await send(prompt)
+    await mobile().waitUntil(
+      async () => {
+        const text = await mobile().$('#conversation').getText()
+        return text.includes(answer.slice(0, 'Streaming'.length)) && !text.includes(answer)
+      },
+      {
+        timeout: 30_000,
+        interval: 100,
+        timeoutMsg: 'The phone never showed the answer while it was being written',
+      },
+    )
+    await waitText(answer)
+    await scenario.assertComplete()
   })
 
   it('preserves drafts through network loss, stops a run, and blocks downgraded or revoked credentials', async () => {

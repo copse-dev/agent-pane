@@ -9,6 +9,11 @@ import {
 } from './settings-writable.ts'
 
 describe('settings-writable', () => {
+  it('persists the Needs action sort and rejects unsupported sort values', () => {
+    assert.equal(parseRendererWritableSetting('sidebarThreadSort', 'action'), 'action')
+    assert.throws(() => parseRendererWritableSetting('sidebarThreadSort', 'invalid'))
+  })
+
   it('accepts supported search providers and rejects arbitrary endpoints or legacy scraping providers', () => {
     assert.equal(isRendererWritableSettingKey('webSearchProvider'), true)
     for (const provider of ['none', 'tavily', 'parallel']) {

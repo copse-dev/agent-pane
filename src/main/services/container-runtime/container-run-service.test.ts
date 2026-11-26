@@ -2,7 +2,7 @@ import type { ContainerRunRequest } from '@shared/types/container-run.ts'
 import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
 import { TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import { FileSupervisedTaskStore } from '../supervisor/task-store.ts'
-import { describe, it, beforeEach } from 'node:test'
+import { after, before, describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -23,6 +23,17 @@ installInMemorySecretCipher()
 
 const PROJECT = 'container-run-project'
 const THREAD = 'container-run-thread'
+const originalProfile = process.env['COPSE_DIR']
+let profile = ''
+before(() => {
+  profile = mkdtempSync(join(tmpdir(), 'copse-container-service-profile-'))
+  process.env['COPSE_DIR'] = profile
+})
+after(() => {
+  if (originalProfile === undefined) delete process.env['COPSE_DIR']
+  else process.env['COPSE_DIR'] = originalProfile
+  rmSync(profile, { recursive: true, force: true })
+})
 
 function fakeRecord(threadId: string): ThreadContainerRecord {
   return {

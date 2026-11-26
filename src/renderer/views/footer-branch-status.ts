@@ -109,6 +109,10 @@ function isTrunkBranch(branch: string | null, defaultBranch: string | null): boo
   return defaultBranch != null && branch != null && branch === defaultBranch
 }
 
+const DETACHED_HEAD_LABEL = 'Detached HEAD'
+const DETACHED_START_TITLE =
+  'Start this thread from the checked-out commit (detached HEAD). Pick a branch to switch the checkout to it instead.'
+
 export function mountFooterBranchStatus(
   host: HTMLElement,
   store: AppStore,
@@ -231,9 +235,23 @@ export function mountFooterBranchStatus(
     const picked = baseBranchByThread.get(thread.id)
     if (picked) return picked
     if (thread.id !== store.getState().activeThreadId) return undefined
+    if (projectCheckoutDetached()) return undefined
     return defaultBranch && branches.some((branch) => branch.name === defaultBranch)
       ? defaultBranch
       : undefined
+  }
+
+  /**
+   * Whether the active blank thread's project checkout is on no branch. Such a
+   * checkout cannot cut a worktree, so the thread will share it, and defaulting
+   * to a branch would move it off the commit the user chose — or fail outright
+   * when another worktree holds that branch. It starts where it is unless the
+   * user picks a branch. Only main's positive `detached` reading counts: a
+   * status with no branch also comes back for a folder that is not a
+   * repository, and for a new thread read before it is saved.
+   */
+  function projectCheckoutDetached(): boolean {
+    return isPickerMode() && status?.detached === true
   }
 
   /** The base branch for the active thread, while it is still blank. */
@@ -316,10 +334,13 @@ export function mountFooterBranchStatus(
     const displayBranch = getDisplayBranch()
     const pickerMode = isPickerMode()
     const pr = getVisiblePr()
+    // A blank thread on a detached project checkout names no branch either,
+    // but the chip still says where it will start.
+    const startsDetached = !displayBranch && projectCheckoutDetached()
     deferredNote.hidden = !readsCheckout()
-    trigger.hidden = !displayBranch
+    trigger.hidden = !displayBranch && !startsDetached
 
-    if (!displayBranch) {
+    if (!displayBranch && !startsDetached) {
       // A thread reading a detached checkout names no branch, but the note
       // still says it is reading the checkout.
       wrap.hidden = !readsCheckout()
@@ -352,7 +373,15 @@ export function mountFooterBranchStatus(
       setOpen(false)
     }
 
-    if (pr) {
+    if (!displayBranch) {
+      // No branch to name: the thread starts at the checked-out commit.
+      label.textContent = DETACHED_HEAD_LABEL
+      trigger.title = DETACHED_START_TITLE
+      trigger.classList.remove('is-link')
+      trigger.classList.remove('is-copyable')
+      branchToCopy = null
+      trigger.setAttribute('aria-label', DETACHED_START_TITLE)
+    } else if (pr) {
       label.textContent = `PR #${String(pr.number)}`
       trigger.title = mismatch ? `${mismatchMessage} (${pr.title})` : pr.title
       trigger.classList.add('is-link')
@@ -555,20 +584,24 @@ export function mountFooterBranchStatus(
     }
   }
 
-  /** The PR action row (if any) plus the branches matching the current filter, default first. */
-  function filteredRows(): { pr: GitOpenPr | null; matches: GitBranchInfo[] } {
+  /**
+   * The PR action row (if any), the detached-HEAD row (unfiltered, on a
+   * detached project checkout), then the branches matching the current filter,
+   * default first.
+   */
+  function filteredRows(): { pr: GitOpenPr | null; head: boolean; matches: GitBranchInfo[] } {
     const pr = getVisiblePr()
     const ordered = orderBranchesWithDefaultFirst(branches, defaultBranch)
     const query = filterInput.value.trim().toLocaleLowerCase()
     const matches = query
       ? ordered.filter((branch) => branch.name.toLocaleLowerCase().includes(query))
       : ordered
-    return { pr, matches }
+    return { pr, head: !query && projectCheckoutDetached(), matches }
   }
 
   function rowCount(): number {
-    const { pr, matches } = filteredRows()
-    return (pr ? 1 : 0) + matches.length
+    const { pr, head, matches } = filteredRows()
+    return (pr ? 1 : 0) + (head ? 1 : 0) + matches.length
   }
 
   function clampActiveIndex(): void {
@@ -602,16 +635,32 @@ export function mountFooterBranchStatus(
     renderMenu()
   }
 
-  /** Activate whichever row is currently keyboard-highlighted (PR action or a branch). */
+  /** Drop the pick, so the thread starts at the detached commit it would share. */
+  function selectDetachedHead(): void {
+    setOpen(false)
+    trigger.focus()
+    const thread = getActiveThread()
+    if (!thread) return
+    baseBranchByThread.delete(thread.id)
+    renderTrigger()
+    renderMenu()
+  }
+
+  /** Activate whichever row is currently keyboard-highlighted (PR action, detached HEAD or a branch). */
   function activateRow(index: number): void {
-    const { pr, matches } = filteredRows()
+    const { pr, head, matches } = filteredRows()
     if (pr && index === 0) {
       setOpen(false)
       trigger.focus()
       openBrowserUrl(store, pr.url)
       return
     }
-    const branch = matches[pr ? index - 1 : index]
+    const headIndex = pr ? 1 : 0
+    if (head && index === headIndex) {
+      selectDetachedHead()
+      return
+    }
+    const branch = matches[index - headIndex - (head ? 1 : 0)]
     if (branch) selectBranch(branch.name)
   }
 
@@ -628,7 +677,7 @@ export function mountFooterBranchStatus(
     if (!isPickerMode()) return
 
     const selected = activeBaseBranch() ?? status?.currentBranch ?? null
-    const { pr, matches } = filteredRows()
+    const { pr, head, matches } = filteredRows()
     clampActiveIndex()
     let rowIndex = 0
 
@@ -652,6 +701,28 @@ export function mountFooterBranchStatus(
         openBrowserUrl(store, pr.url)
       })
       list.append(prItem)
+      rowIndex++
+    }
+
+    if (head) {
+      const headItem = el(
+        'button',
+        {
+          type: 'button',
+          class: 'branch-picker-option branch-picker-detached-head',
+          id: `${listId}-option-${String(rowIndex)}`,
+          role: 'option',
+          tabindex: '-1',
+          title: DETACHED_START_TITLE,
+          'aria-selected': rowIndex === activeIndex ? 'true' : 'false',
+        },
+        el('span', { class: 'branch-picker-option-label' }, DETACHED_HEAD_LABEL),
+        el('span', { class: 'branch-picker-default-badge' }, 'current'),
+      )
+      if (selected === null) headItem.classList.add('is-selected')
+      if (rowIndex === activeIndex) headItem.classList.add('is-active')
+      headItem.addEventListener('click', selectDetachedHead)
+      list.append(headItem)
       rowIndex++
     }
 
@@ -971,10 +1042,19 @@ export function mountFooterBranchStatus(
       // submission's owner, never whichever thread becomes active while waiting.
       const picked = baseBranchByThread.get(threadId)
       if (picked) return picked
-      const [listed, defaultName] = await Promise.all([
+      // The footer's status already describes this thread's checkout once
+      // loaded (it is cleared on every thread switch). Read it only when the
+      // send beat that refresh, as a send right at startup can.
+      const loaded = threadId === store.getState().activeThreadId && status !== null ? status : null
+      const [listed, defaultName, head] = await Promise.all([
         api.git.listBranches(projectId, threadId),
         api.git.getDefaultBranch(projectId, threadId),
+        loaded ?? api.git.branchStatus(projectId, threadId),
       ])
+      // A detached project checkout starts the thread where it is (see
+      // `projectCheckoutDetached`), never on a branch nobody picked. Only
+      // main's positive reading counts, never a branch name that is missing.
+      if (head.detached === true) return undefined
       return defaultName && listed.some((branch) => branch.name === defaultName)
         ? defaultName
         : undefined

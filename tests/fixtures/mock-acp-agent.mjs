@@ -26,6 +26,8 @@
  * | `report-env:A,B` | reply `env:{"A":…,"B":…}`: those vars as this process got them |
  * | `echo-prompt`    | reply `prompt:` and the whole prompt text, Copse's notes included |
  * | `say:TEXT`       | reply TEXT (the rest of that line), and nothing else            |
+ * | `write-files:OPS` | change files in the session cwd itself, past Copse's diff queue |
+ * |                  | (#4006): `;`-separated `path=text`, `path<source` (copy), `-path` |
  * | `fail-auth-after:TEXT` | stream TEXT as one id-stamped message, then fail the prompt |
  * |                  | with `-32000 Authentication required`, as Claude Agent ACP does |
  * |                  | when the CLI's OAuth refresh fails mid-turn                     |
@@ -39,8 +41,8 @@
  * | `crash`          | write to stderr and exit non-zero **mid-turn**                 |
  * | anything else    | echo it back as an agent message chunk                         |
  *
- * `report-env:`, `refuse-copse-tool:`, `fail-auth-after:`, `say:`, `list-mcp-tools`
- * and `echo-prompt` are checked first: a
+ * `report-env:`, `refuse-copse-tool:`, `fail-auth-after:`, `say:`, `write-files:`,
+ * `list-mcp-tools` and `echo-prompt` are checked first: a
  * turn driven through Copse's own prompt builder carries a preamble whose words
  * (`task`, …) would otherwise trip the substring branches below.
  *
@@ -53,9 +55,14 @@
  * | `--list-mcp-tools`     | list each offered http server's tools before `session/new` returns |
  * | `--report-mcp-failure` | on the first prompt, report each offered server as failed the |
  * |                        | way Claude Agent ACP does for a client without notices        |
+ * | `--ignore-mcp`         | never start the stdio servers it is offered                   |
  *
  * `--mcp-http` alone is an agent that is offered the bridge and never mounts it,
  * until a `list-mcp-tools` prompt mounts it late.
+ *
+ * Without `--mcp-http` the agent behaves like any ACP agent offered stdio
+ * servers: it starts each one and lists its tools while `session/new` runs.
+ * Copse offers its bridge that way, through its stdio relay.
  *
  * No permission request ever runs anything: the agent only reports the
  * client's answer.
@@ -68,6 +75,9 @@ import {
   RequestError,
 } from '@agentclientprotocol/sdk/unstable'
 import { Writable } from 'node:stream'
+import { mountStdioServers } from './acp-mount-stdio-servers.mjs'
+import { copyFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 
 /** Bridge Node's stdin to the SDK's Web Stream type (mirrors node-readable-stream.ts). */
 function readableFrom(source) {
@@ -129,6 +139,8 @@ async function listTools(servers) {
 let nextSessionId = 0
 /** The http MCP servers each session was offered, by session id. */
 const offeredServers = new Map()
+/** The working directory each session was opened in, by session id. */
+const sessionCwds = new Map()
 const reportedFailures = new Set()
 /** Turns parked until the client cancels them (`stop-mid-command`). */
 const awaitingCancel = new Set()
@@ -147,7 +159,12 @@ agent({ name: 'mock-acp-agent' })
     const sessionId = `mock-session-${String(nextSessionId)}`
     const servers = (ctx.params.mcpServers ?? []).filter((server) => server.type === 'http')
     offeredServers.set(sessionId, servers)
+    sessionCwds.set(sessionId, ctx.params.cwd)
     if (flags.has('--list-mcp-tools')) await listTools(servers)
+    // `--ignore-mcp`: an agent that silently ignores the servers it is offered.
+    if (!flags.has('--mcp-http') && !flags.has('--ignore-mcp')) {
+      await mountStdioServers(ctx.params.mcpServers, 'mock-acp-agent')
+    }
     return { sessionId }
   })
   .onRequest('session/prompt', async (ctx) => {
@@ -250,6 +267,27 @@ agent({ name: 'mock-acp-agent' })
     const sayLine = /say:([^\n]*)/.exec(text)
     if (sayLine) {
       await say(sayLine[1].trim())
+      return { stopReason: 'end_turn' }
+    }
+
+    // Writes made with the agent's own tools never reach Copse's diff queue,
+    // like an ACP agent's shell, so only the turn-end audit sees them.
+    const writeFiles = /write-files:([^\n]*)/.exec(text)
+    if (writeFiles) {
+      const cwd = sessionCwds.get(sessionId) ?? process.cwd()
+      for (const op of writeFiles[1].split(';').map((entry) => entry.trim())) {
+        if (op.startsWith('-')) {
+          rmSync(resolve(cwd, op.slice(1)))
+          continue
+        }
+        const copy = /^([^<]+)<(.+)$/.exec(op)
+        const write = /^([^=]+)=(.*)$/.exec(op)
+        const target = resolve(cwd, (copy ?? write)?.[1] ?? '')
+        mkdirSync(dirname(target), { recursive: true })
+        if (copy) copyFileSync(resolve(cwd, copy[2]), target)
+        else if (write) writeFileSync(target, `${write[2]}\n`)
+      }
+      await say('Changed the files with my own shell.')
       return { stopReason: 'end_turn' }
     }
 

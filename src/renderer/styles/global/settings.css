@@ -69,6 +69,11 @@ dialog.settings-overlay::backdrop {
   color: var(--text-secondary);
   line-height: var(--titlebar-height);
 }
+.settings-header .approval-settings-pending {
+  margin-left: auto;
+  margin-right: var(--spacing-sm);
+  -webkit-app-region: no-drag;
+}
 .settings-close-btn {
   -webkit-app-region: no-drag;
   display: inline-flex;
@@ -513,7 +518,7 @@ dialog.settings-overlay::backdrop {
    background, that left "Server connection" straddling the card's top edge,
    half on the card and half off it. Floating it makes it an ordinary block in
    the content box, so the card's padding surrounds it like any other child;
-   everything after it clears. Flat groups (listed above) keep the rendered
+   every other child clears it. Flat groups (listed above) keep the rendered
    legend: they have no padding or fill for it to misplace. */
 .settings-content
   fieldset:not(
@@ -538,8 +543,12 @@ dialog.settings-overlay::backdrop {
     .machines-settings > fieldset,
     .usage-section-root > fieldset
   )
-  > legend
-  ~ * {
+  > :not(legend) {
+  /* Not `> legend ~ *`: with a sibling selector on a `*` subject, Chromium
+     restyled the whole transcript each time rows were inserted, though no row
+     is in a fieldset. The legend is the only float in a card, and clearing
+     only moves past earlier floats, so clearing every other child looks the
+     same. */
   clear: both;
 }
 /* A field and its own controls stay tight; the gap belongs *between* fields. */
@@ -550,17 +559,13 @@ dialog.settings-overlay::backdrop {
   margin-bottom: 0;
 }
 /* Chat, lightweight prompts, and task-role routing are one decision surface.
-   Keep the roles visibly nested inside the Models card without introducing a
-   second card / nested fieldset. */
+   Keep the roles inside the Models section without introducing a second card /
+   nested fieldset; space, not a rule, separates them from the fields above. */
 #settings-model-routing-host {
   margin-top: var(--spacing-xl);
-  padding-top: var(--spacing-lg);
-  border-top: 1px solid var(--border);
 }
 #settings-model-maker-block-host {
   margin-top: var(--spacing-xl);
-  padding-top: var(--spacing-lg);
-  border-top: 1px solid var(--border);
 }
 .model-maker-block-list {
   display: grid;
@@ -575,8 +580,6 @@ dialog.settings-overlay::backdrop {
    one card, three stacked decisions, no second border box. */
 #settings-model-parameters-host {
   margin-top: var(--spacing-xl);
-  padding-top: var(--spacing-lg);
-  border-top: 1px solid var(--border);
 }
 .model-parameter-note {
   margin-bottom: var(--spacing-lg);
@@ -1129,7 +1132,6 @@ dialog.settings-overlay::backdrop {
   gap: calc(var(--spacing-xl) + var(--spacing-md));
 }
 .usage-plan-section,
-.usage-worth-section,
 .usage-ledger-section {
   display: flex;
   flex-direction: column;
@@ -1137,82 +1139,17 @@ dialog.settings-overlay::backdrop {
 }
 /* These blocks space their children with the flex gap; the group blurb's own
    bottom margin would stack on top of it. */
-.usage-plan-section > .settings-fieldset-desc,
-.usage-worth-section > .settings-fieldset-desc {
+.usage-plan-section > .settings-fieldset-desc {
   margin-bottom: 0;
 }
 /* <h4>, not <h3>: these title groups inside the Usage section, below its
    masthead, so they stay in the interface family (docs/ui-taste.md). */
 .usage-plan-heading,
-.usage-worth-heading,
 .usage-ledger-heading {
   margin: 0;
   font-size: var(--font-size-md);
   font-weight: 600;
   color: var(--text-primary);
-}
-.usage-worth-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-md) 0;
-}
-.usage-worth-verdict {
-  margin: 0;
-  font-size: var(--font-size-base);
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.usage-worth-card[data-verdict='worth_it'] .usage-worth-verdict {
-  color: var(--success);
-}
-.usage-worth-card[data-verdict='not_worth_it'] .usage-worth-verdict {
-  color: var(--warning);
-}
-.usage-worth-card[data-verdict='borderline'] .usage-worth-verdict {
-  color: var(--text-secondary);
-}
-.usage-worth-reason {
-  margin: 0;
-}
-.usage-worth-fee-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--spacing-sm);
-}
-.usage-worth-fee-label {
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-}
-.usage-worth-fee-input {
-  width: 7rem;
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-base);
-  color: var(--text-primary);
-  font-size: var(--font-size-sm);
-}
-.usage-worth-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-sm);
-}
-.usage-worth-inference-btn {
-  -webkit-app-region: no-drag;
-  align-self: flex-start;
-  background: transparent;
-  color: var(--accent);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--spacing-xs) var(--spacing-md);
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-.usage-worth-inference-btn:hover {
-  background: var(--bg-hover);
 }
 .usage-plan-providers {
   display: flex;
@@ -3363,13 +3300,11 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   font-size: var(--font-size-sm);
 }
 
-/* Coding agents list: logo, name + status chip on one row, action on the right. */
-.acp-list {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
-  overflow: hidden;
-}
+/* Coding agents list (`.acp-list`): logo, name + status chip on one row, action
+   on the right. The rows sit on the page like plugin rows, without a filled
+   card or rules between them. The list does not clip its overflow either: each
+   row's last action ends flush with the list's edge, so a clip would cut off
+   its focus ring. */
 .acp-list-bar {
   display: flex;
   align-items: baseline;
@@ -3381,11 +3316,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   display: none;
 }
 .acp-row {
-  padding: var(--spacing-md);
-  border-bottom: 1px solid var(--border);
-}
-.acp-row:last-child {
-  border-bottom: 0;
+  padding: var(--spacing-md) 0;
 }
 .acp-row-head {
   display: flex;
@@ -3496,6 +3427,15 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .acp-add-menu[hidden] {
   display: none;
 }
+/* The Add menu is still a card, so its rows keep the inset and the rule between
+   them that rows in the unframed list above do without. */
+.acp-add-menu .acp-row {
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--border);
+}
+.acp-add-menu .acp-row:last-child {
+  border-bottom: 0;
+}
 /* Models & agents Add menu: group labels between rows, and inline add forms. */
 .connections-menu-group {
   padding: var(--spacing-xs) var(--spacing-md);
@@ -3518,4 +3458,50 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 .acp-add-menu .provider-panel-embedded > .provider-actions:first-child {
   display: none;
+}
+
+/* Settings > Agent > Profiles (agent-profiles-section.ts). */
+.agent-profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin: var(--spacing-sm) 0;
+}
+.agent-profile-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) 0;
+}
+.agent-profile-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.agent-profile-row-actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: var(--spacing-md);
+}
+.agent-profile-form {
+  display: grid;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+}
+.agent-profile-form[hidden] {
+  display: none;
+}
+.agent-profile-form-title {
+  margin: 0;
+  font-weight: 600;
+}
+.agent-profile-form .agent-profile-name {
+  width: 100%;
+  max-width: 360px;
+  min-height: var(--action-min-height);
+  padding-inline: var(--spacing-md);
+}
+.agent-profile-add {
+  justify-self: start;
 }

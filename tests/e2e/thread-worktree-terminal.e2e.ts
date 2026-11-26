@@ -225,7 +225,7 @@ describe('isolated thread terminal cwd', () => {
     this.timeout(90_000)
     const mainHandle = (await browser.getWindowHandles())[0]
     assert.ok(mainHandle)
-    const changesBtn = await $('#titlebar .titlebar-btn[aria-label="Open changes"]').getElement()
+    const changesBtn = await $('#titlebar .titlebar-btn[aria-label="Open review"]').getElement()
     await changesBtn.click()
 
     await browser.waitUntil(async () => (await gitChangePaths()).includes('worktree-only.md'), {
@@ -238,7 +238,7 @@ describe('isolated thread terminal cwd', () => {
     await $('.monaco-diff-editor').waitForDisplayed({ timeout: 30_000 })
 
     const before = await browser.getWindowHandles()
-    await $('#git-changes-host .pane-popout-btn').click()
+    await $('.review-header .git-changes-header .pane-popout-btn').click()
     await browser.waitUntil(async () => (await browser.getWindowHandles()).length > before.length, {
       timeout: 15_000,
       timeoutMsg: 'expected a pop-out Changes window',
@@ -300,8 +300,14 @@ describe('isolated thread terminal cwd', () => {
     assert.equal(git(worktreeRoot, ['branch', '--show-current']), '')
 
     const terminalBtn = await $('#titlebar .titlebar-btn[aria-label="Open terminal"]').getElement()
-    if (!((await terminalBtn.getAttribute('class')) ?? '').includes('active'))
+    if (!((await terminalBtn.getAttribute('class')) ?? '').includes('active')) {
+      // Run alone, this opens the panel, which starts its own first shell. Count
+      // tabs once that shell is up, or its late tab reads as the recovery tab.
       await terminalBtn.click()
+      await approveUnsandboxedTerminalIfPrompted()
+      await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 })
+      await $('.terminals-tab').waitForExist({ timeout: 30_000 })
+    }
     const tabsBefore = await $$('.terminals-tab').getElements()
     await $('.terminals-new-btn').click()
     await approveUnsandboxedTerminalIfPrompted()

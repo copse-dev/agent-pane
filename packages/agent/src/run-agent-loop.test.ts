@@ -10,7 +10,7 @@ import {
   EXTENSION_GRANT_LLM_CALLS,
   MAX_EXTENSION_GRANTS,
 } from './agent-loop-limits.ts'
-import { getLastMeasuredInputTokens, setLastMeasuredInputTokens } from './trim-history.ts'
+import { getLastInputMeasurement, setLastInputMeasurement } from './trim-history.ts'
 import {
   MALFORMED_TOOL_CALL_NUDGE,
   REASONING_RUNAWAY_FORCE_ANSWER_NUDGE,
@@ -29,6 +29,7 @@ import type {
 import type { StreamCutRecord } from './stream-cut-record.ts'
 import type { AgentStreamChunk, TodoItem } from './wire-types.ts'
 import {
+  EMPTY_TURN_NUDGE,
   EXPLORE_REPEAT_USE_EXCERPTS_NUDGE,
   EXPLORE_WITHOUT_READ_NUDGE,
   PLAN_VERIFIED_FINALIZE_NUDGE,
@@ -1111,6 +1112,63 @@ describe('runAgentLoop', () => {
     )
   })
 
+  it('lets a host trim to a context window without the pressure nudges', async () => {
+    const pressureHooks = new Set(['loop-nudge', 'stuck-finalize-nudge'])
+    const run = async (
+      conversationPressureNudges?: boolean,
+    ): Promise<{ toolCalls: number; trims: number; nudges: string[] }> => {
+      let toolCalls = 0
+      let trims = 0
+      const applied: import('./run-agent-loop.ts').AppliedNudgeRecord[] = []
+      const provider: LLMProvider = {
+        async *stream(messages, tools): AsyncGenerator<ProviderStreamChunk> {
+          const isTextFinalize = messages.some(
+            (message) =>
+              message.role === 'user' &&
+              typeof message.content === 'string' &&
+              message.content.includes('Do not call any tools.'),
+          )
+          if (tools.length === 0 || isTextFinalize) {
+            yield { type: 'text', text: 'Final.' }
+            yield { type: 'done' }
+            return
+          }
+          toolCalls++
+          yield {
+            type: 'tool_call',
+            toolCall: { id: `tool-${String(toolCalls)}`, name: 'run_shell', args: {} },
+          }
+          yield { type: 'done' }
+        },
+      }
+      await runAgentLoop({
+        provider,
+        messages: [{ role: 'user', content: 'go' }],
+        tools: [{ name: 'run_shell', description: 'run', parameters: { type: 'object' } }],
+        maxSteps: 15,
+        maxContextTokens: 1_000,
+        ...(conversationPressureNudges === undefined ? {} : { conversationPressureNudges }),
+        recordAppliedNudge: (record) => applied.push(record),
+        onHistoryTrimmed: () => {
+          trims++
+        },
+        onChunk: () => {},
+        executeTool: async () => 'x'.repeat(2_000),
+      })
+      return {
+        toolCalls,
+        trims,
+        nudges: applied.map((record) => record.hookId).filter((id) => pressureHooks.has(id)),
+      }
+    }
+    // By default the same run is nudged: the opt-out is what keeps it quiet.
+    assert.notDeepEqual((await run()).nudges, [])
+    const quiet = await run(false)
+    assert.deepEqual(quiet.nudges, [])
+    assert.equal(quiet.toolCalls, 15)
+    assert.ok(quiet.trims > 0, 'history is still trimmed to the window')
+  })
+
   describe('reasoning-runaway recovery ladder', () => {
     const SHELL_TOOL = { name: 'run_shell', description: 'run', parameters: { type: 'object' } }
     const flood = (): ProviderStreamChunk[] => {
@@ -1593,6 +1651,9 @@ src/renderer/views/projects-pane.ts
       executeTool: async () => 'ok',
     })
     assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('model-request limit')))
+    // The notice is the loop's own text, so a host can tell it from the model's.
+    const notice = chunks.find((c) => c.type === 'text' && c.text.includes('model-request limit'))
+    assert.ok(notice && 'author' in notice)
     assert.deepEqual(chunks.at(-1), { type: 'done', stopReason: 'max_steps' })
   })
 
@@ -2630,7 +2691,7 @@ src/renderer/views/projects-pane.ts
 
   it('restores measured input tokens after a tool runs a nested loop (#112)', async () => {
     // A tool (e.g. an explore subagent or local todo worker) can run a nested
-    // agent loop that overwrites the shared `lastMeasuredInputTokens` global with
+    // agent loop that overwrites the shared `lastInputMeasurement` global with
     // its own stream sizes. The parent loop must restore its own measurement so
     // the next turn's trim/escalation sizing is not skewed by the subagent.
     let measuredAtSecondStream: number | null = -1
@@ -2643,7 +2704,7 @@ src/renderer/views/projects-pane.ts
           yield { type: 'done' }
         } else {
           // Sampled after the top-of-loop sizing for the second turn ran.
-          measuredAtSecondStream = getLastMeasuredInputTokens()
+          measuredAtSecondStream = getLastInputMeasurement()?.tokens ?? null
           yield { type: 'text', text: 'final' }
           yield { type: 'usage', model: 'm', inputTokens: 2000, outputTokens: 10 }
           yield { type: 'done' }
@@ -2659,11 +2720,52 @@ src/renderer/views/projects-pane.ts
       onChunk: () => {},
       executeTool: async () => {
         // Simulate a nested loop clobbering the shared global.
-        setLastMeasuredInputTokens(5)
+        setLastInputMeasurement({ tokens: 5, through: { role: 'user', content: 'nested' } })
         return 'tool done'
       },
     })
     assert.equal(measuredAtSecondStream, 1000)
+  })
+
+  it('counts the tool results added since the last measured request before trimming', async () => {
+    // Each request is measured under budget, but the round of tool results added
+    // after it is not part of that measurement. Sizing the next request by the
+    // previous measurement alone sends that round over the budget untrimmed.
+    const measured = [2_000, 12_000, 30_000]
+    const sent: string[][] = []
+    let call = 0
+    const provider: LLMProvider = {
+      async *stream(messages) {
+        sent.push(
+          messages.flatMap((m) =>
+            m.role === 'tool' ? m.toolResults.map((r) => r.toolCallId) : [],
+          ),
+        )
+        const n = call++
+        const inputTokens = measured[n]
+        if (inputTokens === undefined) {
+          yield { type: 'text', text: 'done' }
+          yield { type: 'done' }
+          return
+        }
+        const id = `tc${String(n + 1)}`
+        yield { type: 'tool_call', toolCall: { id, name: 'read_file', args: { path: id } } }
+        yield { type: 'usage', model: 'm', inputTokens, outputTokens: 10 }
+        yield { type: 'done' }
+      },
+    }
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [],
+      // A 38,976-token conversation budget: 30,000 measured plus a 10,000-token
+      // result does not fit, 30,000 alone does.
+      maxContextTokens: 40_000,
+      usageModel: 'm',
+      onChunk: () => {},
+      executeTool: async () => 'r'.repeat(40_000),
+    })
+    assert.deepEqual(sent, [[], ['tc1'], ['tc1', 'tc2'], ['tc2', 'tc3']])
   })
 })
 
@@ -3358,5 +3460,148 @@ describe('goal-met guards (#1433 Fix 4)', () => {
       args: { path: 'a.ts', old_string: 'a', new_string: 'b' },
     })
     assert.equal(executed.filter((e) => e.includes('npm run check')).length, 2)
+  })
+})
+
+describe('runAgentLoop empty turns (#4294 dogfood)', () => {
+  const READ_TOOL = {
+    name: 'read_file',
+    description: 'read',
+    parameters: { type: 'object' },
+  }
+  /** A short thinking-model reply that never lands: reasoning only, then a clean stop. */
+  const reasoningOnly: ProviderStreamChunk[] = [
+    {
+      type: 'reasoning',
+      text: 'I should call git_diff next to see the change.',
+    },
+    { type: 'done', stopReason: 'stop' },
+  ]
+  const toolTurn = (id: string): ProviderStreamChunk[] => [
+    {
+      type: 'tool_call',
+      toolCall: { id, name: 'read_file', args: { path: 'index.html' } },
+    },
+    { type: 'done', stopReason: 'tool_calls' },
+  ]
+  function recording(turns: ProviderStreamChunk[][]): {
+    provider: LLMProvider
+    requests: string[]
+  } {
+    const requests: string[] = []
+    const provider: LLMProvider = {
+      async *stream(messages): AsyncGenerator<ProviderStreamChunk> {
+        requests.push(JSON.stringify(messages))
+        for (const c of turns[Math.min(requests.length, turns.length) - 1] ?? []) yield c
+      },
+    }
+    return { provider, requests }
+  }
+
+  it('never re-sends an identical request after a reasoning-only reply', async () => {
+    const { provider, requests } = recording([
+      toolTurn('a'),
+      toolTurn('b'),
+      reasoningOnly,
+      reasoningOnly,
+      [{ type: 'text', text: ANSWER_PAST_TOLERANCE }, { type: 'done' }],
+    ])
+    const applied: AppliedNudgeRecord[] = []
+    await runAgentLoop({
+      provider,
+      messages: [
+        { role: 'system', content: 'review' },
+        { role: 'user', content: 'review the diff' },
+      ],
+      tools: [READ_TOOL],
+      maxSteps: 10,
+      onChunk: () => {},
+      executeTool: async () => '<h1>Copse smoke one</h1>',
+      recordAppliedNudge: (r) => applied.push(r),
+    })
+    for (let i = 1; i < requests.length; i++) {
+      assert.notEqual(
+        requests[i],
+        requests[i - 1],
+        `request ${String(i + 1)} repeats its predecessor`,
+      )
+    }
+    assert.equal(requests.length, 5)
+    assert.deepEqual(
+      applied.map((r) => r.hookId),
+      ['empty-turn', 'empty-turn'],
+    )
+  })
+
+  it('replays the unchanged request under the replay-v1 strategy', async () => {
+    const { provider, requests } = recording([
+      reasoningOnly,
+      [{ type: 'text', text: ANSWER_PAST_TOLERANCE }, { type: 'done' }],
+    ])
+    const applied: AppliedNudgeRecord[] = []
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [READ_TOOL],
+      maxSteps: 5,
+      emptyTurnRecoveryStrategy: 'replay-v1',
+      onChunk: () => {},
+      executeTool: async () => 'ok',
+      recordAppliedNudge: (r) => applied.push(r),
+    })
+    assert.equal(requests.length, 2)
+    assert.equal(requests[1], requests[0])
+    assert.deepEqual(applied, [])
+  })
+
+  it('leaves no empty-turn nudge in history when the call budget ends the run', async () => {
+    const { provider, requests } = recording([[{ type: 'done', stopReason: 'stop' }]])
+    const messages: LLMMessage[] = [{ role: 'user', content: 'go' }]
+    const applied: AppliedNudgeRecord[] = []
+    await runAgentLoop({
+      provider,
+      messages,
+      tools: [READ_TOOL],
+      maxSteps: 5,
+      maxLlmCalls: 2,
+      onChunk: () => {},
+      executeTool: async () => 'ok',
+      recordAppliedNudge: (r) => applied.push(r),
+    })
+    assert.equal(requests.length, 2)
+    const nudges = messages.filter((m) => m.role === 'user' && m.content === EMPTY_TURN_NUDGE)
+    assert.equal(nudges.length, 1, 'only the nudge the second call answered is in history')
+    assert.equal(applied.length, 1)
+  })
+
+  it('earns no budget extension while the last turn was empty', async () => {
+    // Two distinct reads would earn a grant on their own; empty turns add
+    // nothing to that health window, so only the empty turn itself can say the
+    // run is stuck.
+    const read = (id: string, path: string): ProviderStreamChunk[] => [
+      { type: 'tool_call', toolCall: { id, name: 'read_file', args: { path } } },
+      { type: 'done', stopReason: 'tool_calls' },
+    ]
+    const { provider, requests } = recording([
+      read('a', 'a.ts'),
+      read('b', 'b.ts'),
+      [{ type: 'done', stopReason: 'stop' }],
+    ])
+    const messages: LLMMessage[] = [{ role: 'user', content: 'go' }]
+    const chunks: AgentStreamChunk[] = []
+    await runAgentLoop({
+      provider,
+      messages,
+      tools: [READ_TOOL],
+      maxSteps: 100,
+      maxLlmCalls: 4,
+      adaptiveExtensions: true,
+      onChunk: (c) => chunks.push(c),
+      executeTool: async () => 'ok',
+    })
+    assert.equal(requests.length, 4)
+    assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('model-request limit')))
+    const nudges = messages.filter((m) => m.role === 'user' && m.content === EMPTY_TURN_NUDGE)
+    assert.equal(nudges.length, 1, 'the refused run keeps no unanswered nudge')
   })
 })

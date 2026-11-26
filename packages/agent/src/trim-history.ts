@@ -7,14 +7,26 @@ export { ESTIMATED_IMAGE_TOKENS } from './token-estimate.ts'
 
 export const CANCELLED_TOOL_RESULT = 'Tool execution cancelled.'
 
-let lastMeasuredInputTokens: number | null = null
-
-export function setLastMeasuredInputTokens(tokens: number | null): void {
-  lastMeasuredInputTokens = tokens != null && tokens > 0 ? tokens : null
+/**
+ * A provider-measured request size. `tokens` covers the history up to and
+ * including `through`, the last history message the request carried. Messages
+ * appended after it — the model's reply, tool results, nudges — were never
+ * measured, so sizing adds their estimates (see {@link effectiveConversationTokens}).
+ */
+export interface InputMeasurement {
+  readonly tokens: number
+  readonly through: LLMMessage
 }
 
-export function getLastMeasuredInputTokens(): number | null {
-  return lastMeasuredInputTokens
+let lastInputMeasurement: InputMeasurement | null = null
+
+/** Record the running loop's latest measured request, or clear it with `null`. */
+export function setLastInputMeasurement(measurement: InputMeasurement | null): void {
+  lastInputMeasurement = measurement !== null && measurement.tokens > 0 ? measurement : null
+}
+
+export function getLastInputMeasurement(): InputMeasurement | null {
+  return lastInputMeasurement
 }
 
 function estimateUserContentTokens(content: UserContent): number {
@@ -181,10 +193,29 @@ export function estimateConversationTokens(messages: LLMMessage[]): number {
   return total
 }
 
-/** Prefer provider-reported input size when available (#52). */
+/**
+ * Where `measurement` stops in `messages`: the index of the last message its
+ * request carried, or -1 when `messages` no longer holds it (a trim dropped it,
+ * or the measurement belongs to another loop) and only an estimate applies.
+ */
+function measuredThroughIndex(
+  messages: readonly LLMMessage[],
+  measurement: InputMeasurement | null,
+): number {
+  return measurement === null ? -1 : messages.lastIndexOf(measurement.through)
+}
+
+/**
+ * Prefer the provider-reported size of the previous request when it still
+ * describes `messages` (#52), plus an estimate of everything appended since, so a
+ * round of tool results is counted before the request that carries it.
+ */
 export function effectiveConversationTokens(messages: LLMMessage[]): number {
-  if (lastMeasuredInputTokens != null) return lastMeasuredInputTokens
-  return estimateConversationTokens(messages)
+  const through = measuredThroughIndex(messages, lastInputMeasurement)
+  if (lastInputMeasurement === null || through < 0) return estimateConversationTokens(messages)
+  let tokens = lastInputMeasurement.tokens
+  for (const message of messages.slice(through + 1)) tokens += conversationMessageEstimate(message)
+  return tokens
 }
 
 /**
@@ -297,12 +328,12 @@ export function trimMessagesInPlace(
      */
     compaction?: CompactionIdentity | undefined
     /**
-     * Provider-measured input size of this conversation's previous request.
+     * Provider-measured size of this conversation's previous request.
      * Defaults to the running loop's measurement. Pass `null` when trimming
      * outside a loop: the module-level value then belongs to whichever loop
      * (another thread, a reviewer subagent) streamed last, not to `messages`.
      */
-    measuredInputTokens?: number | null
+    measurement?: InputMeasurement | null
   },
 ): boolean {
   const minTail = opts?.minTailMessages ?? 5
@@ -319,13 +350,12 @@ export function trimMessagesInPlace(
   // seeding `currentTokens` from it and then not decrementing would collapse the
   // whole history down to `minTail` on the first pass once measured tokens cross the
   // budget. Seed from the measured size when present (more accurate than the
-  // estimate), otherwise from the estimated total, then decrement by our per-message
+  // estimate) plus the estimates of the messages appended after the request it
+  // measured, otherwise from the estimated total, then decrement by our per-message
   // estimates on every drop. `estimates` stays index-aligned with `messages`; the
   // system prompt is never a drop target.
-  const measured =
-    opts?.measuredInputTokens === undefined
-      ? getLastMeasuredInputTokens()
-      : opts.measuredInputTokens
+  const measurement = opts?.measurement === undefined ? getLastInputMeasurement() : opts.measurement
+  const measuredThrough = measuredThroughIndex(messages, measurement)
   const anchor = compactionReplayStart(messages, opts?.compaction)
   const estimates = messages.map((message, i) =>
     i < anchor && message.role !== 'system' && message.role !== 'developer'
@@ -333,8 +363,9 @@ export function trimMessagesInPlace(
       : conversationMessageEstimate(message),
   )
   let currentTokens: number
-  if (measured != null) {
-    currentTokens = measured
+  if (measurement !== null && measuredThrough >= 0) {
+    currentTokens = measurement.tokens
+    for (let i = measuredThrough + 1; i < estimates.length; i++) currentTokens += estimates[i] ?? 0
   } else {
     const start = contentStartIndex(messages)
     let total = CONVERSATION_ENVELOPE_TOKENS
@@ -363,7 +394,7 @@ export function trimHistory(
     minTailMessages?: number
     completionReserveTokens?: number
     compaction?: CompactionIdentity | undefined
-    measuredInputTokens?: number | null
+    measurement?: InputMeasurement | null
   },
 ): { messages: LLMMessage[]; trimmed: boolean } {
   const copy = [...messages]

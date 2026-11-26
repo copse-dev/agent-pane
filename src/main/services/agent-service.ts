@@ -90,7 +90,8 @@ import {
   updateMeta,
 } from './thread-store.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
-import { redactUserContent } from './security/pii-redactor.ts'
+import { isPiiRedactionEnabled, redactUserContent } from './security/pii-redactor.ts'
+import { localPromptCommitSpans } from './security/pii-git-references.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
 import { appendOperatorInstruction } from '@copse/agent/hooks/inject-context.ts'
 import { operatorInstructionPlacement } from '@copse/llm/model-catalog.ts'
@@ -285,6 +286,7 @@ import {
   cancelAgentInitiatedAcpTurn,
   cancelAllAgentInitiatedAcpTurns,
 } from './acp/acp-session-pool.ts'
+import { abortedTurnEndReason, AcpTurnEnded } from './acp/turn-end.ts'
 import {
   ACP_UNFINISHED_TURN_BUDGET_FALLBACK,
   ACP_UNFINISHED_TURN_FALLBACK,
@@ -325,6 +327,12 @@ export {
   suggestToolTurnSummary,
 } from './title-generator.ts'
 import { isNonEmptyString } from '@shared/nullish.ts'
+import {
+  AGENT_PROFILES_SETTING,
+  agentProfilePromptBlock,
+  findAgentProfile,
+  type AgentProfile,
+} from '@shared/agent-profiles.ts'
 
 const abortMap = new Map<string, AbortController>()
 let shuttingDown = false
@@ -799,6 +807,11 @@ export interface RunAgentOptions {
    * the level saved on the model in Settings; absent means "use that level".
    */
   reasoning?: ReasoningLevel
+  /**
+   * Named agent profile the thread uses. Its instructions are read from
+   * Settings at turn start, so an edited profile applies from the next turn.
+   */
+  profileId?: string
   /** Turn-tree epoch this run belongs to (decision 16 / C3); keys the budget. */
   turnTreeId?: string
   /** Machine turns already spent in this turn tree (decision 5); seeds the budget. */
@@ -866,7 +879,10 @@ export async function runAgent(
   const revokeTaskApprovals = (): void => {
     if (admission.signal.reason === 'send_now') return
     shellReplayLeaseStore.revokeThread(threadId)
-    discardApprovalsForThread(threadId)
+    discardApprovalsForThread(
+      threadId,
+      isAgentRunTimeoutAbort(admission.signal) ? 'run-timeout' : 'stopped',
+    )
   }
   admission.signal.addEventListener('abort', revokeTaskApprovals, { once: true })
   abortMap.set(threadId, admission)
@@ -1128,10 +1144,13 @@ async function runAgentWithInlineCanvas(
   // the feature is off. When it is on but Rampart cannot run, the prompt goes out
   // unchanged and the user is told so through the same turn notice as a model
   // fallback.
-  const redaction = await redactUserContent(
-    threadId,
-    withReviewContext(userPrompt, options?.reviewContext),
-  )
+  const promptWithReviewContext = withReviewContext(userPrompt, options?.reviewContext)
+  const localCommitSpans = isPiiRedactionEnabled()
+    ? await localPromptCommitSpans(promptWithReviewContext, runContext?.root ?? null)
+    : []
+  const redaction = await redactUserContent(threadId, promptWithReviewContext, {
+    preserveSpans: localCommitSpans,
+  })
   admission.signal.throwIfAborted()
   onPreflightComplete()
   const outboundPrompt = redaction.content
@@ -1338,9 +1357,10 @@ async function runAgentWithInlineCanvas(
     // (and other host-side waits) are open so a long user think cannot abort the
     // ACP turn underneath the still-visible prompt.
     registerRunDeadline(threadId, runAbort.deadline)
-    // Aborted in finally so bridged tools / orphaned approval modals cancel when
-    // the external agent finishes the turn without waiting for them.
+    // End execution at the turn boundary, but retain unanswered approvals on
+    // normal completion so an exact retry can consume the user's later answer.
     const bridgeTurn = new AbortController()
+    let bridgeTurnCompleted = false
     // The advisor works both ways for ACP: an external executor can consult it
     // through the native-tool bridge. Unlike the native loop (context set around
     // each call), bridged calls arrive over HTTP at any point in the turn, so
@@ -1432,7 +1452,7 @@ async function runAgentWithInlineCanvas(
       // Copse-managed ACP turns use the canonical turnStart assembly (decision
       // 20). Agent-managed turns leave the agent's own prompt behavior intact.
       // The ACP run calls this once it knows which Copse tools the agent has.
-      const turnGuidance =
+      const copseGuidance =
         options?.executionMode === 'agent'
           ? undefined
           : (bridgeToolNames: readonly string[]): Promise<string | undefined> =>
@@ -1451,6 +1471,11 @@ async function runAgentWithInlineCanvas(
                   recordHookRun: recordFunctionHookRun,
                 }),
               )
+      // The profile's instructions join Copse's guidance. An agent-managed turn
+      // gets neither: it keeps the agent's own prompt behavior (decision 20).
+      const turnGuidance = copseGuidance
+        ? withProfileGuidance(copseGuidance, await turnProfileInstructions(threadId, options))
+        : undefined
       let result = await runAcpAgentFromSettings({
         threadId,
         agentId: acpRunAgentId,
@@ -1516,6 +1541,13 @@ async function runAgentWithInlineCanvas(
       }
 
       await finishInlineVisualizations()
+
+      // Park pending questions before settling tool cards, regardless of
+      // whether the MCP client disconnected before or after its turn response.
+      bridgeTurnCompleted = normalizeStopReason(result.stopReason.toLowerCase()) === 'end_turn'
+      if (bridgeTurnCompleted && !controller.signal.aborted) {
+        bridgeTurn.abort(new AcpTurnEnded('completed'))
+      }
 
       // A stop response is terminal for every foreground tool call the agent
       // opened during this turn. If one never sent a final result/update, leave
@@ -1667,7 +1699,24 @@ async function runAgentWithInlineCanvas(
     } finally {
       // B3: agent work has stopped (turn end or abort) — fire `stop` detached.
       fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
-      bridgeTurn.abort()
+      bridgeTurn.abort(
+        new AcpTurnEnded(
+          controller.signal.aborted
+            ? isAgentRunTimeoutAbort(controller.signal)
+              ? 'idle-timeout'
+              : abortedTurnEndReason(controller.signal)
+            : bridgeTurnCompleted
+              ? 'completed'
+              : 'failed',
+        ),
+      )
+      // Send-now keeps same-task approvals (hooks plan decision 4); other aborts revoke.
+      if (controller.signal.aborted && controller.signal.reason !== 'send_now') {
+        discardApprovalsForThread(
+          threadId,
+          isAgentRunTimeoutAbort(controller.signal) ? 'run-timeout' : 'stopped',
+        )
+      }
       cancelApprovalsForThread(threadId)
       // Approvals that survived the turn (parked when the agent abandoned the
       // bridged call, then kept by the skips above) are re-detached from the
@@ -2018,6 +2067,7 @@ async function runAgentWithInlineCanvas(
       availableToolNames: parentLoopTools.map((tool) => tool.name),
       trackInstructionActivation: true,
       nestedInstructionTurn,
+      profileInstructions: await turnProfileInstructions(threadId, options),
     })
     const systemPrompt = systemPromptBuild.prompt + threadPlanInstructions()
     const parentProvider = withPromptCatalog(provider, systemPromptBuild.promptCatalog)
@@ -3203,11 +3253,11 @@ async function runAgentWithInlineCanvas(
 export function abortAgent(threadId: string, reason?: 'send_now'): void {
   if (reason !== 'send_now') {
     shellReplayLeaseStore.revokeThread(threadId)
-    discardApprovalsForThread(threadId)
+    discardApprovalsForThread(threadId, 'stopped')
   }
   abortMap.get(threadId)?.abort(reason)
   // A turn the coding agent resumed on its own has no entry above.
-  cancelAgentInitiatedAcpTurn(threadId)
+  cancelAgentInitiatedAcpTurn(threadId, reason === 'send_now' ? 'send-now' : 'stopped')
 }
 
 /** Fence new turns and interrupt existing work before command cleanup can settle tools. */
@@ -3394,5 +3444,39 @@ export async function runReviewForThread(
     clearActiveRunThread(threadId)
     abortMap.delete(threadId)
     sendChunk({ type: 'done' })
+  }
+}
+
+/**
+ * The instructions block of the thread's named profile, read from Settings now.
+ * The profile comes from the payload when the renderer dispatched the turn, and
+ * from the thread itself otherwise, so turns main starts on its own (CI and
+ * long-task wakes, background completions) keep the profile too.
+ */
+export async function turnProfileInstructions(
+  threadId: string,
+  options: RunAgentOptions | undefined,
+): Promise<string> {
+  const context = getThreadExecutionContext()
+  const profileId =
+    options?.profileId ??
+    (context
+      ? (await getThreadMeta(context.projectId, threadId).catch(() => null))?.profileId
+      : undefined)
+  if (profileId === undefined) return ''
+  return agentProfilePromptBlock(
+    findAgentProfile(getSetting<AgentProfile[]>(AGENT_PROFILES_SETTING, []), profileId),
+  )
+}
+
+/** A Copse-managed ACP turn's guidance with the profile's instructions after Copse's own. */
+export function withProfileGuidance(
+  copseGuidance: (bridgeToolNames: readonly string[]) => Promise<string | undefined>,
+  profileBlock: string,
+): (bridgeToolNames: readonly string[]) => Promise<string | undefined> {
+  if (!profileBlock) return copseGuidance
+  return async (bridgeToolNames) => {
+    const copse = await copseGuidance(bridgeToolNames)
+    return copse ? `${copse}\n\n${profileBlock}` : profileBlock
   }
 }

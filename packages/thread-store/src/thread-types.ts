@@ -74,8 +74,13 @@ export type { QueuedMessageOrigin } from '@copse/agent/hooks/hook-outcome.ts'
 /** Provenance for a host-native continuation that started without a human submit. */
 export interface MachineMessageOrigin {
   kind: 'machine'
-  /** Durable background/supervisor operation that requested the continuation. */
+  /** Durable operation that requested the continuation; thread:<sourceId> identifies cross-thread prompts. */
   operationId: string
+  /**
+   * Main's per-destination cross-thread allowance scope: JSON
+   * `[senderThreadId, senderTurnTreeId]`, `null` for a sender run without a user turn.
+   */
+  crossThreadScope?: string
 }
 
 /** Authorship marker persisted on transcript messages. */
@@ -327,6 +332,26 @@ export interface ThreadLink {
   target: string
 }
 
+/** A coding tool whose saved sessions Copse can import as threads. */
+export type ExternalSessionSource = 'claude-code' | 'codex'
+
+/** Provenance of a thread imported from {@link ExternalSessionSource}. */
+export interface ImportedSessionLink {
+  source: ExternalSessionSource
+  /**
+   * One-way key of the source session, so the same session is not imported
+   * twice. Never the raw session id, which stays in the private ACP binding.
+   */
+  key: string
+  importedAt: number
+  /**
+   * The thread was linked to the user's own session file, which its turns then
+   * add to (Codex has no per-thread home that keeps its sign-in). Absent when
+   * the thread only holds a copy of the transcript, or of the file.
+   */
+  sharesOriginal?: true
+}
+
 export interface Thread {
   id: string
   title: string
@@ -430,6 +455,12 @@ export interface Thread {
   remoteAgentLink?: RemoteAgentLink
   /** Recent Cursor agent IDs launched for this thread, recorded only by main. */
   cursorAgentIds?: string[]
+  /**
+   * Set when this thread was imported from another coding tool's saved session
+   * (a Claude Code or Codex CLI transcript). Recorded only by main. The earlier
+   * messages and tool calls ran outside Copse, without its sandbox or approvals.
+   */
+  importedSession?: ImportedSessionLink
   /** Prompts submitted while the agent is running; drained FIFO when idle. */
   pendingMessages?: QueuedUserMessage[]
   /**
@@ -454,6 +485,10 @@ export interface Thread {
    * counter per turn tree.
    */
   continuationUsed?: number
+  /** Legacy unscoped incoming prompts dispatched in the destination turn tree. */
+  crossThreadPromptsUsed?: number
+  /** Dispatched prompts by sender/user-turn scope; destination human turns do not reset it. */
+  crossThreadPromptCounts?: Record<string, number>
   /** True while a queued message is being edited; suspends FIFO draining. */
   queuePaused?: boolean
   /** Unsubmitted composer text; keeps blank threads visible across switches. */
@@ -478,6 +513,13 @@ export interface Thread {
    * means the model's own saved level applies.
    */
   reasoning?: ReasoningLevel
+  /**
+   * Named agent profile this chat was started from or switched to
+   * (`src/shared/agent-profiles.ts`). Its instructions join every turn; its
+   * model and effort were copied onto {@link model} and {@link reasoning} when
+   * it was chosen. A deleted profile leaves the id behind with no effect.
+   */
+  profileId?: string
   /**
    * Answers to the {@link ThreadProposal}s the agent offered in this thread —
    * one row per proposal, keyed by the offering tool call's id (see

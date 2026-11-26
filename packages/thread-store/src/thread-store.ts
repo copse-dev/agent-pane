@@ -36,6 +36,7 @@ import {
   type RefResolver,
 } from './fold.ts'
 import { parseOkfMessage } from './okf-message.ts'
+import type { TurnOutcome } from './turn-outcome.ts'
 import { withImmutableMessageFiles } from './immutable-message-files.ts'
 import { parseThreadMetaValue, parseThreadValue } from './thread-boundary.ts'
 import {
@@ -365,6 +366,30 @@ const acpSessionBindingSchema = z
     agentConfigGeneration: z.number().int().nonnegative(),
     createdBy: z.enum(['copse', 'external']),
     lastAttachedAt: z.number().int().nonnegative(),
+    /**
+     * How much of the thread's provider history the linked session already
+     * holds, so a turn that resumes it sends only what came after.
+     */
+    transcriptCheckpoint: z
+      .object({
+        messageCount: z.number().int().nonnegative(),
+        prefixHash: z.string().min(1),
+      })
+      .strict()
+      .optional(),
+    /**
+     * A session file the agent shares with its own CLI (a Codex rollout in
+     * `~/.codex`), and when it was last written as of a Copse turn. Another
+     * write after that means the session went on outside Copse, so the thread's
+     * transcript no longer matches what resuming it would bring back.
+     */
+    sharedSessionFile: z
+      .object({
+        path: z.string().min(1),
+        modifiedAt: z.number().nonnegative(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
 
@@ -1012,6 +1037,91 @@ export function loadThreadMessages(projectId: string, threadId: string): Promise
   return runSerialized(queueKey(projectId), async () => {
     const thread = await readThread(projectId, threadId)
     return thread?.messages ?? []
+  })
+}
+
+export interface ThreadTranscriptPage {
+  title: string
+  status: Thread['status']
+  updatedAt: number
+  messages: Array<{
+    id: string
+    role: Message['role']
+    createdAt: number
+    content: string
+    contentTruncated: boolean
+    turnOutcome: Pick<TurnOutcome, 'status' | 'stopReason'> | null
+    unavailable: boolean
+    contentPath: string | null
+    toolCalls: Array<Pick<Message['toolCalls'][number], 'name' | 'status'>>
+    toolCallCount: number
+  }>
+  totalMessages: number
+  offset: number
+  nextOffset: number | null
+}
+
+/** Recent prose, oldest first within each page; offset counts back from the newest message.
+ * Only selected message bodies are read. Tool blobs, images, reasoning and nested agents stay lazy.
+ */
+export function readThreadTranscriptPage(
+  projectId: string,
+  threadId: string,
+  options: { limit: number; offset: number },
+): Promise<ThreadTranscriptPage | null> {
+  if (
+    !Number.isSafeInteger(options.limit) ||
+    options.limit < 1 ||
+    options.limit > 20 ||
+    !Number.isSafeInteger(options.offset) ||
+    options.offset < 0
+  ) {
+    throw new RangeError('Transcript pages require limit 1–20 and a nonnegative integer offset')
+  }
+  return runSerialized(queueKey(projectId), async () => {
+    recoverPendingHistoryEdit(projectId, threadId)
+    const dir = threadDir(projectId, threadId)
+    const meta = parseMeta(await readOrNull(join(dir, META_FILE)))
+    if (meta === null) return null
+    const spine = parseSpine((await readOrNull(join(dir, EVENTS_FILE))) ?? '')
+    const end = Math.max(0, spine.length - options.offset)
+    const start = Math.max(0, end - options.limit)
+    const messages = await mapConcurrent(spine.slice(start, end), async (line) => {
+      const path = contentFilePath(dir, line.content.ref)
+      const raw = path === null ? null : await readOrNull(path)
+      const parsed = raw === null ? null : parseOkfMessage(raw)
+      let unavailable = true
+      let content = '[Message unavailable: missing or failed integrity check.]'
+      if (parsed !== null && sha256Hex(parsed.body) === line.content.sha256) {
+        unavailable = false
+        content = parsed.body
+      }
+      return {
+        content: content.slice(0, 4000),
+        turnOutcome: line.turnOutcome
+          ? { status: line.turnOutcome.status, stopReason: line.turnOutcome.stopReason }
+          : null,
+        role: line.role,
+        createdAt: line.createdAt ?? 0,
+        id: line.id,
+        contentTruncated: content.length > 4000,
+        unavailable,
+        contentPath: path,
+        toolCalls: line.toolCalls
+          .slice(0, 20)
+          .map((call) => ({ name: call.name.slice(0, 128), status: call.status })),
+        toolCallCount: line.toolCalls.length,
+      }
+    })
+    return {
+      title: meta.title,
+      status: meta.status,
+      updatedAt: meta.updatedAt,
+      messages,
+      totalMessages: spine.length,
+      offset: options.offset,
+      nextOffset: start > 0 ? options.offset + messages.length : null,
+    }
   })
 }
 
@@ -2297,15 +2407,18 @@ async function appendMessageUnqueued(
 
 /**
  * After a replacement line has committed, remove the prose and reasoning files
- * the replaced line referenced and the committed spine no longer does,
- * `messages/<id>.md` included. Without this every re-finalisation of a growing
- * message left one more full copy behind until a whole-thread save pruned it.
+ * and the nested subagent directories the replaced line referenced and the
+ * committed spine no longer does, `messages/<id>.md` and `subagents/<id>/`
+ * included. Without this every re-finalisation of a growing message left one
+ * more full copy behind until a whole-thread save pruned it.
  *
  * Only files directly in `messages/` are removed. Their OKF header carries the
  * message id, so no other message shares them; the check against every
- * committed line still keeps one a duplicate line refers to. Blob revisions
- * (rich blocks, images, attachment snapshots) can be shared between messages
- * and wait for the whole-thread prune.
+ * committed line still keeps one a duplicate line refers to. A subagent
+ * directory is removed whole, and only when it sits directly in `subagents/`;
+ * its name covers the subagent id, so the same check keeps one another line
+ * shares. Blob revisions (rich blocks, images, attachment snapshots) can be
+ * shared between messages and wait for the whole-thread prune.
  *
  * A failed removal only leaves an orphan for that prune, so it is logged and
  * never fails the write. A reader holding the replaced line cannot be broken:
@@ -2322,9 +2435,27 @@ async function removeSupersededProse(
   committed: SpineEntry[],
 ): Promise<void> {
   const live = new Set<string>()
+  const liveSubagents = new Set<string>()
   for (const entry of committed) {
     if (entry.line?.type !== 'message') continue
-    for (const ref of refsOfLine(entry.line).files) live.add(ref)
+    const refs = refsOfLine(entry.line)
+    for (const ref of refs.files) live.add(ref)
+    for (const ref of refs.subagentDirs) liveSubagents.add(ref)
+  }
+  for (const ref of refsOfLine(replaced).subagentDirs) {
+    if (liveSubagents.has(ref)) continue
+    const path = contentFilePath(dir, ref)
+    const parts = path === null ? [] : relative(resolvePath(dir), path).split(sep)
+    if (path === null || parts.length !== 2 || parts[0] !== 'subagents') continue
+    try {
+      assertStorePath(path)
+      await fsPromises.rm(path, { recursive: true, force: true })
+    } catch (error) {
+      console.warn(
+        `[thread-store] Could not remove superseded ${ref}; the next whole-thread save prunes it:`,
+        error,
+      )
+    }
   }
   for (const ref of [replaced.content.ref, replaced.reasoning?.ref]) {
     if (ref === undefined || live.has(ref)) continue

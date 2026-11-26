@@ -580,7 +580,11 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   )
 
   const api: ApiClient = {
-    remote: { publish: async () => {} },
+    remote: {
+      publish: async () => {},
+      watched: () => Promise.resolve([]),
+      onWatchedChanged: () => () => {},
+    },
     clientActions: {
       claim: () => Promise.resolve(false),
       publish: async () => {},
@@ -651,6 +655,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       registerName: () => resolvedVoid(),
       removeName: () => resolvedVoid(),
       recheckNameDns: () => resolvedVoid(),
+      setRelayEnabled: () => resolvedVoid(),
+      createShellPairing: () => resolvedVoid(),
+      clearShellPairing: () => resolvedVoid(),
       onChat: () => () => {},
       reply: async () => {},
     },
@@ -935,6 +942,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     alerts: { threadFinished: resolvedVoid, onOpenThread: subscribe },
     deepLinks: { ready: resolvedVoid, onOpenThread: subscribe },
     sshPrompt: {
+      onDismissed: subscribe,
       respond: resolvedVoid,
       onRequest: subscribe,
     },
@@ -1078,6 +1086,15 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         thread.updatedAt = Date.now()
         return resolved(true)
       },
+      actionState: () =>
+        resolved({
+          entries: [],
+          assessed: 0,
+          total: 0,
+          pending: 0,
+          assessing: false,
+          budgetLimited: false,
+        }),
       onAutoArchived: () => () => {},
       storageSize: () => resolved({ bytes: 24_576, truncated: false }),
       archive: (_projectId, threadId) => {
@@ -1229,6 +1246,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           })),
         ),
       listOrphans: emptyArray,
+      listExternalSessions: () => resolved({ sessions: [], sourcesFound: [] }),
+      importExternalSessions: () => resolved({ imported: [], alreadyImported: [], failed: [] }),
     },
     openRouter: { models: emptyArray },
     models: {
@@ -1465,40 +1484,6 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       },
       getThreadClassifierUse: () => resolved({ calls: 0, rows: [] }),
       getPlanUsage: () => resolved({ providers: [], checkedAt: DEMO_TIME }),
-      getPlanWorthIt: () =>
-        resolved({
-          worthIt: {
-            verdict: 'insufficient_history',
-            reason:
-              'Need a couple of completed weekly windows — keep Copse signed into Claude and reopen Usage after resets.',
-            apiEquivalentBurnPerWeek: null,
-            planFeePerWeek: null,
-            monthlyFeeUsd: null,
-            feeHint: null,
-            completedWeeklyCount: 0,
-            inferenceFrontierNote: null,
-          },
-          windowExhaustion: [],
-          historySampleCount: 0,
-          completedWeeklyCount: 0,
-        }),
-      setClaudePlanMonthlyFee: () =>
-        resolved({
-          worthIt: {
-            verdict: 'insufficient_history',
-            reason:
-              'Need a couple of completed weekly windows — keep Copse signed into Claude and reopen Usage after resets.',
-            apiEquivalentBurnPerWeek: null,
-            planFeePerWeek: null,
-            monthlyFeeUsd: null,
-            feeHint: null,
-            completedWeeklyCount: 0,
-            inferenceFrontierNote: null,
-          },
-          windowExhaustion: [],
-          historySampleCount: 0,
-          completedWeeklyCount: 0,
-        }),
     },
     index: {
       query: (pattern: string) =>
@@ -1780,6 +1765,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         currentBranch = branch
         return resolvedVoid()
       },
+      setPathStaged: () => resolved({ ok: false, message: 'The demo has no git checkout.' }),
+      setLinesStaged: () => resolved({ ok: false, message: 'The demo has no git checkout.' }),
       listBranches: () =>
         resolved([
           { name: currentBranch, lastCommitDate: DEMO_TIME },
@@ -1820,6 +1807,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       rerunFailedRuns: () =>
         resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
       approvePr: () => resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
+      replyToReviewThread: () =>
+        resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
+      setReviewThreadResolved: () =>
+        resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
       markPrReady: () => resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
       enableAutoMerge: () =>
         resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),

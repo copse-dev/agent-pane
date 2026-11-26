@@ -38,7 +38,13 @@ import {
   prMatchesFilter,
   type PrRef,
 } from './pr-pane-list.ts'
-import { prCheckFixDraft, startPrCheckFixThread, startPrDiscussThread } from './pr-pane-thread.ts'
+import {
+  prCheckFixDraft,
+  prReviewThreadsFixDraft,
+  startPrCheckFixThread,
+  startPrDiscussThread,
+  startPrReviewThreadsFixThread,
+} from './pr-pane-thread.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
@@ -66,7 +72,7 @@ import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
 import { renderPrThreadRelationships } from './pr-thread-relationships.ts'
 import { githubSamlAuthorizationUrl, isGithubSamlError } from './pr-auth-error.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
-import { selectRightPanelMode } from '../controller/panels.ts'
+import { selectRightPanel } from '../controller/panels.ts'
 import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 const STATUS_LABEL: Record<string, string> = {
@@ -98,6 +104,8 @@ function indexAgentLinksByPrKey(
   return map
 }
 
+/** A pull request is the review subject on screen. Local review keeps the list in
+ * the subject picker but loads it only when the picker opens ({@link PrPaneHandle}). */
 function prsModeActive(store: AppStore): boolean {
   const { filesPaneOpen, rightPanelMode } = store.getState()
   return filesPaneOpen && rightPanelMode === 'prs'
@@ -191,13 +199,21 @@ export function indexThreadLinks(store: AppStore): Map<string, PrThreadRelations
   return links
 }
 
+/** Unmounts the pane when called. */
+export interface PrPaneHandle {
+  (): void
+  /** Load the PR list without selecting a PR, for the review subject picker while
+   * local changes are open. A no-op while a PR is the subject: that list is live. */
+  loadList: () => void
+}
+
 export function mountPrPane(
   listRoot: HTMLElement,
   viewerRoot: HTMLElement,
   store: AppStore,
   api: ApiClient,
   monaco: GitDiffMonaco,
-): () => void {
+): PrPaneHandle {
   const listHeader = el('div', { class: 'pane-header' })
   listHeader.append(
     el('span', { class: 'pane-header-title' }, 'Pull requests'),
@@ -366,10 +382,14 @@ export function mountPrPane(
   let selectRequestId = 0
   let diffLoadQueue: Promise<void> = Promise.resolve()
   let pendingOpen: PrRef | null = null
+  // A row clicked while local changes were the subject (see the row's click handler).
+  let pickedFromList = false
   // Last lifecycle-action result, shown under the PR actions until another PR is
   // selected. Kept across the re-select an action triggers so its outcome stays
   // visible while the refreshed details load.
   let lastActionMessage: { text: string; ok: boolean } | null = null
+  /** Unsent review-thread replies by thread id, kept while the pane is open. */
+  const reviewReplyDrafts = new Map<string, string>()
 
   // Cross-repo "your PRs" are lazy: not queried until the section is expanded,
   // so the default view costs only the workspace + chat-linked lookups.
@@ -541,6 +561,7 @@ export function mountPrPane(
     section: 'linked' | 'workspace' | 'mine' | 'viewing',
   ): HTMLButtonElement {
     const isSelected =
+      store.getState().rightPanelMode === 'prs' &&
       selectedPr?.owner === pr.owner &&
       selectedPr.repo === pr.repo &&
       selectedPr.number === pr.number
@@ -615,7 +636,20 @@ export function mountPrPane(
         checksLabel,
       ),
     )
-    row.addEventListener('click', () => void selectPr(pr))
+    row.addEventListener('click', () => {
+      // Picked from local review: the list is fresh and this click loads (or keeps)
+      // the PR, so switching the subject to it needs no second refresh.
+      const fromLocalReview = !prsModeActive(store)
+      if (fromLocalReview) pickedFromList = true
+      // Re-picking the loaded PR keeps its tab and file; one whose load failed loads again.
+      if (prDetails && githubPrKey(prDetails) === githubPrKey(pr)) {
+        // Back from local review the PR may have moved on (a push, a merge), and
+        // the subject switch above skips its refresh, so reload the details in place.
+        if (fromLocalReview) void refreshDetailsAfterAction(pr)
+        return
+      }
+      void selectPr(pr)
+    })
     if (!state) ensureCheck(pr)
     return row
   }
@@ -851,10 +885,11 @@ export function mountPrPane(
   }
 
   /**
-   * Reload a PR's details after a lifecycle action without the heavier
-   * selectPr(): keep the existing details (and therefore the action buttons and
-   * the outcome status line) if the reload fails, and bail if the user has since
-   * selected a different PR so we never render one PR's data into another's view.
+   * Reload a PR's details after a lifecycle action, or a re-pick from local
+   * review, without the heavier selectPr(): keep the tab, the file, and the
+   * existing details (and therefore the action buttons and the outcome status
+   * line) if the reload fails, and bail if the user has since selected a
+   * different PR so we never render one PR's data into another's view.
    */
   async function refreshDetailsAfterAction(ref: PrRef): Promise<void> {
     if (!isStillSelected(ref)) return
@@ -1186,7 +1221,7 @@ export function mountPrPane(
           ? prDetails.files.length
           : activity && !activity.error
             ? section.key === 'comments'
-              ? activity.comments.length
+              ? activity.comments.length + activity.reviewThreads.length
               : section.key === 'checks'
                 ? activity.checks.length
                 : undefined
@@ -1194,7 +1229,7 @@ export function mountPrPane(
       if (count !== undefined) {
         const truncated =
           section.key === 'comments'
-            ? activity?.commentsTruncated
+            ? (activity?.commentsTruncated ?? false) || (activity?.reviewThreadsTruncated ?? false)
             : section.key === 'checks'
               ? activity?.checksTruncated
               : false
@@ -1229,22 +1264,73 @@ export function mountPrPane(
         },
         (check, headSha) => {
           if (!prDetails) return
-          const key = prRelationKey(prDetails)
-          const producingThreadId = (prRelationships ?? threadLinks.get(key) ?? []).find((row) =>
-            row.kinds.includes('produced'),
-          )?.threadId
-          if (producingThreadId) {
-            switchThread(store, producingThreadId)
-            void getPromptAttachmentHandlers()?.sendMessage?.(
-              prCheckFixDraft(prDetails, check, headSha),
+          const pr = prDetails
+          handToAgent(
+            () => prCheckFixDraft(pr, check, headSha),
+            () => startPrCheckFixThread(store, pr, check, headSha),
+          )
+        },
+        {
+          address: (threads) => {
+            if (!prDetails || !threads.length) return
+            const pr = prDetails
+            handToAgent(
+              () => prReviewThreadsFixDraft(pr, threads),
+              () => startPrReviewThreadsFixThread(store, pr, threads),
             )
-            return
-          }
-          startPrCheckFixThread(store, prDetails, check, headSha)
-          getPromptAttachmentHandlers()?.focusComposer?.()
+          },
+          reply: (thread, body) =>
+            writeReviewThread((ref) =>
+              api.gh.replyToReviewThread(ref.owner, ref.repo, ref.number, thread.id, body),
+            ),
+          setResolved: (thread, resolved) =>
+            writeReviewThread((ref) =>
+              api.gh.setReviewThreadResolved(ref.owner, ref.repo, ref.number, thread.id, resolved),
+            ),
+          refresh: () => {
+            if (selectedPr) void refreshDetailsAfterAction(selectedPr)
+          },
+          drafts: reviewReplyDrafts,
         },
       )
     }
+  }
+
+  /**
+   * Run a review-thread write for the PR on screen. The thread view shows the
+   * outcome and asks for a refresh on success; nothing is retried.
+   */
+  function writeReviewThread(
+    write: (ref: PrRef) => Promise<PrActionResult>,
+  ): Promise<PrActionResult> {
+    const ref = selectedPr
+    if (!ref)
+      return Promise.resolve({
+        ok: false,
+        backend: 'cli',
+        message: 'No pull request is selected.',
+      })
+    return write(ref)
+  }
+
+  /**
+   * Send follow-up work to the thread that produced this PR, which already has
+   * its checkout and context; with no such thread, open a new one with the
+   * draft in the composer for the user to edit and send.
+   */
+  function handToAgent(draft: () => string, startThread: () => void): void {
+    if (!prDetails) return
+    const key = prRelationKey(prDetails)
+    const producingThreadId = (prRelationships ?? threadLinks.get(key) ?? []).find((row) =>
+      row.kinds.includes('produced'),
+    )?.threadId
+    if (producingThreadId) {
+      switchThread(store, producingThreadId)
+      void getPromptAttachmentHandlers()?.sendMessage?.(draft())
+      return
+    }
+    startThread()
+    getPromptAttachmentHandlers()?.focusComposer?.()
   }
 
   function renderFiles(): void {
@@ -1502,9 +1588,11 @@ export function mountPrPane(
     void api.gh.setListWatch(prsModeActive(store), otherLoaded)
   }
 
-  async function refresh(opts: { reason?: 'manual' | 'poll' | 'event' } = {}): Promise<void> {
+  type RefreshReason = 'manual' | 'poll' | 'event' | 'list'
+
+  async function refresh(opts: { reason?: RefreshReason } = {}): Promise<void> {
     const reason = opts.reason ?? 'event'
-    if (refreshInFlight && reason === 'poll') return
+    if (refreshInFlight && (reason === 'poll' || reason === 'list')) return
     refreshInFlight = true
     try {
       await refreshBody(reason)
@@ -1513,7 +1601,7 @@ export function mountPrPane(
     }
   }
 
-  async function refreshBody(reason: 'manual' | 'poll' | 'event'): Promise<void> {
+  async function refreshBody(reason: RefreshReason): Promise<void> {
     if (reason === 'manual') {
       await api.gh.invalidateReadCache()
       ciGen++
@@ -1574,7 +1662,8 @@ export function mountPrPane(
     prList = mergePrLists(linkedRefs, [workspacePrs, myPrs])
     renderList()
 
-    if (reason === 'poll') return
+    // A poll keeps the selection; a picker listing never makes one.
+    if (reason === 'poll' || reason === 'list') return
 
     const openTarget = pendingOpen
     pendingOpen = null
@@ -1603,9 +1692,9 @@ export function mountPrPane(
   })
   filterInput.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return
+    if (!filterQuery && !filterInput.value) return
     e.preventDefault()
     e.stopPropagation()
-    if (!filterQuery && !filterInput.value) return
     filterQuery = ''
     filterInput.value = ''
     renderList()
@@ -1623,10 +1712,19 @@ export function mountPrPane(
   const unbindActivityBrowserLinks = bindBrowserLinkClicks(activityHost, store, api)
   const stopObservingLayout = observeDiffHostLayout(viewerRoot, () => diffEditor)
 
+  let wasPrSubject = prsModeActive(store)
   const unsubs = [
-    selectRightPanelMode(store, 'prs', (active) => {
+    selectRightPanel(store, () => {
+      const active = prsModeActive(store)
+      if (active === wasPrSubject) return
+      wasPrSubject = active
+      const picked = pickedFromList
+      pickedFromList = false
       syncWatch()
-      if (active) void refresh()
+      // Leaving the PR subject only drops the row highlight; the list stays in the picker.
+      if (!active) renderList()
+      else if (picked && !pendingOpen) renderList()
+      else void refresh()
     }),
     selectActiveWorkspace(store, () => {
       threadRelationshipRequest++
@@ -1665,7 +1763,7 @@ export function mountPrPane(
     // The threads' PR links, titles and finished turns; not streaming,
     // hydration or other metadata that leaves every key unchanged.
     store.select(prPaneThreadsKey, (_next, prev) => {
-      // Opening the pane runs its own full refresh (selectRightPanelMode above).
+      // Opening the pane runs its own full refresh (selectRightPanel above).
       if (prev === PR_PANE_INACTIVE || !prsModeActive(store)) return
       threadLinks = indexThreadLinks(store)
       linkedRefs = collectLinkedPrs(store)
@@ -1719,7 +1817,12 @@ export function mountPrPane(
     },
   })
 
-  return () => {
+  function loadList(): void {
+    if (disposed || prsModeActive(store)) return
+    void refresh({ reason: 'list' })
+  }
+
+  const destroy = (): void => {
     disposed = true
     document.removeEventListener('pointerdown', dismissActions)
     titleGen++
@@ -1742,4 +1845,5 @@ export function mountPrPane(
     diffEditor?.dispose()
     diffEditor = null
   }
+  return Object.assign(destroy, { loadList })
 }
