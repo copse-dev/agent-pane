@@ -29,7 +29,7 @@ const SENSITIVE_BASENAME_PATTERNS: readonly RegExp[] = [
   // `.env`, `.env.local`, `.env.production`, `.env*` …
   /^\.env(?:[.*]|$)/i,
   // Private keys and keystores in any of their usual suffixes.
-  /\.(?:pem|key|p12|pfx|jks|keystore|ppk|asc)$/i,
+  /\.(?:pem|key|p12|pfx|jks|keystore|ppk|asc|p8)$/i,
   /^id_[a-z0-9]+$/i,
   /(?:^|[.\-_])secrets?(?:[.\-_]|$)/i,
   /(?:^|[.\-_])credentials?(?:[.\-_]|$)/i,

@@ -29,7 +29,7 @@ import {
   projectReadFolders,
 } from '../services/security/project-read-grants.ts'
 import {
-  approvedFolderSecretDenyEntries,
+  approvedFolderReadPlan,
   currentStandingReadRoots,
   sandboxReadAccessPolicy,
 } from './sandbox-read-access.ts'
@@ -1541,8 +1541,14 @@ export function workspaceSandboxOverlay(
   const approvedFolders = readPolicy.approvedFolders
     ? projectReadFolders(currentReadGrantProjectRoot())
     : []
-  const approvedFolderRead = approvedFolders.flatMap((folder) => [folder, `${folder}/**`])
-  const approvedFolderSecretDeny = approvedFolders.flatMap(approvedFolderSecretDenyEntries)
+  // On Linux a folder whose credential walk failed is left out, never allowed
+  // without its denies (see approvedFolderReadPlan).
+  const approvedFolderPlan = approvedFolderReadPlan(approvedFolders)
+  const approvedFolderRead = approvedFolderPlan.readable.flatMap((folder) => [
+    folder,
+    `${folder}/**`,
+  ])
+  const approvedFolderSecretDeny = approvedFolderPlan.deny
   // Prepared worktrees link dependencies and native runtimes into these fixed,
   // Copse-owned caches. Routine tests/builds need only read them; preparation is
   // the sole path that receives write access after one explicit approval.

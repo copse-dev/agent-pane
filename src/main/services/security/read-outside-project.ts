@@ -31,9 +31,7 @@ export function formatReadOutsideProjectPromptParts(
   return {
     command,
     bodyAdvice:
-      (scope === 'project'
-        ? `The agent requests read access to ${analysis.targets.length === 1 ? 'this folder' : 'these folders'} for this project:\n`
-        : `The agent requests read access to ${plural} for this thread:\n`) +
+      `The agent requests read access to ${plural} for this thread:\n` +
       analysis.targets
         .map((target, index) => {
           const canonical = canonicalTargets[index]
@@ -44,9 +42,10 @@ export function formatReadOutsideProjectPromptParts(
       `\n\n⚠️ ${READ_OUTSIDE_PROJECT_WARNING}`,
     bodyFooter:
       scope === 'project'
-        ? 'Allow lets every chat in this project read the listed folders from now on, including after a restart. ' +
-          'Remove one in Settings → Permissions → Sandbox read access. ' +
-          '.env files, keys and other credentials inside them stay unreadable. ' +
+        ? 'Approve grants reads of the listed folders for the rest of this thread. ' +
+          'Tick the box to keep them readable in every chat in this project instead, including after a restart; ' +
+          'remove one in Settings → Permissions → Sandbox read access. ' +
+          'In a folder kept for the project, contained commands cannot open .env files, keys or other recognised credential names. ' +
           'Writes, installs, and network access are not approved.'
         : 'Approve grants reads of the listed paths and files within listed directories for the rest of this thread. ' +
           'Other paths ask again. Writes, installs, and network access are not approved. ' +

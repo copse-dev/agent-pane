@@ -55,12 +55,13 @@ export function effectiveSandboxReadPolicy(switches: SandboxReadSwitches): Sandb
 }
 
 /**
- * Credentials that stay unreadable whatever the switches say, including inside
- * an approved folder. Shown in Settings so the person can see what is fixed.
+ * What stays unreadable to contained commands whatever the switches say, and
+ * where. Shown in Settings so the person can see what is fixed; each line must
+ * hold for the overlay as built (`workspaceSandboxOverlay`).
  */
 export const SANDBOX_READ_FIXED_DENIALS: readonly string[] = [
-  '~/.ssh, ~/.aws, ~/.gnupg, ~/.kube, ~/.docker and other credential folders',
+  '~/.ssh, ~/.aws, ~/.gnupg, ~/.kube, ~/.docker and other credential folders in your home folder',
   'Keychains (~/Library/Keychains)',
-  'Copse’s keys and settings (~/.copse)',
-  '.env files, private keys (.pem, .key, id_*), .npmrc, .netrc and similar, in any folder',
+  'Copse’s own folder (~/.copse): no folder inside it can be approved',
+  'Inside an approved folder: .env files, private keys (.pem, .key, .p8, id_*), .npmrc, .netrc and similar names, in any letter case. Their names still show in a listing',
 ]

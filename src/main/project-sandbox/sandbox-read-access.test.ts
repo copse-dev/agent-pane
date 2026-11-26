@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { wrapCommandWithSandboxMacOS } from '@anthropic-ai/sandbox-runtime/dist/sandbox/macos-sandbox-utils.js'
+import { globToRegex } from '@anthropic-ai/sandbox-runtime/dist/sandbox/sandbox-utils.js'
+import { sensitiveTargetReason } from '@copse/shell-guard/sensitive-paths.ts'
 import {
   SANDBOX_READ_APPROVED_FOLDERS_SETTING,
   SANDBOX_READ_PROJECT_FOLDERS_SETTING,
@@ -16,8 +18,12 @@ import { deleteSetting, setSetting } from '../services/storage/settings.ts'
 import { runWithWorkspaceRoot } from '../services/workspace.ts'
 import { baseSandboxConfig, workspaceSandboxOverlay } from './config.ts'
 import {
+  approvedFolderLinuxDenies,
+  approvedFolderReadPlan,
   approvedFolderSecretDenyEntries,
+  approvedFolderStillSafe,
   cacheReadRootCandidates,
+  isApprovedFolderSecretName,
   resolveStandingReadRoots,
   toolchainReadRootCandidates,
 } from './sandbox-read-access.ts'
@@ -140,19 +146,156 @@ describe('resolveStandingReadRoots', () => {
   })
 })
 
-describe('approvedFolderSecretDenyEntries', () => {
-  it('denies credential files and folders anywhere inside the folder', () => {
-    const entries = approvedFolderSecretDenyEntries('/Users/dev/code/sibling')
-    for (const entry of [
-      '/Users/dev/code/sibling/**/.env',
-      '/Users/dev/code/sibling/**/.env.*',
-      '/Users/dev/code/sibling/**/*.pem',
-      '/Users/dev/code/sibling/**/id_*',
-      '/Users/dev/code/sibling/**/.npmrc',
-      '/Users/dev/code/sibling/**/.ssh/**',
-      '/Users/dev/code/sibling/**/.aws/**',
-    ]) {
-      assert.ok(entries.includes(entry), entry)
+/** Names `sensitiveTargetReason` calls credentials, in the cases people write them. */
+const CREDENTIAL_NAMES = [
+  '.env',
+  '.ENV',
+  '.env.release',
+  '.Env.Local',
+  'server.pem',
+  'SERVER.PEM',
+  'tls.Key',
+  'store.p12',
+  'cert.pfx',
+  'app.jks',
+  'release.keystore',
+  'putty.ppk',
+  'public-key.asc',
+  'AuthKey_ABC123.p8',
+  'AUTHKEY.P8',
+  'id_rsa',
+  'id_ed25519',
+  'ID_ECDSA',
+  'secrets.json',
+  'App.Secrets.yaml',
+  'credentials.json',
+  'Credentials',
+  'aws_credentials.txt',
+  '.npmrc',
+  '.NETRC',
+  '.pypirc',
+  '.git-credentials',
+  'master.key',
+  'secring.gpg',
+]
+
+describe('approved folder credential names', () => {
+  const root = '/Users/dev/code/sibling'
+
+  it('denies every name the classifier calls a credential, in any case, on macOS', () => {
+    const regexes = approvedFolderSecretDenyEntries(root).map(
+      (entry) => new RegExp(globToRegex(entry)),
+    )
+    for (const name of CREDENTIAL_NAMES) {
+      const path = `${root}/config/${name}`
+      assert.ok(sensitiveTargetReason(path, path) !== null, `the classifier flags ${name}`)
+      assert.ok(
+        regexes.some((regex) => regex.test(path)),
+        `macOS denies ${name}`,
+      )
+      assert.ok(isApprovedFolderSecretName(name), `Linux denies ${name}`)
+    }
+    assert.ok(!regexes.some((regex) => regex.test(`${root}/src/main.ts`)))
+    assert.ok(!isApprovedFolderSecretName('README.md'))
+  })
+
+  it('denies credential folders at any depth, in any case', () => {
+    const regexes = approvedFolderSecretDenyEntries(root).map(
+      (entry) => new RegExp(globToRegex(entry)),
+    )
+    for (const path of [`${root}/.ssh/id`, `${root}/deep/.AWS/config`, `${root}/x/.gnupg/a`]) {
+      assert.ok(
+        regexes.some((regex) => regex.test(path)),
+        path,
+      )
+    }
+  })
+})
+
+describe('approved folders on Linux', () => {
+  function folder(): { root: string; cleanup: () => void } {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'approved-folder-walk-')))
+    writeFileSync(join(root, 'README.md'), 'readme\n')
+    writeFileSync(join(root, '.ENV'), 'TOKEN=x\n')
+    mkdirSync(join(root, 'config', '.ssh'), { recursive: true })
+    writeFileSync(join(root, 'config', '.ssh', 'id_rsa'), 'key\n')
+    writeFileSync(join(root, 'config', 'Server.PEM'), 'key\n')
+    return {
+      root,
+      cleanup: (): void => {
+        rmSync(root, { recursive: true, force: true })
+      },
+    }
+  }
+
+  it('denies the credential paths the walk finds, and not their siblings', () => {
+    const { root, cleanup } = folder()
+    try {
+      assert.deepEqual(
+        new Set(approvedFolderLinuxDenies(root)),
+        new Set([
+          join(root, '.ENV'),
+          join(root, 'config', '.ssh'),
+          join(root, 'config', 'Server.PEM'),
+        ]),
+      )
+    } finally {
+      cleanup()
+    }
+  })
+
+  it(
+    'keeps every deny when a subfolder cannot be read, and denies that subfolder whole',
+    { skip: process.getuid?.() === 0 ? 'root reads mode-000 folders' : false },
+    () => {
+      const { root, cleanup } = folder()
+      const locked = join(root, 'data')
+      mkdirSync(locked)
+      chmodSync(locked, 0o000)
+      try {
+        const denies = approvedFolderLinuxDenies(root)
+        assert.ok(denies !== null)
+        assert.ok(denies.includes(join(root, '.ENV')))
+        assert.ok(denies.includes(locked))
+      } finally {
+        chmodSync(locked, 0o700)
+        cleanup()
+      }
+    },
+  )
+
+  it('gives the folder up rather than allow it without its denies', () => {
+    const { root, cleanup } = folder()
+    try {
+      assert.equal(approvedFolderLinuxDenies(root, { entries: 2, denies: 100 }), null)
+      assert.equal(approvedFolderLinuxDenies(root, { entries: 100, denies: 1 }), null)
+      const missing = join(root, 'gone')
+      const plan = approvedFolderReadPlan([root, missing], 'linux')
+      assert.deepEqual(plan.readable, [root])
+      assert.ok(plan.deny.every((path) => path.startsWith(root + '/')))
+      const mac = approvedFolderReadPlan([root, missing], 'darwin')
+      assert.deepEqual(mac.readable, [root, missing])
+    } finally {
+      cleanup()
+    }
+  })
+})
+
+describe('approvedFolderStillSafe', () => {
+  it('refuses a folder inside Copse’s own profile folder', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      const profile = join(home, 'profile')
+      const plugins = join(profile, 'plugins')
+      const sibling = join(home, 'code', 'sibling')
+      mkdirSync(plugins, { recursive: true })
+      mkdirSync(sibling, { recursive: true })
+      const env = { HOME: home, COPSE_DIR: profile }
+      assert.equal(approvedFolderStillSafe(plugins, env, home), false)
+      assert.equal(approvedFolderStillSafe(profile, env, home), false)
+      assert.equal(approvedFolderStillSafe(sibling, env, home), true)
+    } finally {
+      cleanup()
     }
   })
 })
@@ -176,7 +319,7 @@ describe('approved folder credentials in the macOS profile', () => {
     assert.ok(denyBlock > 0, 'a read deny follows the allow')
     assert.ok(
       after.slice(denyBlock).includes('^/Users/dev/code/sibling/(.*/)?') &&
-        /\.env\(\/\.\*\)\?\$"\)/.test(after.slice(denyBlock)),
+        after.slice(denyBlock).includes('[eE][nN][vV]'),
       'the .env deny is in it',
     )
   })
@@ -207,6 +350,10 @@ describe('approved folders inside the real workspace sandbox', () => {
         writeFileSync(join(sibling, '.env'), 'TOKEN=secret\n')
         mkdirSync(join(sibling, 'config'))
         writeFileSync(join(sibling, 'config', 'server.pem'), 'PRIVATE\n')
+        // A folder the user cannot list (a container's data directory owned by
+        // another uid) must not drop the credential denies on Linux.
+        mkdirSync(join(sibling, 'data'))
+        chmodSync(join(sibling, 'data'), 0o000)
         await setSetting(SANDBOX_READ_PROJECT_FOLDERS_SETTING, { [workspace]: [sibling] })
         const run = async (command: string): Promise<{ status: number | null; output: string }> => {
           const overlay = runWithWorkspaceRoot(workspace, () => workspaceSandboxOverlay(workspace))
@@ -238,6 +385,11 @@ describe('approved folders inside the real workspace sandbox', () => {
       } finally {
         await SandboxManager.reset()
         rmSync(workspace, { recursive: true, force: true })
+        try {
+          chmodSync(join(sibling, 'data'), 0o700)
+        } catch {
+          // Not created when the sandbox could not start.
+        }
         rmSync(sibling, { recursive: true, force: true })
       }
     },

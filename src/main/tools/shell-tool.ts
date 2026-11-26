@@ -47,6 +47,7 @@ import {
   shellExpectedBlockEscalation,
   shellSandboxFailureShouldOfferUnsandboxedRetry,
 } from '../services/security/permission-policy.ts'
+import { reliesOnStandingReadRoots } from '../services/security/shell-scope.ts'
 import { envForRendererChildProcess } from '../services/exec/child-process-env.ts'
 import {
   isSigpipeOnlyFailure,
@@ -178,7 +179,12 @@ interface UnsandboxedRetryResult {
 interface UnsandboxedRetryOptions {
   readonly guardedYolo: boolean
   readonly unattendedContainer: boolean
-  readonly readGrantApplied: boolean
+  /**
+   * The run was contained only because its outside paths sit under standing
+   * read roots (`reliesOnStandingReadRoots`). Its retry is never answered
+   * without the user, Guarded YOLO's runner-evidence path included.
+   */
+  readonly standingReadRootRun: boolean
   readonly outsideRootPath: string | null
   /** Whether the failed attempt itself was already run outside the project sandbox. */
   readonly ranOutsideSandbox: boolean
@@ -247,10 +253,10 @@ async function maybeRetryUnsandboxed(
   }
   const evidence = runnerDetection.likely ? 'runner' : 'signature'
   const approved =
-    sandboxRetryMaySkipApproval(evidence, options.guardedYolo, options.unattendedContainer) ||
+    (!options.standingReadRootRun &&
+      sandboxRetryMaySkipApproval(evidence, options.guardedYolo, options.unattendedContainer)) ||
     (await promptUnsandboxedShell(rawCommand, detection.reasons, signal, {
-      readGrantApplied: options.readGrantApplied,
-      requireInteractiveApproval: evidence === 'signature',
+      requireInteractiveApproval: evidence === 'signature' || options.standingReadRootRun,
     }))
   if (signatureMatch) {
     // The output signature is forgeable. It becomes useful cache evidence only
@@ -582,7 +588,8 @@ export const runShellTool = defineTool({
           {
             guardedYolo,
             unattendedContainer,
-            readGrantApplied: readGrantTargets !== null,
+            standingReadRootRun:
+              !outsideSandbox && reliesOnStandingReadRoots(command, agentRoots.executionRoot),
             outsideRootPath: cdTarget,
             ranOutsideSandbox: outsideSandbox,
             threadId,

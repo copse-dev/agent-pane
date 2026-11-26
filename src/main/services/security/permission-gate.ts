@@ -497,11 +497,13 @@ async function resolveReadOutsideProject(
     return true
   }
 
-  // When every target is a folder the project may keep, the primary action
-  // remembers it for the project instead of this chat: one approval per
-  // folder, not one per thread. A handler with no thread can hold neither.
+  // The primary action grants this chat, as before. When every target is a
+  // folder the project may keep, an unticked box offers the standing project
+  // grant as an explicit secondary choice (the replay-lease tick box, carrying
+  // the folder list as its subject so a batch never shares one tick across
+  // different folders). A handler with no thread can hold neither grant.
   const projectOffer = threadId ? projectReadFolderOffer(projectRoot, canonical) : null
-  const { approved, remember } = await requestApproval(
+  const response = await requestApproval(
     {
       title: READ_OUTSIDE_PROJECT_TITLE,
       type: 'shell',
@@ -523,32 +525,44 @@ async function resolveReadOutsideProject(
       // the scope one; the third button that approves only this command appears
       // with the details it refers to.
       collapseDetails: true,
-      approveLabel: projectOffer ? 'Allow reads in this project' : 'Allow reads for this chat',
+      approveLabel: 'Allow reads for this chat',
       approveOnceLabel: 'Approve this command',
+      ...(projectOffer
+        ? {
+            allowTurnTreeLease: true,
+            turnTreeLeaseLabel: `Keep ${projectOffer.length === 1 ? 'this folder' : 'these folders'} readable in every chat in this project`,
+            turnTreeLeaseDefault: false,
+            turnTreeLeaseSubject: `project-read:${projectOffer.join('\n')}`,
+          }
+        : {}),
     },
     signal,
   )
-  // A handler with no thread (headless/ACP) can hold no grant, so its approval
-  // covers this command only.
-  if (approved && remember && threadId) {
-    grantReadOutsideProject(threadId, analysis.resolvedTargets)
-    if (projectOffer && projectRoot !== null) {
-      const added = await rememberProjectReadFolders(projectRoot, projectOffer)
-      // The answer above already logged `remembered: true`; this line names the
-      // standing grant itself, so the log shows what outlives the thread.
-      if (added.length > 0) {
-        recordDecision({
-          kind: 'shell',
-          actor: 'user',
-          verdict: 'allowed',
-          subject: SHELL_DECISION_SUBJECT,
-          scope: 'external-read',
-          remembered: true,
-          reasons: [`project read access granted: ${added.join(', ')}`],
-          source: 'project-read-grant',
-        })
-      }
+  const { approved, remember } = response
+  const keepForProject =
+    approved && response.grantScope === 'turn-tree' && projectOffer !== null && projectRoot !== null
+  if (keepForProject) {
+    // Only the project grant: it already covers this thread, and unlike a chat
+    // grant it stops the moment it is removed in Settings or locked down.
+    const added = await rememberProjectReadFolders(projectRoot, projectOffer)
+    // The answer above already logged its verdict; this line names the
+    // standing grant itself, so the log shows what outlives the thread.
+    if (added.length > 0) {
+      recordDecision({
+        kind: 'shell',
+        actor: 'user',
+        verdict: 'allowed',
+        subject: SHELL_DECISION_SUBJECT,
+        scope: 'external-read',
+        remembered: true,
+        reasons: [`project read access granted: ${added.join(', ')}`],
+        source: 'project-read-grant',
+      })
     }
+  } else if (approved && remember && threadId) {
+    // A handler with no thread (headless/ACP) can hold no grant, so its approval
+    // covers this command only.
+    grantReadOutsideProject(threadId, analysis.resolvedTargets)
   }
   return approved
 }
@@ -657,21 +671,15 @@ async function promptGuardedYoloHarm(
 }
 
 /**
- * Prompt when a sandboxed command failed and may succeed unsandboxed.
- *
- * `readGrantApplied` says the failed run had already been given the read-access
- * relaxation for the paths it names. That command has now been contained with
- * exactly what the read grant promised and still hit the sandbox, so the grant
- * has been spent: it must not also auto-answer the full-escape question. Falling
- * through to "Run outside sandbox?" puts the escalation back in front of the
- * user, where a read grant silently approving writes and network never belonged.
+ * Prompt when a sandboxed command failed and may succeed unsandboxed. A read
+ * grant never answers it: the sandbox already gave the command everything a
+ * read grant promised, so whatever it hit is beyond that grant.
  */
 export async function promptUnsandboxedShell(
   command: string,
   reasons: string[],
   signal?: AbortSignal,
   opts: {
-    readGrantApplied?: boolean
     requireInteractiveApproval?: boolean
     /**
      * Authorize exactly this one outside execution: offer no trusted-command
@@ -695,13 +703,10 @@ export async function promptUnsandboxedShell(
   const leaseIdentity =
     forceAsk || oneShot ? null : expectedBlockLeaseIdentity(command, getAgentExecutionRoot())
   if (leaseIdentity && consumeShellReplayLease(leaseIdentity, command)) return true
-  // A command that failed inside the sandbox because it reads a file in the
-  // user's home directory is the same read-access question as the up-front gate,
-  // so a thread that already granted that scope should not be asked again.
-  if (!forceAsk && !oneShot && opts.readGrantApplied !== true) {
-    const readOutside = await resolveReadOutsideProject(command, getAgentExecutionRoot(), signal)
-    if (readOutside !== null) return readOutside
-  }
+  // No read grant (a chat's, or a folder this project approved) answers this
+  // question. The retry runs outside the sandbox, where the credential denies
+  // a read grant keeps are gone and writes and network are open; a read
+  // approval never covered that, so the escape always reaches the user.
   return requestEscalationApproval(
     'Run outside sandbox?',
     formatUnsandboxedPromptParts(command, reasons),

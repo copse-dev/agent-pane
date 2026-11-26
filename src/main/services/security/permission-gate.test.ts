@@ -80,8 +80,9 @@ import {
 import {
   SANDBOX_READ_APPROVED_FOLDERS_SETTING,
   SANDBOX_READ_PROJECT_FOLDERS_SETTING,
+  SANDBOX_READ_WORKSPACE_ONLY_SETTING,
 } from '@shared/sandbox-read-access.ts'
-import { storedProjectReadFolders } from './project-read-grants.ts'
+import { revokeProjectReadFolder, storedProjectReadFolders } from './project-read-grants.ts'
 import { storageSet } from '../storage/storage.ts'
 import { drainWriteQueue, runSerialized, SETTINGS_WRITE_QUEUE } from '../storage/write-queue.ts'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -3878,8 +3879,13 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     collapseDetails: boolean
     approveLabel: string
     approveOnceLabel: string
+    /** The "keep for this project" tick box, when offered. */
+    projectLabel: string | null
     reasons: string[]
   }
+
+  /** The primary button with the project box ticked. */
+  const KEEP_FOR_PROJECT = { approved: true, remember: true, grantScope: 'turn-tree' } as const
 
   /**
    * Drive the real gate against a throwaway execution root, capturing the prompt
@@ -3888,7 +3894,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
    */
   async function runGate(
     command: string,
-    answer: { approved: boolean; remember: boolean },
+    answer: { approved: boolean; remember: boolean; grantScope?: 'once' | 'turn-tree' },
     root: string,
   ): Promise<{ permitted: boolean; prompt: Prompt | null }> {
     setPermissionGateForTests(null)
@@ -3902,6 +3908,8 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
         collapseDetails: request.collapseDetails ?? false,
         approveLabel: request.approveLabel ?? '',
         approveOnceLabel: request.approveOnceLabel ?? '',
+        projectLabel:
+          request.allowTurnTreeLease === true ? (request.turnTreeLeaseLabel ?? '') : null,
         reasons: request.reasons ?? [],
       }
       return answer
@@ -4208,10 +4216,15 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   it('remembers an approved folder for the project, so other threads read it without asking', async () => {
     await withRoot(async (root, readDir) => {
       const first = await runWithActiveRunIdentity('thread-project-a', () =>
-        runGate(`ls -la ${quote([readDir])}`, { approved: true, remember: true }, root),
+        runGate(`ls -la ${quote([readDir])}`, KEEP_FOR_PROJECT, root),
       )
       assert.equal(first.permitted, true)
-      assert.equal(first.prompt?.approveLabel, 'Allow reads in this project')
+      // The chat grant stays primary; the project grant is the unticked box.
+      assert.equal(first.prompt?.approveLabel, 'Allow reads for this chat')
+      assert.equal(
+        first.prompt.projectLabel,
+        'Keep this folder readable in every chat in this project',
+      )
       assert.match(first.prompt.bodyFooter, /every chat in this project/)
       assert.match(first.prompt.bodyFooter, /Settings → Permissions → Sandbox read access/)
       assert.deepEqual(storedProjectReadFolders(root), [realpathSync(readDir)])
@@ -4254,7 +4267,75 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
         ),
       )
       assert.equal(off.permitted, false)
-      assert.equal(off.prompt?.approveLabel, 'Allow reads for this chat')
+      assert.equal(off.prompt?.projectLabel, null)
+    })
+  })
+
+  it('stops the approving thread too when the folder is removed or locked down', async () => {
+    await withRoot(async (root, readDir) => {
+      const note = join(readDir, 'note.txt')
+      await runWithActiveRunIdentity('thread-revoke', () =>
+        runGate(`ls -la ${quote([readDir])}`, KEEP_FOR_PROJECT, root),
+      )
+      const covered = await runWithActiveRunIdentity('thread-revoke', () =>
+        runGate(`cat ${quote([note])}`, { approved: false, remember: false }, root),
+      )
+      assert.equal(covered.permitted, true)
+
+      await revokeProjectReadFolder(root, realpathSync(readDir))
+      const revoked = await runWithActiveRunIdentity('thread-revoke', () =>
+        runGate(`cat ${quote([note])}`, { approved: false, remember: false }, root),
+      )
+      assert.equal(revoked.permitted, false, 'no chat grant was left behind')
+      assert.ok(revoked.prompt)
+
+      await runWithActiveRunIdentity('thread-revoke', () =>
+        runGate(`ls -la ${quote([readDir])}`, KEEP_FOR_PROJECT, root),
+      )
+      await setSetting(SANDBOX_READ_WORKSPACE_ONLY_SETTING, true)
+      try {
+        const locked = await runWithActiveRunIdentity('thread-revoke', () =>
+          runGate(`cat ${quote([note])}`, { approved: false, remember: false }, root),
+        )
+        assert.equal(locked.permitted, false)
+        assert.ok(locked.prompt)
+      } finally {
+        await deleteSetting(SANDBOX_READ_WORKSPACE_ONLY_SETTING)
+      }
+    })
+  })
+
+  it('never lets a read grant answer an outside-sandbox retry', async () => {
+    await withRoot(async (root, readDir) => {
+      await runWithActiveRunIdentity('thread-escape-a', () =>
+        runGate(`ls -la ${quote([readDir])}`, KEEP_FOR_PROJECT, root),
+      )
+      await runWithActiveRunIdentity('thread-escape-b', () =>
+        runGate(`ls -la ~/.copse/workspace`, { approved: true, remember: true }, root),
+      )
+      const titles: string[] = []
+      setApprovalHandler(async (request) => {
+        titles.push(request.title)
+        return { approved: false, remember: false }
+      })
+      try {
+        for (const [thread, command] of [
+          // Another thread, covered only by the project folder.
+          ['thread-escape-c', `grep -r TOKEN ${quote([readDir])}`],
+          // The thread that holds the chat grant.
+          ['thread-escape-b', 'ls -la ~/.copse/workspace'],
+        ] as const) {
+          const approved = await runWithWorkspaceRoot(root, () =>
+            runWithActiveRunIdentity(thread, () =>
+              promptUnsandboxedShell(command, ['sandbox violation']),
+            ),
+          )
+          assert.equal(approved, false, command)
+        }
+        assert.deepEqual(titles, ['Run outside sandbox?', 'Run outside sandbox?'])
+      } finally {
+        setApprovalHandler(null)
+      }
     })
   })
 
@@ -4268,14 +4349,15 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
         ),
       )
       assert.equal(file.prompt?.approveLabel, 'Allow reads for this chat')
+      assert.equal(file.prompt.projectLabel, null)
       assert.match(file.prompt.bodyFooter, /for the rest of this thread/)
       assert.deepEqual(storedProjectReadFolders(root), [])
 
       await setSetting(SANDBOX_READ_APPROVED_FOLDERS_SETTING, false)
       const off = await runWithActiveRunIdentity('thread-project-off', () =>
-        runGate(`ls -la ${quote([readDir])}`, { approved: true, remember: true }, root),
+        runGate(`ls -la ${quote([readDir])}`, KEEP_FOR_PROJECT, root),
       )
-      assert.equal(off.prompt?.approveLabel, 'Allow reads for this chat')
+      assert.equal(off.prompt?.projectLabel, null)
       assert.deepEqual(storedProjectReadFolders(root), [])
     })
   })
@@ -4327,7 +4409,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
           () => runWithActiveRunIdentity('thread-audit', fn),
         )
       const granted = await inTurn(() =>
-        runGate(`ls -la ${quote([readDir])}`, { approved: true, remember: true }, root),
+        runGate(`ls -la ${quote([readDir])}`, KEEP_FOR_PROJECT, root),
       )
       assert.deepEqual(granted.prompt?.reasons, [`reads outside the project: ${readDir}`])
 
@@ -4421,56 +4503,29 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     })
   })
 
-  /**
-   * Drive the post-failure escalation the shell tool reaches when a sandboxed
-   * run hit a violation, capturing the title of whatever prompt (if any) it puts
-   * up. `readGrantApplied` is the tool saying "this run already had the read
-   * relaxation and still failed".
-   */
-  async function captureEscalation(
-    command: string,
-    readGrantApplied: boolean,
-  ): Promise<{ approved: boolean; title: string | null }> {
-    setPermissionGateForTests(null)
-    let title: string | null = null
-    setApprovalHandler(async (request) => {
-      title = request.title
-      return { approved: false, remember: false }
-    })
-    try {
-      const approved = await promptUnsandboxedShell(command, ['sandbox violation'], undefined, {
-        readGrantApplied,
-      })
-      return { approved, title }
-    } finally {
-      setApprovalHandler(null)
-    }
-  }
-
-  it('spends the read grant on containment, not also on a full sandbox escape', async () => {
+  it('asks before a chat-granted read leaves the sandbox after a block', async () => {
     await withRoot(async (root, readDir) => {
       const note = join(readDir, 'note.txt')
       await runWithActiveRunIdentity('thread-spent', () =>
         runGate(`ls -la ${quote([readDir])}`, { approved: true, remember: true }, root),
       )
-
-      // A command the grant covers that has NOT yet been given the relaxation is
-      // still answered by the grant — that is how the read question stays a
-      // once-per-thread question.
-      const covered = await runWithActiveRunIdentity('thread-spent', () =>
-        captureEscalation(`cat ${quote([note])}`, false),
-      )
-      assert.equal(covered.approved, true)
-      assert.equal(covered.title, null, 'the standing grant answers it without asking')
-
-      // But once the seatbelt has already been widened to exactly the paths the
-      // grant named and the command STILL hit the sandbox, the grant is spent: it
-      // must not silently approve the full escape it never covered.
-      const spent = await runWithActiveRunIdentity('thread-spent', () =>
-        captureEscalation(`cat ${quote([note])}`, true),
-      )
-      assert.equal(spent.approved, false)
-      assert.equal(spent.title, 'Run outside sandbox?')
+      setPermissionGateForTests(null)
+      let title: string | null = null
+      setApprovalHandler(async (request) => {
+        title = request.title
+        return { approved: false, remember: false }
+      })
+      try {
+        // The grant covers the read, but the retry would run outside the
+        // sandbox, which the grant never covered.
+        const approved = await runWithActiveRunIdentity('thread-spent', () =>
+          promptUnsandboxedShell(`cat ${quote([note])}`, ['sandbox violation']),
+        )
+        assert.equal(approved, false)
+        assert.equal(title, 'Run outside sandbox?')
+      } finally {
+        setApprovalHandler(null)
+      }
     })
   })
 

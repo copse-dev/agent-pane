@@ -1068,7 +1068,10 @@ function keepsOutsideReason(argv: readonly string[]): boolean {
  * dangerous-in-sandbox reasons, or when it cannot be parsed. Redirect targets
  * are excluded per token by {@link maskContainedReadPaths}.
  */
+let standingReadRootsSuspended = false
+
 function standingReadRoots(command: string): string[] {
+  if (standingReadRootsSuspended) return []
   const roots = environment.standingReadRoots()
   if (roots.length === 0) return []
   const segments = parsedShellSegments(command)
@@ -1609,6 +1612,22 @@ export function dangerousInSandboxReasons(command: string): string[] {
   }
   if (pipesIntoInterpreter(command)) reasons.push(REASON_PIPE_TO_INTERPRETER)
   return reasons
+}
+
+/**
+ * Whether `command` stays out of the `external` verdict only because a path in
+ * it sits under a standing read root (toolchains, caches, approved folders).
+ * Such a run was contained on the strength of a read-only grant, so a sandbox
+ * block in it must never earn an unprompted outside retry.
+ */
+export function reliesOnStandingReadRoots(command: string, workspaceRoot: string | null): boolean {
+  if (analyzeShellCommand(command, workspaceRoot).verdict === 'external') return false
+  standingReadRootsSuspended = true
+  try {
+    return analyzeShellCommand(command, workspaceRoot).verdict === 'external'
+  } finally {
+    standingReadRootsSuspended = false
+  }
 }
 
 export function analyzeShellCommand(

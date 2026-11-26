@@ -1,6 +1,6 @@
-import { readdirSync, realpathSync } from 'node:fs'
+import { type Dirent, readdirSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { isAbsolute, join, resolve } from 'node:path'
+import { isAbsolute, join, resolve, sep } from 'node:path'
 import {
   SENSITIVE_BASENAMES,
   SENSITIVE_DIR_SEGMENTS,
@@ -18,6 +18,7 @@ import {
   type SandboxReadAccessPolicy,
   type SandboxReadGroup,
 } from '@shared/sandbox-read-access.ts'
+import { copseDataRoot } from '../services/storage/copse-paths.ts'
 import { getSetting } from '../services/storage/settings.ts'
 import { createToolchainReadGuard } from './toolchain-read-guard.ts'
 
@@ -170,9 +171,9 @@ export function cacheReadRootCandidates(
           join(caches, 'pip'),
           join(caches, 'go-build'),
           join(caches, 'CocoaPods'),
-          join(home, 'Library', 'Developer', 'Xcode', 'DerivedData'),
-          join(home, 'Library', 'Logs', 'DiagnosticReports'),
-          '/Library/Logs/DiagnosticReports',
+          // Not Xcode's DerivedData or the crash-report folders: they hold every
+          // project's build products, logs and process memory excerpts, which
+          // are not package caches and get no credential denies.
         ]
       : []),
   ]
@@ -229,10 +230,31 @@ export function currentStandingReadRoots(): StandingReadRoot[] {
 }
 
 /**
+ * Whether `canonical` is Copse's own profile root or inside it: other
+ * projects' worktrees, plugins, knowledge and keys live there, so no project
+ * may approve a folder in it.
+ */
+function insideCopseProfile(canonical: string, env: NodeJS.ProcessEnv, home: string): boolean {
+  const profileEnv = { ...env }
+  if (!env['COPSE_DIR']?.trim()) profileEnv['COPSE_DIR'] = join(home, '.copse')
+  const root = resolve(copseDataRoot(profileEnv))
+  const spellings = [root]
+  try {
+    spellings.push(realpathSync(root))
+  } catch {
+    // A profile root that does not exist yet has only the one spelling.
+  }
+  return spellings.some(
+    (spelling) => canonical === spelling || canonical.startsWith(spelling + sep),
+  )
+}
+
+/**
  * Re-check an approved folder before a spawn uses it: it must still be a
- * directory at the same canonical path, and still clear the credential guard.
- * A folder replaced by a link elsewhere, or one that now holds a credential
- * store, silently stops being readable until it is approved again.
+ * directory at the same canonical path, outside Copse's profile root, and still
+ * clear the credential guard. A folder replaced by a link elsewhere, or one
+ * that now holds a credential store, silently stops being readable until it is
+ * approved again.
  */
 export function approvedFolderStillSafe(
   canonical: string,
@@ -245,35 +267,149 @@ export function approvedFolderStillSafe(
   } catch {
     return false
   }
-  return real === canonical && createToolchainReadGuard(env, home)(canonical, true) === canonical
+  return (
+    real === canonical &&
+    !insideCopseProfile(canonical, env, home) &&
+    createToolchainReadGuard(env, home)(canonical, true) === canonical
+  )
 }
 
-/** Leaf names that are credentials by convention, as seatbelt globs. */
-const SECRET_FILE_GLOBS = [
+/**
+ * Leaf names that are credentials by convention, lower-case. A superset of
+ * what `sensitiveTargetReason` calls a credential file, matched without regard
+ * to case (a test holds the two lists together).
+ */
+const SECRET_NAME_GLOBS: readonly string[] = [
   ...[...SENSITIVE_BASENAMES].filter((name) => !name.includes('*')),
   '.env',
   '.env.*',
-  '*.pem',
-  '*.key',
-  '*.p12',
-  '*.pfx',
-  '*.jks',
-  '*.keystore',
-  '*.ppk',
+  ...['pem', 'key', 'p12', 'pfx', 'jks', 'keystore', 'ppk', 'asc', 'p8'].map((ext) => `*.${ext}`),
   'id_*',
   '*secret*',
   '*credential*',
 ]
 
+/** `.Env` → `.[eE][nN][vV]`: ASRT's seatbelt regexes are case-sensitive, names on disk need not be. */
+function caseInsensitiveGlob(glob: string): string {
+  return glob.replace(/[a-z]/g, (letter) => `[${letter}${letter.toUpperCase()}]`)
+}
+
+function nameGlobRegex(glob: string): RegExp {
+  const body = glob
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*')
+    .replace(/\?/g, '.')
+  return new RegExp(`^${body}$`, 'i')
+}
+
+const SECRET_NAME_REGEXES = SECRET_NAME_GLOBS.map(nameGlobRegex)
+
+/** Whether a file name is a credential by the approved-folder deny list. */
+export function isApprovedFolderSecretName(name: string): boolean {
+  return SECRET_NAME_REGEXES.some((regex) => regex.test(name))
+}
+
+/** Whether a directory name is a credential store by the approved-folder deny list. */
+export function isApprovedFolderSecretDir(name: string): boolean {
+  return SENSITIVE_DIR_SEGMENTS.has(name.toLowerCase())
+}
+
 /**
- * `denyRead` entries that keep credentials unreadable inside an approved
- * folder. ASRT emits glob denies after its allow block, so they win over the
- * folder's own `/**` allow; on Linux it expands them to the files that exist
- * at spawn time.
+ * macOS `denyRead` globs that keep credentials unreadable inside an approved
+ * folder. ASRT emits glob denies after its allow block, so seatbelt (last match
+ * wins) denies them over the folder's own `/**` allow.
  */
 export function approvedFolderSecretDenyEntries(root: string): string[] {
   return [
-    ...SECRET_FILE_GLOBS.map((glob) => `${root}/**/${glob}`),
-    ...[...SENSITIVE_DIR_SEGMENTS].map((dir) => `${root}/**/${dir}/**`),
+    ...SECRET_NAME_GLOBS.map((glob) => `${root}/**/${caseInsensitiveGlob(glob)}`),
+    ...[...SENSITIVE_DIR_SEGMENTS].map((dir) => `${root}/**/${caseInsensitiveGlob(dir)}/**`),
   ]
+}
+
+/** Entries a Linux walk may visit before it gives the folder up (fails closed). */
+export const APPROVED_FOLDER_WALK_LIMIT = 200_000
+/** Concrete denies one folder may need before it is given up instead. */
+export const APPROVED_FOLDER_DENY_LIMIT = 2_000
+
+function isPermissionError(error: unknown): boolean {
+  const code = error instanceof Error && 'code' in error ? error.code : undefined
+  return code === 'EACCES' || code === 'EPERM'
+}
+
+/**
+ * The concrete credential paths inside `root`, for Linux, where bubblewrap
+ * takes no globs. ASRT's own expansion returns no paths at all when any
+ * directory in the walk is unreadable, so Copse walks the folder itself: an
+ * unreadable directory is denied whole and the walk goes on; any other error,
+ * or a folder past the walk or deny limit, returns null and the caller drops
+ * the folder rather than allow it without its denies. Symlinked directories
+ * are not followed (their targets are judged by their own allow and deny).
+ * The list is a spawn-time snapshot, as ASRT's was.
+ */
+export function approvedFolderLinuxDenies(
+  root: string,
+  limits: { entries: number; denies: number } = {
+    entries: APPROVED_FOLDER_WALK_LIMIT,
+    denies: APPROVED_FOLDER_DENY_LIMIT,
+  },
+): string[] | null {
+  const denies: string[] = []
+  const pending = [root]
+  let visited = 0
+  while (pending.length > 0) {
+    const dir = pending.pop() ?? root
+    let entries: Dirent[]
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch (error) {
+      if (dir !== root && isPermissionError(error)) {
+        denies.push(dir)
+        continue
+      }
+      return null
+    }
+    for (const entry of entries) {
+      visited += 1
+      if (visited > limits.entries) return null
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) {
+        if (isApprovedFolderSecretDir(entry.name)) denies.push(path)
+        else pending.push(path)
+      } else if (isApprovedFolderSecretName(entry.name)) {
+        denies.push(path)
+      }
+      if (denies.length > limits.denies) return null
+    }
+  }
+  return denies
+}
+
+export interface ApprovedFolderReadPlan {
+  /** Folders the overlay may add to `allowRead`. */
+  readable: string[]
+  /** Credential denies for those folders, appended after every other deny. */
+  deny: string[]
+}
+
+/**
+ * How the overlay opens approved folders on `platform`: macOS denies by glob,
+ * Linux by the paths {@link approvedFolderLinuxDenies} found, and a Linux
+ * folder whose walk failed is left out entirely.
+ */
+export function approvedFolderReadPlan(
+  folders: readonly string[],
+  platform: NodeJS.Platform = process.platform,
+): ApprovedFolderReadPlan {
+  if (platform === 'darwin') {
+    return { readable: [...folders], deny: folders.flatMap(approvedFolderSecretDenyEntries) }
+  }
+  const readable: string[] = []
+  const deny: string[] = []
+  for (const folder of folders) {
+    const found = approvedFolderLinuxDenies(folder)
+    if (found === null) continue
+    readable.push(folder)
+    deny.push(...found)
+  }
+  return { readable, deny }
 }
