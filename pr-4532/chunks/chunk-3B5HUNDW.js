@@ -56881,10 +56881,10 @@ var init_sandbox_read_access = __esm({
     SANDBOX_READ_APPROVED_FOLDERS_DEFAULT = true;
     SANDBOX_READ_WORKSPACE_ONLY_DEFAULT = false;
     SANDBOX_READ_FIXED_DENIALS = [
-      "~/.ssh, ~/.aws, ~/.gnupg, ~/.kube, ~/.docker and other credential folders",
+      "~/.ssh, ~/.aws, ~/.gnupg, ~/.kube, ~/.docker and other credential folders in your home folder",
       "Keychains (~/Library/Keychains)",
-      "Copse\u2019s keys and settings (~/.copse)",
-      ".env files, private keys (.pem, .key, id_*), .npmrc, .netrc and similar, in any folder"
+      "Copse\u2019s own folder (~/.copse): no folder inside it can be approved",
+      "Inside an approved folder: .env files, private keys (.pem, .key, .p8, id_*), .npmrc, .netrc and similar names, in any letter case. Their names still show in a listing"
     ];
   }
 });
@@ -70988,8 +70988,8 @@ var init_permissions_markup = __esm({
                 Package caches and build logs
               </label>
               <p class="field-hint">
-                Downloaded packages from npm, pnpm, Yarn, pip, uv, Cargo, Go, Gradle and Maven, Xcode
-                DerivedData, and crash reports.
+                Downloaded packages and logs from npm, pnpm, Yarn, pip, uv, Cargo, Go, Gradle, Maven
+                and CocoaPods.
               </p>
               <label class="checkbox-label">
                 <input
@@ -71000,8 +71000,8 @@ var init_permissions_markup = __esm({
                 Folders you approved for a project
               </label>
               <p class="field-hint">
-                When the agent asks to read a folder such as a sibling checkout, one approval lets
-                every chat in that project read it from then on. Off: approvals last for one chat.
+                When the agent asks to read a folder such as a sibling checkout, you can tick the box
+                to keep it readable in every chat in that project. Off: approvals last for one chat.
               </p>
               <div id="sandbox-read-folders-host" class="sandbox-read-folders"></div>
               <label class="checkbox-label">
@@ -71010,10 +71010,11 @@ var init_permissions_markup = __esm({
               </label>
               <p class="field-hint">
                 Turns off every group above, so a command that reads outside the project asks
-                first. System folders such as <code>/usr</code> stay readable, as before.
+                first, except where a chat already approved that read for itself. System folders
+                such as <code>/usr</code> stay readable, as before.
               </p>
               <div class="sandbox-read-fixed">
-                <span class="field-hint">Always unreadable, whatever these settings say:</span>
+                <span class="field-hint">Always unreadable to sandboxed commands, whatever these settings say:</span>
                 <ul class="sandbox-read-fixed-list">
                   ${SANDBOX_READ_FIXED_DENIALS.map((denial) => `<li>${denial}</li>`).join("")}
                 </ul>
