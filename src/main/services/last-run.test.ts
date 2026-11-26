@@ -41,6 +41,12 @@ describe('RunRecorder', () => {
     assert.deepEqual(await readLastRun(handOff), { startedAt: 7, ended: 'hand-off' })
   })
 
+  it('reads back a start time with a fraction of a millisecond', async () => {
+    const path = recordPath()
+    writeFileSync(path, JSON.stringify({ startedAt: 1795659222761.8193 }))
+    assert.deepEqual(await readLastRun(path), { startedAt: 1795659222761.8193 })
+  })
+
   it('treats a missing or unreadable record as no previous run', async () => {
     const path = recordPath()
     assert.equal(await new RunRecorder(path, 1).previous, null)

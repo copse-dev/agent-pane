@@ -32,7 +32,7 @@ export interface LastRunRecord {
 }
 
 const lastRunSchema = z.object({
-  startedAt: z.number().int().nonnegative(),
+  startedAt: z.number().nonnegative(),
   ended: z.enum(['quit', 'update', 'hand-off']).optional(),
 })
 
@@ -123,7 +123,8 @@ let recorder: RunRecorder | null = null
 
 /** Start recording this run. Call once, early in boot. */
 export function startRunRecorder(userDataPath: string, startedAt: number): RunRecorder {
-  recorder ??= new RunRecorder(lastRunPath(userDataPath), startedAt)
+  // Whole milliseconds: the boot time comes from `process.uptime()`, a fraction.
+  recorder ??= new RunRecorder(lastRunPath(userDataPath), Math.floor(startedAt))
   return recorder
 }
 
