@@ -5,14 +5,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { installMockScenario } from './helpers/mock-scenario.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { fixtureHostPids } from './helpers/foreground-fixture-processes.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { parkPointer, saveAppScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { INTERRUPTED_TURN_CONTINUATION } from '../../src/shared/turn-recovery.ts'
 import type { MockScenario } from '../../packages/llm/src/mock-script.ts'
-
-const RESTART_RESUME_NOTE = 'Copse restarted during this turn. Continuing where it stopped.'
 
 let root = ''
 let owned: number[] = []
@@ -57,9 +57,9 @@ describe('quit during an owned foreground command', function () {
     seedEmptyProject(root, 'e2e-foreground-shell-quit', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
-      // This spec covers the in-app path: quit cuts the turn off and the next
-      // launch continues it. With the hand-off on, a background worker would
-      // take the turn instead and the quit dialog would offer "Close".
+      // This spec covers a quit that stops the turn. With the hand-off on, a
+      // background worker would take the turn instead and the quit dialog
+      // would offer "Close".
       continueTurnsAfterQuit: false,
     })
     await browser.reloadSession()
@@ -77,7 +77,7 @@ describe('quit during an owned foreground command', function () {
     if (root) removeE2eTree(root)
   })
 
-  it('drains the process group before quitting and continues the turn once on relaunch', async () => {
+  it('drains the process group before quitting and keeps explicit restart recovery', async () => {
     const prompt = 'Record a checkpoint, then run the bounded foreground check.'
     const interruptedScenario: MockScenario = {
       title: 'Bounded check interrupted by quit',
@@ -189,15 +189,24 @@ describe('quit during an owned foreground command', function () {
       false,
       'quit must interrupt the owning turn before a queued edit can run',
     )
-    // The cut-off turn continues by itself on relaunch, once, from the saved
-    // history (`interrupted-turn-resume.ts`); the killed command is not rerun.
-    // Its reply is the mock fallback (scenarios lived in the old process), which
-    // the screenshot guard refuses, so this state has no screenshot.
-    await expect($('.msg-user.msg-machine-origin')).toHaveText(RESTART_RESUME_NOTE, {
-      containing: true,
+    // A quit the user chose (a signal here) stops the run: the next launch does
+    // not continue it by itself (`last-run.ts`), so the Retry card is the way on.
+    await expect($('[data-turn-recovery-card]')).toBeDisplayed()
+    await parkPointer()
+    await saveAppScreenshot('foreground-shell-recovery-after-quit.png')
+    const recovered = await installMockScenario({
+      title: 'Recovered check',
+      turns: [
+        {
+          user: INTERRUPTED_TURN_CONTINUATION,
+          responses: [{ text: 'Continued from the existing checkpoint without replaying it.' }],
+        },
+      ],
     })
+    await $('[data-turn-recovery-card]').$('button*=Retry this turn').click()
+    await recovered.waitForComplete()
+    await recovered.assertComplete()
     await waitForAgentIdle(15_000)
-    await expect($('[data-turn-recovery-card]')).not.toExist()
     assert.equal(readFileSync(join(root, 'checkpoint.txt'), 'utf8'), 'completed once\n')
     const retained = ['checkpoint.txt', 'pids.json', 'parent.txt', 'child.txt'].map((name) => ({
       name,
@@ -244,7 +253,7 @@ describe('quit during an owned foreground command', function () {
         preservedFiles: retained.map((file) => file.name),
       }),
     )
-    // No closing screenshot: the continued turn's reply is the mock fallback
-    // (see above), which the screenshot guard refuses.
+    await parkPointer()
+    await saveAppScreenshot('foreground-shell-explicitly-recovered.png')
   })
 })
