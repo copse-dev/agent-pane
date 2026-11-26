@@ -505,7 +505,9 @@ commands do not prompt because they cannot open a network connection.
 
 A few network commands have a destination Copse can name before they run: `git fetch`, `pull`,
 `ls-remote` and non-force `push` against a configured remote, `git clone` from github.com or a host
-a configured remote already uses, and the `gh` read commands. In standard mode such a command runs
+a configured remote already uses, and the `gh` read commands. `gh` writes (`pr create`, `release
+create`, `gist create`, `api` with a method, field or input) never get a plan, whatever the harm
+gate decides. In standard mode such a command runs
 **inside** the project sandbox in its own ASRT host process (`port-binding-worker.ts`), whose
 allowlist is exactly that command's hosts: the remote URL's host (the push URL for a push), or
 `github.com`, `api.github.com` and `*.githubusercontent.com` for `gh`. Main's process-wide
@@ -517,12 +519,16 @@ All of these must hold, or the command takes its ordinary path unchanged
 (`scopedNetworkRunFor` in `permission-gate.ts`, `network-scoped-shell.ts`):
 
 - standard mode, an active local sandbox, auto-run on and a trusted workspace;
+- every segment of the line is one of those network shapes or a text filter (`cat`, `head`,
+  `tail`, `grep`, `wc`, `uniq`, `cut`, `tr`), named bare with no wrapper or environment
+  assignment. The allowlist covers the whole spawn, so `gh repo view && python3 -c …` or `git
+  fetch && curl …` gets no plan: the other program would hold the same egress;
 - the auto-approval classifier places every segment in a tier the user enabled. It accepts `git
   pull` and `git clone` only for a network-scoped run, never for an escape;
 - the harm gate allows the command, so tag pushes and other release actions, `gh` writes, `gh
   gist create` and `gh api` with a method, field or input file still ask;
-- `git` and `gh` are named bare and resolve on `PATH` outside the workspace and temp directories,
-  with no writable directory searched before them;
+- every program in the line resolves on `PATH` outside the workspace and temp directories, with
+  no writable directory searched before it;
 - no `cd`, and the execution root's own `.git` leads to the project's common git directory, whose
   `config` and `hooks/` contained commands cannot write. Repository config that names a program
   (`core.sshCommand`, `core.fsmonitor`, a `!` credential helper, filter or diff drivers, upload
@@ -539,9 +545,11 @@ answers only from it, SSH-to-HTTPS rewrites for github.com remotes (the sandbox 
 `~/.ssh`), and a fresh `GH_CONFIG_DIR` in its temp directory. Every configured credential helper is
 reset first, since none can reach its store from inside the sandbox. Other hosts get no
 credentials, so a private remote elsewhere fails contained and offers the usual retry. On macOS a
-`gh` plan also gets ASRT's `enableWeakerNetworkIsolation`, the single `com.apple.trustd.agent`
-lookup Go needs to verify TLS. trustd can fetch revocation data for certificates it is asked to
-evaluate, which is why it is limited to `gh` plans, whose programs are only the verified `git` and `gh` binaries. A proxy denial inside the
+line that is a single `gh` read, optionally piped through the filters above, also gets ASRT's
+`enableWeakerNetworkIsolation`: the `com.apple.trustd.agent` lookup Go needs to verify TLS. trustd
+fetches the AIA and OCSP URLs of any certificate it is asked to evaluate, itself and outside the
+sandbox's proxy, so a program that can hand it a crafted certificate (`security verify-cert`) can
+reach any host. No other program may share that line, and git plans never get the lookup. A proxy denial inside the
 scoped host counts as runner evidence for that retry.
 
 Lockfile installs are not a scoped shape yet: `.pnpmfile.cjs`, Yarn's `yarnPath` and plugins, and

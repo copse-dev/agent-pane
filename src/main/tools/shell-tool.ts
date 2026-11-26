@@ -562,7 +562,7 @@ export const runShellTool = defineTool({
             githubToken: networkPlan.github ? await resolveGitHubApiToken('github.com') : null,
           }),
           freshGhConfig: networkPlan.programs.includes('gh'),
-          trustEvaluation: networkPlan.programs.includes('gh'),
+          trustEvaluation: networkPlan.trustEvaluation,
         }
       : undefined
 

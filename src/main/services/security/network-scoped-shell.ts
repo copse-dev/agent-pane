@@ -1,4 +1,4 @@
-import { isFlag, flagName } from '@copse/shell-guard/gh-argv.ts'
+import { classifyGhSegment, isFlag, flagName } from '@copse/shell-guard/gh-argv.ts'
 import { splitSegments } from './command-routing.ts'
 import {
   argvOf,
@@ -32,10 +32,15 @@ import type { RepoNetworkFacts } from './git-network-facts.ts'
  * matters is not the host but that nothing except the recognised tool runs while
  * the egress is open:
  *
- *  - every segment must already be an auto-approved shape, so the line holds no
- *    interpreter, script or unrecognised binary;
- *  - `git` and `gh` must be named bare and resolve outside the workspace (checked
- *    by the caller), so a planted `./git` cannot take their place;
+ *  - every segment is itself a recognised network shape (a git network
+ *    subcommand or a `gh` read) or one of a few output filters
+ *    ({@link INERT_FILTERS}) that can neither reach the network nor run another
+ *    program. The allowlist applies to the whole spawn, so any other program in
+ *    the line — `python3 -c urlopen(...)`, `curl`, `security verify-cert` —
+ *    would hold the same egress;
+ *  - every program must be named bare, with no wrapper or environment
+ *    assignment, and resolve outside the workspace (checked by the caller), so a
+ *    planted `./git` or `./tail` cannot take its place;
  *  - the repository's config and hooks are write-protected from contained
  *    commands, and config that names a program, includes another file or points
  *    hooks into the workspace refuses the scope ({@link RepoNetworkFacts});
@@ -65,7 +70,33 @@ export interface ScopedNetworkPlan {
   reasons: string[]
   /** Bare program names the caller must resolve outside every writable root. */
   programs: string[]
+  /**
+   * The line is one `gh` read and nothing else but {@link INERT_FILTERS}: the
+   * only shape given macOS's `com.apple.trustd.agent` lookup, which Go needs to
+   * verify TLS. trustd fetches a certificate's AIA and OCSP URLs itself, outside
+   * the sandbox and its proxy, so any program that can hand it a certificate
+   * has a way to any host. `gh` only ever verifies the chains GitHub serves.
+   */
+  trustEvaluation: boolean
 }
+
+/**
+ * Programs that may share a network-scoped line, typically after a pipe
+ * (`gh run view 1 --log-failed | tail -50`). Each reads text and writes text:
+ * none opens a socket, runs another program or evaluates a certificate. Absent
+ * on purpose: `sed` (GNU `e` runs a shell command), `awk` (`system()`), `sort`
+ * (`--compress-program`), `xargs`, `jq` and anything else that could.
+ */
+const INERT_FILTERS: ReadonlySet<string> = new Set([
+  'cat',
+  'head',
+  'tail',
+  'grep',
+  'wc',
+  'uniq',
+  'cut',
+  'tr',
+])
 
 export type ScopedNetworkAssessment =
   | { action: 'scope'; plan: ScopedNetworkPlan }
@@ -146,7 +177,7 @@ function namedRemote(args: readonly string[], facts: RepoNetworkFacts): string |
 function gitSegmentScope(
   argv: readonly string[],
   facts: RepoNetworkFacts | null,
-): SegmentScope | { refused: string } | null {
+): SegmentScope | { refused: string } {
   const split = splitGitArgv(argv)
   if (!split) return { refused: 'unrecognised git global option' }
   const { subcommand, args } = split
@@ -182,7 +213,9 @@ function gitSegmentScope(
       reason: `git clone reaches ${host}`,
     }
   }
-  if (!['fetch', 'pull', 'push', 'ls-remote'].includes(subcommand)) return null
+  if (!['fetch', 'pull', 'push', 'ls-remote'].includes(subcommand)) {
+    return { refused: `git ${subcommand} is not a network shape` }
+  }
   if (facts === null) return { refused: 'the execution root is not the project repository' }
   const push = subcommand === 'push'
   const hosts = remoteHosts(facts, namedRemote(args, facts), push)
@@ -197,6 +230,10 @@ function gitSegmentScope(
 }
 
 function ghSegmentScope(argv: readonly string[]): SegmentScope | { refused: string } {
+  // Only reads. A write (`pr create`, `release create`, `gist create`) asks
+  // through the harm gate anyway; refusing it here as well keeps the egress
+  // from ever being opened for one if that gate changes.
+  if (classifyGhSegment(argv) !== 'read') return { refused: 'gh command is not a read' }
   for (let index = 1; index < argv.length; index++) {
     const token = argv[index] ?? ''
     const name = flagName(token)
@@ -230,7 +267,7 @@ export function planScopedNetwork(
   const segments = splitSegments(command.trim())
   if (segments.length === 0) return { action: 'none', reason: 'no segments' }
   const scopes: SegmentScope[] = []
-  let touchesGit = false
+  const filters = new Set<string>()
   for (const segment of segments) {
     const argv = argvOf(stripClearedRedirects(segment))
     if (!argv) return { action: 'none', reason: `unparseable segment: ${segment}` }
@@ -238,27 +275,34 @@ export function planScopedNetwork(
     const head = effective?.[0]
     if (!effective || head === undefined)
       return { action: 'none', reason: `no command word: ${segment}` }
-    const bare = head.includes('/') ? null : head
+    // A wrapper (`env`, `command`, `nice`) is one more program holding the egress.
+    if (effective.length !== argv.length)
+      return { action: 'none', reason: `wrapped command: ${segment}` }
     const name = head.slice(head.lastIndexOf('/') + 1)
     if (name === 'cd' || name === 'pushd' || name === 'popd') {
       return { action: 'none', reason: 'changes directory, so git may find another repository' }
     }
-    if (name !== 'git' && name !== 'gh') continue
-    touchesGit = true
-    if (bare === null) return { action: 'none', reason: `${name} is named by path` }
+    if (head.includes('/')) return { action: 'none', reason: `${name} is named by path` }
+    if (INERT_FILTERS.has(name)) {
+      filters.add(name)
+      continue
+    }
+    if (name !== 'git' && name !== 'gh') {
+      // The allowlist covers the whole spawn: any other program could use it.
+      return { action: 'none', reason: `${name} would share the network scope` }
+    }
     // gh runs git in whatever repository it discovers, so it needs the same
     // vouched-for repository a git network command does.
     if (name === 'gh' && facts === null) {
       return { action: 'none', reason: 'the execution root is not the project repository' }
     }
     const scope = name === 'git' ? gitSegmentScope(effective, facts) : ghSegmentScope(effective)
-    if (scope === null) continue
     if ('refused' in scope) return { action: 'none', reason: scope.refused }
     scopes.push(scope)
   }
   if (scopes.length === 0) return { action: 'none', reason: 'no network command' }
   // gh also runs git (`git remote -v`, `git status`) to find its repository.
-  if (touchesGit && facts !== null && facts.unsafeConfig.length > 0) {
+  if (facts !== null && facts.unsafeConfig.length > 0) {
     return { action: 'none', reason: `repository config: ${facts.unsafeConfig.join('; ')}` }
   }
   const runsHooks = scopes.some((scope) => scope.runsHooks)
@@ -272,7 +316,8 @@ export function planScopedNetwork(
       github: scopes.some((scope) => scope.github),
       disableGitHooks: !runsHooks,
       reasons: scopes.map((scope) => scope.reason),
-      programs: [...new Set(scopes.map((scope) => scope.program))].sort(),
+      programs: [...new Set([...scopes.map((scope) => scope.program), ...filters])].sort(),
+      trustEvaluation: scopes.length === 1 && scopes[0]?.program === 'gh',
     },
   }
 }
