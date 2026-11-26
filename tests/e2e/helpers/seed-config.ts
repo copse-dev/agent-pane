@@ -1,3 +1,4 @@
+import type { AgentProfile } from '../../../src/shared/agent-profiles.ts'
 import {
   mkdirSync,
   mkdtempSync,
@@ -634,6 +635,8 @@ export function seedEmptyProject(
      * is shown.
      */
     autoRunSandboxCommands?: boolean
+    /** Saved named agent profiles (Settings > Agent > Profiles). */
+    agentProfiles?: AgentProfile[]
     registeredAcpAgents?: AcpAgentConfig[]
     windowBounds?: { width: number; height: number }
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
@@ -784,6 +787,9 @@ export function seedEmptyProject(
   }
   if (options?.autoRunSandboxCommands !== undefined) {
     settings['autoRunSandboxCommands'] = options.autoRunSandboxCommands
+  }
+  if (options?.agentProfiles !== undefined) {
+    settings['agentProfiles'] = options.agentProfiles
   }
   if (options?.registeredAcpAgents !== undefined) {
     settings['registeredAcpAgents'] = options.registeredAcpAgents

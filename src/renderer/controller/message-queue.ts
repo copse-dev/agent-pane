@@ -195,6 +195,8 @@ export function refreshAgentRunPayload(
     // The composer's reasoning dial, read at dispatch time for the same reason:
     // turning it up while a message sits queued should apply to that message.
     ...(thread?.reasoning !== undefined ? { reasoning: thread.reasoning } : {}),
+    // The thread's named profile, so main adds its current instructions.
+    ...(thread?.profileId !== undefined ? { profileId: thread.profileId } : {}),
     // C3: thread the turn-tree epoch + the machine turns already spent so the
     // main-process continuation ledger keys and seeds the same counter this
     // renderer enforces at drain time (decision 5 / 16). Read at dispatch time so
