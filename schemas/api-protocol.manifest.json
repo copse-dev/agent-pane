@@ -2915,6 +2915,13 @@
           1
         ]
       },
+      "workspace:trust-offer-details": {
+        "api": "workspace.trustOfferDetails",
+        "args": [
+          1,
+          1
+        ]
+      },
       "worktrees:cleanup-packages": {
         "api": "worktrees.cleanupPackages",
         "args": [

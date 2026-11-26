@@ -72,7 +72,18 @@ describe('approval dialog — workspace trust offer', () => {
         responses.push(id)
         return Promise.resolve()
       },
-      'workspace.unsandboxedProjectHooks': () => Promise.resolve([]),
+      // The window's workspace is some other project; the consent must not use it.
+      'workspace.unsandboxedProjectHooks': () =>
+        Promise.resolve([{ event: 'sessionStart', command: 'other-window-hook' }]),
+      'workspace.trustOfferDetails': (id: string) =>
+        Promise.resolve(
+          id === 'a'
+            ? {
+                name: 'repo',
+                unsandboxedHooks: [{ event: 'preToolUse', command: './offered-hook' }],
+              }
+            : null,
+        ),
       'workspace.trustFromApproval': (id: string): Promise<true> => {
         trusted.push(id)
         return Promise.resolve(true)
@@ -127,6 +138,11 @@ describe('approval dialog — workspace trust offer', () => {
 
     offerButton().click()
     await settle()
+    // The consent names and describes the offered project, not the window's.
+    const consent = document.querySelector('#confirm-dialog')?.textContent ?? ''
+    assert.match(consent, /Trust “repo”\?/)
+    assert.match(consent, /offered-hook/)
+    assert.doesNotMatch(consent, /other-window-hook/)
     clickActiveConfirmDialogConfirm()
     await settle()
     assert.deepEqual(trusted, ['a'])

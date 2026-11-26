@@ -1335,12 +1335,17 @@ export async function createNewProject(store: AppStore, api: ApiClient): Promise
 async function offerProjectTrust(api: ApiClient, root: string): Promise<void> {
   try {
     if (await api.workspace.isTrusted()) return
+    // Hooks come from the window's workspace, the same root `setTrusted` below
+    // trusts; the re-check after the dialog keeps the two the same project.
+    const unsandboxedHooks = await api.workspace.unsandboxedProjectHooks().catch(() => [])
     const { confirmProjectTrust } = await import('../views/workspace-trust-consent.ts')
-    const confirmed = await confirmProjectTrust(api, {
-      message: 'Trust this project?',
+    const confirmed = await confirmProjectTrust({
+      projectName: basename(root),
+      unsandboxedHooks,
       lead: 'Copse keeps new projects untrusted and asks before running their commands. Only trust a folder whose contents you wrote or have reviewed.',
-      confirmLabel: 'Trust project',
       cancelLabel: 'Not now',
+      // Nobody asked for this dialog, so Enter must not grant trust.
+      focusCancel: true,
     })
     // Trust applies to the window's workspace. If the user switched projects
     // while the dialog was open, the yes was about a project no longer shown.

@@ -7,6 +7,7 @@ import { revalidateStaleAcpModels, runAcpAutoSetup } from '../services/acp/acp-a
 import { initAgentsRegistry } from '../services/agents/agents-registry.ts'
 import { perfSpan, perfSyncSpan } from '../services/diagnostics/perf-trace.ts'
 import { pendingWorkspaceTrustOffer } from '../services/approval.ts'
+import { listUnsandboxedProjectHooks } from '../services/hooks/copse-adapter.ts'
 import { setWorkspaceTrustAndReload } from '../services/mcp/mcp-registry.ts'
 import { scaffoldProject } from '../services/project-scaffold.ts'
 import { registerSkillTools } from '../services/registry-bootstrap.ts'
@@ -227,6 +228,17 @@ export function registerWorkspaceHandlers(
   // renderer names the prompt, not a path: the root is the one main attached to
   // that still-open request, so this can only ever trust what a prompt offered.
   // It does not answer the prompt; the user still approves or rejects it.
+  // What the consent for a prompt's trust offer must show, read from the root
+  // that prompt would trust rather than the process-global workspace: with two
+  // windows those differ, and the `sandbox: false` hooks listed at consent
+  // (hooks plan decision 7) must be the ones trusting would let run.
+  ipcMain.handle('workspace:trust-offer-details', async (event, rawId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(z.string().min(1).max(200), [rawId])
+    const root = pendingWorkspaceTrustOffer(id)
+    if (root === null) return null
+    return { name: basename(root), unsandboxedHooks: await listUnsandboxedProjectHooks(root) }
+  })
   ipcMain.handle('workspace:trust-from-approval', async (event, rawId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(z.string().min(1).max(200), [rawId])

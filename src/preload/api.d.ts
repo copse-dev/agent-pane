@@ -281,6 +281,11 @@ export interface ApiClient {
     setTrusted: (trusted: boolean) => Promise<McpServerStatus[]>
     /** Trust the project an open shell prompt offered; leaves the prompt unanswered. */
     trustFromApproval: (approvalId: string) => Promise<true>
+    /** The offered project's name and `sandbox: false` hooks, or null once the prompt is gone. */
+    trustOfferDetails: (approvalId: string) => Promise<{
+      name: string
+      unsandboxedHooks: { event: string; command: string }[]
+    } | null>
     unsandboxedProjectHooks: () => Promise<{ event: string; command: string }[]>
     createNewProject: (name: string, parentDir: string) => Promise<string>
     pickParentDirectory: () => Promise<string | null>

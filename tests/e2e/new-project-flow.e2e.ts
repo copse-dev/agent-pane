@@ -146,8 +146,10 @@ describe('new project flow', () => {
     // Adding a project offers, once, to trust it; trust stays off unless accepted.
     const trustOffer = $('#confirm-dialog')
     await trustOffer.waitForDisplayed({ timeout: 10_000 })
-    await expect(trustOffer.$('.confirm-dialog-message')).toHaveText('Trust this project?')
+    await expect(trustOffer.$('.confirm-dialog-message')).toHaveText(`Trust “${projectName}”?`)
     await expect(trustOffer.$('.confirm-dialog-cancel')).toHaveText('Not now')
+    // Nobody asked for this dialog, so Enter must decline rather than trust.
+    await expect(trustOffer.$('.confirm-dialog-cancel')).toBeFocused()
     await saveAppScreenshot('new-project-trust-offer.png')
     await trustOffer.$('.confirm-dialog-cancel').click()
     await trustOffer.waitForDisplayed({ reverse: true, timeout: 5_000 })

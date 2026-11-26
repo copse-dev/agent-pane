@@ -63,7 +63,12 @@ test('offers trust for a newly added project and trusts only on yes', async () =
   const store = createStore({ projects: [] })
   assert.equal(await addProject(store, makeApi(state)), true)
   await flush()
-  assert.equal(confirmMessage(), 'Trust this project?')
+  assert.equal(confirmMessage(), 'Trust “new”?')
+  // Nobody asked for this dialog, so the keyboard default declines.
+  assert.equal(
+    document.activeElement,
+    document.querySelector('#confirm-dialog .confirm-dialog-cancel'),
+  )
   clickActiveConfirmDialogConfirm()
   await flush()
   assert.deepEqual(state.trustCalls, [true])

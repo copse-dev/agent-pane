@@ -721,13 +721,15 @@ export function mountApprovalDialog(
   async function trustFromPrompt(): Promise<void> {
     const offer = sharedTrustOffer()
     if (offer === null || trustingFromPrompt) return
-    // The consent dialog names what trust turns on; its hook list describes the
-    // window's workspace, which is the project a focused thread's prompt runs in.
+    // Main reads the name and `sandbox: false` hooks from the root this prompt
+    // would trust, not from whichever project another window last opened.
+    const details = await api.workspace.trustOfferDetails(offer.id).catch(() => null)
+    if (details === null) return
     const { confirmProjectTrust } = await import('./workspace-trust-consent.ts')
-    const confirmed = await confirmProjectTrust(api, {
-      message: 'Trust this project?',
+    const confirmed = await confirmProjectTrust({
+      projectName: details.name,
+      unsandboxedHooks: details.unsandboxedHooks,
       lead: 'Only trust a folder whose contents you wrote or have reviewed.',
-      confirmLabel: 'Trust project',
     })
     if (!confirmed) return
     trustingFromPrompt = true

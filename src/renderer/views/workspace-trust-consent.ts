@@ -1,4 +1,3 @@
-import type { ApiClient } from '../../preload/api.d.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 
 /**
@@ -26,19 +25,24 @@ export function workspaceTrustDetail(
 }
 
 /**
- * Ask before trusting the open project. Resolves true only on an explicit yes;
- * the caller performs the trust itself so each surface keeps its own status copy.
+ * Ask before trusting a project, naming it. Resolves true only on an explicit
+ * yes; the caller performs the trust itself so each surface keeps its own status
+ * copy. The caller supplies the hooks read from the same root it will trust, so
+ * the consent never describes a different project than the one trusted.
  */
-export async function confirmProjectTrust(
-  api: ApiClient,
-  copy: { message: string; confirmLabel: string; cancelLabel?: string; lead?: string },
-): Promise<boolean> {
-  const unsandboxed = await api.workspace.unsandboxedProjectHooks().catch(() => [])
-  const detail = [copy.lead ?? '', workspaceTrustDetail(unsandboxed)].filter(Boolean).join(' ')
+export function confirmProjectTrust(request: {
+  projectName: string
+  unsandboxedHooks: readonly { event: string; command: string }[]
+  lead: string
+  cancelLabel?: string
+  /** Enter declines: for an offer the user did not ask for. */
+  focusCancel?: boolean
+}): Promise<boolean> {
   return showConfirmDialog({
-    message: copy.message,
-    detail,
-    confirmLabel: copy.confirmLabel,
-    ...(copy.cancelLabel ? { cancelLabel: copy.cancelLabel } : {}),
+    message: `Trust “${request.projectName}”?`,
+    detail: `${request.lead} ${workspaceTrustDetail(request.unsandboxedHooks)}`,
+    confirmLabel: 'Trust project',
+    ...(request.cancelLabel ? { cancelLabel: request.cancelLabel } : {}),
+    ...(request.focusCancel ? { focusCancel: true } : {}),
   })
 }

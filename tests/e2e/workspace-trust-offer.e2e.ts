@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { waitForAgentIdle } from './helpers.ts'
 import {
@@ -74,7 +74,7 @@ describe('workspace trust offer on a shell prompt', () => {
     await offer.$('.approval-trust-offer-btn').click()
     const confirm = $('#confirm-dialog')
     await confirm.waitForDisplayed({ timeout: 10_000 })
-    await expect(confirm.$('.confirm-dialog-message')).toHaveText('Trust this project?')
+    await expect(confirm.$('.confirm-dialog-message')).toHaveText(`Trust “${basename(root)}”?`)
     await expect(confirm.$('.confirm-dialog-detail')).toHaveText(
       expect.stringContaining('run without asking'),
     )

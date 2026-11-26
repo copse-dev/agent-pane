@@ -161,6 +161,8 @@ const api: ApiClient = {
     setTrusted: (trusted: boolean) => ipcRenderer.invoke('workspace:set-trusted', trusted),
     trustFromApproval: (approvalId: string) =>
       ipcRenderer.invoke('workspace:trust-from-approval', approvalId),
+    trustOfferDetails: (approvalId: string) =>
+      ipcRenderer.invoke('workspace:trust-offer-details', approvalId),
     createNewProject: (name: string, parentDir: string) =>
       ipcRenderer.invoke('workspace:create-project', name, parentDir),
     pickParentDirectory: () => ipcRenderer.invoke('workspace:pick-parent-directory'),
