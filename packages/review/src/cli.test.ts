@@ -4,9 +4,17 @@ import { access, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/prom
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { createServer, type Server } from 'node:http'
+import { z } from 'zod'
 import { setTimeout as delay } from 'node:timers/promises'
 import { HEADLESS_EXIT, headlessEventSchema } from '@copse/agent/headless-contract.ts'
-import { main, resolveForgeTarget, resolvePullRequestRef, reviewPermissionProfile } from './cli.ts'
+import {
+  endpointOrigin,
+  main,
+  resolveForgeTarget,
+  resolvePullRequestRef,
+  reviewPermissionProfile,
+} from './cli.ts'
 import { decodeFindings } from './finding.ts'
 import { createEphemeralRunnerBackend } from './host-process-backend.ts'
 import type { IsolationBackend } from './isolation.ts'
@@ -292,6 +300,53 @@ describe('copse-review CLI', () => {
     assert.equal(parsed[0]?.type, 'turn_start')
     assert.equal(parsed.at(-1)?.type, 'turn_end')
     assert.ok(parsed.some((event) => event.type === 'tool_call' && event.name === 'run_command'))
+  })
+
+  it('writes each event to --events as it happens, so the review can be followed from disk', async () => {
+    const repo = await fixture({})
+    const dir = await mkdtemp(join(tmpdir(), 'review-cli-'))
+    scratch.push(dir)
+    const events = join(dir, 'events.jsonl')
+    const script = join(dir, 'script.json')
+    // Mid-review, the reviewer's own command reads the events file.
+    await writeFile(
+      script,
+      JSON.stringify([
+        {
+          type: 'tool_call',
+          name: 'run_command',
+          args: {
+            argv: [
+              process.execPath,
+              '-e',
+              `process.stdout.write(require('fs').readFileSync(${JSON.stringify(events)}, 'utf8'))`,
+            ],
+          },
+        },
+        finishReviewStep('src/math.ts'),
+        { type: 'text', text: 'Done.' },
+      ]),
+    )
+    const result = await run(repo, [
+      '--base',
+      'main',
+      '--allow-unisolated',
+      '--provider',
+      'mock',
+      '--mock-script',
+      script,
+      '--events',
+      events,
+      '--no-verify',
+    ])
+    assert.equal(result.code, HEADLESS_EXIT.SUCCESS, result.err)
+    const parsed = (await readFile(events, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => headlessEventSchema.parse(JSON.parse(line)))
+    const seen = parsed.find((event) => event.type === 'tool_result')
+    assert.ok(seen?.type === 'tool_result')
+    assert.match(seen.result, /\\?"type\\?":\\?"turn_start\\?"/)
   })
 
   it('fans out over lenses, clusters duplicate candidates, and verifies them', async () => {
@@ -1359,6 +1414,206 @@ describe('copse-review CLI', () => {
       assert.equal(worktreeCount(repo), 1)
     } finally {
       controller.abort()
+    }
+  })
+})
+
+/** A local server that answers LM Studio's native catalogue with one model. */
+async function catalogServer(
+  model: string,
+  contextLength: number,
+  vision = true,
+): Promise<{ baseUrl: string; server: Server }> {
+  const server = createServer((request, response) => {
+    if (request.url === '/api/v1/models') {
+      response.setHeader('content-type', 'application/json')
+      response.end(
+        JSON.stringify({
+          models: [
+            {
+              type: 'llm',
+              key: model,
+              quantization: { name: 'Q4_K_M' },
+              capabilities: { vision },
+              max_context_length: 131_072,
+              loaded_instances: [{ id: model, config: { context_length: contextLength } }],
+            },
+          ],
+        }),
+      )
+      return
+    }
+    response.statusCode = 404
+    response.end()
+  })
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done))
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('no TCP address')
+  return { baseUrl: `http://127.0.0.1:${String(address.port)}/v1`, server }
+}
+
+describe('copse-review CLI with local models', () => {
+  it('checks the model routes with --preflight and exits before anything runs', async () => {
+    const repo = await fixture({ test: { exit: 1 } })
+    const { baseUrl, server } = await catalogServer('roomy-model', 131_072)
+    const args = ['--provider', 'lmstudio', '--model', 'roomy-model', '--base-url', baseUrl]
+    try {
+      const ready = await run(repo, ['--preflight', ...args])
+      assert.equal(ready.code, HEADLESS_EXIT.SUCCESS, ready.err)
+      assert.match(ready.err, /the model routes can run this review/)
+      const missing = await run(repo, [
+        '--preflight',
+        ...args.slice(0, 3),
+        'absent-model',
+        ...args.slice(4),
+      ])
+      assert.equal(missing.code, HEADLESS_EXIT.USAGE, missing.err)
+      assert.match(missing.err, /has no model absent-model \(available: roomy-model\)/)
+      const both = await run(repo, ['--preflight', '--summary-only', ...args])
+      assert.equal(both.code, HEADLESS_EXIT.USAGE, both.err)
+      assert.match(both.err, /--preflight cannot be used with --summary-only/)
+      assert.equal(worktreeCount(repo), 1)
+    } finally {
+      server.close()
+    }
+  })
+
+  it('refuses a visual-only review by a model that cannot see before Stage 0 runs', async () => {
+    const repo = await fixture({ test: { exit: 1 } })
+    const { baseUrl, server } = await catalogServer('text-model', 131_072, false)
+    try {
+      const result = await run(repo, [
+        '--base',
+        'main',
+        '--allow-unisolated',
+        '--provider',
+        'lmstudio',
+        '--model',
+        'text-model',
+        '--base-url',
+        baseUrl,
+        '--lenses',
+        'visual',
+      ])
+      assert.equal(result.code, HEADLESS_EXIT.USAGE, result.err)
+      assert.match(result.err, /the visual lens needs a reviewer model that can see images/)
+      assert.equal(worktreeCount(repo), 1)
+    } finally {
+      server.close()
+    }
+  })
+
+  it('refuses a local model loaded with too little context before Stage 0 runs', async () => {
+    const repo = await fixture({ test: { exit: 1 } })
+    const { baseUrl, server } = await catalogServer('small-model', 4_096)
+    try {
+      const result = await run(repo, [
+        '--base',
+        'main',
+        '--allow-unisolated',
+        '--provider',
+        'lmstudio',
+        '--model',
+        'small-model',
+        '--base-url',
+        baseUrl,
+      ])
+      assert.equal(result.code, HEADLESS_EXIT.USAGE, result.err)
+      assert.match(result.err, /small-model is loaded with a 4096-token context/)
+      assert.match(result.err, /lms load small-model --context-length \d+/)
+      // Nothing was checked out or run: the refusal costs seconds, not a build.
+      assert.equal(result.out, '')
+      assert.equal(worktreeCount(repo), 1)
+    } finally {
+      server.close()
+    }
+  })
+
+  it('routes the challenger to its own server and records every route in the report', async () => {
+    const repo = await fixture({})
+    const dir = await mkdtemp(join(tmpdir(), 'review-cli-'))
+    scratch.push(dir)
+    const script = join(dir, 'script.json')
+    await writeFile(
+      script,
+      JSON.stringify([finishReviewStep('src/math.ts'), { type: 'text', text: 'Done.' }]),
+    )
+    const { baseUrl, server } = await catalogServer('challenger-model', 65_536)
+    try {
+      const reportPath = join(dir, 'report.json')
+      const result = await run(repo, [
+        '--base',
+        'main',
+        '--allow-unisolated',
+        '--provider',
+        'mock',
+        '--mock-script',
+        script,
+        '--challenger',
+        'challenger-model',
+        '--challenger-provider',
+        'openai-compatible',
+        '--challenger-base-url',
+        baseUrl,
+        '--challenger-reasoning',
+        'high',
+        '--no-verify',
+        '--json',
+        reportPath,
+      ])
+      assert.equal(result.code, HEADLESS_EXIT.SUCCESS, result.err)
+      const report = z
+        .object({
+          models: z.array(
+            z.object({
+              role: z.string(),
+              model: z.string(),
+              provider: z.string(),
+              endpoint: z.string().optional(),
+              reasoning: z.string().optional(),
+              local: z
+                .object({ loadedContextLength: z.number(), quantization: z.string() })
+                .optional(),
+            }),
+          ),
+        })
+        .parse(JSON.parse(await readFile(reportPath, 'utf8')))
+      assert.deepEqual(report.models, [
+        { role: 'reviewer', model: 'mock', provider: 'mock' },
+        {
+          role: 'challenger',
+          model: 'challenger-model',
+          provider: 'openai-compatible',
+          endpoint: new URL(baseUrl).origin,
+          reasoning: 'high',
+          local: { loadedContextLength: 65_536, quantization: 'Q4_K_M' },
+        },
+      ])
+    } finally {
+      server.close()
+    }
+  })
+
+  it('records only an endpoint’s origin, never a path that may name an account', () => {
+    assert.equal(
+      endpointOrigin('https://user:secret@api.example.ai/0d2c5b7e-project/v1?key=x#f'),
+      'https://api.example.ai',
+    )
+    assert.equal(endpointOrigin('http://127.0.0.1:1234/v1'), 'http://127.0.0.1:1234')
+    assert.equal(endpointOrigin('not a url'), '(unparseable URL)')
+  })
+
+  it('rejects an unknown reasoning level, challenger provider or time limit as usage', async () => {
+    const repo = await fixture({})
+    for (const [args, message] of [
+      [['--reasoning', 'extreme'], /--reasoning must be one of off, minimal/],
+      [['--challenger-provider', 'ollama'], /unknown challenger provider ollama/],
+      [['--time-limit', '0'], /--time-limit must be a positive integer/],
+      [['--min-context=1.5'], /--min-context must be a positive integer/],
+    ] as const) {
+      const result = await run(repo, ['--base', 'main', '--allow-unisolated', ...args])
+      assert.equal(result.code, HEADLESS_EXIT.USAGE, args.join(' '))
+      assert.match(result.err, message)
     }
   })
 })

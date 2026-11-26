@@ -21,8 +21,10 @@ function lease(threadId: string, owner: string): WriterLeaseRecord {
 function follower(
   leases: Map<string, WriterLeaseRecord>,
   running: Record<string, string[]>,
-): { follower: ForeignTurnFollower; repaints: ForeignTurn[] } {
+  abandoned: Set<string> = new Set(),
+): { follower: ForeignTurnFollower; repaints: ForeignTurn[]; settled: ForeignTurn[] } {
   const repaints: ForeignTurn[] = []
+  const settled: ForeignTurn[] = []
   const instance = new ForeignTurnFollower({
     listProjectIds: (): string[] => Object.keys(running),
     listRunningThreadIds: (projectId): Promise<string[]> =>
@@ -34,8 +36,14 @@ function follower(
       repaints.push(turn)
       return Promise.resolve()
     },
+    leaseAbandoned: (_projectId, threadId): Promise<boolean> =>
+      Promise.resolve(abandoned.has(threadId)),
+    settleAbandoned: (turn): Promise<void> => {
+      settled.push(turn)
+      return Promise.resolve()
+    },
   })
-  return { follower: instance, repaints }
+  return { follower: instance, repaints, settled }
 }
 
 describe('ForeignTurnFollower', () => {
@@ -75,6 +83,29 @@ describe('ForeignTurnFollower', () => {
     }
   })
 
+  it('settles a thread whose holder died without releasing it, and only that one', async () => {
+    const leases = new Map([
+      ['died', lease('died', 'worker')],
+      ['finished', lease('finished', 'worker')],
+    ])
+    const {
+      follower: f,
+      settled,
+      repaints,
+    } = follower(leases, { p: ['died', 'finished'] }, new Set(['died']))
+    try {
+      await f.discover()
+      const before = repaints.length
+      leases.clear()
+      await f.tick()
+      assert.deepEqual(settled, [{ projectId: 'p', threadId: 'died' }])
+      assert.equal(repaints.length - before, 2)
+      assert.deepEqual(f.threadIds(), [])
+    } finally {
+      f.stop()
+    }
+  })
+
   it('keeps following past a failed read', async () => {
     const errors: unknown[] = []
     let fail = true
@@ -85,6 +116,8 @@ describe('ForeignTurnFollower', () => {
         fail ? Promise.reject(new Error('busy')) : Promise.resolve(lease('t', 'worker')),
       selfOwner: 'self',
       repaint: (): Promise<void> => Promise.resolve(),
+      leaseAbandoned: (): Promise<boolean> => Promise.resolve(false),
+      settleAbandoned: (): Promise<void> => Promise.resolve(),
       onError: (error): void => {
         errors.push(error)
       },
@@ -154,6 +187,8 @@ describe('ForeignTurnFollower attached to its worker', () => {
       deliver: (message): void => {
         delivered.push(message)
       },
+      leaseAbandoned: (): Promise<boolean> => Promise.resolve(false),
+      settleAbandoned: (): Promise<void> => Promise.resolve(),
     })
     return { follower: instance, repaints, delivered, lines }
   }
@@ -191,13 +226,16 @@ describe('ForeignTurnFollower attached to its worker', () => {
     try {
       await f.discover()
       assert.equal(f.isAttached('t'), false)
-      assert.equal(f.requestStop('t'), false)
+      // Pressed while the worker is still starting: kept until it answers.
+      assert.equal(f.requestStop('t'), true)
+      assert.equal(f.requestStop('unfollowed'), false)
       assert.equal(repaints.length, 1)
 
       answering = true
       await f.tick()
       assert.equal(f.isAttached('t'), true)
       assert.equal(repaints.length, 1)
+      assert.deepEqual(lines.at(0)?.sent, ['attach', 'stop'])
 
       lines.at(0)?.drop()
       assert.equal(f.isAttached('t'), false)

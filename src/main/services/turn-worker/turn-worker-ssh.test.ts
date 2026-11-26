@@ -8,6 +8,7 @@ import { setSettings } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
 import { ToolRegistry } from '../tool-registry.ts'
 import { loadThreadMessages, saveProjectThread } from '../thread-store.ts'
+import { setSshControlDirForTests } from '../ssh-workspace/ssh-paths.ts'
 import { runTurnWorker } from './turn-worker.ts'
 
 /**
@@ -41,6 +42,11 @@ before(() => {
   writeFileSync(join(remoteRoot, 'REMOTE_MARKER.txt'), 'on the host\n')
   process.env['PATH'] = [resolve('tests/e2e/fixtures/fake-ssh'), saved.path ?? ''].join(delimiter)
   process.env['COPSE_E2E_FAKE_SSH_STATE'] = state
+  // Not the real per-user control directory a running Copse shares.
+  // A short path under /tmp: control socket paths have a tight length limit.
+  const control = mkdtempSync('/tmp/tw-ssh-ctl-')
+  scratch.push(control)
+  setSshControlDirForTests(control)
 })
 function restore(key: string, value: string | undefined): void {
   if (value === undefined) Reflect.deleteProperty(process.env, key)
@@ -48,6 +54,7 @@ function restore(key: string, value: string | undefined): void {
 }
 
 after(() => {
+  setSshControlDirForTests(null)
   restore('COPSE_DIR', saved.dir)
   restore('COPSE_PANEL_MOCK_LLM', saved.mock)
   restore('PATH', saved.path)

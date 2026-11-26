@@ -10,15 +10,17 @@ import {
 import { createCloseGate } from './close-gate.ts'
 import { isWindowDetached } from '../windows/window-detach.ts'
 import { getSetting } from './storage/settings.ts'
-import { CONTINUE_TURNS_AFTER_QUIT_SETTING } from './turn-worker/turn-worker-launch.ts'
+import { continuesTurnsAfterQuit } from './turn-worker/turn-worker-launch.ts'
 
 /**
  * Guards closing the app while an agent is still working.
  *
  * Quitting is destructive to a live turn: `cleanupBeforeQuit` disposes every ACP
  * session, terminal and background process, and whatever the agent had not yet
- * written to disk is gone. A quit the user chose is also not continued on the
- * next launch (`last-run.ts`); only a crash or an update relaunch is. So the close is checked with
+ * written to disk is gone. Unless the quit hands its turns to background workers
+ * ("Continue turns after Copse closes"), a quit the user chose is also not
+ * continued on the next launch (`last-run.ts`); only a crash or an update
+ * relaunch is. So the close is checked with
  * the user *before* teardown starts, on both routes out of the app (the window's
  * own close, and `before-quit` from Cmd+Q / the menu / the updater).
  *
@@ -60,6 +62,15 @@ export function requestCloseConfirmation(): Promise<boolean> {
  */
 export function approveClose(): void {
   gate.approve()
+}
+
+export function isCloseApproved(): boolean {
+  return gate.isApproved()
+}
+
+/** Ask again on the next close: the quit `approveClose` was for did not happen. */
+export function revokeCloseApproval(): void {
+  gate.revoke()
 }
 
 /**
@@ -138,8 +149,7 @@ export function initCloseConfirm(win: BrowserWindow): void {
       const id = randomUUID()
       // Whether a quit now hands the working turns off instead of stopping them,
       // so the question can say what closing will do.
-      const continuesAfterQuit =
-        getSetting<unknown>(CONTINUE_TURNS_AFTER_QUIT_SETTING, true) !== false
+      const continuesAfterQuit = continuesTurnsAfterQuit(getSetting)
       win.webContents.send('app:close-confirm-request', { id, continuesAfterQuit })
       const timer = setTimeout(() => {
         settle(id, true)

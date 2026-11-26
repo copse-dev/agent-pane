@@ -28,14 +28,14 @@ describe('browser-hosted tool permission settings', () => {
     const proton = panel.$('[data-group-id="mcp:project:proton-mcp"]')
     await expect(proton.$('.tool-permission-group-origin')).toHaveText('project')
     await expect(proton.$('.tool-permission-group-status')).toHaveText('connected')
-    // Count, origin and status are labels beside the name, not actions: they take
-    // the kit corner, not pill rounding (docs/ui-taste.md, chips).
+    // Count, origin and status are facts beside the name, not actions: they read
+    // as muted text with no chip frame at all (settings-unframed-lists.demo.ts).
     for (const tag of [
       '.tool-permission-count',
       '.tool-permission-group-origin',
       '.tool-permission-group-status',
     ]) {
-      await expect(proton.$(tag)).toHaveStyle({ 'border-top-left-radius': '6px' })
+      await expect(proton.$(tag)).toHaveStyle({ 'border-top-width': '0px' })
     }
     assert.equal((await proton.$$('.tool-permission-row').getElements()).length, 4)
     await expect(proton.$('[data-tool-id="mcp:project:proton-mcp:send-mail"]')).toHaveText(
@@ -145,6 +145,18 @@ describe('browser-hosted tool permission settings', () => {
     await expect(toggle).toHaveAttribute('aria-expanded', 'true')
     await expect(description.$('code=run_shell')).toBeDisplayed()
     await expect(description.$('li=Commands run in the active workspace.')).toBeDisplayed()
+    // The group has no frame, so the description starts at the panel's edge. A
+    // list indents its own markers rather than hanging them into the gutter.
+    const listInset = await browser.execute(() => {
+      const text = document.querySelector(
+        '[data-tool-id="copse:run-shell"] .tool-permission-description',
+      )
+      const item = text?.querySelector('li')
+      return text && item
+        ? item.getBoundingClientRect().left - text.getBoundingClientRect().left
+        : -1
+    })
+    assert.ok(listInset >= 12, `list items start ${String(listInset)}px inside the description`)
     await expect(description.$('pre code')).toHaveText('pnpm test')
     assert.ok((await description.getSize()).height > compactHeight)
     await saveElementScreenshot('#settings-dialog', 'settings-tool-descriptions-expanded.png')

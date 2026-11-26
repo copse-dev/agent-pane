@@ -158,6 +158,14 @@ describe('settings → Customise / MCP / Storage', function () {
     assert.equal((await origin.getText()).toLowerCase(), PLUGIN_ID)
     // A declaration is not a control: nothing here implies Copse could start it.
     assert.equal(await declaredRow.$('.toggle-switch').isExisting(), false)
+    // It sits on the page like the server rows above it, with no frame of its own.
+    const frame = await declaredRow.getElement().then((row) =>
+      browser.execute((element) => {
+        const style = getComputedStyle(element)
+        return [style.borderTopStyle, style.borderLeftStyle, style.paddingLeft]
+      }, row),
+    )
+    assert.deepEqual(frame, ['none', 'none', '0px'])
 
     await expect($('#settings-dialog .settings-nav-subheadings')).toHaveText(
       expect.stringContaining('Declared by plugins, not running'),

@@ -42,6 +42,12 @@ afterEach(() => {
   resetProjectSwitchStateForTest()
 })
 
+function removeMenuItem(): HTMLButtonElement | undefined {
+  return [...document.querySelectorAll<HTMLButtonElement>('.context-menu-item')].find(
+    (item) => item.textContent === 'Remove from sidebar',
+  )
+}
+
 describe('projects pane remove-from-sidebar (component)', () => {
   function mount(store: ReturnType<typeof createStore>, api: ApiClient): HTMLElement {
     const host = document.createElement('div')
@@ -127,9 +133,10 @@ describe('projects pane remove-from-sidebar (component)', () => {
     const menu = document.querySelector<HTMLElement>('.context-menu')
     assert.ok(menu, 'context menu is mounted')
     assert.equal(menu.getAttribute('role'), 'menu')
-    const item = menu.querySelector<HTMLButtonElement>('.context-menu-item')
-    assert.ok(item)
-    assert.equal(item.textContent, 'Remove from sidebar')
+    assert.deepEqual(
+      [...menu.querySelectorAll('.context-menu-item')].map((item) => item.textContent),
+      ['Remove from sidebar', 'Import sessions…', 'New group…'],
+    )
   })
 
   it('removes the project from the sidebar when the menu item is clicked', async () => {
@@ -159,7 +166,7 @@ describe('projects pane remove-from-sidebar (component)', () => {
       }),
     )
 
-    const item = document.querySelector<HTMLButtonElement>('.context-menu-item')
+    const item = removeMenuItem()
     assert.ok(item)
     item.click()
 
@@ -226,7 +233,7 @@ describe('projects pane remove-from-sidebar (component)', () => {
     betaToRemove.dispatchEvent(
       new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
     )
-    const remove = document.querySelector<HTMLButtonElement>('.context-menu-item')
+    const remove = removeMenuItem()
     assert.ok(remove)
     remove.click()
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -398,6 +405,12 @@ describe('projects pane remove-from-sidebar (component)', () => {
           sampleTitles: ['Old notes'],
           updatedAt: 50,
         },
+        {
+          id: 'other-store',
+          threadCount: 2,
+          sampleTitles: ['Other notes'],
+          updatedAt: 40,
+        },
       ]),
     )
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -414,7 +427,8 @@ describe('projects pane remove-from-sidebar (component)', () => {
     })
     // Removing all children briefly empties the scroll container in Chromium,
     // which clamps scrollTop to zero. Simulate that browser behavior on the
-    // current children so this test fails if render() stops restoring the offset.
+    // current children so this test fails if render() removes rows that did not
+    // change instead of updating the list in place.
     for (const child of Array.from(list.children)) {
       const remove = child.remove.bind(child)
       child.remove = (): void => {
@@ -423,9 +437,17 @@ describe('projects pane remove-from-sidebar (component)', () => {
       }
     }
 
+    const projectEntry = list.querySelector('.project-entry')
+    const otherOrphan = list.querySelector('[data-orphan-id="other-store"]')
+    assert.ok(projectEntry)
+    assert.ok(otherOrphan)
+
     document.querySelector<HTMLButtonElement>('.orphan-dismiss-btn')?.click()
     await new Promise((resolve) => setTimeout(resolve, 0))
 
+    assert.equal(list.querySelector('[data-orphan-id="stale-store"]'), null)
+    assert.equal(list.querySelector('.project-entry'), projectEntry)
+    assert.equal(list.querySelector('[data-orphan-id="other-store"]'), otherOrphan)
     assert.equal(list.scrollTop, 160)
   })
 

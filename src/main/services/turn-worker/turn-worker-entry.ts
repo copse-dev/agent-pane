@@ -19,13 +19,15 @@
 import { parseArgs } from 'node:util'
 import { installReadOnlyProfile } from './worker-profile.ts'
 import { turnWorkerSocketPath } from './turn-worker-socket.ts'
-import type { TakenOverThread } from './turn-worker.ts'
+import type { TakenOverThread, TurnControl } from './turn-worker.ts'
+import { quietWorkerEnvironment } from './worker-environment.ts'
 
 function log(line: string): void {
   process.stderr.write(`[turn-worker ${new Date().toISOString()}] ${line}\n`)
 }
 
 async function main(): Promise<number> {
+  quietWorkerEnvironment(process.env)
   const { values } = parseArgs({
     options: {
       'user-data': { type: 'string' },
@@ -53,24 +55,36 @@ async function main(): Promise<number> {
     log,
   })
 
+  // Decide before taking the thread or starting the sandbox and MCP servers: a
+  // thread left for the next launch must never be held while the worker boots,
+  // or an app relaunched meanwhile would follow it instead of continuing it.
+  const { openTurnControl, takeOverThread, whyNotContinue } = await import('./turn-worker.ts')
+  const reason = await whyNotContinue(projectId, threadId)
+  if (reason !== null) {
+    log(`thread ${threadId} stays for the next launch: ${reason}`)
+    return 0
+  }
+
   // Take the thread before the slow boot below, so an app relaunched meanwhile
-  // follows this worker instead of continuing the turn itself.
-  const { takeOverThread } = await import('./turn-worker.ts')
+  // follows this worker instead of continuing the turn itself, and serve it at
+  // once, so a Stop pressed during the boot reaches this worker.
   const takeOver = await takeOverThread({ projectId, threadId }, { log })
   if (takeOver.status === 'held') return 2
   const thread = takeOver.thread
+  const control = await openTurnControl(turnWorkerSocketPath(userDataPath, threadId), log)
   try {
-    return await bootAndContinue(userDataPath, projectId, threadId, thread)
+    return await bootAndContinue(projectId, threadId, thread, control)
   } finally {
+    await control.close()
     await thread.release()
   }
 }
 
 async function bootAndContinue(
-  userDataPath: string,
   projectId: string,
   threadId: string,
   takenOver: TakenOverThread,
+  control: TurnControl,
 ): Promise<number> {
   const [
     { setExecutionAuditSink },
@@ -83,6 +97,11 @@ async function bootAndContinue(
     { initAgentsRegistry },
     { loadCustomTools },
     { loadMcpServers, shutdownMcpServers },
+    { stopAllForegroundShellProcesses },
+    { cancelAllSupervisedBackgroundProcesses },
+    { getTaskSupervisor },
+    { disposeAllAcpSessions },
+    { stopAllBackgroundProcesses },
     { runTurnWorker },
   ] = await Promise.all([
     import('../execution-runtime/audit.ts'),
@@ -95,6 +114,11 @@ async function bootAndContinue(
     import('../agents/agents-registry.ts'),
     import('../mcp/custom-tools-registry.ts'),
     import('../mcp/mcp-registry.ts'),
+    import('../exec/foreground-shell-process.ts'),
+    import('../exec/supervised-background-process.ts'),
+    import('../supervisor/task-supervisor.ts'),
+    import('../acp/acp-session-pool.ts'),
+    import('../exec/background-process.ts'),
     import('./turn-worker.ts'),
   ])
 
@@ -113,14 +137,26 @@ async function bootAndContinue(
   try {
     const outcome = await runTurnWorker(
       { projectId, threadId },
-      { registry, log, takenOver, socketPath: turnWorkerSocketPath(userDataPath, threadId) },
+      { registry, log, takenOver, control },
     )
     log(`thread ${threadId}: ${JSON.stringify(outcome)}`)
     return outcome.status === 'held' ? 2 : 0
   } finally {
-    await shutdownMcpServers().catch((error: unknown) => {
-      log(`could not stop MCP servers: ${String(error)}`)
-    })
+    // The same teardown as the app's quit: nothing the turn started may outlive
+    // the worker, since no window lists it and nothing else would stop it.
+    const stop = async (what: string, step: () => Promise<void> | void): Promise<void> => {
+      try {
+        await step()
+      } catch (error) {
+        log(`could not stop ${what}: ${String(error)}`)
+      }
+    }
+    await stop('foreground commands', stopAllForegroundShellProcesses)
+    await stop('supervised background commands', cancelAllSupervisedBackgroundProcesses)
+    await stop('supervised tasks', () => getTaskSupervisor().shutdown())
+    await stop('agent sessions', disposeAllAcpSessions)
+    await stop('background commands', stopAllBackgroundProcesses)
+    await stop('MCP servers', shutdownMcpServers)
     await shutdownProjectSandbox()
   }
 }
