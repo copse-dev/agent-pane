@@ -19,6 +19,7 @@ import {
 import {
   shellReadGrantTargets,
   shellRunsOutsideSandbox,
+  shellTempWriteTargets,
 } from '../services/security/command-routing-config.ts'
 import { detectSandboxFailure } from '../services/security/sandbox-failure.ts'
 import {
@@ -432,6 +433,26 @@ export const runShellTool = defineTool({
       })
     }
 
+    // Likewise a command that leaves the sandbox ONLY to write named /tmp paths
+    // stays contained with just those paths writable. The permission gate asked
+    // about exactly these paths, from the same analysis of the same command.
+    const tempTargets =
+      outsideSandbox && readGrantTargets === null && !isRemote
+        ? shellTempWriteTargets(command, agentRoots, cwd)
+        : null
+    if (tempTargets) {
+      outsideSandbox = false
+      recordDecision({
+        kind: 'shell',
+        actor: 'system',
+        verdict: 'allowed',
+        subject: SHELL_DECISION_SUBJECT,
+        scope: 'sandbox',
+        reasons: [`sandbox write access widened to: ${tempTargets.join(', ')}`],
+        source: 'temp-write-sandbox-relaxation',
+      })
+    }
+
     // A denial confirmed earlier THIS thread for the same operation (issue #1436
     // point 2) pulls the same escalation forward the agent's own
     // `expects_sandbox_block` hint would — so the second attempt at an
@@ -454,7 +475,7 @@ export const runShellTool = defineTool({
     // A read-only grant never authorizes a host execution. A wrapper failure or
     // sandbox denial under this overlay must not turn into an outside retry,
     // including Guarded YOLO's runner-evidence auto-approval path.
-    let suppressUnsandboxedRetry = readGrantTargets !== null
+    let suppressUnsandboxedRetry = readGrantTargets !== null || tempTargets !== null
     let skippedProbeViaCache = false
     if (readonlyCheckout) {
       suppressUnsandboxedRetry = true
@@ -552,6 +573,7 @@ export const runShellTool = defineTool({
         onDetach,
         readonlyCheckout,
         revalidateShellYield(yieldOptions, timeout_ms),
+        tempTargets ?? [],
       )
 
       if (result.backgroundId) return backgroundResult(result.backgroundId)

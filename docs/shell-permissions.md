@@ -490,17 +490,18 @@ while one is active, Copse pauses auto-run and names the holder in an approval p
 starting a new network-capable command. Structurally read-only
 commands do not prompt because they cannot open a network connection.
 
-### Allow for this chat
+### Writing named /tmp paths inside the sandbox
 
-A "Run outside sandbox?" prompt whose every reason is one of a few local kinds (`/tmp` paths, a
-loopback request, an inline or heredoc script, a project script or file) offers **Run once**, the
-primary answer, and **Allow for this chat** (`escalation-grant.ts`). The grant names those reason
-kinds, never a command, for that thread until Copse quits. A later escalation in the thread is
-answered without a prompt only when all of its reasons are granted kinds and the Guarded YOLO harm
-gate allows the command, so credential reads and the rest of that list still ask. Network
-downloads, installs, pushes, substitution, and `~/`, `../` or other outside paths are never
-grantable. Where a trusted command is offered, that broader remember choice replaces this one. The
-decision log records the approval and each covered command (`source: escalation-grant`).
+A command whose only reason to leave the sandbox is writing literal paths under `/tmp`
+(`curl -c /tmp/cookies.txt …`, `node server.js > /tmp/server.log`) is not run outside. The gate
+asks **Let this command write to /tmp?** (cause `shell-temp-write`), and on approval `run_shell`
+runs it contained with exactly those paths writable (`tempWriteTargets`, `withTempWrites`): no
+internet, no other path. Every `/tmp` mention must be a plain literal path (no variable, glob, `..`
+or bare `/tmp`), the command with those paths set aside must not be `external`, and destructive
+commands keep their own prompt. The seatbelt grant uses the canonical `/private/tmp` spelling, and
+a named path that is or sits under a symlink is refused. **Allow for this chat** lets later
+commands in that thread write the `/tmp` paths they name the same way, until Copse quits
+(`temp-write-grant.ts`, `source: temp-write-grant`); **Allow once** grants nothing further.
 
 ### Reaching the thread's own dev server
 

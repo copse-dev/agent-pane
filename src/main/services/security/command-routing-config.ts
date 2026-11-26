@@ -1,3 +1,4 @@
+import { tempWriteTargets } from '@copse/shell-guard/temp-write-targets.ts'
 import { getSetting, updateSetting } from '../storage/settings.ts'
 import type { AgentRoots } from '../execution-root.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
@@ -141,6 +142,23 @@ export function shellReadGrantTargets(
     }
     return target
   })
+}
+
+/**
+ * The named `/tmp` paths a command may write while staying contained, when
+ * writing them is its only reason to leave the sandbox (see
+ * `tempWriteTargets`). Null without an active sandbox, or when the command is
+ * trusted to run outside anyway.
+ */
+export function shellTempWriteTargets(
+  command: string,
+  roots: AgentRoots,
+  executionRoot: string | null,
+  toolName: ShellRoutingTool = 'run_shell',
+): string[] | null {
+  if (!isProjectSandboxEnabled()) return null
+  if (routeShellCommand(command, roots, toolName).outcome === 'allow') return null
+  return tempWriteTargets(command, executionRoot)
 }
 
 /**

@@ -1,14 +1,17 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { escalationGrantFooter } from '../../src/main/services/security/escalation-grant.ts'
-import { gitPushApproval, gitPushChatGrantCopy } from '../../src/shared/approval-copy.ts'
+import {
+  gitPushApproval,
+  gitPushChatGrantCopy,
+  tempWriteApproval,
+} from '../../src/shared/approval-copy.ts'
 import { E2E_SCREENSHOT_DIR, prepareE2eScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
-const PROJECT_ID = 'e2e-approval-escalation-chat-grant'
+const PROJECT_ID = 'e2e-approval-chat-grants'
 
-describe('outside-sandbox prompt with a chat grant', function () {
+describe('approval prompts with a chat grant', function () {
   this.timeout(30_000)
 
   before(async () => {
@@ -22,24 +25,15 @@ describe('outside-sandbox prompt with a chat grant', function () {
     resetUserData()
   })
 
-  it('offers Run once as the primary answer and Allow for this chat beside it', async () => {
+  it('asks to write named /tmp paths inside the sandbox, with a chat grant beside it', async () => {
     await $('.prompt-input').waitForExist({ timeout: 20_000 })
-    // The fields permission-gate's requestEscalationApproval sends for a
-    // command whose only reasons are grantable kinds, with its real footer.
-    const footer = escalationGrantFooter([
-      'global temp path (/tmp/)',
-      'loopback request (curl/wget)',
-    ])
+    const command = 'curl -s -c /tmp/rider_cookies.txt http://localhost:3000/api/me'
+    // The fields permission-gate's resolveTempWrite sends, with its real copy.
     const request = {
-      id: 'escalation-chat-grant',
-      title: 'Run outside sandbox?',
-      body: 'curl -s -c /tmp/rider_cookies.txt http://localhost:3000/api/me',
-      bodyAdvice: 'Uses the machine-wide temp directory (/tmp)',
-      bodyFooter: footer,
+      id: 'temp-write-chat-grant',
+      ...tempWriteApproval(command, ['/tmp/rider_cookies.txt']),
       type: 'shell',
       allowRemember: true,
-      approveLabel: 'Allow for this chat',
-      approveOnceLabel: 'Run once',
     }
     await browser.execute(async (value) => {
       const bridge = window.__copseE2e
@@ -49,18 +43,17 @@ describe('outside-sandbox prompt with a chat grant', function () {
 
     const dialog = $('#approval-dialog')
     await expect(dialog).toBeDisplayed()
+    await expect(dialog).toHaveText(expect.stringContaining('Let this command write to /tmp?'))
     const once = dialog.$('.approval-approve-once')
-    const grant = dialog.$('.approval-approve')
-    await expect(once).toBeDisplayed()
-    await expect(once).toHaveText('Run once')
+    await expect(once).toHaveText('Allow once')
     await expect(once).toHaveElementClass('ui-btn-primary')
-    await expect(grant).toHaveText('Allow for this chat')
+    await expect(dialog.$('.approval-approve')).toHaveText('Allow for this chat')
     await expect(dialog).toHaveText(
-      expect.stringContaining('only involve /tmp files and requests to this machine'),
+      expect.stringContaining('stays in the project sandbox, with no internet access'),
     )
 
     await prepareE2eScreenshot()
-    await dialog.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'approval-escalation-chat-grant.png'))
+    await dialog.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'approval-temp-write-chat-grant.png'))
     await dialog.$('.approval-reject').click()
     await expect(dialog).not.toBeDisplayed()
   })

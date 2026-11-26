@@ -1,12 +1,13 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { rmSync, symlinkSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { createServer, type AddressInfo, type Server } from 'node:net'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
-import { containedSandboxNetworkConfig, withLoopbackPorts } from './config.ts'
+import { containedSandboxNetworkConfig, withLoopbackPorts, withTempWrites } from './config.ts'
 
 const require = createRequire(import.meta.url)
 
@@ -90,4 +91,70 @@ describe('sandbox-runtime loopback-port patch', () => {
       }
     },
   )
+})
+
+describe('withTempWrites', () => {
+  it(
+    'lets a contained command write only the named /tmp path',
+    { skip: process.platform !== 'darwin' },
+    async () => {
+      await SandboxManager.initialize(
+        {
+          network: { allowedDomains: [], deniedDomains: [] },
+          filesystem: { denyRead: [], allowWrite: [], denyWrite: [] },
+        },
+        () => Promise.resolve(false),
+        false,
+      )
+      const name = `copse-temp-write-${String(process.pid)}-${String(Date.now())}`
+      const allowed = `/tmp/${name}.txt`
+      const other = `/tmp/${name}-other.txt`
+      try {
+        const attempt = async (path: string): Promise<number | null> => {
+          const config = withTempWrites(
+            { filesystem: { allowWrite: [], denyWrite: [], denyRead: [] } },
+            [allowed],
+          )
+          const { argv, env } = await SandboxManager.wrapWithSandboxArgv(
+            `echo ok > ${path}`,
+            '/bin/sh',
+            config,
+          )
+          return run(argv, env)
+        }
+        assert.equal(await attempt(allowed), 0)
+        assert.notEqual(await attempt(other), 0)
+      } finally {
+        rmSync(allowed, { force: true })
+        rmSync(other, { force: true })
+        await SandboxManager.reset()
+      }
+    },
+  )
+
+  it('refuses a named /tmp path that is a symlink', () => {
+    const link = `/tmp/copse-temp-link-${String(process.pid)}-${String(Date.now())}`
+    symlinkSync('/etc/hosts', link)
+    try {
+      assert.throws(
+        () =>
+          withTempWrites({ filesystem: { allowWrite: [], denyWrite: [], denyRead: [] } }, [link]),
+        /symlink/,
+      )
+    } finally {
+      rmSync(link, { force: true })
+    }
+  })
+
+  it('writes grants in the canonical /private/tmp spelling and ignores other paths', () => {
+    const config = withTempWrites(
+      { filesystem: { allowWrite: ['/w'], denyWrite: [], denyRead: [] } },
+      ['/tmp/copse-x.txt', '/etc/passwd'],
+    )
+    assert.deepEqual(config.filesystem?.allowWrite, [
+      '/w',
+      '/private/tmp/copse-x.txt',
+      '/private/tmp/copse-x.txt/**',
+    ])
+  })
 })

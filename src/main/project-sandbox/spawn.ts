@@ -15,6 +15,7 @@ import {
   portBindingSandboxOverlay,
   readAllowedSandboxOverlay,
   withLoopbackPorts,
+  withTempWrites,
   withoutCheckoutWrites,
   workspaceSandboxOverlay,
 } from './config.ts'
@@ -208,6 +209,12 @@ export async function spawnShellInProjectSandbox(
      * allow-list they cannot leak to any other running command.
      */
     loopbackPorts?: readonly number[]
+    /**
+     * Named `/tmp` paths the user approved writing inside the sandbox (see
+     * `tempWriteTargets` and {@link withTempWrites}). Widens writes to exactly
+     * these paths; never network or any other path.
+     */
+    tempWriteTargets?: readonly string[]
     executionTarget?: ExecutionTarget
   } & Pick<SpawnOptions, 'stdio'>,
 ): Promise<ChildProcess> {
@@ -237,7 +244,12 @@ export async function spawnShellInProjectSandbox(
         const config = opts.readonlyCheckout
           ? withoutCheckoutWrites(baseConfig, opts.cwd)
           : baseConfig
-        return { config: withLoopbackPorts(config, opts.loopbackPorts ?? []) }
+        return {
+          config: withTempWrites(
+            withLoopbackPorts(config, opts.loopbackPorts ?? []),
+            opts.tempWriteTargets ?? [],
+          ),
+        }
       },
     },
   })

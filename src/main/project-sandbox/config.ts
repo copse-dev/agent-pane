@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process'
-import { accessSync, lstatSync, readdirSync, readlinkSync, realpathSync, statSync } from 'node:fs'
+import {
+  accessSync,
+  lstatSync,
+  readdirSync,
+  readlinkSync,
+  realpathSync,
+  statSync,
+  type Stats,
+} from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -514,6 +522,47 @@ export function withLoopbackPorts(
   if (valid.length === 0) return config
   const network = config.network ?? containedSandboxNetworkConfig()
   return { ...config, network: { ...network, allowLoopbackPorts: valid } }
+}
+
+/**
+ * Let one contained spawn write the named `/tmp` paths the user approved
+ * (`tempWriteTargets`), and nothing else new. On macOS `/tmp` is a link to
+ * `/private/tmp`, and the seatbelt matches canonical paths, so each grant is
+ * written in that spelling. A target that is, or sits under, a symlink is
+ * refused: the grant names a temp path, never the file a link points at.
+ */
+export function withTempWrites(
+  config: Partial<SandboxRuntimeConfig>,
+  targets: readonly string[],
+): Partial<SandboxRuntimeConfig> {
+  const fs = config.filesystem
+  if (!fs || targets.length === 0) return config
+  const granted: string[] = []
+  for (const target of targets) {
+    const canonical = resolve(target).replace(/^\/tmp(?=\/)/, '/private/tmp')
+    if (!/^\/private\/tmp\/[^/]/.test(canonical)) continue
+    const parts = canonical.split('/').slice(3)
+    for (let depth = 1; depth <= parts.length; depth++) {
+      const path = `/private/tmp/${parts.slice(0, depth).join('/')}`
+      if (lstatOrNull(path)?.isSymbolicLink() === true) {
+        throw new Error(`Temp write target traverses a symlink: ${path}`)
+      }
+    }
+    granted.push(canonical, `${canonical}/**`)
+  }
+  if (granted.length === 0) return config
+  return {
+    ...config,
+    filesystem: { ...fs, allowWrite: [...new Set([...fs.allowWrite, ...granted])] },
+  }
+}
+
+function lstatOrNull(path: string): Stats | null {
+  try {
+    return lstatSync(path)
+  } catch {
+    return null
+  }
 }
 
 export function baseSandboxConfig(): SandboxRuntimeConfig {

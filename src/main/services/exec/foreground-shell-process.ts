@@ -104,6 +104,7 @@ export async function runShellOnce(
   onDetach?: () => () => Promise<void>,
   readonlyCheckout = false,
   yieldOptions?: ShellYieldOptions,
+  tempWriteTargets: readonly string[] = [],
 ): Promise<ShellRunResult> {
   signal.throwIfAborted()
   if (closing) throw new Error('Copse is closing; the command was not started.')
@@ -143,6 +144,7 @@ export async function runShellOnce(
           unsandboxed,
           readGrantTargets,
           ...(loopbackPorts.length > 0 ? { loopbackPorts } : {}),
+          ...(tempWriteTargets.length > 0 ? { tempWriteTargets } : {}),
           ...(readonlyCheckout ? { readonlyCheckout } : {}),
           signal: spawnController.signal,
         })
