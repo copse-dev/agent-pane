@@ -115,6 +115,8 @@ export interface AgentRunPayload {
    * applies.
    */
   reasoning?: ReasoningLevel
+  /** Named agent profile the thread uses (`agent-profiles.ts`); main resolves its instructions. */
+  profileId?: string
   /**
    * Turn-tree epoch this run belongs to (decision 16 / C3). Minted by the
    * renderer for a human submission / release and carried on every dispatch of
