@@ -379,6 +379,8 @@
       "threads:export-archive",
       "threads:fork",
       "threads:history-snapshot",
+      "threads:import-external-sessions",
+      "threads:list-external-sessions",
       "threads:list-orphans",
       "threads:pending-approvals",
       "threads:record-model-selection",

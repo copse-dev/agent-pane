@@ -1,4 +1,5 @@
 import type { CheckRun } from './stage0.ts'
+import { reportedIncompleteTestInventory } from './test-failures.ts'
 import { parseTscDiagnostics } from './tsc-diagnostics.ts'
 
 export interface InconclusiveCheckFailure {
@@ -26,9 +27,16 @@ export function inconclusiveCheckFailure(run: CheckRun): InconclusiveCheckFailur
   if (
     run.exitCode === 126 ||
     run.exitCode === 127 ||
-    /\bERR_PNPM_(?:NO_SCRIPT|NO_IMPORTER_MANIFEST_FOUND)\b|\bCommand "[^"]+" not found\b|\bspawn \S+ ENOENT\b/.test(
-      run.output,
-    )
+    // A test run that printed its own failure report, complete or not, did
+    // start: a tool missing for one of its tests (`spawn ps ENOENT`) is that
+    // test's failure. It is compared against base like any failed check (test
+    // by test when both reports are complete), never waved off as a checker
+    // that could not run, which would leave a real regression unchecked.
+    (run.testFailures === undefined &&
+      !reportedIncompleteTestInventory(run) &&
+      /\bERR_PNPM_(?:NO_SCRIPT|NO_IMPORTER_MANIFEST_FOUND)\b|\bCommand "[^"]+" not found\b|\bspawn \S+ ENOENT\b/.test(
+        run.output,
+      ))
   ) {
     return {
       kind: 'setup',
@@ -42,6 +50,17 @@ export function inconclusiveCheckFailure(run: CheckRun): InconclusiveCheckFailur
     }
   }
   return null
+}
+
+/**
+ * Whether another run of the same commits in the same image might settle this
+ * failure: the checker ran out of time or memory, or was killed. A checker
+ * that could not start, or a typecheck with no diagnostic, fails the same way
+ * every time.
+ */
+export function transientCheckFailure(run: CheckRun): boolean {
+  const kind = inconclusiveCheckFailure(run)?.kind
+  return kind === 'timeout' || kind === 'termination' || kind === 'resource'
 }
 
 export function inconclusiveCheckReason(run: CheckRun): string | null {
