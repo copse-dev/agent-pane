@@ -2628,8 +2628,14 @@ const REOPENABLE_REASONING = '.msg-assistant:not(.msg-concise) .message-reasonin
 const BACKFILL_CHUNK_SIZE = 30
 /** Stands in for a row built without a signature, which matches no wanted row. */
 const UNSIGNED_ROW: TranscriptRowSignature = { patched: '', settled: '' }
-/** Gives each prompt's actions menu a unique id for its trigger's `aria-controls`. */
-let nextUserActionsMenuId = 0
+/**
+ * The id of a prompt's actions menu, for its trigger's `aria-controls`. It is
+ * derived from the thread and message so a reconciled row and a fresh rebuild
+ * of the same prompt produce identical markup; a counter made them differ.
+ */
+function userActionsMenuId(threadId: string, msgId: string): string {
+  return `msg-actions-menu-${threadId}-${msgId}`.replace(/[^A-Za-z0-9_-]/g, '_')
+}
 
 export function mountConversation(
   root: HTMLElement,
@@ -3822,7 +3828,7 @@ export function mountConversation(
       runResend(threadId)
     })
     const sideChat = buildSideChatAction(threadId, msgId)
-    const menuId = `msg-actions-menu-${String(++nextUserActionsMenuId)}`
+    const menuId = userActionsMenuId(threadId, msgId)
     // A disclosure, not an ARIA menu: the revealed actions are ordinary buttons
     // in the Tab order, so `aria-haspopup` would promise menu keys they lack.
     const trigger = el(
