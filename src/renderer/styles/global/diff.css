@@ -48,6 +48,31 @@
 .diff-approval-bar[hidden] {
   display: none;
 }
+.git-stage-bar {
+  /* Same bar as approvals: below the editor so it never covers diff lines.
+     The status takes its own line, so a narrow pane never clips it. */
+  flex-wrap: wrap;
+  gap: var(--spacing-xs) var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.git-stage-bar[hidden] {
+  display: none;
+}
+.git-stage-status {
+  flex: 1 1 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+.git-stage-status:empty {
+  display: none;
+}
+.git-stage-status[data-ok='false'] {
+  color: var(--error);
+}
 
 /* Line comments on a diff (monaco/diff-line-comments.ts). The "+" sits in the
    glyph margin of the hovered line; a card under a line is a Monaco view zone. */
