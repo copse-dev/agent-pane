@@ -50,6 +50,7 @@ import {
   addUsageDelta,
   afterPendingThreadPersistence,
   agentActivityLabel,
+  agentProfilesSchema,
   announcementCatalog,
   appendAcpContentBlock,
   appendReasoning,
@@ -135,6 +136,7 @@ import {
   fetchModelOptions,
   fileExtension,
   findAcpCatalogEntry,
+  findAgentProfile,
   findThreadProposalDecision,
   findToolCall,
   findToolCallOwner,
@@ -180,6 +182,7 @@ import {
   init_active_thread_owner,
   init_active_workspace,
   init_agent_activity,
+  init_agent_profiles,
   init_annotation_layer,
   init_announcement_catalog,
   init_appearance,
@@ -490,7 +493,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-FFB5IGUS.js";
+} from "./chunk-RFMZEQJ7.js";
 import "./chunk-X6JZSFJR.js";
 import {
   createSshWorkspaceConsent,
@@ -54482,6 +54485,43 @@ var init_footer_reasoning_group = __esm({
   }
 });
 
+// src/renderer/views/footer-profile-group.ts
+function profileValueGroup(profiles, currentId, modelLabel2) {
+  if (profiles.length === 0) return null;
+  const current = profiles.find((profile) => profile.id === currentId);
+  return {
+    id: PROFILE_GROUP_ID,
+    label: "Profile",
+    currentValue: current?.id ?? NONE_VALUE,
+    choices: [
+      { value: NONE_VALUE, label: "None", description: "No profile instructions" },
+      // Say which model a pick moves the chat to, before its instructions.
+      ...profiles.map((profile) => ({
+        value: profile.id,
+        label: profile.name,
+        description: [
+          profile.model ? modelLabel2(profile.model) : "Keeps the chat\u2019s model",
+          ...profile.instructions?.trim() ? [oneLine(profile.instructions, 80)] : []
+        ].join(" \xB7 ")
+      }))
+    ]
+  };
+}
+function profileIdFromGroupValue(value) {
+  return value === NONE_VALUE ? void 0 : value;
+}
+function oneLine(text, max) {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}\u2026`;
+}
+var PROFILE_GROUP_ID, NONE_VALUE;
+var init_footer_profile_group = __esm({
+  "src/renderer/views/footer-profile-group.ts"() {
+    PROFILE_GROUP_ID = "__agent_profile__";
+    NONE_VALUE = "";
+  }
+});
+
 // src/renderer/views/footer-model-picker.ts
 function mountFooterModelPicker(root, api2, getCurrent, onSelect, pickerOpts = {}) {
   let optionAgentId = null;
@@ -54531,17 +54571,21 @@ function mountFooterModelPicker(root, api2, getCurrent, onSelect, pickerOpts = {
       // effort). Both hang off whichever value is selected, so they reload with
       // the model list.
       loadValueGroups: async (current) => {
-        const loaded = await loadAcpOptionGroups(
-          api2,
-          current,
-          pickerOpts.isAgentManaged?.() === true
-        );
+        const [loaded, profiles] = await Promise.all([
+          loadAcpOptionGroups(api2, current, pickerOpts.isAgentManaged?.() === true),
+          pickerOpts.loadProfiles?.() ?? Promise.resolve([])
+        ]);
         optionAgentId = loaded?.agentId ?? null;
         optionGroups = loaded?.groups ?? [];
+        const profile = profileValueGroup(profiles, pickerOpts.getProfileId?.(), modelDisplayLabel);
         const reasoning = pickerOpts.getReasoning ? reasoningValueGroup(current, pickerOpts.getReasoning()) : null;
-        return reasoning ? [reasoning, ...optionGroups] : optionGroups;
+        return [...profile ? [profile] : [], ...reasoning ? [reasoning] : [], ...optionGroups];
       },
       onSelectGroupValue: (groupId, value) => {
+        if (groupId === PROFILE_GROUP_ID) {
+          pickerOpts.onSelectProfile?.(profileIdFromGroupValue(value));
+          return;
+        }
         if (groupId === REASONING_GROUP_ID) {
           pickerOpts.onSelectReasoning?.(reasoningLevelFromGroupValue(value));
           return;
@@ -54585,6 +54629,7 @@ var init_footer_model_picker = __esm({
     init_model_picker();
     init_acp_config_options();
     init_footer_reasoning_group();
+    init_footer_profile_group();
   }
 });
 
@@ -58426,7 +58471,22 @@ ${context}` : text;
     if (!thread) return void 0;
     return thread.resolvedModel ?? [...thread.messages].reverse().find((m2) => m2.role === "assistant" && m2.model)?.model;
   }
+  let agentProfiles = [];
+  async function loadAgentProfiles() {
+    const raw = await api2.settings.get("agentProfiles").catch(() => void 0);
+    const parsed = agentProfilesSchema.safeParse(raw ?? []);
+    agentProfiles = parsed.success ? parsed.data : [];
+    return agentProfiles;
+  }
+  function activeProfile() {
+    return findAgentProfile(agentProfiles, getActiveThread(store2)?.profileId);
+  }
   function footerModelDisplayLabel(current) {
+    const profile = activeProfile();
+    const label = footerModelBaseLabel(current);
+    return profile ? `${profile.name} \xB7 ${label ?? modelDisplayLabel(current)}` : label;
+  }
+  function footerModelBaseLabel(current) {
     const resolved = footerResolvedModel(current);
     if (current === MATCH_PROMPT_MODEL_SELECTOR) {
       return resolved ? `Auto \u2014 ${modelDisplayLabel(resolved)}` : "Match task";
@@ -58469,6 +58529,35 @@ ${context}` : text;
     store2.setState({ threads });
     modelPicker.refresh();
   }
+  function selectProfile(profileId) {
+    const thread = getActiveThread(store2);
+    if (!thread) return;
+    const profile = findAgentProfile(agentProfiles, profileId);
+    if (profileId !== void 0 && !profile) return;
+    if (profile?.model && !isBestValueChatModel(profile.model)) {
+      commitThreadModelSelection(
+        store2,
+        api2,
+        thread.id,
+        "user",
+        thread.model ?? store2.getState().settings?.model,
+        profile.model
+      );
+    }
+    const threads = store2.getState().threads.map((t) => {
+      if (t.id !== thread.id) return t;
+      const { profileId: _previous, ...rest } = t;
+      const next = { ...rest, ...profile ? { profileId: profile.id } : {}, updatedAt: Date.now() };
+      if (!profile) return next;
+      const { reasoning: _reasoning, ...withoutReasoning } = next;
+      return profile.reasoning ? { ...withoutReasoning, reasoning: profile.reasoning } : withoutReasoning;
+    });
+    store2.setState({ threads });
+    store2.emit("threads_changed");
+    updateFooter();
+    void refreshImageCompatibilityWarning();
+    void runContextEstimate();
+  }
   const modelPicker = mountFooterModelPicker(modelHost, api2, footerChatModel, selectChatModel, {
     formatCurrentLabel: footerModelDisplayLabel,
     getCurrentRoute: footerResolvedModel,
@@ -58483,8 +58572,17 @@ ${context}` : text;
     },
     getRecentModels: footerRecentModels,
     getReasoning: () => getActiveThread(store2)?.reasoning,
-    onSelectReasoning: selectReasoning
+    onSelectReasoning: selectReasoning,
+    loadProfiles: loadAgentProfiles,
+    getProfileId: () => getActiveThread(store2)?.profileId,
+    onSelectProfile: selectProfile
   });
+  const syncProfileLabel = () => {
+    void loadAgentProfiles().then(() => {
+      modelPicker.sync();
+    });
+  };
+  syncProfileLabel();
   store2.on("threads_changed", () => {
     modelPicker.refresh();
     void refreshAutomaticCheckoutPreview();
@@ -60371,6 +60469,7 @@ ${reply}`);
       void refreshContainerRunsSetting();
       void refreshPlanModeSetting();
       modelPicker.refresh();
+      syncProfileLabel();
       void refreshImageCompatibilityWarning();
       refreshModelPricing();
       updateFooter();
@@ -60536,6 +60635,7 @@ var init_input_bar = __esm({
     init_model_display();
     init_context_window_advice();
     init_estimate_cost();
+    init_agent_profiles();
     init_model_selection();
     init_perf();
     init_active_recordings();
@@ -73330,8 +73430,8 @@ ${output}` : "Terminal output: (none)"
   async function runCodeBlockInBackground(request) {
     const command2 = request.command.trim();
     if (!command2) return;
-    const oneLine = command2.split(/\s+/).join(" ");
-    const summary = ellipsize(oneLine, 48);
+    const oneLine2 = command2.split(/\s+/).join(" ");
+    const summary = ellipsize(oneLine2, 48);
     const initialInput = `${command2.replace(/\r\n?|\n/g, "\r")}\rexit\r`;
     const label = `Run \xB7 ${summary}`;
     let tabId;
