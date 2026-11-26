@@ -936,6 +936,30 @@ the background-only interaction policy adds no network or shell approval grant.
 
 ## Read access outside the project
 
+The dedicated `read_file`, `list_dir`, `search_code`, and regex `search_codebase`
+tools also accept absolute external paths after scoped read approval. They reuse
+the current thread's path grants and respect Always ask and Blocked. Workspace
+and chat-store resolution retain their existing guards; a chat-store read still
+requires the separate conversation permission and cannot fall through to an
+external-path prompt after denial. Relative paths that escape the workspace
+remain rejected.
+
+Dedicated external reads run in a one-shot, read-only filesystem worker with
+network denied. If the local project sandbox is unavailable, they fail closed;
+there is no host-filesystem fallback. Approval checks both the supplied path and
+its canonical destination, and rechecks the target identity after approval.
+Directory scans omit credential paths, the chat store, and nested symlinks.
+External search is a bounded filesystem scan, not a workspace index query: it
+skips `.git`, `node_modules`, `dist`, and `vendor`, and reports scan limits or
+unreadable files. Explicit semantic search remains workspace-only.
+
+ACP `fs/read_text_file` uses the native `read_file` gate (including Blocked,
+Always ask and hooks) and this same scoped worker for absolute outside paths.
+It returns raw text with ACP's line/limit semantics. Its grants, audit and path
+rebasing belong to the live owning turn; callbacks cannot borrow another selected
+workspace or an ended turn. RPC cancellation and turn teardown cancel pending
+file approvals. Other-conversation reads keep their separate permission.
+
 A command that only reads fully-accounted-for paths outside the project receives the narrower
 “Allow read access outside of the project?” question. The prompt lists every requested path and
 warns that a directory can contain sensitive files. Its primary action grants reads of those
