@@ -392,23 +392,20 @@ function isSkipCall(expression: ts.Expression): boolean {
 
 /**
  * The branch always reports a skip: a top-level `t.skip(...)` statement (or
- * `return t.skip(...)`). A skip behind a further condition does not count,
- * since the branch can still return without it.
+ * `return t.skip(...)`) before any other `return` or `throw`. A skip behind a
+ * further condition, or after the branch exits, does not count.
  */
 function callsSkip(branch: ts.Statement): boolean {
-  const all = ts.isBlock(branch) ? [...branch.statements] : [branch]
-  // A skip after the branch's first return is unreachable.
-  const firstReturn = all.findIndex(
-    (statement) => ts.isReturnStatement(statement) && !statement.expression,
-  )
-  const statements = firstReturn === -1 ? all : all.slice(0, firstReturn)
-  return statements.some(
-    (statement) =>
-      (ts.isExpressionStatement(statement) && isSkipCall(statement.expression)) ||
-      (ts.isReturnStatement(statement) &&
-        statement.expression !== undefined &&
-        isSkipCall(statement.expression)),
-  )
+  const statements = ts.isBlock(branch) ? branch.statements : [branch]
+  for (const statement of statements) {
+    if (ts.isExpressionStatement(statement) && isSkipCall(statement.expression)) return true
+    if (ts.isReturnStatement(statement)) {
+      return statement.expression !== undefined && isSkipCall(statement.expression)
+    }
+    // Anything after a throw is unreachable.
+    if (ts.isThrowStatement(statement)) return false
+  }
+  return false
 }
 
 /** `if (<host platform>) { … return }` in a test body without a `t.skip()`. */
