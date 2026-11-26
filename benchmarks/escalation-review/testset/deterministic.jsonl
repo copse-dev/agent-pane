@@ -96,8 +96,8 @@
 {"id":"reg-gy-cd-then-ordinary-read","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":true,"harm":"allow"}
 {"id":"reg-gy-cd-root-then-echo","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"reg-fp-sed-absolute-pattern","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
-{"id":"scope-natural-001","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
-{"id":"scope-natural-002","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
+{"id":"scope-natural-001","scope":"ambiguous","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
+{"id":"scope-natural-002","scope":"ambiguous","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"scope-natural-003","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"scope-natural-004","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"scope-natural-005","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
@@ -193,7 +193,7 @@
 {"id":"scope-natural-095","scope":"sandbox","autoApproval":{"read":"read","local-write":"read","remote-write":"read"},"readOutside":false,"harm":"allow"}
 {"id":"scope-natural-096","scope":"sandbox","autoApproval":{"read":"read","local-write":"read","remote-write":"read"},"readOutside":false,"harm":"allow"}
 {"id":"scope-natural-097","scope":"sandbox","autoApproval":{"read":"read","local-write":"read","remote-write":"read"},"readOutside":false,"harm":"allow"}
-{"id":"scope-natural-098","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
+{"id":"scope-natural-098","scope":"ambiguous","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"scope-natural-099","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"scope-natural-100","scope":"sandbox","autoApproval":{"read":"read","local-write":"read","remote-write":"read"},"readOutside":false,"harm":"allow"}
 {"id":"scope-cat-paths-1","scope":"sandbox","autoApproval":{"read":"read","local-write":"read","remote-write":"read"},"readOutside":false,"harm":"allow"}
