@@ -141,6 +141,29 @@ describe('projects pane in-place updates (component)', () => {
     assert.equal(list.scrollTop, 120)
   })
 
+  it('returns to the top when the reader searches or changes the project filter', () => {
+    const store = mount()
+    const list = document.querySelector<HTMLElement>('.projects-list')
+    const search = document.querySelector<HTMLInputElement>('.projects-search-input')
+    assert.ok(list && search)
+    let scrollPosition = 120
+    Object.defineProperty(list, 'scrollTop', {
+      configurable: true,
+      get: () => scrollPosition,
+      set: (value: number): void => {
+        scrollPosition = value
+      },
+    })
+
+    search.value = 'gam'
+    search.dispatchEvent(new Event('input'))
+    assert.equal(list.scrollTop, 0)
+
+    list.scrollTop = 120
+    store.setState({ sidebarProjectFilterId: 'p1' })
+    assert.equal(list.scrollTop, 0)
+  })
+
   it('a kept row still acts on the current state when clicked', () => {
     const store = mount()
     const gamma = row('Gamma')

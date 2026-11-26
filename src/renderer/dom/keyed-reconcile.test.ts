@@ -75,6 +75,20 @@ describe('reconcileChildren', () => {
     assert.equal(liveNode(fresh), live)
   })
 
+  it('keeps runtime classes on a container whose fresh copy has no class', () => {
+    const parent = document.createElement('div')
+    const block = (): HTMLElement => keyedContainer(el('section', {}, rowFor('a', 'A')), 'block')
+    reconcileChildren(parent, [block()])
+    const live = parent.firstElementChild
+    assert.ok(live)
+    live.classList.add('is-dragging', 'hovered-by-runtime')
+
+    reconcileChildren(parent, [block()], { transientClasses: ['is-dragging'] })
+
+    assert.equal(parent.firstElementChild, live)
+    assert.equal(live.getAttribute('class'), 'is-dragging')
+  })
+
   it('always replaces unkeyed elements and drops rows that are gone', () => {
     const parent = document.createElement('div')
     reconcileChildren(parent, [el('p', {}, 'note'), rowFor('a', 'A'), rowFor('b', 'B')])

@@ -582,13 +582,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     threadFilter = filterText(searchInput.value.trim())
     filteredProjectId = store.getState().activeProjectId
     if (!archivedOnly) contentFilter.search(threadFilter)
-    render()
+    renderFromTop()
   })
   searchInput.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       e.stopPropagation()
       closeThreadFilter()
-      render()
+      renderFromTop()
     }
   })
 
@@ -688,7 +688,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         onSelect: (): void => {
           needsCleanupOnly = !needsCleanupOnly
           archivedOnly = false
-          render()
+          renderFromTop()
         },
       },
       {
@@ -700,7 +700,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           needsCleanupOnly = false
           closeThreadFilter()
           archivedThreads.invalidate()
-          render()
+          renderFromTop()
         },
       },
     ])
@@ -717,7 +717,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         onSelect: (): void => {
           store.setState({ sidebarThreadGroup: mode })
           saveSort('sidebarThreadGroup', mode)
-          render()
+          renderFromTop()
         },
       })),
       { heading: 'Sort by' },
@@ -727,7 +727,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         onSelect: (): void => {
           store.setState({ sidebarThreadSort: mode })
           saveSort('sidebarThreadSort', mode)
-          render()
+          renderFromTop()
         },
       })),
       { separator: true },
@@ -738,7 +738,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         onSelect: (): void => {
           store.setState({ sidebarThreadSortReverse: !sidebarThreadSortReverse })
           saveSort('sidebarThreadSortReverse', !sidebarThreadSortReverse)
-          render()
+          renderFromTop()
         },
       },
       {
@@ -1674,6 +1674,16 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
    * nodes, so a background update leaves hover, focus, scroll position and a
    * drag in progress alone, and a reference to an unchanged row stays valid.
    */
+  /**
+   * Render after the reader changed what the list shows (a search, filter,
+   * grouping or sort), and start them at the top of the new list. Background
+   * updates call `render()` and keep the reader's position.
+   */
+  function renderFromTop(): void {
+    render()
+    list.scrollTop = 0
+  }
+
   function render(): void {
     // A filter naming a removed project lists everything. Clear it before any
     // DOM work: the write re-renders through the filter selection.
@@ -3084,7 +3094,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     store.select(
       (s) => s.sidebarProjectFilterId,
       () => {
-        render()
+        renderFromTop()
       },
     ),
     store.select(

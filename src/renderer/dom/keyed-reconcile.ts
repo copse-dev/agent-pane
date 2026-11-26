@@ -142,14 +142,16 @@ function recordBuiltMarkup(node: Element): void {
 }
 
 function syncAttributes(live: Element, fresh: Element, transientClasses: readonly string[]): void {
+  // Read the runtime classes first: the loop below drops `class` when the
+  // fresh node has none.
+  const kept = transientClasses.filter((name) => live.classList.contains(name))
   for (const { name } of Array.from(live.attributes)) {
-    if (!fresh.hasAttribute(name)) live.removeAttribute(name)
+    if (name !== 'class' && !fresh.hasAttribute(name)) live.removeAttribute(name)
   }
   for (const { name, value } of Array.from(fresh.attributes)) {
     if (name === 'class') continue
     if (live.getAttribute(name) !== value) live.setAttribute(name, value)
   }
-  const kept = transientClasses.filter((name) => live.classList.contains(name))
   const next = [
     ...Array.from(fresh.classList),
     ...kept.filter((name) => !fresh.classList.contains(name)),
