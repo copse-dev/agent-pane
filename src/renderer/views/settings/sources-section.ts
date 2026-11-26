@@ -7,6 +7,7 @@ import { isNonEmptyString } from '@shared/nullish.ts'
 import { qsRequired } from '../../dom/helpers.ts'
 import { openAttachmentPreview } from '../../attachments/attachment-preview.ts'
 import { showConfirmDialog } from '../confirm-dialog.ts'
+import { workspaceTrustDetail } from '../workspace-trust-consent.ts'
 import { makeSourceRow } from './source-row.ts'
 import { mountSkillsSources } from '../settings-sources-skills.ts'
 
@@ -328,16 +329,7 @@ export function createSourcesSection({
     const epoch = lifecycleEpoch
     const unsandboxed = await api.workspace.unsandboxedProjectHooks().catch(() => [])
     if (epoch !== lifecycleEpoch) return
-    const detail = [
-      'Its instruction files join the system prompt, and the MCP servers and hooks it defines are allowed to run.',
-      unsandboxed.length > 0
-        ? `${String(unsandboxed.length)} of those hooks declare "sandbox": false and run OUTSIDE the project sandbox: ${unsandboxed
-            .map((h) => `${h.event}: ${h.command}`)
-            .join('; ')}`
-        : '',
-    ]
-      .filter(Boolean)
-      .join(' ')
+    const detail = workspaceTrustDetail(unsandboxed)
     const confirmed = await showConfirmDialog({
       message: 'Trust this workspace?',
       detail,

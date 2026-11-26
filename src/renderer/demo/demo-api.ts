@@ -682,6 +682,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       },
       isTrusted: () => resolved(true),
       setTrusted: emptyArray,
+      trustFromApproval: () => resolved<true>(true),
       unsandboxedProjectHooks: emptyArray,
       // The demo bundle is browser-targeted (no `node:path`), and demo paths are
       // display-only POSIX strings, so join by hand rather than importing path.

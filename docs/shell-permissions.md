@@ -1131,6 +1131,31 @@ active, which is seatbelt on macOS and bubblewrap on Linux. `permission-policy.t
 up-front prompts and `sandbox-failure.ts` the after-a-block retry; the `expects_sandbox_block`
 wording stays an expectation, per the section above.
 
+### When missing workspace trust is the reason
+
+Workspace trust is off for every project until the user turns it on, and while it is off the
+auto-approval tiers and trusted-command routing never apply. A shell prompt says so when trust is
+the only closed gate: `workspaceTrustWouldAutoApprove` (`auto-approval-config.ts`) runs the same
+classifier with the trust gate removed and offers the run's project root only when auto-run is on,
+the project sandbox is active, the configured level covers the command, the run is not under an
+explicit host trust profile, and the policy is not Always ask. The in-sandbox prompt, the up-front
+escalation and the after-a-block retry carry that root as `workspaceTrustOffer`; the package-install,
+dangerous-command, Guarded YOLO and expected-block prompts never do. Trusted-command routing is not
+counted, so a prompt that only a trusted-command grant would remove does not make the claim.
+
+The desktop prompt states that Copse is asking because the project isn't trusted and shows
+**Trust project…**, only when every batched request carries the same root. The button opens the same
+consent as Sources (instructions, MCP servers, hooks including `sandbox: false` ones, and the shell
+tiers). On yes the renderer sends only the prompt's id; `workspace:trust-from-approval` trusts the root
+main attached to that still-open request, so no renderer-chosen path can be trusted, and an answered
+or withdrawn prompt trusts nothing. Trusting does not answer the prompt: the user still runs or
+rejects that command. Interactive remote clients see the prompt without the offer.
+
+Adding a local project with Open folder or New project offers trust once, with **Not now** as the
+other answer. Declining leaves the project untrusted and is not asked again when the same folder is
+reopened; SSH projects and recovered or relocated projects are not offered. Copse has no clone flow,
+so it never trusts a cloned repository on its own.
+
 ## Worktree preparation capability
 
 Every project can use `preflight_worktree` and `prepare_worktree`. Preflight detects npm, pnpm,

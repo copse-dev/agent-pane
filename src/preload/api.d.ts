@@ -279,6 +279,8 @@ export interface ApiClient {
     set: (root: string, sshHost?: string) => Promise<string>
     isTrusted: () => Promise<boolean>
     setTrusted: (trusted: boolean) => Promise<McpServerStatus[]>
+    /** Trust the project an open shell prompt offered; leaves the prompt unanswered. */
+    trustFromApproval: (approvalId: string) => Promise<true>
     unsandboxedProjectHooks: () => Promise<{ event: string; command: string }[]>
     createNewProject: (name: string, parentDir: string) => Promise<string>
     pickParentDirectory: () => Promise<string | null>
@@ -491,6 +493,8 @@ export interface ApiClient {
         turnTreeLeaseLabel?: string
         turnTreeLeaseDefault?: boolean
         turnTreeLeaseSubject?: string
+        /** Workspace trust is the only reason this shell prompt is asking. */
+        workspaceTrustOffer?: { root: string }
       }) => void,
     ) => () => void
     onApprovalCancelled: (handler: (req: { id: string }) => void) => () => void

@@ -99,7 +99,7 @@ import {
   routeShellCommand,
   type ShellRoutingTool,
 } from './command-routing-config.ts'
-import { resolveAutoApproval } from './auto-approval-config.ts'
+import { resolveAutoApproval, workspaceTrustWouldAutoApprove } from './auto-approval-config.ts'
 import {
   BROWSER_TOOLS,
   READ_ONLY_BROWSER_TOOLS,
@@ -324,6 +324,25 @@ function autoApproveShell(
   return true
 }
 
+/**
+ * The trust offer a shell prompt carries when trusting the run's project is the
+ * only thing between `command` and the deterministic tiers. Same roots and
+ * sandbox state as {@link autoApproveShell}, so the prompt never claims trust
+ * would help where another gate would still ask.
+ */
+function shellWorkspaceTrustOffer(
+  command: string,
+  executionRoot?: string | null,
+  sandboxEnabled = commandRunsSandboxed(executionRoot ?? getAgentExecutionRoot()),
+): Pick<ApprovalRequest, 'workspaceTrustOffer'> {
+  const root = workspaceTrustWouldAutoApprove(
+    command,
+    { projectRoot: getAgentProjectRoot(), executionRoot: executionRoot ?? getAgentExecutionRoot() },
+    sandboxEnabled,
+  )
+  return root === null ? {} : { workspaceTrustOffer: { root } }
+}
+
 /** Observation only: no commands, credential values or grant contents are copied. */
 function shellApprovalAuditContext(): NonNullable<ApprovalRequest['shellContext']> {
   const threadId = getActiveRunThread()
@@ -349,7 +368,7 @@ async function requestEscalationApproval(
   cause: PromptCause,
   signal?: AbortSignal,
   leaseIdentity?: ShellReplayLeaseIdentity,
-  opts: { offerTrustedCommand?: boolean } = {},
+  opts: { offerTrustedCommand?: boolean } & Pick<ApprovalRequest, 'workspaceTrustOffer'> = {},
 ): Promise<boolean> {
   if (signal?.aborted) return false
   const trustable =
@@ -367,6 +386,7 @@ async function requestEscalationApproval(
       cause,
       reasons,
       shellContext: shellApprovalAuditContext(),
+      ...(opts.workspaceTrustOffer ? { workspaceTrustOffer: opts.workspaceTrustOffer } : {}),
       allowRemember: trustable !== null,
       ...(trustable ? { rememberLabel: `Always allow \`${trustable}\` in trusted projects` } : {}),
       ...(leaseIdentity
@@ -513,6 +533,7 @@ async function promptShell(
   containedCause: PromptCause,
   signal?: AbortSignal,
   leaseIdentity?: ShellReplayLeaseIdentity,
+  trustOffer: Pick<ApprovalRequest, 'workspaceTrustOffer'> = {},
 ): Promise<boolean> {
   if (signal?.aborted) return false
   // The trusted-command tick box only makes sense on an escalation to OUTSIDE the
@@ -526,6 +547,8 @@ async function promptShell(
       reasons,
       'shell-sandbox-escalation',
       signal,
+      undefined,
+      trustOffer,
     )
   }
   const sandboxed =
@@ -543,6 +566,7 @@ async function promptShell(
       cause: containedCause,
       reasons,
       shellContext: shellApprovalAuditContext(),
+      ...trustOffer,
       // A sandboxed approval includes a bounded replay lease by default. The
       // prompt names the 10-retry/15-minute bound; outside-sandbox grants remain
       // explicit because they weaken containment.
@@ -657,7 +681,7 @@ export async function promptUnsandboxedShell(
     'shell-sandbox-retry',
     signal,
     leaseIdentity ?? undefined,
-    { offerTrustedCommand: !oneShot },
+    { offerTrustedCommand: !oneShot, ...(forceAsk ? {} : shellWorkspaceTrustOffer(command)) },
   )
 }
 
@@ -1870,6 +1894,7 @@ export async function ensureShellCommandPermitted(
     sandboxEnabled ? 'shell-in-sandbox' : 'shell-no-containment',
     opts.signal,
     (forceAsk ? undefined : leaseOfferIdentity) ?? undefined,
+    forceAsk ? {} : shellWorkspaceTrustOffer(command, workspaceRoot, sandboxEnabled),
   )
 }
 

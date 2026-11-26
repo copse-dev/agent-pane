@@ -7,7 +7,7 @@ import {
 } from '@shared/auto-approval.ts'
 import { getSetting } from '../storage/settings.ts'
 import type { AgentRoots } from '../execution-root.ts'
-import { isWorkspaceTrusted } from './workspace-trust.ts'
+import { canChangeWorkspaceTrust, isWorkspaceTrusted } from './workspace-trust.ts'
 import { configuredGitRemotes } from './git-remotes.ts'
 import { assessAutoApproval, type AutoApprovalDecision } from './auto-approval.ts'
 
@@ -56,10 +56,41 @@ export function resolveAutoApproval(
   }
   // Trust belongs to the run's project, not whichever checkout the window shows:
   // a background or automation thread acts on its own project.
-  const { projectRoot } = roots
-  if (!isWorkspaceTrusted(projectRoot)) {
+  if (!isWorkspaceTrusted(roots.projectRoot)) {
     return { action: 'prompt', reasons: ['workspace not trusted'] }
   }
+  return assessTrustedAutoApproval(command, roots, sandboxEnabled)
+}
+
+/**
+ * The project root to offer trust for when workspace trust is the only closed
+ * gate: `command` would auto-approve if, and only if, the user trusted the run's
+ * project. Null when the project is already trusted, when any other gate (auto-run,
+ * sandbox, level, the classifier itself) would still prompt, or when trust is
+ * scoped to an explicit host run and cannot be changed from a prompt.
+ *
+ * This only decides whether a prompt may *say* trust is why it is asking. It grants
+ * nothing: trusting stays a separate, explicit user action.
+ */
+export function workspaceTrustWouldAutoApprove(
+  command: string,
+  roots: AgentRoots,
+  sandboxEnabled = false,
+): string | null {
+  const { projectRoot } = roots
+  if (!projectRoot || isWorkspaceTrusted(projectRoot) || !canChangeWorkspaceTrust()) return null
+  if (!getSetting<boolean>('autoRunSandboxCommands', true) || !sandboxEnabled) return null
+  return assessTrustedAutoApproval(command, roots, sandboxEnabled).action === 'auto-approve'
+    ? projectRoot
+    : null
+}
+
+function assessTrustedAutoApproval(
+  command: string,
+  roots: AgentRoots,
+  sandboxEnabled: boolean,
+): AutoApprovalDecision {
+  const { projectRoot } = roots
   return assessAutoApproval(command, {
     workspaceRoot: roots.executionRoot,
     level: effectiveAutoApprovalLevel(autoApprovalLevel(), sandboxEnabled),

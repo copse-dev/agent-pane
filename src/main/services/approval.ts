@@ -196,6 +196,14 @@ export interface ApprovalRequest {
    * it secret-free at the call site anyway.
    */
   reasons?: string[]
+  /**
+   * Set only when workspace trust is the one closed gate: the command would have
+   * run without this prompt in a trusted project. The renderer says so on the
+   * prompt and offers to trust; trusting goes through
+   * {@link pendingWorkspaceTrustOffer}, which reads this root from the main-held
+   * request, never from the renderer. Trusting does not answer the prompt.
+   */
+  workspaceTrustOffer?: { root: string }
   /** Audit-only permission facts captured when the shell prompt opens. */
   shellContext?: {
     sandboxAvailable: boolean
@@ -268,6 +276,7 @@ export function approvalDedupeKey(req: ApprovalRequest): string {
     turnTreeLeaseLabel: req.turnTreeLeaseLabel ?? '',
     turnTreeLeaseDefault: req.turnTreeLeaseDefault ?? false,
     turnTreeLeaseSubject: req.turnTreeLeaseSubject ?? '',
+    workspaceTrustOffer: req.workspaceTrustOffer?.root ?? '',
   })
 }
 
@@ -1117,6 +1126,18 @@ export function releaseParkedApprovalsForThread(threadId: string): void {
   }
 }
 
+/** Open desktop prompts that offer to trust their run's project, by prompt id. */
+const workspaceTrustOffers = new Map<string, string>()
+
+/**
+ * The project root a still-open prompt offered to trust, or null. The renderer
+ * names only the prompt; the root comes from the request main built, so a
+ * renderer cannot trust a folder no prompt offered.
+ */
+export function pendingWorkspaceTrustOffer(id: string): string | null {
+  return workspaceTrustOffers.get(id) ?? null
+}
+
 export function initApproval(
   win: BrowserWindow,
   ipcMain: IpcMain,
@@ -1180,6 +1201,7 @@ export function initApproval(
           if (!dest.isDestroyed()) dest.send('agent:approval-request', { id, threadId, ...req })
         }
         replay.set(id, { target: dest, send })
+        if (req.workspaceTrustOffer) workspaceTrustOffers.set(id, req.workspaceTrustOffer.root)
         send()
         // Deliver the user's configured native alert channels. A repeating
         // Dock/taskbar animation stops on focus and also when this approval
@@ -1230,6 +1252,7 @@ export function initApproval(
               )
             : (): void => {}
         pending.set(id, (response) => {
+          workspaceTrustOffers.delete(id)
           removeDecision()
           if (!dest.isDestroyed()) dest.send('agent:approval-cancelled', { id })
           signal?.removeEventListener('abort', onAbort)

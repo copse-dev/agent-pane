@@ -159,6 +159,8 @@ const api: ApiClient = {
     set: (root: string, sshHost?: string) => ipcRenderer.invoke('workspace:set', root, sshHost),
     isTrusted: () => ipcRenderer.invoke('workspace:is-trusted'),
     setTrusted: (trusted: boolean) => ipcRenderer.invoke('workspace:set-trusted', trusted),
+    trustFromApproval: (approvalId: string) =>
+      ipcRenderer.invoke('workspace:trust-from-approval', approvalId),
     createNewProject: (name: string, parentDir: string) =>
       ipcRenderer.invoke('workspace:create-project', name, parentDir),
     pickParentDirectory: () => ipcRenderer.invoke('workspace:pick-parent-directory'),

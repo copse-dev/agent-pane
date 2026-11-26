@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { revalidateStaleAcpModels, runAcpAutoSetup } from '../services/acp/acp-auto-setup.ts'
 import { initAgentsRegistry } from '../services/agents/agents-registry.ts'
 import { perfSpan, perfSyncSpan } from '../services/diagnostics/perf-trace.ts'
+import { pendingWorkspaceTrustOffer } from '../services/approval.ts'
 import { setWorkspaceTrustAndReload } from '../services/mcp/mcp-registry.ts'
 import { scaffoldProject } from '../services/project-scaffold.ts'
 import { registerSkillTools } from '../services/registry-bootstrap.ts'
@@ -221,5 +222,18 @@ export function registerWorkspaceHandlers(
     const statuses = await setWorkspaceTrustAndReload(registry, root, trusted)
     broadcastToAppWindows('mcp:status-changed', statuses)
     return statuses
+  })
+  // Trust the project a shell prompt said was the only reason it asked. The
+  // renderer names the prompt, not a path: the root is the one main attached to
+  // that still-open request, so this can only ever trust what a prompt offered.
+  // It does not answer the prompt; the user still approves or rejects it.
+  ipcMain.handle('workspace:trust-from-approval', async (event, rawId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(z.string().min(1).max(200), [rawId])
+    const root = pendingWorkspaceTrustOffer(id)
+    if (root === null) throw new IpcValidationError('That prompt no longer offers trust')
+    const statuses = await setWorkspaceTrustAndReload(registry, root, true)
+    broadcastToAppWindows('mcp:status-changed', statuses)
+    return true
   })
 }
