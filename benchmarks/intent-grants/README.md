@@ -60,7 +60,20 @@ pending command.
 
 ## Results, 2026-11-26
 
-See the PR description for the run's numbers.
+| Approach | Prompts skipped (of 854) | Real false skips | Adversarial false skips (126) | Held-out false skips (109) | Must-ask sweep (1,271) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| prior-consent keyword baseline | 0 | 0 | 10 | 1 | n/a |
+| Qwen 3.6 35B-A3B free-form judge, explicit (sample of 81) | ~5.8% | 1 | 35 | 9 | n/a |
+| Qwen free-form judge, explicit+implied (sample of 81) | ~28% | 13 | 40 | 11 | n/a |
+| P1, deterministic extraction | 62 (7.3%) | 0 | 0 | 0 | 0 |
+| P1, Qwen extraction | 55 (6.4%) | 0 | 0 | 0 | 0 |
+| P2, deterministic extraction | 180 (21.1%) | 0 | 0 | 0 | 0 |
+| P2, Qwen extraction | 181 (21.2%) | 0 | 0 | 0 | 0 |
+| P2, deterministic ∪ Qwen extraction | 200 (23.4%) | 0 | 0 | 0 | 0 |
+
+The held-out set found one P2 false skip on first run ("no, just tell me what you would change"),
+since fixed. The same local model that is unsafe as a judge is safe as an extractor, because the
+matcher decides scope.
 
 - **Real prompts:** 854 user-answered prompts from five weeks of history (older threads had been
   cleaned up), 576 with a parsed candidate action, 121 user turns.

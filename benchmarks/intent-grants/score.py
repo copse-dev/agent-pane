@@ -72,9 +72,13 @@ if __name__ == '__main__':
         if arm.startswith('judge') and not JUDGE: continue
         if 'llm' in arm and not LLM_GRANTS: continue
         name = arm + (f' [{policy}]' if policy else '')
-        r = run(REAL, arm, policy or 'scoped')
+        real = REAL
+        if arm.startswith('judge'):  # the judge ran on a random sample of real prompts
+            real = [c for c in REAL if c['actions'] and all(f"{c['id']}|{i}" in JUDGE for i in range(len(c['actions'])))]
+            share = len([c for c in REAL if c['actions']]) / len(REAL)
+        r = run(real, arm, policy or 'scoped')
         a = run(ADV, arm, policy or 'scoped')
-        sk = [c for c in REAL if r[c['id']]]
+        sk = [c for c in real if r[c['id']]]
         unl = [c for c in sk if c['id'] not in REF]
         fs = [c for c in sk if REF.get(c['id'], {}).get('label') == 'not-covered']
         neg = [c for c in ADV if c['expected'] == 'ask']
@@ -83,7 +87,9 @@ if __name__ == '__main__':
         h = run(HELD, arm, policy or 'scoped')
         hneg = [c for c in HELD if c['expected'] == 'ask']
         hfs = [c for c in hneg if h[c['id']]]
-        print(f'{name:28} {len(sk):>5} ({100*len(sk)/len(REAL):4.1f}%) {len(fs):>9}{"+"+str(len(unl))+"?" if unl else "":7} {len(afs):>9}/{len(neg):<6} {sum(a[c["id"]] for c in pos):>6}/{len(pos):<7} {len(hfs):>10}/{len(hneg)}')
+        pct = 100 * len(sk) / len(real) * (share if arm.startswith('judge') else 1)
+        if arm.startswith('judge'): name += f' n={len(real)}'
+        print(f'{name:28} {len(sk):>5} ({pct:4.1f}%) {len(fs):>9}{"+"+str(len(unl))+"?" if unl else "":7} {len(afs):>9}/{len(neg):<6} {sum(a[c["id"]] for c in pos):>6}/{len(pos):<7} {len(hfs):>10}/{len(hneg)}')
         if verbose:
             for c in hfs: print('    HELD-OUT FALSE SKIP', c['source'], repr(c['user'][:40]), '|', c['actions'][-1][:100].replace('\n', ' '))
         if verbose:
