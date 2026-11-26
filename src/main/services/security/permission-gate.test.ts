@@ -70,10 +70,21 @@ import {
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
 import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
-import { setSetting, getSetting, setApiKey, deleteApiKey } from '../storage/settings.ts'
+import {
+  setSetting,
+  getSetting,
+  setApiKey,
+  deleteApiKey,
+  deleteSetting,
+} from '../storage/settings.ts'
+import {
+  SANDBOX_READ_APPROVED_FOLDERS_SETTING,
+  SANDBOX_READ_PROJECT_FOLDERS_SETTING,
+} from '@shared/sandbox-read-access.ts'
+import { storedProjectReadFolders } from './project-read-grants.ts'
 import { storageSet } from '../storage/storage.ts'
 import { drainWriteQueue, runSerialized, SETTINGS_WRITE_QUEUE } from '../storage/write-queue.ts'
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { quote } from 'shell-quote'
@@ -3865,6 +3876,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     bodyAdvice: string
     bodyFooter: string
     collapseDetails: boolean
+    approveLabel: string
     approveOnceLabel: string
     reasons: string[]
   }
@@ -3888,6 +3900,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
         bodyAdvice: request.bodyAdvice ?? '',
         bodyFooter: request.bodyFooter ?? '',
         collapseDetails: request.collapseDetails ?? false,
+        approveLabel: request.approveLabel ?? '',
         approveOnceLabel: request.approveOnceLabel ?? '',
         reasons: request.reasons ?? [],
       }
@@ -3936,6 +3949,8 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       // follow the next test's COPSE_WORKSPACE_DIR and contaminate its log.
       await drainWriteQueue()
       await setSetting('safetyClassifierEnabled', false)
+      await deleteSetting(SANDBOX_READ_PROJECT_FOLDERS_SETTING)
+      await deleteSetting(SANDBOX_READ_APPROVED_FOLDERS_SETTING)
       restore()
       clearReadOutsideProjectGrants()
       if (previousStore === undefined) delete process.env['COPSE_WORKSPACE_DIR']
@@ -4174,8 +4189,10 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     })
   })
 
-  it('keeps the grant to one thread', async () => {
+  it('keeps the chat grant to one thread', async () => {
     await withRoot(async (root) => {
+      // With project folders off, the directory grant is the chat-only one.
+      await setSetting(SANDBOX_READ_APPROVED_FOLDERS_SETTING, false)
       await runWithActiveRunIdentity('thread-a', () =>
         runGate('ls -la ~/.copse/workspace', { approved: true, remember: true }, root),
       )
@@ -4185,6 +4202,81 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       assert.equal(other.permitted, false)
       assert.ok(other.prompt)
       assert.equal(other.prompt.title, 'Allow read access outside of the project?')
+    })
+  })
+
+  it('remembers an approved folder for the project, so other threads read it without asking', async () => {
+    await withRoot(async (root, readDir) => {
+      const first = await runWithActiveRunIdentity('thread-project-a', () =>
+        runGate(`ls -la ${quote([readDir])}`, { approved: true, remember: true }, root),
+      )
+      assert.equal(first.permitted, true)
+      assert.equal(first.prompt?.approveLabel, 'Allow reads in this project')
+      assert.match(first.prompt.bodyFooter, /every chat in this project/)
+      assert.match(first.prompt.bodyFooter, /Settings → Permissions → Sandbox read access/)
+      assert.deepEqual(storedProjectReadFolders(root), [realpathSync(readDir)])
+
+      const other = await runWithActiveRunIdentity('thread-project-b', () =>
+        runGate(
+          `cat ${quote([join(readDir, 'nested', 'deep.txt')])}`,
+          { approved: false, remember: false },
+          root,
+        ),
+      )
+      assert.equal(other.permitted, true)
+      assert.equal(other.prompt, null, 'another thread of the project reads it without a prompt')
+
+      // Another project keeps asking.
+      const elsewhere = mkdtempSync(join(tmpdir(), 'copse-read-outside-other-'))
+      try {
+        const foreign = await runWithWorkspaceRoot(elsewhere, () =>
+          runWithActiveRunIdentity('thread-project-c', () =>
+            runGate(
+              `cat ${quote([join(readDir, 'note.txt')])}`,
+              { approved: false, remember: false },
+              elsewhere,
+            ),
+          ),
+        )
+        assert.equal(foreign.permitted, false)
+        assert.ok(foreign.prompt)
+      } finally {
+        rmSync(elsewhere, { recursive: true, force: true })
+      }
+
+      // Turning the group off stops the standing grant at once.
+      await setSetting(SANDBOX_READ_APPROVED_FOLDERS_SETTING, false)
+      const off = await runWithActiveRunIdentity('thread-project-d', () =>
+        runGate(
+          `cat ${quote([join(readDir, 'note.txt')])}`,
+          { approved: false, remember: false },
+          root,
+        ),
+      )
+      assert.equal(off.permitted, false)
+      assert.equal(off.prompt?.approveLabel, 'Allow reads for this chat')
+    })
+  })
+
+  it('offers only the chat grant for a file, or when project folders are off', async () => {
+    await withRoot(async (root, readDir) => {
+      const file = await runWithActiveRunIdentity('thread-project-file', () =>
+        runGate(
+          `cat ${quote([join(readDir, 'note.txt')])}`,
+          { approved: true, remember: true },
+          root,
+        ),
+      )
+      assert.equal(file.prompt?.approveLabel, 'Allow reads for this chat')
+      assert.match(file.prompt.bodyFooter, /for the rest of this thread/)
+      assert.deepEqual(storedProjectReadFolders(root), [])
+
+      await setSetting(SANDBOX_READ_APPROVED_FOLDERS_SETTING, false)
+      const off = await runWithActiveRunIdentity('thread-project-off', () =>
+        runGate(`ls -la ${quote([readDir])}`, { approved: true, remember: true }, root),
+      )
+      assert.equal(off.prompt?.approveLabel, 'Allow reads for this chat')
+      assert.deepEqual(storedProjectReadFolders(root), [])
     })
   })
 
@@ -4259,7 +4351,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
         })),
         [
           // The grant itself: who made it, over which paths, and that it was
-          // made sticky for the thread.
+          // made sticky.
           {
             actor: 'user',
             verdict: 'approved',
@@ -4268,6 +4360,15 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
             threadId: 'thread-audit',
             source: undefined,
           },
+          // A folder is kept for the project, which outlives the thread.
+          {
+            actor: 'user',
+            verdict: 'allowed',
+            remembered: true,
+            reasons: [`project read access granted: ${realpathSync(readDir)}`],
+            threadId: 'thread-audit',
+            source: 'project-read-grant',
+          },
           // …and the command that ran under it without asking again.
           {
             actor: 'user',
@@ -4275,7 +4376,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
             remembered: undefined,
             reasons: [`reads outside the project: ${join(readDir, 'note.txt')}`],
             threadId: 'thread-audit',
-            source: 'read-outside-grant',
+            source: 'project-read-grant',
           },
         ],
       )

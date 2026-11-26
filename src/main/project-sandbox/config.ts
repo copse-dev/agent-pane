@@ -24,6 +24,15 @@ import {
   type InternalWorkspaceRootRegistration,
 } from '../services/workspace.ts'
 import { activeThreadReadRoots } from '../services/security/thread-read-roots.ts'
+import {
+  currentReadGrantProjectRoot,
+  projectReadFolders,
+} from '../services/security/project-read-grants.ts'
+import {
+  approvedFolderSecretDenyEntries,
+  currentStandingReadRoots,
+  sandboxReadAccessPolicy,
+} from './sandbox-read-access.ts'
 import { threadChatReadRoots } from '../services/security/thread-access.ts'
 import {
   WEB_ALLOWED_ORIGINS_SETTING,
@@ -1520,6 +1529,20 @@ export function workspaceSandboxOverlay(
     ...resolveInterpreterToolchainAllowRead(),
   ]
   const sandboxRuntimeRead = sandboxRuntimeHelperAllowReadPaths()
+  // Settings → Permissions → Sandbox read access. Default groups (toolchains,
+  // caches) and the folders this project approved are readable, never
+  // writable; credentials inside an approved folder stay denied. The
+  // classifier lists the same roots as contained reads (shell-guard-environment.ts).
+  const readPolicy = sandboxReadAccessPolicy()
+  const standingRead = currentStandingReadRoots().flatMap((entry) => [
+    entry.canonical,
+    `${entry.canonical}/**`,
+  ])
+  const approvedFolders = readPolicy.approvedFolders
+    ? projectReadFolders(currentReadGrantProjectRoot())
+    : []
+  const approvedFolderRead = approvedFolders.flatMap((folder) => [folder, `${folder}/**`])
+  const approvedFolderSecretDeny = approvedFolders.flatMap(approvedFolderSecretDenyEntries)
   // Prepared worktrees link dependencies and native runtimes into these fixed,
   // Copse-owned caches. Routine tests/builds need only read them; preparation is
   // the sole path that receives write access after one explicit approval.
@@ -1687,6 +1710,18 @@ export function workspaceSandboxOverlay(
     ...siblingDeny,
     ...nestedCheckoutDeny,
   ]
+  const allowRead = [
+    ...existingRead,
+    ...toolchainReadExceptions(
+      [...toolchainRead, ...standingRead, ...approvedFolderRead],
+      deniedRead,
+      existingRead,
+    ),
+  ]
+  // Folders outside home are readable already (only home is denied), so the
+  // approved-folder entries above may have been dropped as unnecessary; their
+  // credential denies apply either way.
+  const finalDeniedRead = [...deniedRead, ...approvedFolderSecretDeny]
   return {
     // Auto-run, sandbox-contained commands get NO network (see
     // containedSandboxNetworkConfig); only user-approved commands run with
@@ -1695,11 +1730,8 @@ export function workspaceSandboxOverlay(
     filesystem: {
       // Deny home reads, re-allow only this project plus the user's git config
       // files (ASRT deny-then-allow; a more-specific allow overrides the deny).
-      denyRead: deniedRead,
-      allowRead: [
-        ...existingRead,
-        ...toolchainReadExceptions(toolchainRead, deniedRead, existingRead),
-      ],
+      denyRead: finalDeniedRead,
+      allowRead,
       allowWrite: [
         root,
         `${root}/**`,

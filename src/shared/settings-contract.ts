@@ -156,6 +156,11 @@ export interface SettingsValues {
   acpAutoApproveNativeBridgeTools: boolean
   worktreeAutoApproveEdits: boolean
   backgroundDefaultBranchFetch: boolean
+  sandboxReadToolchains: boolean
+  sandboxReadCaches: boolean
+  sandboxReadApprovedFolders: boolean
+  sandboxReadWorkspaceOnly: boolean
+  sandboxReadProjectFolders: Record<string, Array<string>>
   autoArchiveAfterDays: number
   modelClassifierEnabled: boolean
   nextStepSuggestionEnabled: boolean
@@ -294,6 +299,7 @@ type DedicatedSettingKey =
   | 'extraProviders'
   | 'openRouterPricing'
   | 'modelCardProbeCache'
+  | 'sandboxReadProjectFolders'
 
 /** Ordinary preferences only. Role assignments merge with the latest saved role map. */
 export type SettingsUpdate = {

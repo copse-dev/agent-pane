@@ -19,6 +19,7 @@ import { createModelsSection } from './settings/models-section.ts'
 import { createProvidersSection } from './settings/providers-section.ts'
 import { createAppearanceSection } from './settings/appearance-section.ts'
 import { createSecuritySection } from './settings/security-section.ts'
+import { createSandboxReadSection } from './settings/sandbox-read-section.ts'
 import { createSourcesSection } from './settings/sources-section.ts'
 import { createStorageSection } from './settings/storage-section.ts'
 import { createMcpSection } from './settings/mcp-section.ts'
@@ -178,6 +179,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     () => modelsSection.readSecurity(),
     () => providersSection.getUrl(),
   )
+  const sandboxRead = createSandboxReadSection(form, api)
   const nav = createSettingsNavigation(overlay, (ids) => {
     if (snapshot) void lifecycle.show(ids, snapshot)
   })
@@ -261,7 +263,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         },
       },
       permissions: {
-        refresh: (_values, signal): Promise<void> => toolPermissionsPanel.refresh(signal),
+        refresh: (values, signal): Promise<void> => {
+          sandboxRead.refresh(values)
+          return toolPermissionsPanel.refresh(signal)
+        },
       },
       ssh: {
         refresh: async (_values, signal): Promise<void> => {

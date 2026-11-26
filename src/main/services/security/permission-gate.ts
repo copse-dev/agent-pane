@@ -1,4 +1,9 @@
 import { projectAllowsPortBinding, rememberProjectPortBinding } from './project-port-grants.ts'
+import {
+  projectReadFolderOffer,
+  projectReadFoldersCover,
+  rememberProjectReadFolders,
+} from './project-read-grants.ts'
 import { planToolBlockReason } from '../thread-plan-context.ts'
 import { z } from 'zod'
 import {
@@ -458,6 +463,27 @@ async function resolveReadOutsideProject(
   }
 
   const threadId = getActiveRunThread()
+  const projectRoot = getAgentProjectRoot()
+  const canonical = canonicalTargets.filter((target) => target !== null)
+  // Folders this project approved (Settings → Permissions → Sandbox read
+  // access). Usually the classifier already ran such a read contained; this
+  // covers the shapes it does not call read-only but this proof accepts.
+  if (
+    canonical.length === canonicalTargets.length &&
+    projectReadFoldersCover(projectRoot, analysis.resolvedTargets, canonical)
+  ) {
+    recordDecision({
+      kind: 'shell',
+      actor: 'user',
+      verdict: 'allowed',
+      subject: SHELL_DECISION_SUBJECT,
+      scope: 'external-read',
+      reasons,
+      source: 'project-read-grant',
+    })
+    return true
+  }
+
   if (hasReadOutsideProjectGrant(threadId, analysis.resolvedTargets)) {
     recordDecision({
       kind: 'shell',
@@ -471,12 +497,21 @@ async function resolveReadOutsideProject(
     return true
   }
 
+  // When every target is a folder the project may keep, the primary action
+  // remembers it for the project instead of this chat: one approval per
+  // folder, not one per thread. A handler with no thread can hold neither.
+  const projectOffer = threadId ? projectReadFolderOffer(projectRoot, canonical) : null
   const { approved, remember } = await requestApproval(
     {
       title: READ_OUTSIDE_PROJECT_TITLE,
       type: 'shell',
       ...shellPromptToApprovalFields(
-        formatReadOutsideProjectPromptParts(command, analysis, canonicalTargets),
+        formatReadOutsideProjectPromptParts(
+          command,
+          analysis,
+          canonicalTargets,
+          projectOffer ? 'project' : 'thread',
+        ),
       ),
       subject: SHELL_DECISION_SUBJECT,
       scope: 'external-read',
@@ -488,7 +523,7 @@ async function resolveReadOutsideProject(
       // the scope one; the third button that approves only this command appears
       // with the details it refers to.
       collapseDetails: true,
-      approveLabel: 'Allow reads for this chat',
+      approveLabel: projectOffer ? 'Allow reads in this project' : 'Allow reads for this chat',
       approveOnceLabel: 'Approve this command',
     },
     signal,
@@ -497,6 +532,23 @@ async function resolveReadOutsideProject(
   // covers this command only.
   if (approved && remember && threadId) {
     grantReadOutsideProject(threadId, analysis.resolvedTargets)
+    if (projectOffer && projectRoot !== null) {
+      const added = await rememberProjectReadFolders(projectRoot, projectOffer)
+      // The answer above already logged `remembered: true`; this line names the
+      // standing grant itself, so the log shows what outlives the thread.
+      if (added.length > 0) {
+        recordDecision({
+          kind: 'shell',
+          actor: 'user',
+          verdict: 'allowed',
+          subject: SHELL_DECISION_SUBJECT,
+          scope: 'external-read',
+          remembered: true,
+          reasons: [`project read access granted: ${added.join(', ')}`],
+          source: 'project-read-grant',
+        })
+      }
+    }
   }
   return approved
 }

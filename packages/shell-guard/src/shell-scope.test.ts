@@ -594,6 +594,30 @@ describe('analyzeShellCommand', () => {
     }
   })
 
+  it('never treats a credential inside a contained read root as contained', () => {
+    configureShellScopeEnvironment({
+      containedReadRoots: () => ['/Users/dev/code/sibling', '/opt/homebrew'],
+    })
+    try {
+      assert.equal(
+        analyzeShellCommand('cat /Users/dev/code/sibling/README.md', root).verdict,
+        'sandbox',
+      )
+      assert.equal(analyzeShellCommand('ls /opt/homebrew/Cellar', root).verdict, 'sandbox')
+      for (const secret of [
+        '/Users/dev/code/sibling/.env',
+        '/Users/dev/code/sibling/.env.local',
+        '/Users/dev/code/sibling/certs/server.pem',
+        '/Users/dev/code/sibling/.ssh/id_ed25519',
+        '/Users/dev/code/sibling/.npmrc',
+      ]) {
+        assert.equal(analyzeShellCommand(`cat ${secret}`, root).verdict, 'external', secret)
+      }
+    } finally {
+      configureShellScopeEnvironment()
+    }
+  })
+
   it('allows workspace-relative paths', () => {
     const r = analyzeShellCommand('cat src/index.ts', root)
     assert.equal(r.verdict, 'sandbox')

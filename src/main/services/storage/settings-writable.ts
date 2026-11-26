@@ -388,6 +388,14 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // (see default-branch-fetch.ts). Default on. Off skips background fetches,
   // including the contained fallback, on every platform.
   backgroundDefaultBranchFetch: z.boolean(),
+  // Settings → Permissions → Sandbox read access: read-only groups outside the
+  // project that sandboxed commands may read without asking, and the
+  // workspace-only lockdown that turns them all off. None of them widens
+  // writes or network (see src/shared/sandbox-read-access.ts).
+  sandboxReadToolchains: z.boolean(),
+  sandboxReadCaches: z.boolean(),
+  sandboxReadApprovedFolders: z.boolean(),
+  sandboxReadWorkspaceOnly: z.boolean(),
   // Experimental features, opt-in and off by default. See the experimental
   // section in Settings.
   //

@@ -1013,6 +1013,56 @@ The in-memory grant disappears on restart. The decision record does not: an answ
 `decision` spine event at `scope: external-read`, including the paths and whether the grant was
 remembered. Each later allowed command records a verdict sourced to `read-outside-grant`.
 
+## Sandbox read access
+
+Settings → Permissions → **Sandbox read access** lists the folders outside the project that a
+sandboxed command may read without asking. Every group is read-only: nothing here adds an
+`allowWrite` entry or network access. Two consumers agree on the same roots, exactly as they do for
+an invoked skill's directory: the seatbelt overlay (`workspaceSandboxOverlay`) adds each root under
+home to `allowRead`, and the shell-scope classifier (`shell-guard-environment.ts`) lists every root
+as a contained read root, so a structurally read-only command naming one starts inside the sandbox
+instead of asking. A write naming one still prompts.
+
+| Group (setting)                                                   | Default | What it covers                                                                                                                                                                                                                                                                      |
+| ----------------------------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Toolchains and SDKs (`sandboxReadToolchains`)                     | on      | `/Applications/Xcode*.app`, `/Library/Developer/CommandLineTools`, Homebrew (`/opt/homebrew`, `/usr/local/Homebrew`, `/usr/local/Cellar`, linuxbrew, `$HOMEBREW_PREFIX`), `$DEVELOPER_DIR`, and installs under nvm, fnm, Volta, asdf, mise, rbenv, pyenv, uv, bun, cargo and rustup |
+| Package caches and build logs (`sandboxReadCaches`)               | on      | npm `_cacache`/`_logs`, the pnpm store, Yarn, pip, uv, Cargo `registry`/`git`, the Go module and build caches, Gradle, Maven, CocoaPods, Xcode DerivedData and crash reports                                                                                                        |
+| Folders you approved for a project (`sandboxReadApprovedFolders`) | on      | Folders remembered per project from the read prompt (below)                                                                                                                                                                                                                         |
+| Workspace only (`sandboxReadWorkspaceOnly`)                       | off     | Lockdown: every group above is off whatever its own switch says                                                                                                                                                                                                                     |
+
+Roots are resolved from `project-sandbox/sandbox-read-access.ts` and pass the toolchain read guard
+(`toolchain-read-guard.ts`): only existing directories count, and one that is home, an ancestor of
+home, or that contains or sits inside a credential store (`~/.npmrc`, `~/.ssh`, `~/Library/Keychains`,
+`~/.copse`, `$CARGO_HOME/credentials.toml`, …) is dropped. Roots outside home were already readable
+inside the sandbox, which denies only home; for them the change is that a read stops prompting.
+Workspace only does not deny system folders such as `/usr`, which a contained command still needs.
+The existing grants that let a contained command start Node, Rust, Corepack, fnm, pyenv, uv and bun
+(`resolveNodeToolchainAllowRead` and its siblings) are unaffected by these switches.
+
+**Folders approved for a project.** When every target of a read-outside-the-project command is an
+existing directory the guard accepts, and the project holds fewer than 64 folders, the read prompt's
+primary action becomes **Allow reads in this project**. It stores the folder's canonical path under
+`sandboxReadProjectFolders`, keyed by project root like remembered port binding, so every thread of
+that project reads it from then on, across restarts, and no other project does. Files, globs and
+folders the guard refuses keep the chat-only **Allow reads for this chat** grant; so does every
+approval while the group is off. A stored folder whose realpath has moved, or that now covers a
+credential store, is skipped until approved again; it is never re-resolved to its new target. The
+renderer can remove a folder (`settings:revoke-sandbox-read-folder`) but never add one.
+
+Inside an approved folder, credentials stay unreadable: the overlay adds `denyRead` globs for `.env`,
+`.env.*`, key and keystore suffixes, `id_*`, `*secret*`, `*credential*`, `.npmrc`, `.netrc` and the
+other `SENSITIVE_BASENAMES`, and for `.ssh`, `.aws`, `.gnupg`, `.kube`, `.docker` and the other
+credential directories at any depth. ASRT emits glob denies after its allow block on macOS, so they
+win (seatbelt is last-match-wins); on Linux it expands them to the files that exist at spawn time.
+The classifier never treats a credential path as a contained read, even inside a contained root, so
+`cat ../sibling/.env` asks instead of failing EPERM.
+
+The decision log records the grant: the answered prompt writes its usual `remembered: true` line,
+and a second `external-read` line sourced `project-read-grant` names the folders kept for the
+project. A later read the read-outside proof accepts under an approved folder records a verdict
+sourced `project-read-grant`. A read the classifier already ran contained records nothing, like any
+other contained command. Removing a folder in Settings is not logged: it happens outside any thread.
+
 ## Native commits and signing
 
 `git_commit` runs fixed add/commit argv, preserving hooks and signing. Local commands

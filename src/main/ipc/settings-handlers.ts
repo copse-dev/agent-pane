@@ -89,6 +89,7 @@ import {
   type ResolvedModelCard,
 } from '../services/providers/model-card-resolver.ts'
 import { invalidateCursorCloudModelsCache } from '../services/remote/cursor-cloud-models.ts'
+import { revokeProjectReadFolder } from '../services/security/project-read-grants.ts'
 
 const SKILLS_RELOAD_KEYS = new Set([
   'skillsEnabled',
@@ -170,6 +171,20 @@ export function registerSettingsHandlers(win: BrowserWindow, registry: ToolRegis
         .map(([k, v]) => setSetting(k, v)),
     )
   })
+  // Settings → Permissions → Sandbox read access lists the folders each project
+  // approved. The renderer may remove one, never add one: a folder is added
+  // only by answering the read prompt (`project-read-grants.ts`).
+  ipcMain.handle(
+    'settings:revoke-sandbox-read-folder',
+    async (event, projectRoot: unknown, folder: unknown) => {
+      assertMainFrameSender(event, win)
+      const [root, path] = parseIpcArgs(
+        z.tuple([zNonEmptyString.max(4096), zNonEmptyString.max(4096)]),
+        [projectRoot, folder],
+      )
+      await revokeProjectReadFolder(root, path)
+    },
+  )
   ipcMain.handle('settings:get-key', (event, provider: unknown) => {
     assertMainFrameSender(event, win)
     const p = parseIpcArgs(keyProviderSchema, [provider])

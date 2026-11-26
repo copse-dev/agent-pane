@@ -25,11 +25,15 @@ export function formatReadOutsideProjectPromptParts(
   command: string,
   analysis: ReadOutsideProjectAnalysis,
   canonicalTargets: readonly (string | null)[] = [],
+  scope: 'thread' | 'project' = 'thread',
 ): ShellPromptParts {
+  const plural = analysis.targets.length === 1 ? 'this path' : 'these paths'
   return {
     command,
     bodyAdvice:
-      `The agent requests read access to ${analysis.targets.length === 1 ? 'this path' : 'these paths'} for this thread:\n` +
+      (scope === 'project'
+        ? `The agent requests read access to ${analysis.targets.length === 1 ? 'this folder' : 'these folders'} for this project:\n`
+        : `The agent requests read access to ${plural} for this thread:\n`) +
       analysis.targets
         .map((target, index) => {
           const canonical = canonicalTargets[index]
@@ -39,8 +43,13 @@ export function formatReadOutsideProjectPromptParts(
         .join('\n') +
       `\n\n⚠️ ${READ_OUTSIDE_PROJECT_WARNING}`,
     bodyFooter:
-      'Approve grants reads of the listed paths and files within listed directories for the rest of this thread. ' +
-      'Other paths ask again. Writes, installs, and network access are not approved. ' +
-      'Commands naming credential files or directories directly also ask again.',
+      scope === 'project'
+        ? 'Allow lets every chat in this project read the listed folders from now on, including after a restart. ' +
+          'Remove one in Settings → Permissions → Sandbox read access. ' +
+          '.env files, keys and other credentials inside them stay unreadable. ' +
+          'Writes, installs, and network access are not approved.'
+        : 'Approve grants reads of the listed paths and files within listed directories for the rest of this thread. ' +
+          'Other paths ask again. Writes, installs, and network access are not approved. ' +
+          'Commands naming credential files or directories directly also ask again.',
   }
 }

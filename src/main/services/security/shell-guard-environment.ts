@@ -8,6 +8,9 @@
  * - the read-only roots granted to the active thread — the directories of the
  *   skills it invoked (`thread-read-roots.ts`) — which the overlay adds to
  *   `allowRead` for that thread's commands;
+ * - the standing read roots in Settings → Permissions → Sandbox read access:
+ *   toolchains, caches and the folders this project approved
+ *   (`project-sandbox/sandbox-read-access.ts`, `project-read-grants.ts`);
  * - the active thread's workspace scratch and configured ACP scratch (#481),
  *   which the sandbox allows and the classifier must therefore not flag;
  * - actual filesystem paths for supported literal symbolic-link commands.
@@ -25,6 +28,11 @@ import { copseWorkspaceDir } from '../storage/copse-paths.ts'
 import { getChatStoreRootSync } from '../workspace.ts'
 import { activeThreadReadRootPaths } from './thread-read-roots.ts'
 import { threadChatReadRoots } from './thread-access.ts'
+import {
+  currentStandingReadRoots,
+  sandboxReadAccessPolicy,
+} from '../../project-sandbox/sandbox-read-access.ts'
+import { currentReadGrantProjectRoot, projectReadFolders } from './project-read-grants.ts'
 
 configureShellScopeEnvironment({
   containedReadRoots: () => {
@@ -33,7 +41,10 @@ configureShellScopeEnvironment({
         return root ? threadChatReadRoots(root) : []
       }),
     )
-    return [...roots, ...activeThreadReadRootPaths()]
+    const policy = sandboxReadAccessPolicy()
+    const standing = currentStandingReadRoots().flatMap((root) => [root.path, root.canonical])
+    const approved = policy.approvedFolders ? projectReadFolders(currentReadGrantProjectRoot()) : []
+    return [...roots, ...activeThreadReadRootPaths(), ...standing, ...approved]
   },
   sanctionedScratchMatcher: () => {
     const agentScratch = agentScratchMatcher()

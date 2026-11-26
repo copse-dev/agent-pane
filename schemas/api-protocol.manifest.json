@@ -2173,6 +2173,13 @@
           1
         ]
       },
+      "settings:revoke-sandbox-read-folder": {
+        "api": "settings.revokeSandboxReadFolder",
+        "args": [
+          2,
+          2
+        ]
+      },
       "settings:save-extra-provider": {
         "api": "settings.saveExtraProvider",
         "args": [

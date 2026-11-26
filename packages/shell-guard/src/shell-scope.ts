@@ -2,6 +2,7 @@ import { homedir } from 'node:os'
 import { resolve, sep } from 'node:path'
 import { parse as parseShell } from 'shell-quote'
 import { inertOperandIndexes } from './inert-operands.ts'
+import { sensitiveTargetReason } from './sensitive-paths.ts'
 import {
   CODE_INTERPRETERS,
   INLINE_CODE_FLAGS,
@@ -993,6 +994,19 @@ function isInsideRoot(absPath: string, root: string): boolean {
   return absPath === root || absPath.startsWith(root + sep)
 }
 
+/**
+ * Whether a read of `absPath` is contained by one of `roots`. A credential path
+ * never is, even inside a root: the sandbox denies `.env` files, keys and
+ * credential folders inside an approved folder, so calling such a read
+ * contained would only trade a prompt for an EPERM and a retry offer.
+ */
+function isContainedReadPath(absPath: string, roots: readonly string[]): boolean {
+  return (
+    roots.some((root) => isInsideRoot(absPath, root)) &&
+    sensitiveTargetReason(absPath, absPath) === null
+  )
+}
+
 /** An absolute path token, with the shell separator that introduced it. */
 const ABSOLUTE_PATH_TOKENS = /(^|[\s'"=])(\/[^\s'"|;&]+)/g
 
@@ -1066,7 +1080,7 @@ function maskContainedSymlink(command: string, workspaceRoot: string | null): st
 function maskContainedReadPaths(command: string, readRoots: readonly string[]): string {
   if (readRoots.length === 0) return command
   return command.replace(ABSOLUTE_PATH_TOKENS, (match, lead: string, path: string) =>
-    readRoots.some((root) => isInsideRoot(resolve(path), root)) ? `${lead}contained-read` : match,
+    isContainedReadPath(resolve(path), readRoots) ? `${lead}contained-read` : match,
   )
 }
 
@@ -1278,8 +1292,7 @@ function referencesOutsideWorkspace(
   // Read against the raw text: masking only removes already-sanctioned paths,
   // and the read-only shape of the command is unchanged by it.
   const readRoots = containedReadRoots(rawCommand)
-  const isContainedRead = (absPath: string): boolean =>
-    readRoots.some((root) => isInsideRoot(absPath, root))
+  const isContainedRead = (absPath: string): boolean => isContainedReadPath(absPath, readRoots)
   const command = maskPathAssignments(
     maskInertOperandPaths(
       maskContainedReadPaths(
