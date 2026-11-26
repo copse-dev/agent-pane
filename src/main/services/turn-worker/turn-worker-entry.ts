@@ -25,16 +25,14 @@ import { setPersistentStoreFactory } from '../storage/persistent-store.ts'
 import { readOnlyProfileStoreFactory, readProfileStores } from './read-only-profile-store.ts'
 import { turnWorkerSocketPath } from './turn-worker-socket.ts'
 import type { TakenOverThread, TurnControl } from './turn-worker.ts'
+import { quietWorkerEnvironment } from './worker-environment.ts'
 
 function log(line: string): void {
   process.stderr.write(`[turn-worker ${new Date().toISOString()}] ${line}\n`)
 }
 
 async function main(): Promise<number> {
-  // The launcher sets this so the app binary runs as Node. Commands the turn
-  // runs must not inherit it, or any Electron program they start runs as plain
-  // Node. The worker's own Node children set it for themselves.
-  delete process.env['ELECTRON_RUN_AS_NODE']
+  quietWorkerEnvironment(process.env)
   const { values } = parseArgs({
     options: {
       'user-data': { type: 'string' },
