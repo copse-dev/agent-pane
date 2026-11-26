@@ -7,7 +7,7 @@ import {
   tempWriteApproval,
 } from '../../src/shared/approval-copy.ts'
 import { E2E_SCREENSHOT_DIR, prepareE2eScreenshot } from './helpers/screenshot.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 
 const PROJECT_ID = 'e2e-approval-chat-grants'
 
@@ -17,7 +17,7 @@ describe('approval prompts with a chat grant', function () {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), PROJECT_ID, { model: 'claude-sonnet-4-6' })
+    seedEmptyProject(seedStableWorkspace(), PROJECT_ID, { model: 'claude-sonnet-4-6' })
     await browser.reloadSession()
   })
 
