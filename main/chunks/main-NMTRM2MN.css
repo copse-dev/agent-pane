@@ -788,7 +788,6 @@ copse-ui-field,
 copse-ui-field + copse-ui-field,
 .ui-field + .ui-field {
   padding-top: var(--spacing-sm);
-  border-top: 1px solid var(--border-subtle);
 }
 copse-ui-field:last-child,
 .ui-field:last-child {
@@ -7250,7 +7249,6 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 }
 .tool-card-rollup > .tool-card-header .tool-name {
   font-weight: 400;
-  font-style: italic;
   color: var(--text-muted);
 }
 .tool-card-rollup > .tool-card-header:hover,
@@ -7273,7 +7271,6 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 }
 .tool-card-rollup[data-status=running] > .tool-card-header .tool-name {
   color: var(--text-secondary);
-  font-style: italic;
 }
 .tool-rollup-body > .tool-card {
   background: transparent;
@@ -8084,11 +8081,9 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   display: inline-block;
   margin-bottom: var(--spacing-xs);
   padding: 1px 6px;
-  border-radius: var(--radius);
-  font-size: var(--font-size-2xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  border-radius: var(--badge-radius);
+  font-size: var(--badge-font-size);
+  font-weight: var(--badge-font-weight);
   color: var(--text-muted);
   background: var(--bg-hover);
 }
@@ -9741,13 +9736,9 @@ dialog.settings-overlay::backdrop {
 }
 #settings-model-routing-host {
   margin-top: var(--spacing-xl);
-  padding-top: var(--spacing-lg);
-  border-top: 1px solid var(--border);
 }
 #settings-model-maker-block-host {
   margin-top: var(--spacing-xl);
-  padding-top: var(--spacing-lg);
-  border-top: 1px solid var(--border);
 }
 .model-maker-block-list {
   display: grid;
@@ -9759,8 +9750,6 @@ dialog.settings-overlay::backdrop {
 }
 #settings-model-parameters-host {
   margin-top: var(--spacing-xl);
-  padding-top: var(--spacing-lg);
-  border-top: 1px solid var(--border);
 }
 .model-parameter-note {
   margin-bottom: var(--spacing-lg);
@@ -12183,12 +12172,6 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   color: var(--error);
   font-size: var(--font-size-sm);
 }
-.acp-list {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
-  overflow: hidden;
-}
 .acp-list-bar {
   display: flex;
   align-items: baseline;
@@ -12200,11 +12183,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   display: none;
 }
 .acp-row {
-  padding: var(--spacing-md);
-  border-bottom: 1px solid var(--border);
-}
-.acp-row:last-child {
-  border-bottom: 0;
+  padding: var(--spacing-md) 0;
 }
 .acp-row-head {
   display: flex;
@@ -12314,6 +12293,13 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 .acp-add-menu[hidden] {
   display: none;
+}
+.acp-add-menu .acp-row {
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--border);
+}
+.acp-add-menu .acp-row:last-child {
+  border-bottom: 0;
 }
 .connections-menu-group {
   padding: var(--spacing-xs) var(--spacing-md);
@@ -13877,9 +13863,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   font-size: var(--font-size-sm);
 }
 .mcp-server-row {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--spacing-sm);
+  padding: 0;
 }
 .mcp-server-header {
   display: flex;
@@ -13930,9 +13914,6 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   flex-direction: column;
   gap: var(--spacing-sm);
   font-size: var(--font-size-sm);
-}
-.mcp-declared-row {
-  border-style: dashed;
 }
 .mcp-trust-banner {
   display: flex;
@@ -14088,18 +14069,12 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   flex-direction: column;
   gap: var(--spacing-md);
 }
-.tool-permission-group {
-  overflow: clip;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
-}
 .tool-permission-group-summary {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
   min-height: var(--action-min-height);
-  padding: var(--spacing-md);
+  padding: var(--spacing-md) 0;
   cursor: pointer;
   list-style: none;
 }
@@ -14128,17 +14103,20 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .tool-permission-group-origin,
 .tool-permission-group-status {
   flex: none;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
   color: var(--text-muted);
   font-size: var(--font-size-sm);
   line-height: var(--line-height-base);
-  padding: var(--spacing-xs) var(--spacing-sm);
 }
 .tool-permission-count {
-  min-width: calc(var(--spacing-xl) + var(--spacing-xs));
-  text-align: center;
   font-variant-numeric: tabular-nums;
+}
+.tool-permission-count-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 .tool-permission-group-origin {
   max-width: 18ch;
@@ -14159,12 +14137,9 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   margin-left: auto;
   font-size: var(--font-size-sm);
 }
-.tool-permission-list {
-  border-top: 1px solid var(--border);
-}
 .tool-permission-group-empty {
   margin: 0;
-  padding: var(--spacing-md);
+  padding: var(--spacing-md) 0;
   color: var(--text-muted);
   font-size: var(--font-size-sm);
 }
@@ -14174,13 +14149,11 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   align-items: center;
   gap: var(--spacing-lg);
   min-height: calc(var(--action-min-height) + var(--spacing-xl));
-  padding: var(--list-row-padding-block) var(--spacing-md);
-}
-.tool-permission-row + .tool-permission-row {
-  border-top: 1px solid var(--border);
+  padding: var(--list-row-padding-block) 0;
 }
 .tool-permission-row[data-pending=true] {
   background: var(--bg-hover);
+  box-shadow: calc(-1 * var(--spacing-sm)) 0 0 var(--bg-hover), var(--spacing-sm) 0 0 var(--bg-hover);
 }
 .tool-permission-copy {
   min-width: 0;
@@ -14219,6 +14192,9 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .tool-permission-description ul,
 .tool-permission-description ol {
   margin-block: var(--spacing-xs);
+}
+.tool-permission-description :is(ul, ol) {
+  padding-inline-start: 1.25em;
 }
 .tool-permission-description pre {
   max-width: 100%;
@@ -17534,13 +17510,9 @@ dialog.activity-panel-overlay {
 }
 .thread-proposal-prompt-text {
   margin: var(--spacing-xs) 0 0;
-  padding: var(--spacing-sm);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-base);
   color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: var(--font-size-xs);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
   line-height: var(--line-height-base);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
