@@ -165,8 +165,8 @@ export type EventAutomationTrigger =
 export type PullRequestTransition = 'ready-for-review' | 'new-commits'
 export type PullRequestAuthors = 'mine' | 'anyone'
 /**
- * Whose comments start a run. `collaborators` (default): owners, members and collaborators of
- * the repository, never bots and never `viewer`, so a stranger cannot start a run that acts as
+ * Whose comments start a run. `collaborators` (default): GitHub's OWNER, MEMBER or COLLABORATOR
+ * association (MEMBER is any member of the owning organization), never bots and never `viewer`, so a stranger cannot start a run that acts as
  * the user, and a run's own replies cannot restart it. `others`: any account but `viewer`,
  * bots included. `anyone`: every comment, including `viewer`'s.
  */

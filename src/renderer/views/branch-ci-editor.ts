@@ -138,9 +138,13 @@ export function mountBranchCiEditor(options: {
   const commenters = el(
     'select',
     { class: 'automation-input automation-pr-commenters' },
-    el('option', { value: 'collaborators' }, 'Repository collaborators, not bots or me'),
+    el(
+      'option',
+      { value: 'collaborators' },
+      'Collaborators and organization members, not bots or me',
+    ),
     el('option', { value: 'others' }, 'Anyone but me, including bots and strangers'),
-    el('option', { value: 'anyone' }, 'Anyone, including me'),
+    el('option', { value: 'anyone' }, 'Anyone, including me, bots and strangers'),
   )
   const label = el('input', {
     type: 'text',
@@ -315,7 +319,7 @@ export function mountBranchCiEditor(options: {
             ? 'Warning: anyone who can comment, including bots and strangers, can start a run that acts as you, and replies a run posts can start another run.'
             : commenters.value === 'others'
               ? 'Warning: anyone who can comment, including bots and strangers, can start a run that acts as you. My own comments are ignored.'
-              : 'Only comments from repository owners, members and collaborators count; bots and my own comments, including replies a run posts as me, are ignored.'
+              : 'Only comments from the repository owner, its collaborators and organization members count; bots and my own comments, including replies a run posts as me, are ignored.'
         summary.textContent = `When ${whose} into ${base} gets new review or conversation comments, address them. New comments are batched into one task per pull request; at most three runs per pull request and ten in total per 24 hours. ${from}${strangers}`
         return
       }
