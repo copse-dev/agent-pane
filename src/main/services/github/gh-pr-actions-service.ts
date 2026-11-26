@@ -28,6 +28,24 @@ export async function markPrReady(root: string | null, ref: PrRef): Promise<PrAc
   return resolveGitHubBackend().markPrReady(root, ref)
 }
 
+export async function replyToPrReviewThread(
+  root: string | null,
+  ref: PrRef,
+  threadId: string,
+  body: string,
+): Promise<PrActionResult> {
+  return resolveGitHubBackend().replyToReviewThread(root, ref, threadId, body)
+}
+
+export async function setPrReviewThreadResolved(
+  root: string | null,
+  ref: PrRef,
+  threadId: string,
+  resolved: boolean,
+): Promise<PrActionResult> {
+  return resolveGitHubBackend().setReviewThreadResolved(root, ref, threadId, resolved)
+}
+
 export async function enablePrAutoMerge(root: string | null, ref: PrRef): Promise<PrActionResult> {
   return resolveGitHubBackend().enableAutoMerge(root, ref)
 }
