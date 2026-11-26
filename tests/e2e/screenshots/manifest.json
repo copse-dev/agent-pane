@@ -914,8 +914,8 @@
       "bytes": 32302
     },
     "automation-questions-saved.png": {
-      "sha256": "75bae3393a572e387266c6f93a46da1cf3f0746b3cd6eff5a0fce83732afa7e8",
-      "bytes": 355889
+      "sha256": "d1ad2fcf55013ce395190173e7a55f201d895426dab5c1769426e66b585c4019",
+      "bytes": 367708
     },
     "automation-setup-link-form.png": {
       "sha256": "7f3052a4b829528070e12ff807d95fc87c3e865a16be7b3780462a2b80d3f23f",
@@ -1798,8 +1798,8 @@
       "bytes": 278167
     },
     "cross-thread-prompt-held.png": {
-      "sha256": "8ef55232e43a392bf8a162f2b4e13fc2b28fdff44ffb4644ec26e9fb5a62848f",
-      "bytes": 328496
+      "sha256": "5e970c2d866ed68c6edeed222549946c025b9231c5362bdfd3f8efc209839a19",
+      "bytes": 328655
     },
     "cursor-acp-auth-error.png": {
       "sha256": "7a3211be5b676a4049af29b1f89cbded5d0961490f4865a3f7f1cdd7dc4427e7",
@@ -2574,12 +2574,12 @@
       "bytes": 362156
     },
     "markdown-bold-glob-architecture.png": {
-      "sha256": "ec37d196f08d2412862301497619ac3ee46825bc222bf2cfbcd31458aff06956",
-      "bytes": 497112
+      "sha256": "48d7d1c2b0092f78feaa874cbaba57e629317dd45b370565f74fb72479dcf5fe",
+      "bytes": 496580
     },
     "markdown-bold-glob-full.png": {
-      "sha256": "ec37d196f08d2412862301497619ac3ee46825bc222bf2cfbcd31458aff06956",
-      "bytes": 497112
+      "sha256": "48d7d1c2b0092f78feaa874cbaba57e629317dd45b370565f74fb72479dcf5fe",
+      "bytes": 496580
     },
     "markdown-conformance-quickwins.png": {
       "sha256": "f2139088ec03a3df33c2f94731a0a399257373d5e3eac65f5dd59a642bac3265",
@@ -3050,8 +3050,8 @@
       "bytes": 322277
     },
     "new-project-dialog.png": {
-      "sha256": "5702669dad8903cc54b5ab9c5f46968b889adc2e14b829305c1fcef4895e1c3b",
-      "bytes": 84211
+      "sha256": "0c97d667b4459264be29b62a319bc72638cfef3c56fc6709d7d95c1ea3aa808e",
+      "bytes": 95587
     },
     "new-thread-activity-home.png": {
       "sha256": "efa88bf3060deb186752229797b7adf1b26fa6129d15612d8650232cf33b2148",
@@ -3266,8 +3266,8 @@
       "bytes": 258442
     },
     "panel-position-side.png": {
-      "sha256": "9a3f432deb25fc4d687b42c7f3ed2fb603d09ac0a6eddb462c7f2950fe3d1ba6",
-      "bytes": 275323
+      "sha256": "f9576202348078113c53a8f59d4d1548d816c2b8b91b9d96a93e97be913e70ae",
+      "bytes": 272319
     },
     "parent-instruction-retried-edits.png": {
       "sha256": "b2e11cf197ecd9e16fef849362a68648e2cb50fd3889a3e3be6dcace69eea5a0",
@@ -3766,16 +3766,16 @@
       "bytes": 297917
     },
     "provider-handoff-cancel-before-dispatch-recovered.png": {
-      "sha256": "fd2592eda492e3da7c5bd2c9ad98e06c932c150ca051550153f00848b260e1b1",
-      "bytes": 363577
+      "sha256": "69d6c656b5e1b759024d68d3cf457e7e8a74c2022113fbb39d7b739961d5b399",
+      "bytes": 359903
     },
     "provider-handoff-current-request-recovered.png": {
       "sha256": "0ac5373f8a086cddc5188d98fe93c3a035bd6e782a79b5f11cd072f2df84a9f6",
       "bytes": 388659
     },
     "provider-handoff-final-state.png": {
-      "sha256": "fd2592eda492e3da7c5bd2c9ad98e06c932c150ca051550153f00848b260e1b1",
-      "bytes": 363577
+      "sha256": "69d6c656b5e1b759024d68d3cf457e7e8a74c2022113fbb39d7b739961d5b399",
+      "bytes": 359903
     },
     "provider-model-exact-role-settings.png": {
       "sha256": "62400d56624a47e19d6f3b05ff7bd3dcfd94e699d4d1f582d80d0a28c04dd8a0",
@@ -6222,8 +6222,8 @@
       "bytes": 46378
     },
     "tool-blob-integrity.png": {
-      "sha256": "da71838cb282f07e0fd534c921c36c923d6a10aaf80d2857f72918350ef72548",
-      "bytes": 304231
+      "sha256": "7f43b29c82244f9784618f500108a195f25998047c10e4ac9b5f7163913f8a3c",
+      "bytes": 301986
     },
     "tool-card-refresh-new-tool.png": {
       "sha256": "825dff3e811a39fef409a8e5a0da056a655301020ef81305fa4f825bfbb05613",
@@ -6610,8 +6610,8 @@
       "bytes": 49826
     },
     "welcome-empty.png": {
-      "sha256": "035856b42fffa8f5099e8fb9d739f7c4ee6387e6f77754b4af5a99ba66ddbd18",
-      "bytes": 88759
+      "sha256": "eaa9e2a929ee106332eb3292a453107615f22fb39162b9274e1f3b1aa79d12cb",
+      "bytes": 95783
     },
     "workspace-image-attachments.png": {
       "sha256": "198199f67d7081f4ac89073fd05d8d7d54ed4bd99738656c146cfff5943c6f15",
