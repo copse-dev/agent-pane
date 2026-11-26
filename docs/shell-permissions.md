@@ -1618,7 +1618,9 @@ path that already exists. So every agent command that runs contained (`run_shell
 - **What is guarded.** Agent and hook configuration in the workspace: `.claude/settings.json`,
   `.claude/settings.local.json`, `.claude/hooks/`, `.codex/`, `.cursor/{mcp,hooks,cli,environment}.json`,
   `.cursor/hooks/`, `.gemini/settings.json`, `.qwen/settings.json`, `.copse/hooks.json` and
-  `.copse/worktree-preparation.json`. Git administration the command can reach: `config` and
+  `.copse/worktree-preparation.json`; and the shell hooks that run on `cd` in the user's own
+  terminal, outside any sandbox: direnv's `.envrc` and mise's `mise.toml`, `.mise.toml`,
+  `mise.local.toml` and `.mise.local.toml` (a previously trusted file can be rewritten), plus the files an existing `.envrc` loads with `dotenv`, `dotenv_if_exists`, `source_env` or `source_env_if_exists` (default `.env`), because direnv approves only `.envrc` itself. Git administration the command can reach: `config` and
   `config.worktree` of the checkout's git directory (and its common directory for a linked
   worktree), each `worktrees/*/config.worktree`, submodule `config` files and `hooks/` under
   `modules/`, a linked worktree's `.git` pointer file, any file the config includes from inside the
@@ -1649,8 +1651,8 @@ Limits: the check cannot tell who made a change, so an edit the user makes outsi
 file while a contained background task runs in that workspace is reverted when the task ends or an
 unsandboxed command starts. Files that run only when the user runs the project itself
 (`package.json` scripts, `conftest.py`, `.cargo/config.toml`, `.bundle/config`) are workspace code,
-not configuration, and are not guarded; `.envrc` is left to direnv, which refuses to load changed
-content until the user runs `direnv allow` again. Instruction-only directories (rules, skills) start
+not configuration, and are not guarded: they run when the project's own build or tests run, which
+stay contained. Instruction-only directories (rules, skills) start
 no program and are often written on request, so they are not guarded either.
 
 For each `node` on `PATH` the sandbox re-allows the binary and the directory holding it. It

@@ -53,7 +53,11 @@ import {
 } from './git-config-policy.ts'
 import { repositoryPaths } from './worktree-config.ts'
 
-/** Workspace files that configure an agent, a hook or Copse itself, relative to the workspace. */
+/**
+ * Workspace files that configure an agent, a hook, Copse itself, or a shell
+ * hook that runs on `cd` in the user's own terminal (direnv, mise), relative
+ * to the workspace.
+ */
 export const GUARDED_AGENT_CONFIG_FILES = [
   '.claude/settings.json',
   '.claude/settings.local.json',
@@ -65,6 +69,11 @@ export const GUARDED_AGENT_CONFIG_FILES = [
   '.qwen/settings.json',
   '.copse/hooks.json',
   '.copse/worktree-preparation.json',
+  '.envrc',
+  'mise.toml',
+  '.mise.toml',
+  'mise.local.toml',
+  '.mise.local.toml',
 ] as const
 
 /**
@@ -310,6 +319,44 @@ async function derivedGitTargets(
   return targets
 }
 
+/** direnv's default file for `dotenv` with no argument. */
+const DIRENV_DEFAULT_DOTENV = '.env'
+
+/**
+ * Files the workspace `.envrc` loads into the user's shell: `dotenv` and
+ * `dotenv_if_exists` export their variables (`GIT_SSH_COMMAND`,
+ * `PROMPT_COMMAND`, `LD_PRELOAD` …), and `source_env` and `source_up`-style
+ * helpers run them as shell. direnv approves `.envrc` by content, not these.
+ */
+export function direnvLoadedFiles(envrc: string): string[] {
+  const files: string[] = []
+  for (const line of envrc.split('\n')) {
+    const match =
+      /^\s*(dotenv|dotenv_if_exists|source_env|source_env_if_exists)\b\s*([^\s;#&|]*)/.exec(line)
+    if (!match) continue
+    const argument = (match[2] ?? '').replace(/^["']|["']$/g, '')
+    if (argument === '') {
+      if (match[1]?.startsWith('dotenv') === true) files.push(DIRENV_DEFAULT_DOTENV)
+      continue
+    }
+    if (!argument.includes('$')) files.push(argument)
+  }
+  return files
+}
+
+async function direnvTargets(root: string): Promise<Target[]> {
+  let envrc: string
+  try {
+    envrc = await readFile(join(root, '.envrc'), 'utf8')
+  } catch {
+    return []
+  }
+  return direnvLoadedFiles(envrc)
+    .map((file) => resolve(root, expandHome(file)))
+    .filter((path) => isPathWithin(root, path, { allowSelf: false }))
+    .map((path): Target => ({ path, comparator: 'bytes', tree: false }))
+}
+
 /**
  * What to guard in `root`. `derive` adds the include files and hook directory
  * the current git config names; a check passes `false` and reuses the
@@ -328,6 +375,7 @@ async function guardTargets(root: string, derive: boolean): Promise<Target[]> {
       comparator: 'bytes',
       tree: true,
     })),
+    ...(derive ? await direnvTargets(root) : []),
   ]
   const repository = await repositoryPaths(root).catch(() => null)
   if (!repository) {

