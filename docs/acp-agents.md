@@ -630,7 +630,7 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   minutes. Copse leaves that entry alone: the server would fail the same way on
   the next start, so clearing it buys nothing. Instead the sandbox note says
   these servers can't connect and points at the same GitHub route as above, and
-  the post-turn network audit counts `*.githubcopilot.com` as GitHub, so it names
+  the post-turn network audit counts `api.githubcopilot.com` as GitHub, so it names
   the bridged GitHub tools. Reproduced on Linux with `srt` and Claude Code 2.1.332
   through a `--plugin-dir` plugin named `github-connector`: the stdio server
   connects outside the sandbox and fails with `CONNECTION_CLOSED` inside it.

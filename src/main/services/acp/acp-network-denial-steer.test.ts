@@ -65,6 +65,9 @@ describe('formatSandboxNetworkDenialAudit', () => {
       'evilgithub.com',
       'github.attacker.com',
       'githubcopilot.com.attacker.com',
+      // The Copilot agent's own model endpoints: gh_* tools can't replace them.
+      'api.individual.githubcopilot.com',
+      'api.business.githubcopilot.com',
     ])
       assert.doesNotMatch(
         formatSandboxNetworkDenialAudit([{ host }]),

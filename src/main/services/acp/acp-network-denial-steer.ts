@@ -44,8 +44,12 @@ const GITHUB_DENIAL_HOSTS = new Set([
   'api.github.com',
   'githubusercontent.com',
   // GitHub's hosted MCP server (`api.githubcopilot.com/mcp/`), which a GitHub
-  // plugin of the agent's own may call from inside the sandbox (#4148).
-  'githubcopilot.com',
+  // plugin of the agent's own may call from inside the sandbox (#4148). Only
+  // this exact host: a denial carries no path, and the other
+  // `*.githubcopilot.com` hosts (`api.individual.…`, `api.business.…`) are the
+  // Copilot agent's own model endpoints, which the bridged gh_* tools can't
+  // stand in for.
+  'api.githubcopilot.com',
 ])
 
 /**
@@ -64,8 +68,7 @@ export function isGithubDenialHost(hostOrLabel: string): boolean {
   return (
     GITHUB_DENIAL_HOSTS.has(hostname) ||
     hostname.endsWith('.github.com') ||
-    hostname.endsWith('.githubusercontent.com') ||
-    hostname.endsWith('.githubcopilot.com')
+    hostname.endsWith('.githubusercontent.com')
   )
 }
 
