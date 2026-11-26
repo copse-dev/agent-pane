@@ -28,6 +28,22 @@ export function reviewThreadLocation(thread: Pick<GhPrReviewThread, 'path' | 'li
 }
 
 /**
+ * A Markdown code span that shows `text` literally. A file path comes from the
+ * PR's author, so it may hold backticks, Markdown or line breaks; it must stay
+ * one inert token in the draft rather than add lines or links of its own.
+ */
+function markdownCodeSpan(text: string): string {
+  const flat = Array.from(text, (char) => {
+    const code = char.charCodeAt(0)
+    return code < 0x20 || code === 0x7f || code === 0x2028 || code === 0x2029 ? ' ' : char
+  }).join('')
+  const longestRun = Math.max(0, ...(flat.match(/`+/g) ?? []).map((run) => run.length))
+  const fence = '`'.repeat(longestRun + 1)
+  const pad = flat.startsWith('`') || flat.endsWith('`') || flat.startsWith(' ') ? ' ' : ''
+  return `${fence}${pad}${flat}${pad}${fence}`
+}
+
+/**
  * Prompt asking the agent to address inline review threads. It names each
  * thread by location and node id but does not quote the comments: reviewer
  * text is third-party content, so the agent reads it through `gh_api_read`
@@ -41,7 +57,7 @@ export function prReviewThreadsFixDraft(
   const list = threads
     .map((thread) => {
       const author = thread.comments[0]?.author
-      return `- ${reviewThreadLocation(thread)}${author ? ` (from @${author})` : ''}, thread id \`${thread.id}\``
+      return `- ${markdownCodeSpan(reviewThreadLocation(thread))}${author ? ` (from @${author})` : ''}, thread id ${markdownCodeSpan(thread.id)}`
     })
     .join('\n')
   const subject =

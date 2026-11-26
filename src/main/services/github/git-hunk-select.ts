@@ -8,9 +8,12 @@ import type { GitLineSelection } from '@shared/types/git.ts'
  *
  * Hunks are the unit: with `-U0` each hunk is one contiguous run of removed
  * and added lines, so selecting any line of a change takes the whole change.
- * Skipping a hunk never shifts the others, because every header counts lines
- * in the file the patch is applied to (the index), which only the chosen hunks
- * change.
+ *
+ * With no context lines, `git apply` places a hunk by its result-side line
+ * number, which counts every earlier hunk of the full diff. Once some of those
+ * are left out, the result side of each kept hunk is renumbered from the side
+ * the patch applies to (the index), shifted only by the kept hunks before it.
+ * Without that, a later insertion lands a few lines off and still "succeeds".
  */
 
 type DiffSide = GitLineSelection['side']
@@ -66,8 +69,49 @@ function span(hunk: Hunk, side: DiffSide): [number, number] {
   return [start, start + count - 1]
 }
 
-/** Returns the patch limited to the touched hunks, or null when none is. */
-export function selectHunks(patch: string, selection: GitLineSelection): string | null {
+/** A hunk's position as "lines before it" on one side (a 0-count start already is). */
+function anchor(start: number, count: number): number {
+  return count === 0 ? start : start - 1
+}
+
+function fromAnchor(position: number, count: number): number {
+  return count === 0 ? position : position + 1
+}
+
+function headerFor(hunk: Hunk): string {
+  return `@@ -${String(hunk.oldStart)},${String(hunk.oldCount)} +${String(hunk.newStart)},${String(hunk.newCount)} @@`
+}
+
+/**
+ * Renumber the result side of the kept hunks. Applied forward (staging), the
+ * index is the old side and the new side is rebuilt; reversed (unstaging), the
+ * index is the new side and the old side is rebuilt.
+ */
+function rebase(hunks: Hunk[], reverse: boolean): Hunk[] {
+  let shift = 0
+  return hunks.map((hunk) => {
+    const next = { ...hunk }
+    if (reverse) {
+      next.oldStart = fromAnchor(anchor(hunk.newStart, hunk.newCount) - shift, hunk.oldCount)
+      shift += hunk.newCount - hunk.oldCount
+    } else {
+      next.newStart = fromAnchor(anchor(hunk.oldStart, hunk.oldCount) + shift, hunk.newCount)
+      shift += hunk.newCount - hunk.oldCount
+    }
+    next.lines = [headerFor(next), ...hunk.lines.slice(1)]
+    return next
+  })
+}
+
+/**
+ * Returns the patch limited to the touched hunks, renumbered for the direction
+ * it will be applied in (`reverse` to unstage), or null when none is touched.
+ */
+export function selectHunks(
+  patch: string,
+  selection: GitLineSelection,
+  reverse: boolean,
+): string | null {
   const parsed = parse(patch)
   if (!parsed) return null
   const lo = Math.min(selection.startLine, selection.endLine)
@@ -77,5 +121,6 @@ export function selectHunks(patch: string, selection: GitLineSelection): string 
     return start <= hi && end >= lo
   })
   if (chosen.length === 0) return null
-  return [...parsed.header, ...chosen.flatMap((hunk) => hunk.lines), ''].join('\n')
+  const kept = rebase(chosen, reverse)
+  return [...parsed.header, ...kept.flatMap((hunk) => hunk.lines), ''].join('\n')
 }

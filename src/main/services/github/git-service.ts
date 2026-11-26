@@ -1,7 +1,7 @@
 import * as fsp from 'node:fs/promises'
 import { constants as fsConstants } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { join, resolve } from 'node:path'
+import { join, posix, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { errorMessage } from '@shared/errors.ts'
 import { resolvePathWithinRoot, toRelativePathWithinRoot } from '../workspace.ts'
@@ -1408,11 +1408,52 @@ const EMPTY_TREE = {
   sha256: '6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321',
 } as const
 
+/**
+ * The row's own path, relative to `root`. Only the parent directory is resolved
+ * against the workspace boundary: resolving the row itself would follow a
+ * symlink row to its target, and stage the target instead of the link.
+ */
 async function stageTarget(path: string, root: string | null): Promise<string> {
   if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree(root))) {
     throw new Error('No git repository is open.')
   }
-  return resolveWorkspaceRelativeGitPath(path, root)
+  const normalized = posix.normalize(path.replaceAll('\\', '/'))
+  if (
+    posix.isAbsolute(normalized) ||
+    normalized === '.' ||
+    normalized === '..' ||
+    normalized.startsWith('../')
+  ) {
+    throw new Error(`${path} is outside the workspace.`)
+  }
+  const name = posix.basename(normalized)
+  const parent = posix.dirname(normalized)
+  if (parent === '.') return name
+  const resolvedParent = (await resolveWorkspaceRelativeGitPath(parent, root)).replaceAll('\\', '/')
+  return resolvedParent === '' || resolvedParent === '.' ? name : `${resolvedParent}/${name}`
+}
+
+/**
+ * The old path of a staged rename whose new path is `rel`, so unstaging the
+ * row also unstages the deletion that came with it.
+ */
+async function stagedRenameSource(rel: string, root: string | null): Promise<string | null> {
+  const result = await runGitRead(
+    ['diff', '--cached', '--name-status', '-z', '-M', '--relative', '--no-color'],
+    root,
+  )
+  if (result.code !== 0) return null
+  const fields = result.stdout.split('\0')
+  for (let i = 0; i < fields.length;) {
+    const status = fields[i] ?? ''
+    if (status.startsWith('R')) {
+      if (fields[i + 2] === rel) return fields[i + 1] ?? null
+      i += 3
+    } else {
+      i += 2
+    }
+  }
+  return null
 }
 
 /** A pathspec that matches `rel` alone, even when it contains glob characters. */
@@ -1444,7 +1485,9 @@ export async function setGitPathStaged(
     const format = await runGitRead(['rev-parse', '--show-object-format'], root)
     source = format.stdout.trim() === 'sha256' ? EMPTY_TREE.sha256 : EMPTY_TREE.sha1
   }
-  const result = await runGit(['restore', '--staged', `--source=${source}`, '--', spec], root)
+  const renamedFrom = await stagedRenameSource(rel, root)
+  const specs = renamedFrom ? [spec, literalPathspec(renamedFrom)] : [spec]
+  const result = await runGit(['restore', '--staged', `--source=${source}`, '--', ...specs], root)
   if (result.code !== 0) return { ok: false, message: gitFailure(result, 'restore') }
   return { ok: true, message: `Unstaged ${rel}.` }
 }
@@ -1467,6 +1510,11 @@ export async function setGitLinesStaged(
       'diff',
       '--no-color',
       '--no-renames',
+      // The patch must name the file the same way `git apply` reads it, whatever
+      // the user's diff.noprefix, diff.mnemonicPrefix or diff.relative say.
+      '--src-prefix=a/',
+      '--dst-prefix=b/',
+      '--no-relative',
       '-U0',
       ...(staged ? [] : ['--cached']),
       '--',
@@ -1483,7 +1531,7 @@ export async function setGitLinesStaged(
         : 'Nothing staged here to unstage.',
     }
   }
-  const patch = selectHunks(diff.stdout, selection)
+  const patch = selectHunks(diff.stdout, selection, !staged)
   if (!patch) return { ok: false, message: 'The selection does not touch a changed line.' }
   const result = await runGit(
     [
