@@ -36,7 +36,7 @@ import {
   sleep,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-47L7W7V3.js";
+} from "./chunks/chunk-VX2F4FHT.js";
 import "./chunks/chunk-X6JZSFJR.js";
 import {
   init_icons,
@@ -6459,7 +6459,9 @@ function createDemoApi(scenario2, options = {}) {
           prRefs: []
         }))
       ),
-      listOrphans: emptyArray
+      listOrphans: emptyArray,
+      listExternalSessions: () => resolved({ sessions: [], sourcesFound: [] }),
+      importExternalSessions: () => resolved({ imported: [], alreadyImported: [], failed: [] })
     },
     openRouter: { models: emptyArray },
     models: {
@@ -7523,7 +7525,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-LKPO7ZJA.js").then(async (main) => {
+    void import("./chunks/main-E7JW3YZE.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
