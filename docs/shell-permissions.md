@@ -651,7 +651,9 @@ provides no per-call host enforcement point for a stdio or HTTP MCP server the e
 mounts itself. Offering the relay adds read-only sandbox grants for the agent: the Electron
 runtime, the relay script and the `package.json` beside it, and only alongside the loopback grant
 the bridge already needs. It adds no write grants. An agent that never lists the relay's tools
-within the mount window gets the thread notice that Copse's tools are unavailable.
+within the mount window is told so in its prompt. Unlike an http agent that never mounts, it gets
+no thread notice, because before the relay such an agent was offered nothing and showed none; an
+agent that reports the relay failed to start still gets the notice.
 
 Because every bridged call is re-gated there, the agent's own ACP permission request for one only
 duplicates that gate. Copse approves the ACP-layer request only when **adapter-authored provenance**

@@ -849,10 +849,11 @@ async function runAcpAgentTurn(
     offeredBridge && acpBridgeToolLoss(offeredBridge) === null
       ? (offeredBridge.listedToolNames() ?? [])
       : []
-  // Once per session: tell the thread its agent never connected to Copse's tools.
-  const noteBridgeUnavailable = (bridge: AcpNativeBridge): boolean => {
+  // Once per session: tell the thread its agent never connected to Copse's
+  // tools. `quiet` records it without the thread notice.
+  const noteBridgeUnavailable = (bridge: AcpNativeBridge, quiet = false): boolean => {
     if (!markAcpBridgeUnavailable(bridge)) return false
-    options.onChunk({ type: 'text', text: acpBridgeUnavailableNotice(agent.title) })
+    if (!quiet) options.onChunk({ type: 'text', text: acpBridgeUnavailableNotice(agent.title) })
     return true
   }
   const handlers: AcpClientHandlers = {
@@ -1006,7 +1007,11 @@ async function runAcpAgentTurn(
       // mount: the prompt below is never sent, and the next turn decides.
       sessionBridge &&
       bridgeMount === 'unlisted' &&
-      noteBridgeUnavailable(sessionBridge)
+      // An agent without http MCP was offered the bridge over the stdio relay.
+      // One that silently ignores it reads as it did before that offer
+      // existed: no thread notice. Its own report of a failed relay start
+      // (`onBridgeStartupFailure`) still gets one, and so does an http offer.
+      noteBridgeUnavailable(sessionBridge, entry.open.mcpCapabilities?.http !== true)
     ) {
       console.warn(
         `[acp-bridge] thread ${options.threadId}'s agent never listed the native tools it was offered; they are unavailable this session`,

@@ -55,6 +55,7 @@
  * | `--list-mcp-tools`     | list each offered http server's tools before `session/new` returns |
  * | `--report-mcp-failure` | on the first prompt, report each offered server as failed the |
  * |                        | way Claude Agent ACP does for a client without notices        |
+ * | `--ignore-mcp`         | never start the stdio servers it is offered                   |
  *
  * `--mcp-http` alone is an agent that is offered the bridge and never mounts it,
  * until a `list-mcp-tools` prompt mounts it late.
@@ -160,7 +161,8 @@ agent({ name: 'mock-acp-agent' })
     offeredServers.set(sessionId, servers)
     sessionCwds.set(sessionId, ctx.params.cwd)
     if (flags.has('--list-mcp-tools')) await listTools(servers)
-    if (!flags.has('--mcp-http')) {
+    // `--ignore-mcp`: an agent that silently ignores the servers it is offered.
+    if (!flags.has('--mcp-http') && !flags.has('--ignore-mcp')) {
       await mountStdioServers(ctx.params.mcpServers, 'mock-acp-agent')
     }
     return { sessionId }
