@@ -188,9 +188,10 @@ jobs:
   # and the skip would repeat every week for good, as with v0.1.0-beta.16. So
   # check the version's successful Release (macOS) run, by the tag's commit,
   # and how long its artifacts last (scripts/release-publication-window.mts).
-  # Near expiry this opens or updates an `area:release` issue; once they have
-  # expired it fails too. It never cuts past the version itself: abandoning a
-  # build is a person's call (docs/releasing-macos.md#publication-window).
+  # Near expiry this opens or updates an `area:release` issue, as it does for a
+  # cancelled or never-run build that report-failure misses; once the artifacts
+  # have expired it fails too. It never cuts past the version itself:
+  # abandoning a build is a person's call (docs/releasing-macos.md#publication-window).
   publication-window:
     needs: bump
     if: needs.bump.outputs.unpublished != ''

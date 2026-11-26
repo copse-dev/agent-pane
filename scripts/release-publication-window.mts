@@ -139,7 +139,7 @@ export type PublicationWindow =
   | { state: 'untagged' }
   /** No successful run yet, and one is still going. */
   | { state: 'building'; run: ReleaseRun }
-  /** No successful run, and none going: it failed or was cancelled, or never started. */
+  /** No successful run, and none going: it failed, was cancelled, or never started. */
   | { state: 'unbuilt'; run: ReleaseRun | null }
   /** Publishable, with more than the warning threshold left. */
   | { state: 'open'; run: ReleaseRun; expiresAt: Date }
@@ -157,9 +157,8 @@ export function assessPublicationWindow(options: {
   runs: readonly ReleaseRun[]
   artifacts: readonly RunArtifact[]
   now: Date
-  warningDays?: number
 }): PublicationWindow {
-  const { releaseSha, runs, artifacts, now, warningDays = EXPIRY_WARNING_DAYS } = options
+  const { releaseSha, runs, artifacts, now } = options
   if (releaseSha === null) return { state: 'untagged' }
   const run = latestSuccessfulRun(runs, releaseSha)
   if (run === null) {
@@ -170,7 +169,8 @@ export function assessPublicationWindow(options: {
       : { state: 'building', run: going }
   }
   // GitHub stops listing an artifact once it expires, so a missing one is gone
-  // too. Its expiry then comes from the run's start and the retention.
+  // too. Its expiry then comes from the run's start and the retention: an
+  // early estimate, since uploads come later, but never one a rerun moves.
   const estimate = Date.parse(run.createdAt) + RELEASE_ARTIFACT_RETENTION_DAYS * DAY_MS
   let closes = Number.POSITIVE_INFINITY
   let gone = false
@@ -206,7 +206,7 @@ export function assessPublicationWindow(options: {
   const left = closes - now.getTime()
   const expiresAt = new Date(closes)
   if (left <= 0) return { state: 'expired', run, expiresAt, estimated: false }
-  return { state: left <= warningDays * DAY_MS ? 'closing' : 'open', run, expiresAt }
+  return { state: left <= EXPIRY_WARNING_DAYS * DAY_MS ? 'closing' : 'open', run, expiresAt }
 }
 
 export interface PublicationReport {
@@ -263,14 +263,34 @@ export function reportPublicationWindow(
         issue: null,
       }
     case 'unbuilt': {
-      const latest =
-        window.run === null
-          ? ''
-          : `; the latest, ${window.run.url}, ended ${window.run.conclusion ?? 'without a conclusion'}`
+      const { run } = window
+      if (run?.conclusion === 'failure') {
+        // report-failure in release-mac.yml has already opened an issue for it.
+        return {
+          level: 'warning',
+          message: `${tag} is not published, and its Release (macOS) run failed: ${run.url}. The weekly bump skips until it is published or cut past. Its "Release (macOS) failed for ${tag}" issue has the fix: fix forward, then ${cutPast}. See docs/releasing-macos.md#failed-releases.`,
+          issue: null,
+        }
+      }
+      // Cancelled, a startup failure, or never dispatched: report-failure does
+      // not fire for these, and Cut release tag will not dispatch again while
+      // any run exists, so nothing else would ever say the train has stopped.
+      const why =
+        run === null
+          ? 'has never run'
+          : `ended ${run.conclusion ?? 'without a conclusion'}: ${run.url}`
+      const build = `dispatch \`Release (macOS)\` with tag \`${tag}\` to build it again`
       return {
         level: 'warning',
-        message: `${tag} is not published and has no successful Release (macOS) run${latest}. The weekly bump skips until it is published or cut past: fix forward, then ${cutPast}. See docs/releasing-macos.md#failed-releases.`,
-        issue: null,
+        message: `${tag} is not published, and its Release (macOS) build ${why}. Nothing will build it unless a person does: ${build}, or ${cutPast}.`,
+        issue: {
+          title: unpublishedIssueTitle(tag),
+          body: [
+            `\`Bump release version\` skipped this week because \`${tag}\` is not published, and it has no successful build: its Release (macOS) run ${run === null ? 'has never run' : `[ended ${run.conclusion ?? 'without a conclusion'}](${run.url})`}. No failure issue covers this, and \`Cut release tag\` does not dispatch a second run for a tag that has one, so the weekly bump will skip until a person acts.`,
+            `To build it, ${build}. To abandon it instead, ${cutPast}. See docs/releasing-macos.md#publication-window.`,
+            `Close this issue once \`${tag}\` or a later version is published.`,
+          ].join('\n\n'),
+        },
       }
     }
     case 'open': {
@@ -299,14 +319,20 @@ export function reportPublicationWindow(
       }
     }
     case 'expired': {
-      const when = `${window.estimated ? 'around' : 'on'} ${formatTime(window.expiresAt)}`
+      // An estimate still ahead of now means the artifacts went early (deleted
+      // by hand, say); never claim a future expiry.
+      const when = !window.estimated
+        ? `expired on ${formatTime(window.expiresAt)}`
+        : window.expiresAt.getTime() <= now.getTime()
+          ? `expired around ${formatTime(window.expiresAt)}`
+          : 'are no longer available'
       return {
         level: 'error',
-        message: `${tag}'s build can no longer be published: the artifacts of ${window.run.url} expired ${when}. The weekly bump skips every week until a person moves on: ${cutPast}.`,
+        message: `${tag}'s build can no longer be published: the artifacts of ${window.run.url} ${when}. The weekly bump skips every week until a person moves on: ${cutPast}.`,
         issue: {
           title: unpublishedIssueTitle(tag),
           body: [
-            `\`${tag}\` was never published, and its build no longer can be: the signed artifacts of ${runLink(window.run)} expired ${when}, and \`Publish release artifacts\` publishes only a run's own artifacts.`,
+            `\`${tag}\` was never published, and its build no longer can be: the signed artifacts of ${runLink(window.run)} ${when}, and \`Publish release artifacts\` publishes only a run's own artifacts.`,
             `\`Bump release version\` waits for the current version to be published, so it will skip every week, and fail, until a person moves on. To do that, ${cutPast}. The schedule does not cut past it by itself; see docs/releasing-macos.md#publication-window.`,
             'Close this issue once a later version is published.',
           ].join('\n\n'),

@@ -197,13 +197,14 @@ finds that version's successful `Release (macOS)` run by the tag's commit and
 reads when the run's artifacts expire
 ([`scripts/release-publication-window.mts`](../scripts/release-publication-window.mts)):
 
-| The unpublished version                    | The bump run                                                  |
-| ------------------------------------------ | ------------------------------------------------------------- |
-| Is not tagged yet, or its build is running | Notes it.                                                     |
-| Has no successful build                    | Warns. A failed build already has its own issue.              |
-| Has artifacts lasting more than 14 days    | Notes the run to publish from and the expiry date.            |
-| Has artifacts expiring within 14 days      | Warns, and opens or comments on `Release unpublished: <tag>`. |
-| Has expired artifacts                      | Fails, and opens or comments on the same issue.               |
+| The unpublished version                    | The bump run                                                                                 |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| Is not tagged yet, or its build is running | Notes it.                                                                                    |
+| Has a failed build                         | Warns. Its `Release (macOS) failed for <tag>` issue has the fix.                             |
+| Has a cancelled build, or none at all      | Warns, and opens or comments on `Release unpublished: <tag>`, since nothing else reports it. |
+| Has artifacts lasting more than 14 days    | Notes the run to publish from and the expiry date.                                           |
+| Has artifacts expiring within 14 days      | Warns, and opens or comments on `Release unpublished: <tag>`.                                |
+| Has expired artifacts                      | Fails, and opens or comments on the same issue.                                              |
 
 The threshold is 14 days, not 7, because the bump checks only once a week. A
 7-day threshold could first warn with an hour to spare. Fourteen always warns

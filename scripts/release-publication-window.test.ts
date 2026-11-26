@@ -8,7 +8,6 @@ import { load } from 'js-yaml'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import {
-  EXPIRY_WARNING_DAYS,
   assessPublicationWindow,
   latestSuccessfulRun,
   parseReleaseRuns,
@@ -147,28 +146,13 @@ describe('assessPublicationWindow', () => {
     // artifacts expire. Simulate every hourly offset: the earliest check that
     // warns must leave more than a week, and a later check must warn again.
     const expiry = Date.parse('2026-11-25T09:58:00Z')
-    const warnings = (warningDays: number): number[][] =>
-      Array.from({ length: 7 * 24 }, (_, offsetHours) =>
-        [4, 3, 2, 1, 0]
-          .map((weeks) => offsetHours * 3_600_000 + weeks * 7 * DAY_MS)
-          .filter((left) => {
-            const window = assessPublicationWindow({
-              releaseSha: sha,
-              runs: [run()],
-              artifacts: liveArtifacts(),
-              now: new Date(expiry - left),
-              warningDays,
-            })
-            return window.state === 'closing'
-          }),
-      )
-    for (const [offsetHours, warned] of warnings(EXPIRY_WARNING_DAYS).entries()) {
+    for (let offsetHours = 0; offsetHours < 7 * 24; offsetHours += 1) {
+      const warned = [4, 3, 2, 1, 0]
+        .map((weeks) => offsetHours * 3_600_000 + weeks * 7 * DAY_MS)
+        .filter((left) => assess(new Date(expiry - left).toISOString()).state === 'closing')
       assert.equal(warned.length, 2, `offset ${String(offsetHours)}h`)
       assert.ok((warned[0] ?? 0) >= 7 * DAY_MS, `offset ${String(offsetHours)}h`)
     }
-    // The threshold first suggested can first warn with an hour to spare.
-    const late = warnings(7).map((warned) => warned[0] ?? Number.POSITIVE_INFINITY)
-    assert.ok(Math.min(...late) < 2 * 3_600_000)
   })
 
   it('closes the window at the first required artifact to expire', () => {
@@ -261,6 +245,10 @@ describe('reportPublicationWindow', () => {
     )
     assert.equal(report.issue?.title, 'Release unpublished: v0.1.0-beta.16')
     assert.match(report.issue.body, /The schedule does not cut past it by itself/)
+    // Artifacts gone before the estimate (deleted by hand): never a future date.
+    const early = reportPublicationWindow(tag, assess(now.toISOString(), []), now)
+    assert.equal(early.level, 'error')
+    assert.match(early.message, /actions\/runs\/40298745227 are no longer available\./)
   })
 
   it('counts down in hours on the last day, and suggests the next beta after a stable', () => {
@@ -270,27 +258,44 @@ describe('reportPublicationWindow', () => {
     assert.match(report.issue?.body ?? '', /for example `0\.1\.1-beta\.1`/)
   })
 
-  it('keeps building and untagged versions quiet, and warns on a build with no success', () => {
+  it('keeps building and untagged versions quiet', () => {
     assert.equal(reportPublicationWindow(tag, { state: 'untagged' }, now).level, 'notice')
     const going = run({ status: 'in_progress', conclusion: null })
-    assert.equal(
-      reportPublicationWindow(tag, { state: 'building', run: going }, now).level,
-      'notice',
-    )
-    const unbuilt = reportPublicationWindow(
-      tag,
-      { state: 'unbuilt', run: run({ conclusion: 'cancelled' }) },
-      now,
-    )
-    assert.equal(unbuilt.level, 'warning')
-    assert.equal(unbuilt.issue, null, 'a failed run already has its own issue')
-    assert.match(unbuilt.message, /ended cancelled.*docs\/releasing-macos\.md#failed-releases/)
+    const building = reportPublicationWindow(tag, { state: 'building', run: going }, now)
+    assert.equal(building.level, 'notice')
+    assert.equal(building.issue, null)
+  })
+
+  it('leaves a failed build to its own failure issue', () => {
+    const failed: PublicationWindow = { state: 'unbuilt', run: run({ conclusion: 'failure' }) }
+    const report = reportPublicationWindow(tag, failed, now)
+    assert.equal(report.level, 'warning')
+    assert.equal(report.issue, null, 'report-failure has already opened one')
+    assert.match(report.message, /"Release \(macOS\) failed for v0\.1\.0-beta\.16" issue/)
+  })
+
+  it('files an issue for a build nothing else reports: cancelled, or never run', () => {
+    // report-failure fires only on failure(), and Cut release tag will not
+    // dispatch again while a run exists, so these stall the train silently.
+    for (const builtBy of [
+      run({ conclusion: 'cancelled' }),
+      run({ conclusion: 'startup_failure' }),
+      null,
+    ]) {
+      const report = reportPublicationWindow(tag, { state: 'unbuilt', run: builtBy }, now)
+      assert.equal(report.level, 'warning')
+      assert.equal(report.issue?.title, 'Release unpublished: v0.1.0-beta.16')
+      assert.match(report.message, /dispatch `Release \(macOS\)` with tag `v0\.1\.0-beta\.16`/)
+      assert.match(report.issue.body, /for example `0\.1\.0-beta\.17`/)
+    }
   })
 
   it('stays one line, so the workflow annotation carries all of it', () => {
     const windows: PublicationWindow[] = [
       { state: 'untagged' },
       { state: 'unbuilt', run: null },
+      { state: 'unbuilt', run: run({ conclusion: 'cancelled' }) },
+      { state: 'unbuilt', run: run({ conclusion: 'failure' }) },
       assess('2026-11-02T05:37:00Z'),
       assess(now.toISOString()),
       assess('2026-11-30T05:37:00Z', []),
@@ -336,6 +341,8 @@ const rehearsalSchema = z.object({
 interface Rehearsal {
   /** The tag lookup: a commit (lightweight tag), an annotated tag object, a 404, or an outage. */
   tag: 'commit' | 'annotated' | 'missing' | 'outage'
+  /** A listing that fails after the tag resolves. */
+  failing?: 'runs' | 'artifacts'
   runs?: unknown[]
   artifacts?: unknown[]
   openIssues?: { number: number; title: string }[]
@@ -370,6 +377,9 @@ if (args[0] === 'api' && endpoint.includes('/git/ref/tags/')) {
   process.stdout.write(JSON.stringify({ object: { type, sha: type === 'tag' ? 'b'.repeat(40) : fixture.sha } }))
 } else if (args[0] === 'api' && endpoint.includes('/git/tags/')) {
   process.stdout.write(JSON.stringify({ object: { type: 'commit', sha: fixture.sha } }))
+} else if (args[0] === 'api' && endpoint.includes('/actions/') && fixture.failing && endpoint.includes(fixture.failing === 'runs' ? '/runs?' : '/artifacts')) {
+  process.stdout.write('{"message":"Resource not accessible by integration"}')
+  process.stderr.write('gh: Resource not accessible by integration (HTTP 403)'); process.exit(1)
 } else if (args[0] === 'api' && endpoint.includes('/actions/workflows/release-mac.yml/runs?head_sha=' + fixture.sha)) {
   process.stdout.write(JSON.stringify([{ workflow_runs: fixture.runs ?? [] }]))
 } else if (args[0] === 'api' && /\\/actions\\/runs\\/\\d+\\/artifacts/.test(endpoint)) {
@@ -498,15 +508,34 @@ describe('Bump release version publication-window step', () => {
     assert.deepEqual(outage.state.issues, [])
   })
 
-  it('does not look for artifacts when no run succeeded', () => {
-    const failed = { ...restRun, conclusion: 'failure' }
-    const { result, state } = rehearse({ tag: 'commit', runs: [failed] })
-    assert.equal(result.status, 0, result.stderr)
+  it('does not look for artifacts when no run succeeded, and files only what is unreported', () => {
+    const failed = rehearse({ tag: 'commit', runs: [{ ...restRun, conclusion: 'failure' }] })
+    assert.equal(failed.result.status, 0, failed.result.stderr)
     assert.match(
-      result.stdout,
-      /^::warning::v0\.1\.0-beta\.16 is not published and has no successful/m,
+      failed.result.stdout,
+      /^::warning::v0\.1\.0-beta\.16 is not published, and its Release \(macOS\) run failed/m,
     )
-    assert.ok(!state.calls.some((call) => call.includes('/artifacts')))
-    assert.deepEqual(state.issues, [])
+    assert.ok(!failed.state.calls.some((call) => call.includes('/artifacts')))
+    assert.deepEqual(failed.state.issues, [])
+    const cancelled = rehearse({ tag: 'commit', runs: [{ ...restRun, conclusion: 'cancelled' }] })
+    assert.equal(cancelled.result.status, 0, cancelled.result.stderr)
+    assert.equal(cancelled.state.issues[0]?.title, 'Release unpublished: v0.1.0-beta.16')
+  })
+
+  it('fails, filing nothing, when a run or artifact listing cannot be read', () => {
+    for (const failing of ['runs', 'artifacts'] as const) {
+      const { result, state } = rehearse({
+        tag: 'commit',
+        failing,
+        runs: [restRun],
+        artifacts: restArtifacts(20),
+      })
+      assert.notEqual(result.status, 0, failing)
+      const listing = failing === 'runs' ? '/runs?' : '/artifacts'
+      assert.ok(state.calls.at(-1)?.includes(listing), `stopped at the ${failing} listing`)
+      assert.doesNotMatch(result.stdout, /^::(notice|warning)::/m, failing)
+      assert.deepEqual(state.issues, [], failing)
+      assert.deepEqual(state.comments, [], failing)
+    }
   })
 })
