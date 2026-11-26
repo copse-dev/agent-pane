@@ -161,6 +161,10 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
     pending = null
   }
   let summary = ''
+  // The last text chunk, while it is still the most recent chunk. The shared
+  // loop announces a step or time limit as a text chunk right before `done`;
+  // that is the loop's own continuation prompt, not the reviewer's summary.
+  let trailingText: string | null = null
   let toolCalls = 0
   let usageChunks = 0
   const hostingProviders = new Set<string>()
@@ -203,10 +207,24 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
         if (chunk.type === 'text' || chunk.type === 'reasoning') {
           if (pending !== null && pending.type !== chunk.type) flushPending()
           pending = { type: chunk.type, text: (pending?.text ?? '') + chunk.text }
-          if (chunk.type === 'text') summary += chunk.text
+          if (chunk.type === 'text') {
+            summary += chunk.text
+            trailingText = chunk.text
+          } else {
+            trailingText = null
+          }
           return
         }
         flushPending()
+        if (
+          chunk.type === 'done' &&
+          isRunLimitStopReason(chunk.stopReason) &&
+          trailingText !== null &&
+          summary.endsWith(trailingText)
+        ) {
+          summary = summary.slice(0, summary.length - trailingText.length)
+        }
+        trailingText = null
         if (chunk.type === 'tool_call') {
           toolCalls += 1
           // A fresh answer follows a tool round; the closing summary is the last text.
@@ -360,4 +378,8 @@ export function sumUsage(usages: readonly TurnUsage[]): TurnUsage {
     outputTokens: usages.reduce((sum, usage) => sum + usage.outputTokens, 0),
     estimated: usages.some((usage) => usage.estimated),
   }
+}
+
+function isRunLimitStopReason(stopReason: string | undefined): boolean {
+  return stopReason === 'max_steps' || stopReason === 'timeout'
 }

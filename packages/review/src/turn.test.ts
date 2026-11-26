@@ -60,3 +60,47 @@ it("tells every role today's date, so a past timestamp is not read as a future o
     /^Review the change\.\n\nToday's date is 2026-09-25 \(UTC\)\. Dates and timestamps before it are in the past/,
   )
 })
+
+it("keeps the loop's step-limit prompt out of a reviewer's summary when its repair fails", async () => {
+  // A reviewer that never stops probing runs out of steps; the forced
+  // finish_review repair is then refused by the server (as LM Studio refused
+  // an object tool_choice). The summary must not become the loop's own
+  // "reached its step limit… Continue from the current state" prompt.
+  const provider: LLMProvider = {
+    async *stream(messages, tools, _signal, options): AsyncGenerator<ProviderStreamChunk> {
+      if (options?.toolChoice) throw new Error('400 Invalid tool_choice type')
+      yield* new ScriptedProvider([{ type: 'tool_call', name: 'probe', args: {} }]).stream(
+        messages,
+        tools,
+      )
+    },
+  }
+  const result = await runTurn({
+    provider,
+    model: 'limit-fixture',
+    systemPrompt: 'Review.',
+    userPrompt: 'Review.',
+    tools: [
+      { name: 'probe', description: 'Probe', parameters: { type: 'object', properties: {} } },
+    ],
+    execute: () => Promise.resolve('checked'),
+    threadId: 'limit',
+    turnId: 'limit-1',
+    maxSteps: 2,
+    completionError: () => 'reviewer stopped without calling the required finish_review tool',
+    completionRepair: {
+      tools: [
+        {
+          name: 'finish_review',
+          description: 'Finish',
+          parameters: { type: 'object', properties: {} },
+        },
+      ],
+      toolChoice: { name: 'finish_review' },
+      maxSteps: 1,
+      prompt: () => 'Call finish_review now.',
+    },
+  })
+  assert.equal(result.outcome, 'failed')
+  assert.doesNotMatch(result.summary, /limit before finishing/)
+})

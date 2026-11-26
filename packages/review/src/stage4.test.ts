@@ -639,6 +639,14 @@ describe('verifyFindings', () => {
     assert.equal(record.outcome, 'failed')
     assert.match(record.reason, /stopped without calling the required verdict tool/)
     assert.deepEqual(result.findings.at(0)?.provenance.challengedBy, [])
+    // The report keeps the finding, not the record: the failure must travel with it.
+    const kept = result.findings.at(0)?.verdict
+    assert.ok(kept)
+    assert.equal(kept.status, 'unverified')
+    assert.match(
+      kept.reason,
+      /^the constant changed — challenge by challenger-model did not finish: .*verdict tool/,
+    )
   })
 
   it('verifies the most promising findings first and counts the rest as skipped', async () => {

@@ -1,3 +1,4 @@
+import { isRecord } from '@copse/std/unknown-value.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { ToolCallRequestError, type Chat, type LLMRespondOpts } from '@lmstudio/sdk'
@@ -276,6 +277,38 @@ async function collect(provider: LMStudioProvider): Promise<ProviderStreamChunk[
 }
 
 describe('LMStudioProvider', () => {
+  it('forces a named tool as required over only that tool', async () => {
+    // The SDK's tool choice has no named form, so a forced call (the review's
+    // finish_review repair) narrows the tools and requires one.
+    const client = new FakeClient()
+    const provider = new LMStudioProvider('local-model', { client })
+    const tools = [
+      { name: 'report_finding', description: 'Report', parameters: { type: 'object' } },
+      { name: 'finish_review', description: 'Finish', parameters: { type: 'object' } },
+    ]
+    for await (const _ of provider.stream([{ role: 'user', content: 'Finish' }], tools, undefined, {
+      toolChoice: { name: 'finish_review' },
+    })) {
+      // Drain so the request is captured.
+    }
+    const opts = client.modelHandle.opts ?? {}
+    assert.deepEqual(Reflect.get(opts, 'toolChoice'), { type: 'generic', mode: 'required' })
+    const rawTools: unknown = Reflect.get(opts, 'rawTools')
+    assert.deepEqual(
+      isRecord(rawTools) && Array.isArray(rawTools['tools'])
+        ? rawTools['tools'].map((t: unknown) =>
+            isRecord(t) && isRecord(t['function']) ? t['function']['name'] : null,
+          )
+        : null,
+      ['finish_review'],
+    )
+
+    for await (const _ of provider.stream([{ role: 'user', content: 'Go' }], tools)) {
+      // An unforced call keeps every tool and the server's default choice.
+    }
+    assert.equal(Reflect.get(client.modelHandle.opts ?? {}, 'toolChoice'), undefined)
+  })
+
   it('retains union actions, shared required fields and branch constraints in SDK tools', async () => {
     const client = new FakeClient()
     const provider = new LMStudioProvider('local-model', { client })
