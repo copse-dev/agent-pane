@@ -116,14 +116,14 @@ export function getApiKey(provider: KeyProvider): string | null {
  * so work that needs it must not leave the app.
  */
 export function storedKeysOpenOutsideApp(): boolean {
-  return cached
-    .listKeys()
-    .filter((key) => key.startsWith('apiKey.'))
-    .every((key) => {
-      const raw = cached.get(key)
-      if (!isStoredKey(raw) || raw.plain === true) return true
-      return isKeyringCipherBlob(Buffer.from(raw.enc, 'base64'))
-    })
+  // One nested `apiKey` record, as the secret sweep reads it: the backing
+  // store lists top-level keys only.
+  const stored = cached.get('apiKey')
+  if (!isRecord(stored)) return true
+  return Object.values(stored).every((raw) => {
+    if (!isStoredKey(raw) || raw.plain === true) return true
+    return isKeyringCipherBlob(Buffer.from(raw.enc, 'base64'))
+  })
 }
 
 /**
