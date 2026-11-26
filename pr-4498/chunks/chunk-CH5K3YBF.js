@@ -31938,12 +31938,11 @@ function findAgentProfile(profiles, id) {
   if (id === void 0) return void 0;
   return profiles?.find((profile) => profile.id === id);
 }
-function newAgentProfileId(name, existing, random = () => Math.random().toString(36).slice(2, 8)) {
+function newAgentProfileId(name, existing) {
   const slug2 = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "profile";
   const taken = new Set(existing.map((profile) => profile.id));
-  if (!taken.has(slug2)) return slug2;
   for (; ; ) {
-    const id = `${slug2}-${random()}`.slice(0, 64);
+    const id = `${slug2}-${Math.random().toString(36).slice(2, 8).padEnd(6, "0")}`;
     if (!taken.has(id)) return id;
   }
 }
@@ -46200,6 +46199,7 @@ var init_model_picker = __esm({
 function createAgentProfilesSection(api, opts = {}) {
   let profiles = [];
   let editingId = null;
+  let formModel = "";
   const list = el("div", { class: "agent-profile-list" });
   const status = el("p", { class: "field-hint agent-profile-status", role: "status" });
   status.hidden = true;
@@ -46251,7 +46251,7 @@ function createAgentProfilesSection(api, opts = {}) {
       el(
         "span",
         { class: "field-hint" },
-        "Added to every turn of a chat using this profile, after your custom instructions."
+        "Added to every turn of a Copse managed chat using this profile, after your custom instructions. Agent managed chats, cloud agents and plugin models don\u2019t receive them."
       )
     ),
     el("div", { class: "provider-actions" }, saveButton, cancelButton)
@@ -46306,8 +46306,16 @@ function createAgentProfilesSection(api, opts = {}) {
       list.append(el("p", { class: "field-hint" }, "No profiles yet."));
     }
     for (const profile of profiles) {
-      const edit = el("button", { type: "button", class: "agent-profile-edit" }, "Edit");
-      const remove = el("button", { type: "button", class: "agent-profile-delete" }, "Remove");
+      const edit = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact agent-profile-edit" },
+        "Edit"
+      );
+      const remove = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact agent-profile-delete" },
+        "Remove"
+      );
       edit.addEventListener("click", () => {
         openForm(profile);
       });
@@ -46334,13 +46342,14 @@ function createAgentProfilesSection(api, opts = {}) {
     editingId = profile?.id ?? null;
     formTitle.textContent = profile ? `Edit ${profile.name}` : "New profile";
     nameInput.value = profile?.name ?? "";
-    modelSelect.value = profile?.model ?? "";
+    formModel = profile?.model ?? "";
+    modelSelect.value = formModel;
     effortSelect.value = profile?.reasoning ?? "";
     instructionsInput.value = profile?.instructions ?? "";
     form.hidden = false;
     addButton.hidden = true;
     setStatus("");
-    void ensureModelPicker().refresh(modelSelect.value);
+    void ensureModelPicker().refresh(formModel);
     nameInput.focus();
   }
   function closeForm() {
@@ -46374,6 +46383,9 @@ function createAgentProfilesSection(api, opts = {}) {
     saveButton.click();
   });
   cancelButton.addEventListener("click", closeForm);
+  modelSelect.addEventListener("change", () => {
+    formModel = modelSelect.value;
+  });
   saveButton.addEventListener("click", () => {
     const name = nameInput.value.trim();
     if (!name) {
@@ -46382,7 +46394,7 @@ function createAgentProfilesSection(api, opts = {}) {
       return;
     }
     const instructions = instructionsInput.value.trim();
-    const model = modelSelect.value;
+    const model = formModel;
     const effort = effortSelect.value;
     const id = editingId ?? newAgentProfileId(name, profiles);
     const profile = {

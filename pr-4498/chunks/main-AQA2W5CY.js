@@ -493,7 +493,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-KFSIK2OM.js";
+} from "./chunk-CH5K3YBF.js";
 import "./chunk-X6JZSFJR.js";
 import {
   createSshWorkspaceConsent,
@@ -54486,7 +54486,7 @@ var init_footer_reasoning_group = __esm({
 });
 
 // src/renderer/views/footer-profile-group.ts
-function profileValueGroup(profiles, currentId) {
+function profileValueGroup(profiles, currentId, modelLabel2) {
   if (profiles.length === 0) return null;
   const current = profiles.find((profile) => profile.id === currentId);
   return {
@@ -54495,10 +54495,14 @@ function profileValueGroup(profiles, currentId) {
     currentValue: current?.id ?? NONE_VALUE,
     choices: [
       { value: NONE_VALUE, label: "None", description: "No profile instructions" },
+      // Say which model a pick moves the chat to, before its instructions.
       ...profiles.map((profile) => ({
         value: profile.id,
         label: profile.name,
-        ...profile.instructions?.trim() ? { description: oneLine(profile.instructions, 80) } : {}
+        description: [
+          profile.model ? modelLabel2(profile.model) : "Keeps the chat\u2019s model",
+          ...profile.instructions?.trim() ? [oneLine(profile.instructions, 80)] : []
+        ].join(" \xB7 ")
       }))
     ]
   };
@@ -54573,7 +54577,7 @@ function mountFooterModelPicker(root, api2, getCurrent, onSelect, pickerOpts = {
         ]);
         optionAgentId = loaded?.agentId ?? null;
         optionGroups = loaded?.groups ?? [];
-        const profile = profileValueGroup(profiles, pickerOpts.getProfileId?.());
+        const profile = profileValueGroup(profiles, pickerOpts.getProfileId?.(), modelDisplayLabel);
         const reasoning = pickerOpts.getReasoning ? reasoningValueGroup(current, pickerOpts.getReasoning()) : null;
         return [...profile ? [profile] : [], ...reasoning ? [reasoning] : [], ...optionGroups];
       },
@@ -58551,6 +58555,7 @@ ${context}` : text;
     store2.setState({ threads });
     store2.emit("threads_changed");
     updateFooter();
+    void refreshImageCompatibilityWarning();
     void runContextEstimate();
   }
   const modelPicker = mountFooterModelPicker(modelHost, api2, footerChatModel, selectChatModel, {
@@ -58572,14 +58577,12 @@ ${context}` : text;
     getProfileId: () => getActiveThread(store2)?.profileId,
     onSelectProfile: selectProfile
   });
-  void loadAgentProfiles().then(() => {
-    modelPicker.sync();
-  });
-  store2.on("settings_changed", () => {
+  const syncProfileLabel = () => {
     void loadAgentProfiles().then(() => {
       modelPicker.sync();
     });
-  });
+  };
+  syncProfileLabel();
   store2.on("threads_changed", () => {
     modelPicker.refresh();
     void refreshAutomaticCheckoutPreview();
@@ -60466,6 +60469,7 @@ ${reply}`);
       void refreshContainerRunsSetting();
       void refreshPlanModeSetting();
       modelPicker.refresh();
+      syncProfileLabel();
       void refreshImageCompatibilityWarning();
       refreshModelPricing();
       updateFooter();

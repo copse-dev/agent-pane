@@ -12223,21 +12223,6 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   flex: none;
   gap: var(--spacing-md);
 }
-.agent-profile-row-actions button {
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-base);
-  color: var(--text-primary);
-  font-size: var(--font-size-sm);
-  cursor: pointer;
-}
-.agent-profile-row-actions button:hover {
-  background: var(--bg-hover);
-}
-.agent-profile-row-actions .agent-profile-delete {
-  color: var(--error);
-}
 .agent-profile-form {
   display: grid;
   gap: var(--spacing-sm);
