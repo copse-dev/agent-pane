@@ -9,6 +9,10 @@
  *   process-spawn + seatbelt-wrap cost across every directory listing / file read instead of
  *   paying it per call.
  *
+ * A `restore` request (the workspace integrity revert) may instead arrive on
+ * stdin, because it carries file contents too large for argv or the
+ * environment.
+ *
  * Must stay free of electron imports so it bundles as a standalone script.
  */
 import { errorMessage } from '@shared/errors.ts'
@@ -17,17 +21,29 @@ import { dirname } from 'node:path'
 import { isRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 import { localWorkspaceFs } from '../services/workspace-fs/local-workspace-fs.ts'
 import { readWorkspaceImage } from '../services/workspace-fs/image-content.ts'
+import {
+  applyRestoreSteps,
+  parseRestoreSteps,
+  type RestoreStep,
+} from './workspace-integrity-restore.ts'
 
 type ReadFileReq = { op: 'readFile'; path: string; encoding: 'utf-8' }
 type ReadImageReq = { op: 'readImage'; path: string; displayPath: string }
 type WriteFileReq = { op: 'writeFile'; path: string; content: string; encoding: 'utf-8' }
 type ReaddirReq = { op: 'readdir'; path: string }
 type StatEntryReq = { op: 'statDir'; path: string }
+type RestoreReq = { op: 'restore'; path: string; steps: RestoreStep[] }
 
-type Request = ReadFileReq | ReadImageReq | WriteFileReq | ReaddirReq | StatEntryReq
+type Request = ReadFileReq | ReadImageReq | WriteFileReq | ReaddirReq | StatEntryReq | RestoreReq
 
 type ResponseBody =
-  | { ok: true; data?: string; entries?: string[]; dirents?: { name: string; isDir: boolean }[] }
+  | {
+      ok: true
+      data?: string
+      entries?: string[]
+      dirents?: { name: string; isDir: boolean }[]
+      results?: boolean[]
+    }
   | { ok: false; error: string }
 
 const REQUEST_ENV = 'COPSE_SANDBOX_FS_REQUEST'
@@ -56,6 +72,10 @@ function parseRequest(value: unknown): Request | null {
     case 'readdir':
     case 'statDir':
       return { op: value['op'], path: value['path'] }
+    case 'restore': {
+      const steps = parseRestoreSteps(value['steps'])
+      return steps ? { op: value['op'], path: value['path'], steps } : null
+    }
     default:
       return null
   }
@@ -85,6 +105,8 @@ async function handle(req: Request): Promise<ResponseBody> {
       const dirents = await fsp.readdir(req.path, { withFileTypes: true })
       return { ok: true, dirents: dirents.map((d) => ({ name: d.name, isDir: d.isDirectory() })) }
     }
+    case 'restore':
+      return { ok: true, results: await applyRestoreSteps(req.steps) }
   }
 }
 
@@ -92,8 +114,17 @@ function errorBody(err: unknown): ResponseBody {
   return { ok: false, error: errorMessage(err) }
 }
 
-function oneShot(): void {
-  const raw = process.argv[2] ?? process.env[REQUEST_ENV]
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = []
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)))
+  }
+  return Buffer.concat(chunks).toString('utf-8')
+}
+
+async function oneShot(): Promise<void> {
+  const raw =
+    process.argv[2] ?? process.env[REQUEST_ENV] ?? (process.stdin.isTTY ? '' : await readStdin())
   if (!raw) {
     process.stdout.write(JSON.stringify({ ok: false, error: 'missing request argument' }))
     process.exit(1)
@@ -176,5 +207,5 @@ function server(): void {
 if (process.env[SERVER_ENV]) {
   server()
 } else {
-  oneShot()
+  void oneShot()
 }

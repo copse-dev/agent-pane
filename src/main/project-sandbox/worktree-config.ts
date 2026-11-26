@@ -4,7 +4,7 @@ import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { readOnlyWorkspaceSandboxOverlay, workspaceSandboxOverlay } from './config.ts'
 
 /** Find Git metadata without executing Git or following repository configuration. */
-async function repositoryPaths(cwd: string): Promise<{
+export async function repositoryPaths(cwd: string): Promise<{
   checkout: string
   gitDir: string
   commonDir: string

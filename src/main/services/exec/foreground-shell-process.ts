@@ -3,9 +3,11 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { constants } from 'node:os'
 import {
   afterSandboxedCommand,
+  integrityNoteForCommand,
   isProjectSandboxEnabled,
   sandboxViolationCountForCommand,
   spawnShellInProjectSandbox,
+  workspaceIntegrityOutcome,
 } from '../../project-sandbox/index.ts'
 import {
   CappedOutputAccumulator,
@@ -367,11 +369,26 @@ export async function runShellOnce(
         const exitCode = exitCodeFor(code, closeSignal)
         if (stopped) reportPhase('cancelled')
         else reportPhase('exited', { exitCode })
-        resolve({
+        const result = {
           output: outputAcc.toString(),
           exitCode,
           sandboxViolationCount: violationCount,
-        })
+        }
+        // A contained run's result waits for its integrity check, so the model
+        // learns about a reverted change before it acts on the next step.
+        const integrity = unsandboxed ? null : workspaceIntegrityOutcome(proc)
+        if (!integrity) {
+          resolve(result)
+          return
+        }
+        void integrity.then(
+          (report) => {
+            resolve({ ...result, output: result.output + integrityNoteForCommand(report) })
+          },
+          () => {
+            resolve(result)
+          },
+        )
       })
 
       signal.addEventListener('abort', onAbort, { once: true })

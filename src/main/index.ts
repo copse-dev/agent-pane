@@ -272,6 +272,12 @@ import { getAutomationService } from './services/automations/automation-service.
 import { setAutomationRunCorroborator } from './services/execution-runtime/principal.ts'
 import { setExecutionAuditSink } from './services/execution-runtime/audit.ts'
 import { recordExecutionObservation } from './services/execution-runtime/audit-recorder.ts'
+import {
+  setWorkspaceIntegrityRestorer,
+  setWorkspaceIntegritySink,
+} from './project-sandbox/workspace-integrity.ts'
+import { sandboxedRestore } from './project-sandbox/sandbox-fs-client.ts'
+import { recordWorkspaceIntegrityReport } from './services/security/workspace-integrity-recorder.ts'
 import { getBranchCiAutomationService } from './services/automations/branch-ci-automation-service.ts'
 import { getTaskSupervisor } from './services/supervisor/task-supervisor.ts'
 import { installLongTaskWakeConsumer } from './services/supervisor/long-task-wake.ts'
@@ -832,6 +838,9 @@ app
       getAutomationService().ownsRunThread(projectId, threadId, automation),
     )
     setExecutionAuditSink(recordExecutionObservation)
+    // Contained changes to host-run configuration that Copse reverted.
+    setWorkspaceIntegritySink(recordWorkspaceIntegrityReport)
+    setWorkspaceIntegrityRestorer(sandboxedRestore)
 
     const alertUser = createElectronUserAlertSender(win, app.dock, getFocusedMainWindow)
     setExplainerPreviewCapture(captureExplainerFrames)

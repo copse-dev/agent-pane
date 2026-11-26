@@ -133,6 +133,13 @@ Optional argv / Guarded-YOLO extras live next to tool results:
   never the agent's actions. Processes outside a turn are not recorded. Interactive terminals are not recorded yet either. Headless and
   container runs record the same lines into the run's own decision list. The Context panel's
   Recent decisions list leaves `observed` lines out; the export keeps them.
+- **Workspace integrity** — when a contained agent command leaves a change to host-run
+  configuration that Copse reverts or cannot revert
+  ([`workspace-integrity.ts`](../src/main/project-sandbox/workspace-integrity.ts), see
+  [shell permissions](shell-permissions.md#host-run-configuration-written-by-contained-commands)),
+  one `kind: "workspace-integrity"`, `actor: "system"`, `scope: "sandbox"` event is recorded.
+  `verdict` is `blocked` when everything was reverted and `observed` when something could not be;
+  `reasons` name the paths and git keys, never config values.
 - **Hook verdicts** — any non-`allow` Cursor hook decision
   ([`cursor-hooks.ts`](../src/shared/types/cursor-hooks.ts)) is recorded
   as an `actor: "hook"` event (`blocked` / `ask`).
