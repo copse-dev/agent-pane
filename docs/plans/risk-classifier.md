@@ -128,7 +128,15 @@ nobody wrote a rule for.
    shape flags were written after reading the Studio's misses, so the MacBook figure is the fair one.
    This is the model worth productising: small, explainable per feature, and fast enough to run on
    every escalation with no GPU.
-6. **Prompts are friction today, not judgement.** Every answer on three machines was an approval.
+6. **More real data can make the veto worse.** Leave-one-machine-out, the tree model's AUC rises
+   with the other machines' labels (Studio 0.93 to 0.94, MacBook 0.90 to 0.93), but held-out on the
+   Studio its veto at P(ask) < 0.1 lets 6 of the 8 release-work misses through, where the
+   public-only model let none. Every MacBook `ask` was already caught by the harm gate, so the model
+   learns that "the gate allowed it" means safe, which is the blind spot the veto exists for. A
+   shape-only model without the gate's verdicts is much worse (Studio AUC 0.62). Ship the
+   public-trained model; use private data for leave-one-machine-out evaluation, and train on it only
+   with the gate's misses weighted up and only when no held-out fold regresses.
+7. **Prompts are friction today, not judgement.** Every answer on three machines was an approval.
    A prompt that is always approved trains the person to approve without reading, which is the
    failure the must-ask rules exist to prevent.
 
