@@ -675,6 +675,20 @@ input[type=password] {
   }
 }
 
+/* src/renderer/styles/thread-action.css */
+.thread-action-progress {
+  margin: 4px 12px 8px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+.thread-action-status {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-2xs);
+}
+
 /* src/renderer/styles/global/icons.css */
 .ui-icon {
   flex-shrink: 0;
@@ -3605,6 +3619,115 @@ summary.pr-check-group-heading::-webkit-details-marker {
 .git-changes-review-btn:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* src/renderer/styles/global/review.css */
+.review-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  min-height: var(--pane-header-band-height);
+  border-bottom: 1px solid var(--border);
+}
+.review-subject-picker {
+  min-width: 0;
+  gap: var(--spacing-xs);
+  margin-right: auto;
+}
+.review-subject-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.review-header .review-tools {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  justify-content: flex-end;
+}
+.review-tools > .pane-header-title {
+  display: none;
+}
+.review-subject-choices {
+  position: fixed;
+  margin: 0;
+  box-sizing: border-box;
+  width: min(360px, calc(100vw - 16px));
+  padding: var(--spacing-xs);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  overflow: auto;
+  box-shadow: var(--shadow-lg);
+}
+.review-subject-choices:popover-open {
+  display: flex;
+  flex-direction: column;
+}
+.review-subject-choices .pr-list-host {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+.review-local-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  width: 100%;
+  flex-shrink: 0;
+  padding: var(--list-row-padding-block) var(--spacing-sm);
+  text-align: left;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-primary);
+}
+.review-local-choice:hover {
+  background: var(--bg-hover);
+}
+.review-local-choice[aria-current=true] {
+  background: var(--bg-selected);
+  font-weight: 600;
+}
+.review-files-heading {
+  padding: var(--spacing-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+.review-local-title {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.is-review-pane {
+  container: review / inline-size;
+}
+@container review (max-width: 420px) {
+  .pane-files-body {
+    flex-direction: column;
+  }
+  #right-sidebar {
+    width: 100%;
+    max-height: 30%;
+    flex-shrink: 0;
+  }
+  #resizer-tree {
+    display: none;
+  }
+  .review-files-heading {
+    padding-bottom: 0;
+  }
+}
+.review-local-meta {
+  flex-shrink: 0;
+  padding: var(--spacing-sm) var(--spacing-md);
 }
 
 /* src/renderer/styles/global/pr-thread-relationships.css */
@@ -9222,6 +9345,11 @@ dialog.settings-overlay::backdrop {
   color: var(--text-secondary);
   line-height: var(--titlebar-height);
 }
+.settings-header .approval-settings-pending {
+  margin-left: auto;
+  margin-right: var(--spacing-sm);
+  -webkit-app-region: no-drag;
+}
 .settings-close-btn {
   -webkit-app-region: no-drag;
   display: inline-flex;
@@ -9528,7 +9656,7 @@ dialog.settings-overlay::backdrop {
   padding: 0;
   margin-bottom: var(--spacing-md);
 }
-.settings-content fieldset:not(.settings-section > fieldset, .settings-section > .settings-mount > fieldset, .settings-search-results > fieldset, .machines-settings > fieldset, .usage-section-root > fieldset) > legend ~ * {
+.settings-content fieldset:not(.settings-section > fieldset, .settings-section > .settings-mount > fieldset, .settings-search-results > fieldset, .machines-settings > fieldset, .usage-section-root > fieldset) > :not(legend) {
   clear: both;
 }
 .settings-content fieldset label {
@@ -10016,86 +10144,20 @@ dialog.settings-overlay::backdrop {
   gap: calc(var(--spacing-xl) + var(--spacing-md));
 }
 .usage-plan-section,
-.usage-worth-section,
 .usage-ledger-section {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
 }
-.usage-plan-section > .settings-fieldset-desc,
-.usage-worth-section > .settings-fieldset-desc {
+.usage-plan-section > .settings-fieldset-desc {
   margin-bottom: 0;
 }
 .usage-plan-heading,
-.usage-worth-heading,
 .usage-ledger-heading {
   margin: 0;
   font-size: var(--font-size-md);
   font-weight: 600;
   color: var(--text-primary);
-}
-.usage-worth-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-md) 0;
-}
-.usage-worth-verdict {
-  margin: 0;
-  font-size: var(--font-size-base);
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.usage-worth-card[data-verdict=worth_it] .usage-worth-verdict {
-  color: var(--success);
-}
-.usage-worth-card[data-verdict=not_worth_it] .usage-worth-verdict {
-  color: var(--warning);
-}
-.usage-worth-card[data-verdict=borderline] .usage-worth-verdict {
-  color: var(--text-secondary);
-}
-.usage-worth-reason {
-  margin: 0;
-}
-.usage-worth-fee-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--spacing-sm);
-}
-.usage-worth-fee-label {
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-}
-.usage-worth-fee-input {
-  width: 7rem;
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-base);
-  color: var(--text-primary);
-  font-size: var(--font-size-sm);
-}
-.usage-worth-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-sm);
-}
-.usage-worth-inference-btn {
-  -webkit-app-region: no-drag;
-  align-self: flex-start;
-  background: transparent;
-  color: var(--accent);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--spacing-xs) var(--spacing-md);
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-.usage-worth-inference-btn:hover {
-  background: var(--bg-hover);
 }
 .usage-plan-providers {
   display: flex;
@@ -17934,6 +17996,38 @@ dialog.activity-panel-overlay {
 .ssh-import-config {
   margin: var(--spacing-sm) 0;
 }
+.ssh-consent {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+}
+.ssh-consent p {
+  margin: 0;
+}
+.ssh-consent-title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.ssh-consent-body {
+  color: var(--text-secondary);
+  line-height: var(--line-height-base);
+}
+.ssh-consent-status:empty {
+  display: none;
+}
+.ssh-consent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-sm);
+}
+.ssh-consent-actions > button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 
 /* src/renderer/styles/global/mobile-companion.css */
 .mobile-companion-connection {
@@ -18048,6 +18142,25 @@ dialog.activity-panel-overlay {
 }
 .mobile-companion-name-warning {
   color: var(--warning);
+}
+.mobile-companion-relay {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin: var(--spacing-sm) 0;
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--border);
+}
+.mobile-companion-relay > .mobile-companion-qr,
+.settings-content .mobile-companion-relay > .field-hint:not(:last-child) {
+  margin: 0;
+}
+.mobile-companion-relay .settings-action-row {
+  margin-bottom: 0;
+}
+#mobile-companion-shell-qr .mobile-companion-qr-image {
+  width: 176px;
+  height: 176px;
 }
 
 /* src/renderer/styles/global/memories.css */
@@ -18375,8 +18488,12 @@ dialog.activity-panel-overlay {
 .vnc-ssh-host-form[hidden] {
   display: none;
 }
-.vnc-ssh-host-form .vnc-field-label input {
+.vnc-ssh-host-form .vnc-field-label input,
+.vnc-ssh-host-form .vnc-field-label select {
   width: 100%;
+}
+.vnc-ssh-host-form .vnc-ssh-config-field[hidden] {
+  display: none;
 }
 .vnc-ssh-host-hint,
 .vnc-ssh-host-status {

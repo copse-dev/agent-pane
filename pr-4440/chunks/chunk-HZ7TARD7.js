@@ -12,7 +12,7 @@ import {
   chevronRightIcon,
   circleIcon,
   closeIcon,
-  emptySshHostDraft,
+  createSshHostFields,
   eraserIcon,
   escapeHtml,
   expectNumber,
@@ -25,6 +25,7 @@ import {
   init_inline_status,
   init_ipc_error_message,
   init_nullish,
+  init_ssh_host_fields,
   init_ssh_host_helpers,
   init_toast,
   init_unknown_value,
@@ -41,7 +42,6 @@ import {
   optionalNumber,
   optionalString,
   optionalStringArray,
-  parseSshHostDraft,
   parseSshWorkspaceHosts,
   penLineIcon,
   plusIcon,
@@ -56,7 +56,6 @@ import {
   showErrorToast,
   showToast,
   slashIcon,
-  slugifyHostId,
   squareIcon,
   stringRecordOrEmpty,
   trashIcon,
@@ -64,14 +63,16 @@ import {
   unwrapIpcErrorText,
   upsertHost,
   warningIcon
-} from "./chunk-UAI3U54O.js";
+} from "./chunk-HIIVOQP4.js";
 import {
   clear,
+  createOverlayDialog,
   el,
+  init_dialog_shell,
   init_helpers,
   on,
   qsRequired
-} from "./chunk-EMIRHVRH.js";
+} from "./chunk-OB2CWITE.js";
 import {
   __esm,
   __export
@@ -20870,31 +20871,6 @@ var init_product_announcement_dialog = __esm({
   }
 });
 
-// src/renderer/views/dialog-shell.ts
-function createOverlayDialog(opts) {
-  const dialog2 = document.createElement("dialog");
-  dialog2.id = opts.id;
-  if (opts.className) dialog2.className = opts.className;
-  document.body.append(dialog2);
-  return {
-    dialog: dialog2,
-    open: () => {
-      if (!dialog2.open) dialog2.showModal();
-    },
-    close: () => {
-      if (dialog2.open) dialog2.close();
-    },
-    isOpen: () => dialog2.open
-  };
-}
-function isAnyDialogOpen() {
-  return document.querySelector("dialog[open]") !== null;
-}
-var init_dialog_shell = __esm({
-  "src/renderer/views/dialog-shell.ts"() {
-  }
-});
-
 // packages/std/src/member-of.ts
 function memberOf(members2) {
   const set2 = new Set(members2);
@@ -21412,7 +21388,12 @@ var init_state = __esm({
     init_member_of2();
     RIGHT_PANEL_POSITIONS = ["auto", "side", "bottom"];
     isRightPanelPosition = memberOf(RIGHT_PANEL_POSITIONS);
-    THREAD_SORT_MODES = ["activity", "created", "title"];
+    THREAD_SORT_MODES = [
+      "activity",
+      "created",
+      "title",
+      "action"
+    ];
     isThreadSortMode = memberOf(THREAD_SORT_MODES);
     THREAD_GROUP_MODES = ["project", "status", "none"];
     isThreadGroupMode = memberOf(THREAD_GROUP_MODES);
@@ -21454,10 +21435,19 @@ var init_theme2 = __esm({
   }
 });
 
+// packages/std/src/clamp.ts
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+var init_clamp = __esm({
+  "packages/std/src/clamp.ts"() {
+  }
+});
+
 // src/shared/ui-scale.ts
 function clampUiScale(value) {
   if (!Number.isFinite(value)) return DEFAULT_UI_SCALE;
-  const clamped = Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, value));
+  const clamped = clamp(value, UI_SCALE_MIN, UI_SCALE_MAX);
   return Math.round(clamped * 100) / 100;
 }
 function normalizeUiScale(value) {
@@ -21473,6 +21463,7 @@ function scaledEditorFontSize(fontSize, uiScale) {
 var DEFAULT_UI_SCALE, UI_SCALE_MIN, UI_SCALE_MAX, UI_SCALE_STEP;
 var init_ui_scale = __esm({
   "src/shared/ui-scale.ts"() {
+    init_clamp();
     DEFAULT_UI_SCALE = 1;
     UI_SCALE_MIN = 0.75;
     UI_SCALE_MAX = 1.5;
@@ -22287,10 +22278,27 @@ var init_array_utils2 = __esm({
   }
 });
 
+// packages/std/src/one-line-text.ts
+function collapseWhitespace(text) {
+  return text.replace(/\s+/g, " ").trim();
+}
+function ellipsize(text, max, options = {}) {
+  if (text.length <= max) return text;
+  if (max < 1) return "";
+  const head = text.slice(0, max - 1);
+  return `${options.trimEnd === true ? head.trimEnd() : head}\u2026`;
+}
+function truncateLine(text, max) {
+  return ellipsize(collapseWhitespace(text), max);
+}
+var init_one_line_text = __esm({
+  "packages/std/src/one-line-text.ts"() {
+  }
+});
+
 // packages/thread-store/src/thread-proposal.ts
 function trimTo(value, max) {
-  const trimmed = value.trim();
-  return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max - 1).trimEnd()}\u2026`;
+  return ellipsize(value.trim(), max, { trimEnd: true });
 }
 function stringField(args, key) {
   const value = args[key];
@@ -22340,6 +22348,7 @@ function threadProposalFileSummary(files) {
 var THREAD_PROPOSAL_TOOL, THREAD_PROPOSAL_TITLE_MAX, THREAD_PROPOSAL_SUMMARY_MAX, THREAD_PROPOSAL_FILES_SHOWN;
 var init_thread_proposal = __esm({
   "packages/thread-store/src/thread-proposal.ts"() {
+    init_one_line_text();
     init_unknown_value();
     init_nullish();
     THREAD_PROPOSAL_TOOL = "propose_thread";
@@ -23489,8 +23498,7 @@ function subagentRunLabel(session) {
   const kind = session.kind === "custom" && session.agentName ? session.agentName : SUBAGENT_KIND_LABEL[session.kind];
   const firstLine = session.prompt.trim().split("\n")[0] ?? "";
   if (!firstLine) return kind;
-  const prompt = firstLine.length > RUN_PROMPT_MAX_CHARS ? `${firstLine.slice(0, RUN_PROMPT_MAX_CHARS - 1).trimEnd()}\u2026` : firstLine;
-  return `${kind} \xB7 ${prompt}`;
+  return `${kind} \xB7 ${ellipsize(firstLine, RUN_PROMPT_MAX_CHARS, { trimEnd: true })}`;
 }
 function collectSubagentRuns(toolCalls, runs) {
   for (const toolCall of toolCalls) {
@@ -23606,6 +23614,7 @@ function formatFooterUsageDetail(display, opts) {
 var SUBAGENT_KIND_LABEL, RUN_PROMPT_MAX_CHARS;
 var init_footer_usage_summary = __esm({
   "src/shared/usage/footer-usage-summary.ts"() {
+    init_one_line_text();
     init_estimate_cost();
     init_token_estimate();
     init_format_usage_summary();
@@ -26746,7 +26755,7 @@ function stripInlineMarkdown(text) {
 }
 function excerptText(text) {
   const line = stripInlineMarkdown(text.trim().split("\n", 1)[0] ?? "");
-  return line.length <= MAX_TITLE_LENGTH ? line : `${line.slice(0, MAX_TITLE_LENGTH - 1)}\u2026`;
+  return ellipsize(line, MAX_TITLE_LENGTH);
 }
 function excerpt(message) {
   return excerptText(message.content);
@@ -26813,6 +26822,7 @@ function unreadSideChatParents(threads) {
 var MAX_TITLE_LENGTH;
 var init_side_chat = __esm({
   "packages/thread-store/src/side-chat.ts"() {
+    init_one_line_text();
     init_marked_esm();
     MAX_TITLE_LENGTH = 80;
   }
@@ -26850,10 +26860,6 @@ function reviewReportsAwaitingModel(thread) {
   anchored.sort((a4, b2) => a4.startedAt - b2.startedAt);
   return [...awaiting, ...anchored];
 }
-function clip(text, max) {
-  const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}\u2026`;
-}
 function reviewedLine(report) {
   const parts = ["Copse Reviewer"];
   if (report.baseRef !== "") {
@@ -26873,7 +26879,7 @@ function groundLine(report) {
   return all.length === 0 ? null : `Checks: ${all.join("; ")}.`;
 }
 function findingLine(finding, index) {
-  return `${String(index + 1)}. [${finding.severity} \xB7 ${finding.class} \xB7 ${finding.verdict.status}] ${findingLocation(finding)} \u2014 ${clip(finding.claim, MAX_CONTEXT_CLAIM_CHARS)}`;
+  return `${String(index + 1)}. [${finding.severity} \xB7 ${finding.class} \xB7 ${finding.verdict.status}] ${findingLocation(finding)} \u2014 ${truncateLine(finding.claim, MAX_CONTEXT_CLAIM_CHARS)}`;
 }
 function reportContextText(report) {
   const lines = [reviewedLine(report)];
@@ -26912,6 +26918,7 @@ ${body}
 var MAX_CONTEXT_REPORTS, MAX_CONTEXT_FINDINGS, MAX_CONTEXT_CLAIM_CHARS, REVIEW_CONTEXT_TAG;
 var init_review_reports = __esm({
   "src/shared/store/review-reports.ts"() {
+    init_one_line_text();
     MAX_CONTEXT_REPORTS = 3;
     MAX_CONTEXT_FINDINGS = 12;
     MAX_CONTEXT_CLAIM_CHARS = 400;
@@ -27103,9 +27110,7 @@ function stripShellCdPrefix(command) {
   return command.replace(SHELL_CD_PREFIX_RE, "");
 }
 function shellCommandLabel(command) {
-  const cleaned = stripShellCdPrefix(command).replace(/\s+/g, " ").trim();
-  if (cleaned.length <= SHELL_LABEL_MAX) return cleaned;
-  return `${cleaned.slice(0, SHELL_LABEL_MAX - 1)}\u2026`;
+  return truncateLine(stripShellCdPrefix(command), SHELL_LABEL_MAX);
 }
 function shellCommandArg(args) {
   if (!isRecord(args)) return null;
@@ -27372,6 +27377,7 @@ function buildToolRunDisplayItems(run, opts) {
 var TOOL_DISPLAY_NAMES, TOOL_GROUPS, TOOL_TO_GROUP, ACP_KIND_TO_GROUP, MCP_GROUP_PREFIX, TURN_ROLLUP_KEY, RUN_ROLLUP_KEY, FILE_EDIT_PATH_ARG, SHELL_CD_PREFIX_RE, SHELL_LABEL_MAX, ERROR_BUCKET_SUFFIX;
 var init_tool_display = __esm({
   "src/shared/tools/tool-display.ts"() {
+    init_one_line_text();
     init_apply_patch();
     init_unknown_value3();
     init_humanize_identifier();
@@ -27382,6 +27388,7 @@ var init_tool_display = __esm({
       explore: { running: "Exploring files", done: "Explored files" },
       read_explored: { running: "Quoting explored lines", done: "Quoted explored lines" },
       read_file: { running: "Reading file", done: "Read file" },
+      read_thread: { running: "Reading conversation", done: "Read conversation" },
       search_project_context: {
         running: "Searching project history",
         done: "Searched project history"
@@ -27605,7 +27612,7 @@ var init_todo_logic = __esm({
 // src/renderer/agent-activity.ts
 function promptProgressLabel(fraction) {
   if (!Number.isFinite(fraction)) return "Processing prompt\u2026";
-  const percent = Math.round(Math.min(1, Math.max(0, fraction)) * 100);
+  const percent = Math.round(clamp(fraction, 0, 1) * 100);
   return `Processing prompt\u2026 ${percent.toString()}%`;
 }
 function findRunningActivity(thread) {
@@ -27669,6 +27676,7 @@ function syncAgentActivity(store, threadId, writing) {
 var CONTEXT_TRIM_ACTIVITY;
 var init_agent_activity = __esm({
   "src/renderer/agent-activity.ts"() {
+    init_clamp();
     init_thread_helpers();
     init_tool_display();
     init_copse_tool_call();
@@ -27681,10 +27689,11 @@ var init_agent_activity = __esm({
 function canContinue(used, cap = DEFAULT_CONTINUATION_BUDGET) {
   return used < cap;
 }
-var DEFAULT_CONTINUATION_BUDGET;
+var DEFAULT_CONTINUATION_BUDGET, DEFAULT_CROSS_THREAD_PROMPT_BUDGET;
 var init_continuation_budget = __esm({
   "packages/agent/src/hooks/continuation-budget.ts"() {
     DEFAULT_CONTINUATION_BUDGET = 5;
+    DEFAULT_CROSS_THREAD_PROMPT_BUDGET = 5;
   }
 });
 
@@ -27751,8 +27760,14 @@ function isHeldMessage(item) {
 function isMachineContinuation(item) {
   return item.origin !== void 0;
 }
+function isCrossThreadPrompt(item) {
+  return item.origin?.kind === "machine" && item.origin.operationId.startsWith("thread:");
+}
+function crossThreadBudgetHeldNote() {
+  return `Cross-thread prompt allowance reached \u2014 ${String(DEFAULT_CROSS_THREAD_PROMPT_BUDGET)} prompts from this sender's user turn have run here. This prompt is held; release it to continue, or send a new instruction in the sender thread for a fresh allowance.`;
+}
 function continuationBudgetHeldNote() {
-  return `Auto-continuation budget reached \u2014 ${String(DEFAULT_CONTINUATION_BUDGET)} machine-initiated follow-ups have run in this turn. The next hook follow-up is held; release it to continue (that starts a fresh turn with a reset budget).`;
+  return `Auto-continuation budget reached \u2014 ${String(DEFAULT_CONTINUATION_BUDGET)} machine-initiated follow-ups have run in this turn. The next automatic follow-up is held; release it to continue (that starts a fresh turn with a reset budget).`;
 }
 function isStaleEpoch(thread, epoch) {
   return thread.currentEpoch !== void 0 && thread.currentEpoch !== epoch;
@@ -27771,7 +27786,8 @@ function startRootTurnTree(store, threadId) {
   patchThreadAnywhere(store, threadId, (t2) => ({
     ...t2,
     currentEpoch: epoch,
-    continuationUsed: 0
+    continuationUsed: 0,
+    crossThreadPromptsUsed: 0
   }));
   return epoch;
 }
@@ -27897,6 +27913,22 @@ function requeueBusyMessage(store, api, threadId, item) {
     const pending = t2.pendingMessages ?? [];
     if (pending.some((entry) => entry.messageId === item.messageId)) return t2;
     const requeued = { ...t2, pendingMessages: [item, ...pending], updatedAt: Date.now() };
+    if (isCrossThreadPrompt(item)) {
+      if (item.origin?.kind === "machine" && item.origin.crossThreadScope !== void 0) {
+        const scope = item.origin.crossThreadScope;
+        return {
+          ...requeued,
+          crossThreadPromptCounts: {
+            ...t2.crossThreadPromptCounts,
+            [scope]: Math.max(0, (t2.crossThreadPromptCounts?.[scope] ?? 0) - 1)
+          }
+        };
+      }
+      return {
+        ...requeued,
+        crossThreadPromptsUsed: Math.max(0, (t2.crossThreadPromptsUsed ?? 0) - 1)
+      };
+    }
     return isMachineContinuation(item) && (t2.continuationUsed ?? 0) > 0 ? { ...requeued, continuationUsed: (t2.continuationUsed ?? 0) - 1 } : requeued;
   });
   store.emit("message_queued", threadId, item.messageId);
@@ -27935,11 +27967,26 @@ function drainMessageQueue(store, api, threadId) {
   const pending = thread.pendingMessages ?? [];
   if (pending.length === 0) return;
   let used = thread.continuationUsed ?? 0;
+  let crossThreadUsed = thread.crossThreadPromptsUsed ?? 0;
+  const crossThreadCounts = { ...thread.crossThreadPromptCounts };
   let next;
   const heldByBudget = [];
+  const heldByCrossThreadBudget = [];
   const heldByEpoch = [];
   for (const item of pending) {
     if (isHeldMessage(item)) continue;
+    if (isCrossThreadPrompt(item)) {
+      const scope = item.origin?.kind === "machine" ? item.origin.crossThreadScope : void 0;
+      const count = scope === void 0 ? crossThreadUsed : crossThreadCounts[scope] ?? 0;
+      if (!canContinue(count, DEFAULT_CROSS_THREAD_PROMPT_BUDGET)) {
+        heldByCrossThreadBudget.push(item.messageId);
+        continue;
+      }
+      if (scope === void 0) crossThreadUsed += 1;
+      else crossThreadCounts[scope] = count + 1;
+      next = item;
+      break;
+    }
     if (isMachineContinuation(item)) {
       if (item.epoch !== void 0 && isStaleEpoch(thread, item.epoch)) {
         heldByEpoch.push(item.messageId);
@@ -27956,10 +28003,11 @@ function drainMessageQueue(store, api, threadId) {
     next = item;
     break;
   }
-  if (!next && heldByBudget.length === 0 && heldByEpoch.length === 0) return;
+  if (!next && heldByBudget.length === 0 && heldByCrossThreadBudget.length === 0 && heldByEpoch.length === 0)
+    return;
   if (next && !isMachineContinuation(next)) startHumanTurnTree(store, threadId);
   const rest = pending.filter((item) => item !== next);
-  const held = /* @__PURE__ */ new Set([...heldByBudget, ...heldByEpoch]);
+  const held = /* @__PURE__ */ new Set([...heldByBudget, ...heldByCrossThreadBudget, ...heldByEpoch]);
   patchThreadAnywhere(store, threadId, (t2) => {
     const { pendingMessages: _removed, ...restThread } = t2;
     const messages = movePendingUserMessagesToEnd(t2.messages, pending);
@@ -27967,9 +28015,17 @@ function drainMessageQueue(store, api, threadId) {
       (item) => held.has(item.messageId) ? { ...item, autoDispatch: false } : item
     );
     const base = nextPending.length > 0 ? { ...restThread, messages, pendingMessages: nextPending, updatedAt: Date.now() } : { ...restThread, messages, updatedAt: Date.now() };
+    if (next && isCrossThreadPrompt(next))
+      return {
+        ...base,
+        crossThreadPromptsUsed: crossThreadUsed,
+        crossThreadPromptCounts: crossThreadCounts
+      };
     return next && isMachineContinuation(next) ? { ...base, continuationUsed: used } : base;
   });
   if (heldByBudget.length > 0) addMessage(store, threadId, "error", continuationBudgetHeldNote());
+  if (heldByCrossThreadBudget.length > 0)
+    addMessage(store, threadId, "error", crossThreadBudgetHeldNote());
   store.emit("threads_changed");
   if (next) dispatchAgentRun(store, api, threadId, next.payload, next);
 }
@@ -28152,6 +28208,13 @@ function releaseHeldMessage(store, api, threadId, messageId) {
       currentEpoch: epoch,
       // A human release starts a fresh turn tree with a reset budget (decision 5).
       continuationUsed: 0,
+      crossThreadPromptsUsed: 0,
+      ...item.origin?.kind === "machine" && item.origin.crossThreadScope !== void 0 ? {
+        crossThreadPromptCounts: {
+          ...t2.crossThreadPromptCounts,
+          [item.origin.crossThreadScope]: 0
+        }
+      } : {},
       pendingMessages: (t2.pendingMessages ?? []).map((p2) => {
         if (p2.messageId !== messageId) return p2;
         const { autoDispatch: _released, ...rest } = p2;
@@ -29247,7 +29310,7 @@ async function restoreProject(store, api, id, preferredThreadId = null) {
   void resumePendingQueues(store, api);
 }
 async function createNewProject(store, api) {
-  const { openNewProjectDialog } = await import("./new-project-dialog-3EBGRTDT.js");
+  const { openNewProjectDialog } = await import("./new-project-dialog-J2LQIJL5.js");
   const inferred = lastProjectDirectory(store);
   const home = await api.workspace.getHomeDirectory();
   const parentDir = inferred !== "" ? inferred : home;
@@ -29282,8 +29345,8 @@ async function addProject(store, api) {
   return true;
 }
 async function addRemoteProject(store, api) {
-  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-KNMGRNB7.js");
-  const picked = await openRemoteFolderDialog(api);
+  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-MLZT7WXA.js");
+  const picked = await openRemoteFolderDialog(api, { projects: store.getState().projects });
   if (!picked) return false;
   await addProjectFromRemotePath(store, api, picked.hostId, picked.path);
   return true;
@@ -31808,57 +31871,11 @@ function createSshWorkspaceSection(api, opts = {}) {
     el("option", { value: "accept-new" }, "Accept new host keys (recommended)"),
     el("option", { value: "strict" }, "Strict: reject unknown host keys")
   );
-  const draft = emptySshHostDraft();
-  let idTouched = false;
-  const idInput = el("input", { type: "text", name: "sshHostId", placeholder: "my-server" });
-  const labelInput = el("input", { type: "text", name: "sshHostLabel", placeholder: "Production" });
-  const hostInput = el("input", {
-    type: "text",
-    name: "sshHostHost",
-    placeholder: "example.com or ~/.ssh/config alias"
-  });
-  const userInput = el("input", { type: "text", name: "sshHostUser", placeholder: "ubuntu" });
-  const portInput = el("input", {
-    type: "text",
-    name: "sshHostPort",
-    placeholder: "22",
-    inputmode: "numeric"
-  });
-  const identityInput = el("input", {
-    type: "text",
-    name: "sshHostIdentity",
-    placeholder: "~/.ssh/id_ed25519"
-  });
-  const draftInputs = {
-    id: idInput,
-    label: labelInput,
-    host: hostInput,
-    user: userInput,
-    port: portInput,
-    identityFile: identityInput
-  };
-  function markInvalid(fields) {
-    for (const [field, input2] of Object.entries(draftInputs)) {
-      if (fields.some((name) => name === field)) input2.setAttribute("aria-invalid", "true");
-      else input2.removeAttribute("aria-invalid");
-    }
-  }
-  for (const input2 of Object.values(draftInputs)) {
-    input2.addEventListener("input", () => {
-      input2.removeAttribute("aria-invalid");
-    });
-  }
-  const forwardInput = el("input", { type: "checkbox", name: "sshHostForwardAgent" });
+  const hostFields = createSshHostFields();
   const form = el(
     "div",
     { class: "ssh-host-form" },
-    el("label", {}, "Id ", idInput),
-    el("label", {}, "Label ", labelInput),
-    el("label", {}, "Host ", hostInput),
-    el("label", {}, "User ", userInput),
-    el("label", {}, "Port ", portInput),
-    el("label", {}, "Identity file ", identityInput),
-    el("label", { class: "checkbox-label" }, forwardInput, " Forward SSH agent"),
+    ...hostFields.fields,
     el(
       "div",
       { class: "provider-actions" },
@@ -31872,36 +31889,7 @@ function createSshWorkspaceSection(api, opts = {}) {
     opts.onChanged?.();
   }
   function clearDraft() {
-    Object.assign(draft, emptySshHostDraft());
-    markInvalid([]);
-    idTouched = false;
-    idInput.value = "";
-    labelInput.value = "";
-    hostInput.value = "";
-    userInput.value = "";
-    portInput.value = "";
-    identityInput.value = "";
-    forwardInput.checked = false;
-    idInput.disabled = false;
-  }
-  function fillDraft(host) {
-    markInvalid([]);
-    draft.id = host.id;
-    draft.label = host.label;
-    draft.host = host.host;
-    draft.user = host.user ?? "";
-    draft.port = host.port !== void 0 ? String(host.port) : "";
-    draft.identityFile = host.identityFile ?? "";
-    draft.forwardAgent = host.forwardAgent === true;
-    idTouched = true;
-    idInput.value = host.id;
-    labelInput.value = host.label;
-    hostInput.value = host.host;
-    userInput.value = draft.user;
-    portInput.value = draft.port;
-    identityInput.value = draft.identityFile;
-    forwardInput.checked = draft.forwardAgent;
-    idInput.disabled = true;
+    hostFields.reset();
   }
   async function renderHosts(signal) {
     if (signal?.aborted) return;
@@ -31955,7 +31943,7 @@ function createSshWorkspaceSection(api, opts = {}) {
       actions.append(el("button", { type: "button", class: "ssh-host-delete" }, "Remove"));
       row.append(summary, actions);
       row.querySelector(".ssh-host-edit")?.addEventListener("click", () => {
-        fillDraft(host);
+        hostFields.edit(host);
       });
       row.querySelector(".ssh-host-delete")?.addEventListener("click", () => {
         void api.sshWorkspace.forgetCredentials(host.id).then(() => persistHosts(removeHost(list, host.id)));
@@ -31963,41 +31951,14 @@ function createSshWorkspaceSection(api, opts = {}) {
       hostList.append(row);
     }
   }
-  idInput.addEventListener("input", () => {
-    idTouched = true;
-    draft.id = idInput.value;
-  });
-  labelInput.addEventListener("input", () => {
-    draft.label = labelInput.value;
-    if (!idTouched && !idInput.disabled) idInput.value = slugifyHostId(draft.label);
-    draft.id = idInput.value;
-  });
-  hostInput.addEventListener("input", () => {
-    draft.host = hostInput.value;
-  });
-  userInput.addEventListener("input", () => {
-    draft.user = userInput.value;
-  });
-  portInput.addEventListener("input", () => {
-    draft.port = portInput.value;
-  });
-  identityInput.addEventListener("input", () => {
-    draft.identityFile = identityInput.value;
-  });
-  forwardInput.addEventListener("change", () => {
-    draft.forwardAgent = forwardInput.checked;
-  });
   form.querySelector(".ssh-host-save")?.addEventListener("click", () => {
     void (async () => {
-      const parsed2 = parseSshHostDraft(draft);
+      const existing = parseSshWorkspaceHosts(await api.settings.get("sshWorkspaceHosts"));
+      const parsed2 = hostFields.parse(existing);
       if (!parsed2.ok) {
-        markInvalid(parsed2.fields);
         setInlineStatus(status, "error", parsed2.error);
         return;
       }
-      markInvalid([]);
-      const raw = await api.settings.get("sshWorkspaceHosts");
-      const existing = parseSshWorkspaceHosts(raw);
       await persistHosts(upsertHost(existing, parsed2.host));
       setInlineStatus(status, "ok", `Saved host \u201C${parsed2.host.label}\u201D.`);
       clearDraft();
@@ -32095,6 +32056,7 @@ var init_ssh_workspace_section = __esm({
     init_helpers();
     init_inline_status();
     init_ssh_host_helpers();
+    init_ssh_host_fields();
     init_ssh_host_helpers();
   }
 });
@@ -43267,11 +43229,11 @@ function baseDrop(bitsPerWeight) {
 }
 function sizeFactor(paramsB) {
   if (!(paramsB > 0)) return 3;
-  return Math.min(3, Math.max(0.5, Math.pow(REF_PARAMS_B / paramsB, SIZE_EXP)));
+  return clamp(Math.pow(REF_PARAMS_B / paramsB, SIZE_EXP), 0.5, 3);
 }
 function estimateQuantPenalty(ctx) {
   const raw = baseDrop(ctx.bitsPerWeight) * sizeFactor(ctx.paramsB) * (ctx.taskSensitivity ?? 1);
-  return Math.min(MAX_DROP, Math.max(0, raw));
+  return clamp(raw, 0, MAX_DROP);
 }
 function estimateQuantizedScore(fullScore, ctx) {
   const penalty = estimateQuantPenalty(ctx);
@@ -43285,6 +43247,7 @@ function estimateQuantizedScore(fullScore, ctx) {
 var A2, B2, REF_PARAMS_B, SIZE_EXP, MAX_DROP;
 var init_quant_penalty = __esm({
   "packages/llm/src/quant-penalty.ts"() {
+    init_clamp();
     A2 = 3.35;
     B2 = 1.25;
     REF_PARAMS_B = 30;
@@ -44429,16 +44392,12 @@ function applyPlanCoverage(candidate, snapshot, options = {}) {
   if (!access) return candidate;
   const inclusion = resolvePlanInclusion(access.provider, access.modelId, snapshot);
   if (!inclusion) return candidate;
-  const exhaustion = options.windowExhaustion?.get(inclusion.windowId);
-  const expectedExhausted = mode === "expected" && exhaustion !== void 0 && exhaustion.total > 0 && exhaustion.hit / exhaustion.total >= EXPECTED_PLAN_EXHAUSTION_THRESHOLD;
-  const priorLimitHits = mode === "expected" && exhaustion && exhaustion.total > 0 ? { hit: exhaustion.hit, total: exhaustion.total } : void 0;
-  if (inclusion.exhausted || expectedExhausted) {
+  if (inclusion.exhausted) {
     return {
       ...candidate,
       planLimitReached: {
         label: inclusion.windowLabel,
-        resetsAt: inclusion.resetsAt,
-        ...priorLimitHits ? { priorLimitHits } : {}
+        resetsAt: inclusion.resetsAt
       }
     };
   }
@@ -44449,15 +44408,12 @@ function applyPlanCoverage(candidate, snapshot, options = {}) {
     planDetail: {
       usedPercent: inclusion.usedPercent,
       resetsAt: inclusion.resetsAt,
-      apiPricePerMTok: candidate.costPerMTok,
-      ...priorLimitHits ? { priorLimitHits } : {}
+      apiPricePerMTok: candidate.costPerMTok
     }
   };
 }
-var EXPECTED_PLAN_EXHAUSTION_THRESHOLD;
 var init_plan_inclusion = __esm({
   "src/shared/plan-inclusion.ts"() {
-    EXPECTED_PLAN_EXHAUSTION_THRESHOLD = 0.5;
   }
 });
 
@@ -44652,13 +44608,13 @@ var init_acp_known_agents = __esm({
           scratchPaths: ["/tmp/claude-${uid}", "/tmp/claude-*", "/tmp/claude"]
         },
         sandboxedPermissionMode: "acceptEdits",
-        // setup-token only prints a token; it does not save the login this
-        // desktop setup needs. Use the dedicated login command and leave the
-        // account method to the login flow rather than forcing SSO or Console.
-        setup: "claude auth login",
-        reauth: "claude auth login",
+        // The adapter delegates --cli to the Claude Code binary bundled with its
+        // Agent SDK. Sign-in must use that same binary: a fresh machine can have
+        // the adapter without a separate `claude` executable on PATH.
+        setup: "claude-agent-acp --cli auth login",
+        reauth: "claude-agent-acp --cli auth login",
         docsUrl: "https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp",
-        note: "Runs Claude Code. Sign in with `claude auth login` (or `ANTHROPIC_API_KEY`)."
+        note: "Runs Claude Code. Sign in with `claude-agent-acp --cli auth login` (or `ANTHROPIC_API_KEY`)."
       },
       {
         id: "cursor",
@@ -45273,23 +45229,12 @@ function pointTooltipContent(p2, costAxis = "blended") {
       ),
       ttRow("tt-muted", `Off-plan you'd pay ${formatPrice(p2.planDetail.apiPricePerMTok)} blended.`)
     );
-    if (p2.planDetail.priorLimitHits) {
-      const { hit, total } = p2.planDetail.priorLimitHits;
-      root.append(
-        ttRow(
-          "tt-muted",
-          `Limit hit in ${String(hit)}/${String(total)} prior windows \xB7 still treating as included.`
-        )
-      );
-    }
   }
   if (p2.planLimitReached) {
-    const prior = p2.planLimitReached.priorLimitHits;
-    const priorNote = prior ? ` Limit hit in ${String(prior.hit)}/${String(prior.total)} prior windows.` : "";
     root.append(
       ttRow(
         "tt-muted",
-        prior ? `${p2.planLimitReached.label} usually exhausted \xB7 plotted at off-plan price.${priorNote}` : `${p2.planLimitReached.label} plan limit reached${formatReset(p2.planLimitReached.resetsAt)} \xB7 plotted at its off-plan price.`
+        `${p2.planLimitReached.label} plan limit reached${formatReset(p2.planLimitReached.resetsAt)} \xB7 plotted at its off-plan price.`
       )
     );
   }
@@ -45340,12 +45285,12 @@ function positionFrontierTooltip(tip, container, evt) {
   if (left + tipWidth > rect.width) {
     left = cursorX - tipWidth - TOOLTIP_OFFSET_PX;
   }
-  left = Math.max(0, Math.min(left, Math.max(0, rect.width - tipWidth)));
+  left = clamp(left, 0, Math.max(0, rect.width - tipWidth));
   let top = cursorY + TOOLTIP_OFFSET_PX;
   if (top + tipHeight > rect.height) {
     top = cursorY - tipHeight - TOOLTIP_OFFSET_PX;
   }
-  top = Math.max(0, Math.min(top, Math.max(0, rect.height - tipHeight)));
+  top = clamp(top, 0, Math.max(0, rect.height - tipHeight));
   tip.style.left = `${String(left)}px`;
   tip.style.top = `${String(top)}px`;
 }
@@ -45508,6 +45453,7 @@ function tooltipFor(point, costAxis = "blended") {
 var formatPrice, formatTaskPrice, TOOLTIP_OFFSET_PX, TOOLTIP_HIDE_GRACE_MS, modelCardApi;
 var init_intellect_frontier_tooltip = __esm({
   "src/renderer/views/intellect-frontier-tooltip.ts"() {
+    init_clamp();
     init_model_catalog();
     init_model_intellect();
     init_model_card_cache();
@@ -45649,7 +45595,7 @@ function renderFrontierSvg(points, size = {}, gutters = {}, tooltip, costAxis = 
         const centered = (index - (column.length - 1) / 2) * POINT_SPLAY_STEP_PX;
         const fanPhase = index % 6;
         const fanStep = fanPhase <= 3 ? fanPhase : 6 - fanPhase;
-        const offset = nearLeft ? fanStep * POINT_SPLAY_STEP_PX : Math.max(-POINT_SPLAY_MAX_PX, Math.min(POINT_SPLAY_MAX_PX, centered));
+        const offset = nearLeft ? fanStep * POINT_SPLAY_STEP_PX : clamp(centered, -POINT_SPLAY_MAX_PX, POINT_SPLAY_MAX_PX);
         displayX.set(
           point.id,
           Math.max(plotLeft, Math.min(plotLeft + plotW, x3(point.costPerMTok) + offset))
@@ -45957,7 +45903,7 @@ function renderFrontierSvg(points, size = {}, gutters = {}, tooltip, costAxis = 
         Math.hypot(pointX(other) - displayedCx, y3(other.intellect) - y3(p2.intellect))
       );
     }, Infinity);
-    const hitRadius = Math.max(5, Math.min(11, nearestDistance / 2 - 0.5));
+    const hitRadius = clamp(nearestDistance / 2 - 0.5, 5, 11);
     const hit = svgEl("circle", {
       cx: cx2,
       cy,
@@ -46265,6 +46211,7 @@ function renderChart(points, gutters, tooltip, size = {}, costAxis = "blended", 
 var SVG_NS, WIDTH, HEIGHT, MARGIN, LABEL_LINE_GAP, POINT_SPLAY_COLUMN_PX, POINT_SPLAY_STEP_PX, POINT_SPLAY_MAX_PX, UNPRICED_GUTTER_W, UNSCORED_ROW_LIMIT, UNPRICED_GUTTER_LIMIT;
 var init_intellect_frontier_chart = __esm({
   "src/renderer/views/intellect-frontier-chart.ts"() {
+    init_clamp();
     init_model_intellect();
     init_helpers();
     init_intellect_frontier_tooltip();
@@ -46411,8 +46358,6 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
   let noTrainingOnly = false;
   let costAxis = "blended";
   let planCoverageMode = "plan";
-  let windowExhaustion = /* @__PURE__ */ new Map();
-  let historyAvailable = false;
   let expandPlanCoverageGroup = null;
   let lastUnpriced = [];
   let lastUnscored = [];
@@ -46448,10 +46393,6 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
   function setPlanCoverageMode(next) {
     if (planCoverageMode === next) return;
     planCoverageMode = next;
-    render();
-  }
-  function setWindowExhaustion(rates) {
-    windowExhaustion = rates;
     render();
   }
   function syncZdrBtn(btn) {
@@ -46519,11 +46460,6 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
         mode: "inference",
         label: "Inference",
         title: "Ignore the plan \xB7 plot every cloud model at catalog API $/MTok"
-      },
-      {
-        mode: "expected",
-        label: "Expected",
-        title: "Use prior window history: if a binding window usually hits its limit, plot at API price"
       }
     ];
     for (const { mode, label, title } of modes) {
@@ -46533,7 +46469,6 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
           type: "button",
           class: "frontier-btn frontier-cost-axis-btn",
           "data-plan-coverage": mode,
-          hidden: mode === "expected",
           title
         },
         label
@@ -46549,7 +46484,6 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
     if (!group) return;
     for (const btn of group.querySelectorAll("[data-plan-coverage]")) {
       const mode = btn.dataset["planCoverage"];
-      btn.hidden = mode === "expected" && !historyAvailable;
       const active2 = mode === planCoverageMode;
       btn.classList.toggle("active", active2);
       btn.setAttribute("aria-pressed", active2 ? "true" : "false");
@@ -46966,22 +46900,11 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
     const allRouteCandidates = [...baseCandidates, ...discoveryCandidates];
     const trackedCandidateIsDiscovery = (candidate) => exactRoutes !== null && isTrackedCloudCandidate(candidate) && !candidateHasRoute(candidate);
     const candidateIsIncluded = (candidate) => candidateHasRoute(candidate) || candidate.discovery === true || discover && trackedCandidateIsDiscovery(candidate);
-    historyAvailable = allRouteCandidates.some((candidate) => {
-      if (!planUsage || !candidate.planAccess || candidate.discovery || !candidateIsIncluded(candidate))
-        return false;
-      const inclusion = resolvePlanInclusion(
-        candidate.planAccess.provider,
-        candidate.planAccess.modelId,
-        planUsage
-      );
-      return inclusion !== null && (windowExhaustion.get(inclusion.windowId)?.total ?? 0) > 0;
-    });
     const adjustCandidate = (candidate) => {
       const surfaced = trackedCandidateIsDiscovery(candidate) ? { ...candidate, discovery: true } : candidate;
       const enriched = enrichTaskCost(surfaced);
       return enriched.discovery === true ? enriched : applyPlanCoverage(enriched, planUsage, {
-        mode: planCoverageMode,
-        windowExhaustion
+        mode: planCoverageMode
       });
     };
     const routePolicy = {
@@ -47002,7 +46925,6 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
         ...local ? { local: true } : {}
       });
     };
-    if (planCoverageMode === "expected" && !historyAvailable) planCoverageMode = "plan";
     const unfilteredBlendedPoints = frontierForKnownModels(
       allRouteCandidates,
       adjustCandidate,
@@ -47193,10 +47115,7 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
   }
   return {
     root: fieldset,
-    refresh,
-    setPlanCoverageMode,
-    getPlanCoverageMode: () => planCoverageMode,
-    setWindowExhaustion
+    refresh
   };
 }
 var MAX_CARD_PREFETCH, SEVERE_DOMINATION_PRICE_RATIO;
@@ -48382,7 +48301,7 @@ function renderPlanProvider(host, result, onSignIn) {
   }
   if (result.usage.creditGrant) {
     const credit = result.usage.creditGrant;
-    const usedPercent = Math.min(100, Math.max(0, credit.usedCents / credit.totalCents * 100));
+    const usedPercent = clamp(credit.usedCents / credit.totalCents * 100, 0, 100);
     const row = document.createElement("div");
     row.className = "usage-credit-grant";
     row.innerHTML = `
@@ -48454,94 +48373,6 @@ function renderPlanSection(host, snapshot, error62, onSignIn) {
     renderPlanProvider(list, provider, onSignIn);
   }
   host.append(list);
-}
-function renderPlanWorthItSection(host, payload, error62, opts) {
-  host.replaceChildren();
-  const heading = document.createElement("h4");
-  heading.className = "usage-worth-heading";
-  heading.textContent = "Is your plan worth it?";
-  host.append(heading);
-  const intro = document.createElement("p");
-  intro.className = "settings-fieldset-desc";
-  intro.textContent = "Compares your Claude subscription\u2019s account-wide weekly API-equivalent burn (from plan windows, including other apps and devices) to paying catalog inference rates. Copse\u2019s local ledger is not used here.";
-  host.append(intro);
-  if (error62) {
-    const err = document.createElement("p");
-    err.className = "usage-plan-status usage-plan-status-error field-hint";
-    err.textContent = error62;
-    host.append(err);
-    return;
-  }
-  if (!payload) {
-    const loading = document.createElement("p");
-    loading.className = "field-hint";
-    loading.textContent = "Loading plan worth-it\u2026";
-    host.append(loading);
-    return;
-  }
-  const { worthIt } = payload;
-  const card = document.createElement("div");
-  card.className = "usage-worth-card";
-  card.dataset["verdict"] = worthIt.verdict;
-  const verdict = document.createElement("p");
-  verdict.className = "usage-worth-verdict";
-  verdict.textContent = VERDICT_LABELS[worthIt.verdict];
-  card.append(verdict);
-  const reason = document.createElement("p");
-  reason.className = "usage-worth-reason field-hint";
-  reason.textContent = worthIt.reason.replaceAll("\u2014", "\xB7");
-  card.append(reason);
-  const feeRow = document.createElement("div");
-  feeRow.className = "usage-worth-fee-row";
-  const feeLabel = document.createElement("label");
-  feeLabel.className = "usage-worth-fee-label";
-  feeLabel.htmlFor = "usage-worth-fee-input";
-  feeLabel.textContent = "Claude plan monthly fee (USD)";
-  const feeInput = document.createElement("input");
-  feeInput.id = "usage-worth-fee-input";
-  feeInput.type = "number";
-  feeInput.min = "1";
-  feeInput.max = "10000";
-  feeInput.step = "1";
-  feeInput.className = "usage-worth-fee-input";
-  feeInput.placeholder = worthIt.feeHint ? String(worthIt.feeHint.monthlyFeeUsd) : "e.g. 100";
-  if (worthIt.monthlyFeeUsd !== null) {
-    feeInput.value = String(worthIt.monthlyFeeUsd);
-  }
-  if (worthIt.feeHint && worthIt.monthlyFeeUsd === worthIt.feeHint.monthlyFeeUsd) {
-    feeInput.title = `Hinted from weekly limit (${worthIt.feeHint.label})`;
-  }
-  feeInput.disabled = opts.busy === true;
-  feeInput.addEventListener("change", () => {
-    const raw = feeInput.value.trim();
-    if (!raw) {
-      opts.onFeeChange(null);
-      return;
-    }
-    const n2 = Number(raw);
-    opts.onFeeChange(Number.isFinite(n2) && n2 > 0 ? n2 : null);
-  });
-  feeRow.append(feeLabel, feeInput);
-  card.append(feeRow);
-  if (worthIt.feeHint && worthIt.monthlyFeeUsd === null) {
-    const hint = document.createElement("p");
-    hint.className = "field-hint";
-    hint.textContent = `Suggested from weekly limit: ${worthIt.feeHint.label} (~$${String(worthIt.feeHint.monthlyFeeUsd)}/mo).`;
-    card.append(hint);
-  }
-  const actions = document.createElement("div");
-  actions.className = "usage-worth-actions";
-  const inferenceBtn = document.createElement("button");
-  inferenceBtn.type = "button";
-  inferenceBtn.className = "usage-worth-inference-btn";
-  inferenceBtn.textContent = "Show inference prices on value map";
-  inferenceBtn.title = "Plot the cancel-the-plan frontier (catalog API $/MTok)";
-  inferenceBtn.addEventListener("click", () => {
-    opts.onShowInference();
-  });
-  actions.append(inferenceBtn);
-  card.append(actions);
-  host.append(card);
 }
 function renderModelTable(host, title, rows, emptyText, accounts = []) {
   const section = document.createElement("div");
@@ -48733,7 +48564,6 @@ function createUsageSection(api, store, onRequestClose) {
   root.className = "usage-section-root";
   root.innerHTML = `
     <div class="usage-plan-section" id="usage-plan-section"></div>
-    <div class="usage-worth-section" id="usage-worth-section"></div>
     <div class="usage-ledger-section">
       <h4 class="usage-ledger-heading">Local usage ledger</h4>
       <div class="usage-period-tabs" role="tablist" aria-label="Usage period">
@@ -48780,7 +48610,6 @@ function createUsageSection(api, store, onRequestClose) {
   );
   root.append(frontierPanel.root);
   const planEl = qsRequired(root, "#usage-plan-section");
-  const worthEl = qsRequired(root, "#usage-worth-section");
   const bodyEl2 = qsRequired(root, "#usage-period-body");
   const labelEl = qsRequired(root, "#usage-period-label");
   const tabBtns = root.querySelectorAll(".usage-period-btn");
@@ -48789,41 +48618,6 @@ function createUsageSection(api, store, onRequestClose) {
   let cachedSummary = null;
   let cachedPlanSnapshot = null;
   let ledgerRefreshTimer;
-  let feeBusy = false;
-  async function persistPlanFee(fee) {
-    feeBusy = true;
-    try {
-      const next = await api.usage.setClaudePlanMonthlyFee(fee);
-      applyWorthItPayload(next);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to save Claude plan monthly fee.";
-      renderPlanWorthItSection(worthEl, null, message, {
-        onFeeChange: () => void 0,
-        onShowInference: () => void 0
-      });
-    } finally {
-      feeBusy = false;
-    }
-  }
-  function applyWorthItPayload(payload) {
-    const rates = new Map(
-      payload.windowExhaustion.map((row) => [row.windowId, { hit: row.hit, total: row.total }])
-    );
-    frontierPanel.setWindowExhaustion(rates);
-    renderPlanWorthItSection(worthEl, payload, null, {
-      busy: feeBusy,
-      onFeeChange: (fee) => {
-        void persistPlanFee(fee);
-      },
-      onShowInference: () => {
-        frontierPanel.setPlanCoverageMode("inference");
-        frontierPanel.root.scrollIntoView({
-          block: "nearest",
-          behavior: "smooth"
-        });
-      }
-    });
-  }
   function showPeriod(period) {
     activePeriod = period;
     tabBtns.forEach((btn) => {
@@ -48875,25 +48669,6 @@ function createUsageSection(api, store, onRequestClose) {
       renderPlanSection(planEl, null, message, handleSignIn);
     }
   }
-  async function refreshWorthIt(signal = currentSignal) {
-    renderPlanWorthItSection(worthEl, null, null, {
-      onFeeChange: () => void 0,
-      onShowInference: () => void 0
-    });
-    try {
-      const payload = await api.usage.getPlanWorthIt();
-      if (signal?.aborted) return;
-      applyWorthItPayload(payload);
-    } catch (err) {
-      if (signal?.aborted) return;
-      const message = err instanceof Error ? err.message : "Failed to load plan worth-it.";
-      frontierPanel.setWindowExhaustion(/* @__PURE__ */ new Map());
-      renderPlanWorthItSection(worthEl, null, message, {
-        onFeeChange: () => void 0,
-        onShowInference: () => void 0
-      });
-    }
-  }
   async function refreshLedger(signal = currentSignal) {
     try {
       const summary = await api.usage.getSummary();
@@ -48926,10 +48701,7 @@ function createUsageSection(api, store, onRequestClose) {
     if (!cachedSummary) {
       bodyEl2.textContent = "Loading usage\u2026";
     }
-    const planThenWorth = refreshPlan(signal).then(() => {
-      if (!signal?.aborted) return refreshWorthIt(signal);
-      return void 0;
-    });
+    const planPromise = refreshPlan(signal);
     const frontierPromise = frontierPanel.refresh(signal);
     try {
       const summary = await api.usage.getSummary();
@@ -48940,7 +48712,7 @@ function createUsageSection(api, store, onRequestClose) {
       if (signal?.aborted) return;
       bodyEl2.textContent = err instanceof Error ? `Failed to load usage: ${err.message}` : "Failed to load usage.";
     }
-    await planThenWorth;
+    await planPromise;
     await frontierPromise;
   }
   const unsubUsage = store?.on("usage_updated", () => {
@@ -48957,9 +48729,10 @@ function createUsageSection(api, store, onRequestClose) {
     }
   };
 }
-var PERIOD_LABELS, PROVIDER_LABELS, LEDGER_REFRESH_DEBOUNCE_MS, VERDICT_LABELS;
+var PERIOD_LABELS, PROVIDER_LABELS, LEDGER_REFRESH_DEBOUNCE_MS;
 var init_usage_section = __esm({
   "src/renderer/views/setup/usage-section.ts"() {
+    init_clamp();
     init_format_usage_summary();
     init_helpers();
     init_inline_markdown();
@@ -48983,13 +48756,6 @@ var init_usage_section = __esm({
       cursor: "Cursor"
     };
     LEDGER_REFRESH_DEBOUNCE_MS = 400;
-    VERDICT_LABELS = {
-      worth_it: "Worth it vs inference",
-      borderline: "Close to break-even",
-      not_worth_it: "Inference may be cheaper",
-      insufficient_history: "Need more history",
-      needs_fee: "Enter your plan fee"
-    };
   }
 });
 
@@ -49333,6 +49099,50 @@ function createMobileCompanionSection(api) {
     "Remove name"
   );
   const nameStatus = el("span", { class: "mobile-companion-name-status" });
+  const relayInput = el("input", { type: "checkbox", name: "mobileCompanionRelay" });
+  const relayStatus = el("div", { class: "mobile-companion-relay-status" });
+  const shellPairBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary" },
+    "Add this Mac at copse.me"
+  );
+  const shellPairRow = el("div", { class: "settings-action-row" }, shellPairBtn);
+  const shellQrImage = el("div", { class: "mobile-companion-qr-image", "aria-hidden": "true" });
+  const shellQrHint = el("p", { class: "field-hint" });
+  const shellDoneBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact" },
+    "Done"
+  );
+  const shellQr = el(
+    "div",
+    { id: "mobile-companion-shell-qr", class: "mobile-companion-qr", hidden: true },
+    shellQrImage,
+    el(
+      "div",
+      { class: "mobile-companion-qr-text" },
+      shellQrHint,
+      el("div", { class: "settings-action-row" }, shellDoneBtn)
+    )
+  );
+  const relayBlock = el(
+    "div",
+    { class: "mobile-companion-relay", hidden: true },
+    el(
+      "label",
+      { class: "checkbox-label" },
+      relayInput,
+      " Reach this Mac from anywhere through copse.me"
+    ),
+    el(
+      "p",
+      { class: "field-hint" },
+      "Phones you add at copse.me connect through the Copse relay when they are away from this network. The relay passes the encrypted connection straight to this Mac and cannot read it; it sees when, and from which address, a phone connects. Each phone still pairs with this Mac, and you approve it here."
+    ),
+    relayStatus,
+    shellPairRow,
+    shellQr
+  );
   const nameCard = el(
     "fieldset",
     { class: "mobile-companion-name" },
@@ -49341,6 +49151,7 @@ function createMobileCompanionSection(api) {
     inviteRow,
     nameSummary,
     dnsNote,
+    relayBlock,
     el("div", { class: "settings-action-row" }, removeNameBtn),
     nameStatus
   );
@@ -49495,6 +49306,59 @@ function createMobileCompanionSection(api) {
     if (name.lastError) setInlineStatus(nameStatus, "error", name.lastError);
     else nameStatus.replaceChildren();
   }
+  function renderRelay(state) {
+    const relay = state.relay;
+    if (!relay || state.publicName.state === "unregistered") {
+      relayBlock.hidden = true;
+      return;
+    }
+    relayBlock.hidden = false;
+    relayInput.checked = relay.enabled;
+    shellPairRow.hidden = !relay.enabled;
+    shellPairBtn.toggleAttribute("disabled", state.publicName.state !== "active");
+    renderRelayStatus(state, relay);
+    const pairing = relay.enabled ? state.shellPairing ?? null : null;
+    if (pairing?.qrSvg && pairing.expiresAt > Date.now()) {
+      shellQrImage.innerHTML = pairing.qrSvg;
+      shellQrHint.textContent = `Scan with your phone\u2019s camera, sign in at copse.me with a passkey and add this Mac. Then pair the phone in the page that opens. The code works once and expires at ${formatClock(pairing.expiresAt)}; Done only hides it.`;
+      shellQr.hidden = false;
+      shellPairBtn.textContent = "Show a new code";
+    } else {
+      shellQr.hidden = true;
+      shellPairBtn.textContent = "Add this Mac at copse.me";
+    }
+  }
+  function renderRelayStatus(state, relay) {
+    switch (relay.status) {
+      case "off":
+        relayStatus.replaceChildren();
+        return;
+      case "connected":
+        setInlineStatus(
+          relayStatus,
+          "ok",
+          `Connected to ${relay.relay}. Phones added at copse.me reach this Mac as ${relay.hostname ?? "its web name"}.`
+        );
+        return;
+      case "connecting":
+        setInlineStatus(relayStatus, "pending", `Connecting to ${relay.relay}\u2026`);
+        return;
+      case "retrying":
+        setInlineStatus(
+          relayStatus,
+          "warn",
+          `${relay.error ?? "The relay connection dropped."} Trying again${relay.retryAt ? ` at ${formatClock(relay.retryAt)}` : ""}.`
+        );
+        return;
+      case "waiting":
+        setInlineStatus(
+          relayStatus,
+          "idle",
+          relay.error ?? (!state.running ? "Connects to the relay while Mobile Companion is on." : state.publicName.state !== "active" ? "Connects to the relay once this name is active again." : "Connects to the relay once this name has a certificate.")
+        );
+        return;
+    }
+  }
   function renderDns(hostname3, dns) {
     if (dns === "ok" || dns === "unknown") return;
     if (dns === "checking") {
@@ -49552,7 +49416,7 @@ function createMobileCompanionSection(api) {
           "p",
           { class: "field-hint" },
           "Read only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold.",
-          pairing.trustedName ? " This phone connected over this Mac\u2019s trusted name, and its browser verified the certificate." : " Confirm below that the Copse Local Root is installed and trusted on this phone before allowing control."
+          pairing.relayed ? " This phone connected through the Copse relay (copse.me), and its browser verified this Mac\u2019s certificate." : pairing.trustedName ? " This phone connected over this Mac\u2019s trusted name, and its browser verified the certificate." : " Confirm below that the Copse Local Root is installed and trusted on this phone before allowing control."
         ),
         ...pairing.trustedName ? [] : [
           el(
@@ -49637,6 +49501,7 @@ function createMobileCompanionSection(api) {
     renderAddresses(state);
     renderConnection(state);
     renderPublicName(state);
+    renderRelay(state);
     renderPairing(state);
     renderDevices(state);
     if (state.lastError) setInlineStatus(status, "error", state.lastError);
@@ -49685,6 +49550,24 @@ function createMobileCompanionSection(api) {
   recheckBtn.addEventListener("click", () => {
     void api.mobile.recheckNameDns();
   });
+  relayInput.addEventListener("change", () => {
+    void api.mobile.setRelayEnabled(relayInput.checked).catch((error62) => {
+      if (lastState) renderRelay(lastState);
+      setInlineStatus(
+        relayStatus,
+        "error",
+        ipcErrorMessage(error62, "Could not change the relay setting.")
+      );
+    });
+  });
+  shellPairBtn.addEventListener("click", () => {
+    void api.mobile.createShellPairing().catch((error62) => {
+      setInlineStatus(relayStatus, "error", ipcErrorMessage(error62, "Could not make a code."));
+    });
+  });
+  shellDoneBtn.addEventListener("click", () => {
+    void api.mobile.clearShellPairing();
+  });
   async function refresh() {
     const state = await api.mobile.getState();
     applyState(state);
@@ -49699,7 +49582,7 @@ function createMobileCompanionSection(api) {
     el(
       "p",
       { class: "field-hint" },
-      "Open your Copse threads from a phone on the same local network. Choose the network interface your phone uses, pair phones, or turn sharing off. Copse must stay open and this computer must stay awake."
+      "Open your Copse threads from a phone on the same local network, or from anywhere through copse.me once this Mac has a trusted address. Choose the network interface your phone uses, pair phones, or turn sharing off. Copse must stay open and this computer must stay awake."
     ),
     el("label", { class: "checkbox-label" }, enabledInput, " Enable Mobile Companion"),
     el("label", {}, "Network ", addressSelect),
@@ -49711,6 +49594,9 @@ function createMobileCompanionSection(api) {
     status
   );
   return { root, refresh };
+}
+function formatClock(ms) {
+  return new Date(ms).toLocaleTimeString(void 0, { hour: "numeric", minute: "2-digit" });
 }
 function formatTime(ms) {
   return new Date(ms).toLocaleString(void 0, {
@@ -50387,7 +50273,7 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
     const values = view === "group" && group ? group.choices.map((choice) => choice.value) : visibleOptions(cachedOptions).filter((opt) => !opt.disabled).map((opt) => opt.value);
     if (values.length === 0) return;
     const index = values.findIndex((value) => value === activeValue);
-    const nextIndex = Math.max(0, Math.min(values.length - 1, index + direction));
+    const nextIndex = clamp(index + direction, 0, values.length - 1);
     activeValue = values[nextIndex] ?? null;
     renderMenu(cachedOptions);
     if (view !== "all") focusActiveOption();
@@ -50707,6 +50593,7 @@ function mountModelSelectPicker(select, pickerOpts) {
 var RECENT_MODEL_LIMIT, COVERAGE_FILTERS, pickerAnchorId, fieldPickerId;
 var init_model_picker = __esm({
   "src/renderer/views/model-picker.ts"() {
+    init_clamp();
     init_context_menu();
     init_helpers();
     init_icons();
@@ -50842,9 +50729,6 @@ function modelParameterSupport(model) {
     upstreamDecides: true
   };
 }
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
 function roundToStep(value) {
   return Math.round(value * 100) / 100;
 }
@@ -50921,6 +50805,7 @@ function decodeModelParametersMap(value) {
 var REASONING_LEVELS, isReasoningLevel, VERBOSITY_LEVELS, isVerbosityLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_GPT6_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_GPT6_LADDER, OPENAI_COMPATIBLE_LADDER, OPENAI_VERBOSITY_PREFIXES, OPENAI_VERBOSITY_EXCLUDED, SAMPLING_BOUNDS, RECOMMENDATIONS;
 var init_model_parameters = __esm({
   "packages/llm/src/model-parameters.ts"() {
+    init_clamp();
     init_model_catalog();
     init_model_families();
     init_model_selection();
@@ -54108,7 +53993,7 @@ function choiceForStored(value) {
 }
 function retainedLabel(value) {
   if (value === "scale") return "Scale (current advanced value)";
-  const visible = value.length > 80 ? `${value.slice(0, 79)}\u2026` : value;
+  const visible = ellipsize(value, 80);
   return `Current advanced value: ${visible || "(empty)"}`;
 }
 function describe3(value) {
@@ -54181,6 +54066,7 @@ function createOpenAiServiceTierField(api) {
 var OFFERED;
 var init_openai_service_tier_field = __esm({
   "src/renderer/views/setup/openai-service-tier-field.ts"() {
+    init_one_line_text();
     init_service_tier();
     init_helpers();
     init_ui();
@@ -55747,11 +55633,17 @@ function createGhCliSection(api, options = {}) {
       el("strong", {}, "Automatic"),
       " uses the ",
       el("code", {}, "gh"),
-      " CLI when it is signed in, otherwise the GitHub REST/GraphQL API with a ",
-      el("code", {}, "GITHUB_TOKEN"),
+      " CLI when it is signed in, otherwise the GitHub REST/GraphQL API with your ",
+      el("code", {}, "gh"),
+      " login or a token: ",
+      el("code", {}, "GH_TOKEN"),
       " or ",
-      el("code", {}, "gh auth token"),
-      "."
+      el("code", {}, "GITHUB_TOKEN"),
+      " for github.com, or ",
+      el("code", {}, "GH_ENTERPRISE_TOKEN"),
+      " when ",
+      el("code", {}, "GH_HOST"),
+      " names a GitHub Enterprise server."
     ),
     backendField
   );
@@ -72636,55 +72528,6 @@ var init_active_thread_owner = __esm({
   }
 });
 
-// src/shared/fs/image-path.ts
-function extensionOf(path) {
-  const name = path.split(/[\\/]/).pop()?.toLowerCase() ?? "";
-  const dot = name.lastIndexOf(".");
-  return dot < 0 ? null : name.slice(dot + 1);
-}
-function imageMimeType(path) {
-  const ext = extensionOf(path);
-  return ext === null ? null : IMAGE_MIME_BY_EXT.get(ext) ?? null;
-}
-function isImagePath(path) {
-  return imageMimeType(path) !== null;
-}
-function isRasterImagePath(path) {
-  const mime = imageMimeType(path);
-  return mime !== null && mime !== "image/svg+xml";
-}
-function isUnrenderableImageMime(mime) {
-  return UNRENDERABLE_IMAGE_MIME.has(mime.toLowerCase());
-}
-function isUnrenderableImagePath(path) {
-  const ext = extensionOf(path);
-  return ext !== null && UNRENDERABLE_IMAGE_EXT.has(ext);
-}
-var IMAGE_MIME_BY_EXT, UNRENDERABLE_IMAGE_MIME, UNRENDERABLE_IMAGE_EXT;
-var init_image_path = __esm({
-  "src/shared/fs/image-path.ts"() {
-    IMAGE_MIME_BY_EXT = /* @__PURE__ */ new Map([
-      ["avif", "image/avif"],
-      ["bmp", "image/bmp"],
-      ["gif", "image/gif"],
-      ["ico", "image/x-icon"],
-      ["jpeg", "image/jpeg"],
-      ["jpg", "image/jpeg"],
-      ["png", "image/png"],
-      ["svg", "image/svg+xml"],
-      ["webp", "image/webp"]
-    ]);
-    UNRENDERABLE_IMAGE_MIME = /* @__PURE__ */ new Set([
-      "image/heic",
-      "image/heic-sequence",
-      "image/heif",
-      "image/heif-sequence",
-      "image/tiff"
-    ]);
-    UNRENDERABLE_IMAGE_EXT = /* @__PURE__ */ new Set(["heic", "heif", "tif", "tiff"]);
-  }
-});
-
 // src/renderer/drawing/drauu/emitter.ts
 var Emitter;
 var init_emitter = __esm({
@@ -74767,6 +74610,55 @@ var init_image_expand = __esm({
   }
 });
 
+// src/shared/fs/image-path.ts
+function extensionOf(path) {
+  const name = path.split(/[\\/]/).pop()?.toLowerCase() ?? "";
+  const dot = name.lastIndexOf(".");
+  return dot < 0 ? null : name.slice(dot + 1);
+}
+function imageMimeType(path) {
+  const ext = extensionOf(path);
+  return ext === null ? null : IMAGE_MIME_BY_EXT.get(ext) ?? null;
+}
+function isImagePath(path) {
+  return imageMimeType(path) !== null;
+}
+function isRasterImagePath(path) {
+  const mime = imageMimeType(path);
+  return mime !== null && mime !== "image/svg+xml";
+}
+function isUnrenderableImageMime(mime) {
+  return UNRENDERABLE_IMAGE_MIME.has(mime.toLowerCase());
+}
+function isUnrenderableImagePath(path) {
+  const ext = extensionOf(path);
+  return ext !== null && UNRENDERABLE_IMAGE_EXT.has(ext);
+}
+var IMAGE_MIME_BY_EXT, UNRENDERABLE_IMAGE_MIME, UNRENDERABLE_IMAGE_EXT;
+var init_image_path = __esm({
+  "src/shared/fs/image-path.ts"() {
+    IMAGE_MIME_BY_EXT = /* @__PURE__ */ new Map([
+      ["avif", "image/avif"],
+      ["bmp", "image/bmp"],
+      ["gif", "image/gif"],
+      ["ico", "image/x-icon"],
+      ["jpeg", "image/jpeg"],
+      ["jpg", "image/jpeg"],
+      ["png", "image/png"],
+      ["svg", "image/svg+xml"],
+      ["webp", "image/webp"]
+    ]);
+    UNRENDERABLE_IMAGE_MIME = /* @__PURE__ */ new Set([
+      "image/heic",
+      "image/heic-sequence",
+      "image/heif",
+      "image/heif-sequence",
+      "image/tiff"
+    ]);
+    UNRENDERABLE_IMAGE_EXT = /* @__PURE__ */ new Set(["heic", "heif", "tif", "tiff"]);
+  }
+});
+
 // src/renderer/controller/files.ts
 function detectLanguage(filePath) {
   const lower = filePath.split("/").pop()?.toLowerCase() ?? "";
@@ -74829,12 +74721,8 @@ async function openWorkspaceFile(store, api, path, reveal) {
 }
 async function openWorkspaceFileInBrowser(store, api, path) {
   const { projectId, threadId } = requireActiveThreadOwner(store);
-  if (store.getState().openLinksInBuiltInBrowser) {
-    const url2 = await api.browser.workspaceFileUrl(projectId, threadId, path);
-    openBrowserUrl(store, url2);
-    return;
-  }
-  await api.shell.openWorkspaceFileInBrowser(projectId, threadId, path);
+  const url2 = await api.browser.workspaceFileUrl(projectId, threadId, path);
+  openBrowserUrl(store, url2);
 }
 function canOpenWorkspaceFileInBrowser(store) {
   const { activeProjectId, projects } = store.getState();
@@ -74937,9 +74825,6 @@ export {
   init_ui,
   mountProductAnnouncements,
   init_product_announcement_dialog,
-  createOverlayDialog,
-  isAnyDialogOpen,
-  init_dialog_shell,
   memberOf,
   init_member_of,
   init_member_of2,
@@ -74949,6 +74834,8 @@ export {
   errorMessage,
   init_errors3 as init_errors,
   init_errors4 as init_errors2,
+  clamp,
+  init_clamp,
   formatUsd,
   formatTokenCount,
   init_format_usage_summary,
@@ -75022,6 +74909,9 @@ export {
   init_local_detection,
   createCustomProvidersSection,
   init_custom_providers_section,
+  collapseWhitespace,
+  ellipsize,
+  init_one_line_text,
   createPasteKeyForm,
   init_paste_key_form,
   contextFitAdvice,
