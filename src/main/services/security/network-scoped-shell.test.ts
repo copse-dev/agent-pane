@@ -103,6 +103,14 @@ describe('planScopedNetwork', () => {
     assert.equal(result.disableGitHooks, false)
   })
 
+  it('names the remotes a push publishes to, for the outgoing-secret check', () => {
+    assert.deepEqual(plan('git push -u fork feature').pushRemotes, ['fork'])
+    assert.deepEqual(plan('git fetch origin && git push origin HEAD').pushRemotes, ['origin'])
+    assert.deepEqual(plan('git push').pushRemotes, ['corp', 'fork', 'origin'])
+    assert.deepEqual(plan('git fetch origin').pushRemotes, [])
+    assert.deepEqual(plan('gh pr view 1').pushRemotes, [])
+  })
+
   it('unions every remote for the implicit-upstream form', () => {
     assert.deepEqual(plan('git fetch --prune').domains, ['git.example.com', 'github.com'])
   })

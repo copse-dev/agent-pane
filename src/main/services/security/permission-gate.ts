@@ -102,6 +102,7 @@ import {
 import { resolveAutoApproval } from './auto-approval-config.ts'
 import { planScopedNetwork, type ScopedNetworkPlan } from './network-scoped-shell.ts'
 import { readRepoNetworkFacts } from './git-network-facts.ts'
+import { outgoingPushSecretReason } from './push-secret-scan.ts'
 import { resolveProgramOutsideRoots } from './program-resolution.ts'
 import {
   BROWSER_TOOLS,
@@ -1802,9 +1803,28 @@ export async function ensureShellCommandPermitted(
   // runs contained with egress to its own hosts only, instead of asking to leave
   // the sandbox. Checked before the escape-granting classifier below so a shape
   // both would accept stays contained.
+  // Set when a scoped push would publish a secret: it must reach the prompt,
+  // not an auto-approval below (run_shell still runs it scoped once approved).
+  let pushPublishesSecret = false
   if (!forceAsk && sandboxEnabled) {
     const plan = scopedNetworkRunFor(command, workspaceRoot)
-    if (plan) {
+    const secretReason =
+      plan && plan.pushRemotes.length > 0 && workspaceRoot !== null
+        ? await outgoingPushSecretReason(workspaceRoot, plan.pushRemotes)
+        : null
+    if (secretReason !== null) {
+      pushPublishesSecret = true
+      recordDecision({
+        kind: 'shell',
+        actor: 'classifier',
+        verdict: 'observed',
+        subject: SHELL_DECISION_SUBJECT,
+        scope: 'sandbox',
+        reasons: [secretReason],
+        source: 'network-scope',
+      })
+    }
+    if (plan && secretReason === null) {
       if (scopedNetworkApprovals.size >= 64) {
         const oldest = scopedNetworkApprovals.values().next().value
         if (oldest !== undefined) scopedNetworkApprovals.delete(oldest)
@@ -1830,6 +1850,7 @@ export async function ensureShellCommandPermitted(
   // auto-approval.ts for the enumerated shapes and the safety argument.
   if (
     !forceAsk &&
+    !pushPublishesSecret &&
     autoApproveShell(
       command,
       outsideSandbox ? 'external' : 'sandbox',
@@ -1874,7 +1895,13 @@ export async function ensureShellCommandPermitted(
   const leaseIdentity =
     leaseRoot !== null ? activeShellReplayLeaseIdentity(leaseRoot, 'project-sandbox') : null
   const leaseOfferIdentity = leaseCore !== null ? leaseIdentity : null
-  if (!forceAsk && leaseIdentity && consumeShellReplayLease(leaseIdentity, command)) return true
+  if (
+    !forceAsk &&
+    !pushPublishesSecret &&
+    leaseIdentity &&
+    consumeShellReplayLease(leaseIdentity, command)
+  )
+    return true
 
   // Reads of accountable paths outside the project ask the narrower read-access
   // question — and can be answered once for the whole thread — instead of the

@@ -78,6 +78,8 @@ export interface ScopedNetworkPlan {
    * has a way to any host. `gh` only ever verifies the chains GitHub serves.
    */
   trustEvaluation: boolean
+  /** Remotes a push segment publishes to; the gate checks their outgoing commits for secrets. */
+  pushRemotes: string[]
 }
 
 /**
@@ -135,6 +137,8 @@ export function gitUrlHost(url: string): string | null {
 
 interface SegmentScope {
   hosts: string[]
+  /** For a push: the remotes it may publish to. */
+  pushRemotes?: string[]
   github: boolean
   runsHooks: boolean
   program: string
@@ -228,10 +232,12 @@ function gitSegmentScope(
   }
   if (facts === null) return { refused: 'the execution root is not the project repository' }
   const push = subcommand === 'push'
-  const hosts = remoteHosts(facts, namedRemote(args), push)
+  const remote = namedRemote(args)
+  const hosts = remoteHosts(facts, remote, push)
   if (!Array.isArray(hosts)) return hosts
   return {
     hosts,
+    ...(push ? { pushRemotes: remote === null ? [...facts.remotes.keys()] : [remote] } : {}),
     github: hosts.includes('github.com'),
     runsHooks: push || subcommand === 'pull',
     program: 'git',
@@ -328,6 +334,7 @@ export function planScopedNetwork(
       reasons: scopes.map((scope) => scope.reason),
       programs: [...new Set([...scopes.map((scope) => scope.program), ...filters])].sort(),
       trustEvaluation: scopes.length === 1 && scopes[0]?.program === 'gh',
+      pushRemotes: [...new Set(scopes.flatMap((scope) => scope.pushRemotes ?? []))].sort(),
     },
   }
 }

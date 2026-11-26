@@ -549,6 +549,15 @@ trusted again. A fetch, pull or push that names a URL or an unknown remote gets 
 repository `url.*.insteadOf`, `pushInsteadOf` and `http.proxy` refuse the scope, so the host the
 plan names is the host git contacts.
 
+A scoped push also checks what it would publish (`push-secret-scan.ts`). The recorded remote may
+be public, and a contained command can commit a `.env` first. Before the push may skip its
+prompt, Copse lists the commits reachable from HEAD or any local branch that no remote-tracking
+ref of the push's remotes has, and asks if one touches a secret file (the read tier's list:
+`.env*`, `.netrc`, keys, `*.pem`, credentials files) or adds a high-confidence token
+(`redactSecrets`' GitHub, cloud and provider key shapes, PEM private keys). More than 500 outgoing
+commits, or history git cannot read, asks too. Git runs through `internalGit`, so the checkout's
+config cannot choose a program, with external diff and textconv off.
+
 Every one of these hosts accepts writes from anyone holding a token, so the boundary is that only
 the recognised tool runs while the egress is open, not the host name. For GitHub the scoped command
 gets the user's token as `GH_TOKEN`, a git credential helper scoped to `https://github.com` that
