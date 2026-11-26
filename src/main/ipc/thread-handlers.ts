@@ -37,6 +37,11 @@ import {
   listOrphanProjectStores,
 } from '../services/thread-store.ts'
 import { deleteThreadResourcesAndStore } from '../services/thread-deletion.ts'
+import {
+  importExternalSessions,
+  listExternalSessions,
+} from '../services/external-sessions/external-session-import.ts'
+import { externalSessionImportDeps } from '../services/external-sessions/external-session-runtime.ts'
 import { buildThreadArchive } from '../services/thread-archive.ts'
 import { archiveStoredThread } from '../services/thread-archiving.ts'
 import {
@@ -448,6 +453,28 @@ export function registerThreadHandlers(
     assertMainFrameSender(event, win)
     const videoPath = parseIpcArgs(zPathString, [path])
     return readVideoForPlayback(videoPath)
+  })
+
+  // Saved Claude Code / Codex CLI sessions that ran in this project's folder,
+  // and importing them as threads. Read-only on the tools' own files.
+  ipcMain.handle('threads:list-external-sessions', (event, projectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zProjectId, [projectId])
+    return listExternalSessions(externalSessionImportDeps(), id)
+  })
+  ipcMain.handle('threads:import-external-sessions', (event, projectId: unknown, keys: unknown) => {
+    assertMainFrameSender(event, win)
+    const [id, sessionKeys] = parseIpcArgs(
+      z.tuple([
+        zProjectId,
+        z
+          .array(z.string().regex(/^[0-9a-f]{32}$/))
+          .min(1)
+          .max(100),
+      ]),
+      [projectId, keys],
+    )
+    return importExternalSessions(externalSessionImportDeps(), id, sessionKeys)
   })
 
   ipcMain.handle('threads:list-orphans', (event) => {

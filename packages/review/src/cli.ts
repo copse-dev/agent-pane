@@ -9,6 +9,7 @@
 // turn_end` event envelope (`--events`), the run resolves its tool permissions
 // from a declared profile that fails closed, and exit codes are the contract's.
 import { execFileSync } from 'node:child_process'
+import { createWriteStream, type WriteStream } from 'node:fs'
 import { access, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { parseArgs } from 'node:util'
 import { homedir } from 'node:os'
@@ -26,6 +27,11 @@ import { safeJsonParse } from '@copse/std/safe-json.ts'
 import { errorMessage } from '@copse/std/errors.ts'
 import { memberOf } from '@copse/std/member-of.ts'
 import type { LLMProvider } from '@copse/llm/wire-types.ts'
+import {
+  isReasoningLevel,
+  REASONING_LEVELS,
+  type ReasoningLevel,
+} from '@copse/llm/model-parameters.ts'
 import { detectContainerBackend } from './container-backend.ts'
 import { buildReviewContext, readFileDiff } from './context.ts'
 import {
@@ -40,7 +46,15 @@ import {
 import { createEphemeralRunnerBackend, createHostProcessBackend } from './host-process-backend.ts'
 import { applyEvidenceFloor, postSummary, renderSummaryBlock, writeSummary } from './pr-summary.ts'
 import type { DiffOrigin, IsolationBackend } from './isolation.ts'
-import { applicableLenses, resolveLenses } from './lenses.ts'
+import { applicableLenses, resolveLenses, VISUAL_LENS, type Lens } from './lenses.ts'
+import { DEFAULT_CONTEXT_BUDGET_CHARS } from './context.ts'
+import {
+  localModelKey,
+  preflightLocalModels,
+  requiredContextTokens,
+  type LocalModelInfo,
+  type LocalPreflight,
+} from './local-model-probe.ts'
 import { readPullRequestConversation, type PullRequestRef } from './pr-conversation.ts'
 import {
   createRemoteImageFetcher,
@@ -70,8 +84,13 @@ import {
 import { decodeStage0Report } from './stage0-report.ts'
 import { DEFAULT_PREPARE_TIMEOUT_MS } from './project-commands.ts'
 import { runReviewers, type Stage2Result } from './stage2.ts'
-import { verifyFindings, type Stage4Result } from './stage4.ts'
-import { assembleReviewReport, canonicalFindings, type ReviewReport } from './stage5.ts'
+import { verifyFindings, type Stage4Result, type VerifierRole } from './stage4.ts'
+import {
+  assembleReviewReport,
+  canonicalFindings,
+  type ReviewModelRoute,
+  type ReviewReport,
+} from './stage5.ts'
 import type { Finding } from './finding.ts'
 import type { ReviewContext } from './context.ts'
 
@@ -102,6 +121,9 @@ never the exit code.
   --image <name>          the container image (default ${DEFAULT_CONTAINER_IMAGE}); never pulled
   --allow-unisolated      consent to run your own tree with no isolation backend
   --no-model              Stage 0 only; no model is called
+  --preflight             check that the model routes can run this review (a local model is
+                          there, loaded with enough context, and can see images if the
+                          lenses need it), then exit without reviewing
   --stage0-json <path>    a Stage 0 report another run wrote (or its --json report): read-only
                           unless an explicit container backend supplies focused validation
   --trusted-prepare <path> caller-owned Node script that overrides checkout preparation;
@@ -112,11 +134,20 @@ never the exit code.
                           security, concurrency, transitions, visual (skipped beside others
                           when there is no image to look at)
   --challenger <id>       model that challenges and writes reproducers (default: the first --model)
+  --challenger-provider <kind>
+                          the challenger's provider (default: --provider, else inferred)
+  --challenger-base-url <url>
+                          the challenger's endpoint, for a second local server
+  --reasoning <level>     reasoning effort for the reviewers: ${REASONING_LEVELS.join(' | ')}
+  --challenger-reasoning <level>
+                          reasoning effort for the challenger (default: --reasoning)
   --no-verify             skip Stage 4 (no reproducers, no challenge)
   --max-verify <n>        findings to verify, most promising first (default 10)
   --verify-concurrency <n> findings verified at once: 1 or 2 (default 1)
-  --concurrency <n>       reviewers running at once (default 2)
+  --concurrency <n>       reviewers running at once (default 2; 1 when every model is local)
   --base-url <url>        endpoint for lmstudio / openai-compatible
+  --min-context <tokens>  the context a local model must be loaded with before the review
+                          starts (default: what --budget-chars needs; 0 skips the check)
   --mock-script <path>    scripted steps for --provider mock (a list, or {roles:{...}})
   --json <path|->         write the full report as JSON (a path, or - for stdout)
   --sarif <path>          write the surfaced findings as SARIF 2.1.0
@@ -141,6 +172,7 @@ never the exit code.
   --store <dir>           pnpm store to mount read-only (default: host standard store)
   --scratch-parent <dir>  parent for disposable checkouts and cell HOME/TMPDIR
                           (default: the operating-system temp directory)
+  --time-limit <minutes>  cancel the whole review after this long (exit 130)
   --quiet                 no text report on stdout
   --help
 
@@ -160,6 +192,13 @@ export interface CliIo {
   readonly stderr: (text: string) => void
   readonly env: Readonly<Record<string, string | undefined>>
   readonly cwd: string
+  /**
+   * The repository the report names (its SARIF root, the review's thread),
+   * when `cwd` is a stand-in for it: `copse-review pr` reviews in a scratch
+   * repository holding only the reviewed history, removed when the run ends.
+   * Default: the root of the repository under `cwd`.
+   */
+  readonly repositoryRoot?: string
   /** A backend the caller built; `--backend` overrides it. */
   readonly backend?: IsolationBackend
   readonly signal?: AbortSignal
@@ -214,6 +253,74 @@ function integer(value: string | undefined, name: string): number | undefined {
   const parsed = /^[1-9]\d*$/.test(value) ? Number(value) : Number.NaN
   if (!Number.isSafeInteger(parsed)) throw new Error(`${name} must be a positive integer`)
   return parsed
+}
+
+/** The models a review calls, resolved before Stage 0. */
+interface ModelRoutes {
+  readonly reviewers: readonly SelectedProvider[]
+  readonly challenger: SelectedProvider
+  /** Every route is a server on this machine, sharing its one GPU. */
+  readonly allLocal: boolean
+}
+
+/** What the pre-flight learned about this route's model on its own server. */
+function preflightInfo(
+  preflight: LocalPreflight | null,
+  selection: SelectedProvider,
+): LocalModelInfo | undefined {
+  return selection.endpoint === undefined
+    ? undefined
+    : preflight?.models.get(localModelKey(selection.endpoint, selection.model))
+}
+
+function reportRoute(
+  role: ReviewModelRoute['role'],
+  selection: SelectedProvider,
+  preflight: LocalPreflight | null,
+): ReviewModelRoute {
+  const local = preflightInfo(preflight, selection)
+  const reasoning = selection.params?.reasoning
+  return {
+    role,
+    model: selection.model,
+    provider: selection.kind,
+    ...(selection.endpoint === undefined
+      ? {}
+      : { endpoint: endpointOrigin(selection.endpoint.baseUrl) }),
+    ...(reasoning === undefined ? {} : { reasoning }),
+    ...(local === undefined ? {} : { local }),
+  }
+}
+
+function modelRoutesForReport(
+  routes: ModelRoutes,
+  preflight: LocalPreflight | null,
+): ReviewModelRoute[] {
+  return [
+    ...routes.reviewers.map((selection) => reportRoute('reviewer', selection, preflight)),
+    reportRoute('challenger', routes.challenger, preflight),
+  ]
+}
+
+function reasoningLevel(value: string | undefined, name: string): ReasoningLevel | undefined {
+  if (value === undefined) return undefined
+  if (!isReasoningLevel(value)) {
+    throw new Error(`${name} must be one of ${REASONING_LEVELS.join(', ')}`)
+  }
+  return value
+}
+
+/**
+ * Where a route's server is, as a report may carry it: the origin alone. A
+ * path can hold an account or project identifier (CI's hosted route has one),
+ * and a report is an uploaded artifact; userinfo, query and fragment go too.
+ */
+export function endpointOrigin(url: string): string {
+  try {
+    return new URL(url).origin
+  } catch {
+    return '(unparseable URL)'
+  }
 }
 
 /** The reviewer's permission profile: deny everything, allow the cell's shell only when execution was allowed. */
@@ -445,7 +552,9 @@ async function importStage0(path: string): Promise<Stage0Report> {
   return report
 }
 
-export async function main(argv: readonly string[], io: CliIo): Promise<HeadlessExitCode> {
+export async function main(argv: readonly string[], callerIo: CliIo): Promise<HeadlessExitCode> {
+  // Rebound once below when --time-limit adds a deadline to the caller's signal.
+  let io = callerIo
   if (io.signal?.aborted) return HEADLESS_EXIT.CANCELLED
   let parsed
   try {
@@ -459,12 +568,19 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
         image: { type: 'string' },
         'allow-unisolated': { type: 'boolean', default: false },
         'no-model': { type: 'boolean', default: false },
+        preflight: { type: 'boolean', default: false },
         'stage0-json': { type: 'string' },
         'trusted-prepare': { type: 'string' },
         provider: { type: 'string' },
         model: { type: 'string', multiple: true },
         lenses: { type: 'string' },
         challenger: { type: 'string' },
+        'challenger-provider': { type: 'string' },
+        'challenger-base-url': { type: 'string' },
+        reasoning: { type: 'string' },
+        'challenger-reasoning': { type: 'string' },
+        'min-context': { type: 'string' },
+        'time-limit': { type: 'string' },
         'no-verify': { type: 'boolean', default: false },
         'max-verify': { type: 'string' },
         'verify-concurrency': { type: 'string' },
@@ -512,6 +628,16 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
     }
     providerKind = values.provider
   }
+  let challengerKind: ProviderKind | undefined
+  if (values['challenger-provider'] !== undefined) {
+    if (!isProviderKind(values['challenger-provider'])) {
+      io.stderr(
+        `copse-review: unknown challenger provider ${values['challenger-provider']}; one of ${PROVIDER_KINDS.join(', ')}\n`,
+      )
+      return HEADLESS_EXIT.USAGE
+    }
+    challengerKind = values['challenger-provider']
+  }
   if (values.backend !== undefined && !isBackendChoice(values.backend)) {
     io.stderr(
       `copse-review: unknown backend ${values.backend}; one of ${BACKEND_CHOICES.join(', ')}\n`,
@@ -523,6 +649,10 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
   let maxVerify: number | undefined
   let verifyConcurrency: number | undefined
   let concurrency: number | undefined
+  let minContext: number | undefined
+  let timeLimitMinutes: number | undefined
+  let reviewerReasoning: ReasoningLevel | undefined
+  let challengerReasoning: ReasoningLevel | undefined
   let scratchParent: string | undefined
   let lenses
   let forgeTarget: Omit<ForgeTarget, 'headCommit'> | null
@@ -543,6 +673,11 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
       throw new Error('--verify-concurrency must be 1 or 2')
     verifyConcurrency = integer(requestedVerificationConcurrency, '--verify-concurrency')
     concurrency = integer(values.concurrency, '--concurrency')
+    minContext = values['min-context'] === '0' ? 0 : integer(values['min-context'], '--min-context')
+    timeLimitMinutes = integer(values['time-limit'], '--time-limit')
+    reviewerReasoning = reasoningLevel(values.reasoning, '--reasoning')
+    challengerReasoning =
+      reasoningLevel(values['challenger-reasoning'], '--challenger-reasoning') ?? reviewerReasoning
     if (values['scratch-parent'] !== undefined) {
       scratchParent = await realpath(values['scratch-parent'])
       if (!(await stat(scratchParent)).isDirectory()) {
@@ -579,6 +714,29 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
     return HEADLESS_EXIT.USAGE
   }
 
+  if (values.preflight && values['summary-only']) {
+    io.stderr('copse-review: --preflight cannot be used with --summary-only\n')
+    return HEADLESS_EXIT.USAGE
+  }
+  // A pre-flight ends in seconds; a deadline armed for it would outlive it and
+  // later announce that a review it never ran was being cancelled.
+  if (timeLimitMinutes !== undefined && !values.preflight) {
+    const deadline = AbortSignal.timeout(timeLimitMinutes * 60_000)
+    deadline.addEventListener(
+      'abort',
+      () => {
+        callerIo.stderr(
+          `copse-review: the ${String(timeLimitMinutes)}-minute time limit was reached; cancelling the review\n`,
+        )
+      },
+      { once: true },
+    )
+    io = {
+      ...io,
+      signal: io.signal === undefined ? deadline : AbortSignal.any([io.signal, deadline]),
+    }
+  }
+
   const startedAt = Date.now()
   const baseRef = values.base ?? (refExists('origin/main', io.cwd) ? 'origin/main' : 'main')
   const diffOrigin: DiffOrigin = values.foreign ? 'foreign' : 'own'
@@ -593,6 +751,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
           model: modelIds(values.model)[0],
           baseUrl: values['base-url'],
           script: await loadMockScript(values['mock-script']),
+          params: reviewerReasoning === undefined ? undefined : { reasoning: reviewerReasoning },
         },
         io.env,
       )
@@ -611,6 +770,102 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
       target: forgeTarget,
       quiet: values.quiet,
     })
+  }
+
+  // The model routes, resolved before anything runs, so a local model that
+  // cannot hold the review fails here in seconds rather than after Stage 0's
+  // builds and tests. A route that cannot be built at all (a missing key) is
+  // reported after Stage 0 as before: the checks still stand on their own.
+  let routes: ModelRoutes | null = null
+  let routeError: string | null = null
+  let preflight: LocalPreflight | null = null
+  if (!values['no-model']) {
+    try {
+      const script = await loadMockScript(values['mock-script'])
+      const ids = modelIds(values.model)
+      const reviewerParams =
+        reviewerReasoning === undefined ? undefined : { reasoning: reviewerReasoning }
+      const selections = (ids.length === 0 ? [undefined] : ids).map((model) =>
+        selectProvider(
+          {
+            kind: providerKind,
+            model,
+            baseUrl: values['base-url'],
+            script,
+            params: reviewerParams,
+          },
+          io.env,
+        ),
+      )
+      const first = selections[0]
+      if (first === undefined) throw new Error('no model selected')
+      const separateChallenger =
+        values.challenger !== undefined ||
+        challengerKind !== undefined ||
+        values['challenger-base-url'] !== undefined ||
+        challengerReasoning !== reviewerReasoning
+      const challenger = separateChallenger
+        ? selectProvider(
+            {
+              kind: challengerKind ?? providerKind,
+              model: values.challenger ?? first.model,
+              baseUrl: values['challenger-base-url'] ?? values['base-url'],
+              script,
+              params:
+                challengerReasoning === undefined ? undefined : { reasoning: challengerReasoning },
+            },
+            io.env,
+          )
+        : first
+      routes = {
+        reviewers: selections,
+        challenger,
+        allLocal: [...selections, challenger].every(
+          (selection) => selection.endpoint !== undefined && !selection.remote,
+        ),
+      }
+    } catch (err) {
+      routeError = errorMessage(err)
+    }
+  }
+  if (routes !== null) {
+    // Only the machine's own servers, or an LM Studio elsewhere: a hosted
+    // OpenAI-compatible API (CI's configured route) has no catalogue to read.
+    const local = [...routes.reviewers, routes.challenger].flatMap((selection) =>
+      selection.endpoint === undefined || (selection.remote && selection.kind !== 'lmstudio')
+        ? []
+        : [{ model: selection.model, endpoint: selection.endpoint }],
+    )
+
+    if (local.length > 0) {
+      preflight = await preflightLocalModels(local, {
+        minContextTokens:
+          minContext ?? requiredContextTokens(budgetChars ?? DEFAULT_CONTEXT_BUDGET_CHARS),
+      })
+      for (const note of preflight.notes) io.stderr(`copse-review: ${note}\n`)
+      if (preflight.problems.length > 0) {
+        for (const problem of preflight.problems) io.stderr(`copse-review: ${problem}\n`)
+        return HEADLESS_EXIT.USAGE
+      }
+      // Only the visual lens asked for, and no reviewer can see: nothing would
+      // run, and Stage 0 has not started yet, so say so now.
+      if (
+        lenses.length > 0 &&
+        lenses.every((lens) => lens === VISUAL_LENS) &&
+        routes.reviewers.every((selection) => preflightInfo(preflight, selection)?.vision === false)
+      ) {
+        io.stderr('copse-review: the visual lens needs a reviewer model that can see images\n')
+        return HEADLESS_EXIT.USAGE
+      }
+    }
+  }
+  if (values.preflight) {
+    io.stderr(
+      routeError === null
+        ? 'copse-review: the model routes can run this review\n'
+        : `copse-review: ${routeError}\n`,
+    )
+    return routeError === null ? HEADLESS_EXIT.SUCCESS : HEADLESS_EXIT.USAGE
   }
 
   // The backend. Imported Stage 0 stays read-only unless the caller explicitly
@@ -689,6 +944,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
       }
       stage0 = importedStage0
     }
+    if (io.repositoryRoot !== undefined) stage0 = { ...stage0, repositoryRoot: io.repositoryRoot }
     const executed = stage0.execution.decision.execute
     const profile = reviewPermissionProfile(ground.decision.execute && ground.cell !== null)
     const shellDecision = resolveNonInteractiveDecision(capabilityDecision(profile, 'shell'), {
@@ -701,34 +957,18 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
     let context: ReviewContext | null = null
     let summarySelection: SelectedProvider | undefined
     let modelError: string | null = null
+    let eventsFile: WriteStream | null = null
     if (!values['no-model'] && ground.checkouts !== null) {
       try {
         if (importedStage0 !== null && ground.cell !== null) {
           await prepareReviewHead(ground, io.signal)
         }
-        const script = await loadMockScript(values['mock-script'])
-        const ids = modelIds(values.model)
-        const selections = (ids.length === 0 ? [undefined] : ids).map((model) =>
-          selectProvider(
-            { kind: providerKind, model, baseUrl: values['base-url'], script },
-            io.env,
-          ),
-        )
+        if (routes === null) throw new Error(routeError ?? 'no model selected')
+        const selections = routes.reviewers
         const first = selections[0]
         if (first === undefined) throw new Error('no model selected')
         summarySelection = first
-        const challengerSelection =
-          values.challenger === undefined
-            ? first
-            : selectProvider(
-                {
-                  kind: providerKind,
-                  model: values.challenger,
-                  baseUrl: values['base-url'],
-                  script,
-                },
-                io.env,
-              )
+        const challengerSelection = routes.challenger
         context = await buildReviewContext({
           checkouts: ground.checkouts,
           ...(budgetChars !== undefined ? { budgetChars } : {}),
@@ -758,11 +998,19 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
         if (skipped.length > 0) {
           io.stderr('copse-review: no image to look at; the visual lens did not run\n')
         }
-        const eventLines: string[] = []
+        // Each event reaches the file as it happens: an agent following a
+        // review from disk sees it progress, and a crash keeps what ran.
+        if (values.events !== undefined && values.events !== '-') {
+          const stream = createWriteStream(values.events, { encoding: 'utf8' })
+          stream.on('error', (err) => {
+            io.stderr(`copse-review: could not write --events: ${errorMessage(err)}\n`)
+          })
+          eventsFile = stream
+        }
         const onEvent = (event: Parameters<typeof serializeHeadlessEvent>[0]): void => {
           const line = serializeHeadlessEvent(event)
           if (values.events === '-') io.stdout(`${line}\n`)
-          else eventLines.push(line)
+          else eventsFile?.write(`${line}\n`)
         }
         const cell = ground.cell === null ? null : serializeCell(ground.cell)
         const threadId = `copse-review:${stage0.repositoryRoot}`
@@ -775,26 +1023,55 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
           scrub: (text: string): string => ground.scrub(text),
           fetchRemoteImage,
         }
+        // The context a local model is loaded with, so its turns trim their own
+        // history to fit instead of the server cutting the request unnoticed.
+        const loadedContext = (selection: SelectedProvider): number | undefined => {
+          const info = preflightInfo(preflight, selection)
+          return info?.loaded === true && info.loadedContextLength !== null
+            ? info.loadedContextLength
+            : undefined
+        }
+        // A model its server says is text-only neither runs the visual lens
+        // nor is offered view_image, whose result would put an image in front
+        // of it. Unknown (a server with no catalogue) counts as able to see.
+        const reviewers = selections.flatMap((selection) => {
+          const canSeeImages = preflightInfo(preflight, selection)?.vision !== false
+          const spec = {
+            model: selection.model,
+            providerFor: (lens: Lens): LLMProvider => selection.providerFor(`review:${lens.id}`),
+            canSeeImages,
+            contextTokens: loadedContext(selection),
+          }
+          if (canSeeImages || !reviewLenses.includes(VISUAL_LENS)) return [spec]
+          io.stderr(
+            `copse-review: ${selection.model} cannot see images, so it does not run the visual lens\n`,
+          )
+          const lenses = reviewLenses.filter((lens) => lens !== VISUAL_LENS)
+          return lenses.length === 0 ? [] : [{ ...spec, lenses }]
+        })
+        if (reviewers.length === 0) {
+          throw new Error('the visual lens needs a reviewer model that can see images')
+        }
         reviews = await runReviewers({
           ...host,
           validation: stage0,
-          reviewers: selections.map((selection) => ({
-            model: selection.model,
-            providerFor: (lens): LLMProvider => selection.providerFor(`review:${lens.id}`),
-          })),
+          reviewers,
           lenses: reviewLenses,
           threadId,
           turnPrefix,
-          concurrency,
+          // One GPU serves every local model: parallel turns only take turns on
+          // it and evict each other's prompt cache.
+          concurrency: concurrency ?? (routes.allLocal ? 1 : undefined),
           signal: io.signal,
           onEvent,
           maxSteps,
         })
         findings = canonicalFindings(stage0, reviews)
         if (!values['no-verify']) {
-          const role = (name: string): { model: string; provider: LLMProvider } => ({
+          const role = (name: string): VerifierRole => ({
             model: challengerSelection.model,
             provider: challengerSelection.providerFor(name),
+            contextTokens: loadedContext(challengerSelection),
           })
           let baseReady: Promise<void> | undefined
           verification = await verifyFindings({
@@ -816,11 +1093,11 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
           })
           findings = [...verification.findings]
         }
-        if (values.events !== undefined && values.events !== '-') {
-          await writeFile(values.events, `${eventLines.join('\n')}\n`, 'utf8')
-        }
       } catch (err) {
         modelError = errorMessage(err)
+      } finally {
+        const stream = eventsFile
+        if (stream !== null) await new Promise<void>((done) => stream.end(done))
       }
     } else if (!values['no-model']) {
       modelError = ground.decision.execute
@@ -835,6 +1112,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
       verification,
       findings,
       startedAt,
+      models: routes === null ? undefined : modelRoutesForReport(routes, preflight),
     })
     if (values.json !== undefined) {
       const json = JSON.stringify(report, null, 2)
