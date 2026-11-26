@@ -1,0 +1,117 @@
+#import-sessions-dialog {
+  width: min(640px, calc(100vw - 48px));
+  max-width: 640px;
+}
+.import-sessions-dialog h3 {
+  margin: 0 0 var(--spacing-xs);
+  font-size: var(--font-size-lg);
+  /* Display face (brand.css) ships only 400. */
+  font-weight: 400;
+}
+.import-sessions-dialog .field-hint {
+  margin: 0 0 var(--spacing-md);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-base);
+}
+.import-sessions-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: min(420px, 55vh);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.import-session-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-top: 1px solid var(--border);
+  font-size: var(--font-size-sm);
+}
+.import-session-row:first-child {
+  border-top: none;
+}
+.import-session-label {
+  display: flex;
+  /* The global `label` rule stacks its children; a row reads as one line. */
+  flex-direction: row;
+  flex: 1;
+  margin-bottom: 0;
+  min-width: 0;
+  align-items: center;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+}
+.import-session-check {
+  flex: none;
+  margin: 0;
+}
+.import-session-source {
+  color: var(--text-secondary);
+}
+.import-session-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.import-session-title {
+  overflow: hidden;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.import-session-meta {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.import-session-row.is-imported .import-session-title {
+  color: var(--text-secondary);
+}
+.import-session-imported {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+.import-session-open {
+  flex: none;
+}
+.import-sessions-empty {
+  margin: var(--spacing-md) 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.import-sessions-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-lg);
+}
+.conversation-imported-host:empty {
+  display: none;
+}
+.conversation-imported-host {
+  flex-shrink: 0;
+  width: min(calc(100% - 2 * var(--spacing-xl)), var(--chat-content-max));
+  margin-inline: auto;
+  padding: var(--spacing-md) 0 0;
+}
+.imported-session-notice {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-base);
+}
+.imported-session-notice strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
