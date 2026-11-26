@@ -39,6 +39,36 @@ describe('Models & agents list', () => {
       return menu ? menu.scrollWidth - menu.clientWidth : -1
     })
     assert.ok(overflow <= 0, 'Add menu must not overflow sideways')
+    // The list above sits on the page, but the Add menu is still a card: its
+    // rows keep their inset from its edge and the rule between them.
+    const menuRows = await browser.execute(() => {
+      const probe = document.createElement('span')
+      probe.style.paddingLeft = 'var(--spacing-md)'
+      document.body.append(probe)
+      const inset = getComputedStyle(probe).paddingLeft
+      probe.remove()
+      const rows = document.querySelectorAll('[data-testid="connections-add-menu"] .acp-add-row')
+      return {
+        inset,
+        rows: [...rows].map((row) => {
+          const style = getComputedStyle(row)
+          return {
+            inset: [style.paddingLeft, style.paddingRight],
+            rule: style.borderBottomWidth,
+            last: row === row.parentElement?.lastElementChild,
+          }
+        }),
+      }
+    })
+    assert.ok(menuRows.rows.length > 0, 'the Add menu lists rows')
+    for (const row of menuRows.rows) {
+      assert.deepEqual(
+        row.inset,
+        [menuRows.inset, menuRows.inset],
+        'Add menu rows keep their inset',
+      )
+      if (!row.last) assert.equal(row.rule, '1px', 'a rule separates Add menu rows')
+    }
     await list.$('.acp-add-row[data-add="key"]').scrollIntoView({ block: 'center' })
     await saveElementScreenshot(
       '[data-testid="connections-add-menu"] .acp-add-row[data-add="key"]',

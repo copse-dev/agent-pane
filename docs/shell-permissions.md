@@ -671,9 +671,19 @@ and per-tool permission policy. Copse instead advertises the connected server's 
 `mcp__...` tools through its authenticated native-tool HTTP bridge. Each call returns through
 `ToolRegistry` and the normal permission gate before cache lookup or handler execution.
 
-An ACP agent that does not advertise MCP-over-HTTP support cannot mount that bridge and receives no
-configured MCP tools. This is deliberately fail-closed: ACP provides no per-call host enforcement
-point for a stdio or HTTP MCP server the external agent mounts itself.
+An ACP agent that does not advertise MCP-over-HTTP support mounts the same bridge through a stdio
+relay (`acp-bridge-stdio-relay.ts`). The agent spawns the relay under Copse's own executable
+(`ELECTRON_RUN_AS_NODE=1`), and the relay forwards each JSON-RPC message unchanged to the bridge's
+loopback URL with its bearer token, which reach it only through its environment, never its
+arguments. The relay refuses any target that is not `http:` on a loopback host. Every relayed call
+is re-gated exactly like an http one, and raw server configs are still never forwarded: ACP
+provides no per-call host enforcement point for a stdio or HTTP MCP server the external agent
+mounts itself. Offering the relay adds read-only sandbox grants for the agent: the Electron
+runtime, the relay script and the `package.json` beside it, and only alongside the loopback grant
+the bridge already needs. It adds no write grants. An agent that never lists the relay's tools
+within the mount window is told so in its prompt. Unlike an http agent that never mounts, it gets
+no thread notice, because before the relay such an agent was offered nothing and showed none; an
+agent that reports the relay failed to start still gets the notice.
 
 Because every bridged call is re-gated there, the agent's own ACP permission request for one only
 duplicates that gate. Copse approves the ACP-layer request only when **adapter-authored provenance**

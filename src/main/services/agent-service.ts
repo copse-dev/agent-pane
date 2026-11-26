@@ -95,7 +95,8 @@ import {
   updateMeta,
 } from './thread-store.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
-import { redactUserContent } from './security/pii-redactor.ts'
+import { isPiiRedactionEnabled, redactUserContent } from './security/pii-redactor.ts'
+import { localPromptCommitSpans } from './security/pii-git-references.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
 import { appendOperatorInstruction } from '@copse/agent/hooks/inject-context.ts'
 import { operatorInstructionPlacement } from '@copse/llm/model-catalog.ts'
@@ -331,6 +332,12 @@ export {
   suggestToolTurnSummary,
 } from './title-generator.ts'
 import { isNonEmptyString } from '@shared/nullish.ts'
+import {
+  AGENT_PROFILES_SETTING,
+  agentProfilePromptBlock,
+  findAgentProfile,
+  type AgentProfile,
+} from '@shared/agent-profiles.ts'
 
 const abortMap = new Map<string, AbortController>()
 let shuttingDown = false
@@ -805,6 +812,11 @@ export interface RunAgentOptions {
    * the level saved on the model in Settings; absent means "use that level".
    */
   reasoning?: ReasoningLevel
+  /**
+   * Named agent profile the thread uses. Its instructions are read from
+   * Settings at turn start, so an edited profile applies from the next turn.
+   */
+  profileId?: string
   /** Turn-tree epoch this run belongs to (decision 16 / C3); keys the budget. */
   turnTreeId?: string
   /** Machine turns already spent in this turn tree (decision 5); seeds the budget. */
@@ -1139,10 +1151,13 @@ async function runAgentWithInlineCanvas(
   // the feature is off. When it is on but Rampart cannot run, the prompt goes out
   // unchanged and the user is told so through the same turn notice as a model
   // fallback.
-  const redaction = await redactUserContent(
-    threadId,
-    withReviewContext(userPrompt, options?.reviewContext),
-  )
+  const promptWithReviewContext = withReviewContext(userPrompt, options?.reviewContext)
+  const localCommitSpans = isPiiRedactionEnabled()
+    ? await localPromptCommitSpans(promptWithReviewContext, runContext?.root ?? null)
+    : []
+  const redaction = await redactUserContent(threadId, promptWithReviewContext, {
+    preserveSpans: localCommitSpans,
+  })
   admission.signal.throwIfAborted()
   onPreflightComplete()
   const outboundPrompt = redaction.content
@@ -1444,7 +1459,7 @@ async function runAgentWithInlineCanvas(
       // Copse-managed ACP turns use the canonical turnStart assembly (decision
       // 20). Agent-managed turns leave the agent's own prompt behavior intact.
       // The ACP run calls this once it knows which Copse tools the agent has.
-      const turnGuidance =
+      const copseGuidance =
         options?.executionMode === 'agent'
           ? undefined
           : (bridgeToolNames: readonly string[]): Promise<string | undefined> =>
@@ -1463,6 +1478,11 @@ async function runAgentWithInlineCanvas(
                   recordHookRun: recordFunctionHookRun,
                 }),
               )
+      // The profile's instructions join Copse's guidance. An agent-managed turn
+      // gets neither: it keeps the agent's own prompt behavior (decision 20).
+      const turnGuidance = copseGuidance
+        ? withProfileGuidance(copseGuidance, await turnProfileInstructions(threadId, options))
+        : undefined
       let result = await runAcpAgentFromSettings({
         threadId,
         agentId: acpRunAgentId,
@@ -2054,6 +2074,7 @@ async function runAgentWithInlineCanvas(
       availableToolNames: parentLoopTools.map((tool) => tool.name),
       trackInstructionActivation: true,
       nestedInstructionTurn,
+      profileInstructions: await turnProfileInstructions(threadId, options),
     })
     const systemPrompt = systemPromptBuild.prompt + threadPlanInstructions()
     const parentProvider = withPromptCatalog(provider, systemPromptBuild.promptCatalog)
@@ -3481,5 +3502,39 @@ export async function runReviewForThread(
     clearActiveRunThread(threadId)
     abortMap.delete(threadId)
     sendChunk({ type: 'done' })
+  }
+}
+
+/**
+ * The instructions block of the thread's named profile, read from Settings now.
+ * The profile comes from the payload when the renderer dispatched the turn, and
+ * from the thread itself otherwise, so turns main starts on its own (CI and
+ * long-task wakes, background completions) keep the profile too.
+ */
+export async function turnProfileInstructions(
+  threadId: string,
+  options: RunAgentOptions | undefined,
+): Promise<string> {
+  const context = getThreadExecutionContext()
+  const profileId =
+    options?.profileId ??
+    (context
+      ? (await getThreadMeta(context.projectId, threadId).catch(() => null))?.profileId
+      : undefined)
+  if (profileId === undefined) return ''
+  return agentProfilePromptBlock(
+    findAgentProfile(getSetting<AgentProfile[]>(AGENT_PROFILES_SETTING, []), profileId),
+  )
+}
+
+/** A Copse-managed ACP turn's guidance with the profile's instructions after Copse's own. */
+export function withProfileGuidance(
+  copseGuidance: (bridgeToolNames: readonly string[]) => Promise<string | undefined>,
+  profileBlock: string,
+): (bridgeToolNames: readonly string[]) => Promise<string | undefined> {
+  if (!profileBlock) return copseGuidance
+  return async (bridgeToolNames) => {
+    const copse = await copseGuidance(bridgeToolNames)
+    return copse ? `${copse}\n\n${profileBlock}` : profileBlock
   }
 }

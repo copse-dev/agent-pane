@@ -2,6 +2,7 @@
 // backend: the host-process backend spawns directly, the app's OS-sandbox
 // backend spawns through the seatbelt wrapper, and both hand the child here.
 import type { ChildProcess } from 'node:child_process'
+import { StringDecoder } from 'node:string_decoder'
 import { signalProcessTree } from '@copse/std/process-tree.ts'
 import type { CellCommand, CellCommandResult } from './isolation.ts'
 
@@ -34,6 +35,47 @@ export function killProcessTree(child: ChildProcess, signal: NodeJS.Signals): vo
  * could end the command. After this grace the pipes are closed from our end.
  */
 const EXIT_DRAIN_GRACE_MS = 500
+
+/** At most this much of `retainLinePrefixes` lines is kept; a failure inventory is far smaller. */
+export const MAX_RETAINED_LINE_BYTES = 1024 * 1024
+
+/**
+ * Collects the lines that start with one of `prefixes`, per stream and across
+ * chunk boundaries, up to {@link MAX_RETAINED_LINE_BYTES} in all.
+ */
+class RetainedLines {
+  readonly lines: string[] = []
+  private bytes = 0
+  private readonly partial = new Map<string, string>()
+  private readonly prefixes: readonly string[]
+
+  constructor(prefixes: readonly string[]) {
+    this.prefixes = prefixes
+  }
+
+  add(stream: string, text: string): void {
+    const pending = (this.partial.get(stream) ?? '') + text
+    const parts = pending.split('\n')
+    const last = parts.pop() ?? ''
+    for (const line of parts) this.keep(line)
+    // A partial line longer than the budget can never be kept; stop buffering it.
+    this.partial.set(stream, Buffer.byteLength(last, 'utf8') > MAX_RETAINED_LINE_BYTES ? '' : last)
+  }
+
+  flush(): void {
+    for (const last of this.partial.values()) this.keep(last)
+    this.partial.clear()
+  }
+
+  private keep(raw: string): void {
+    const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw
+    if (!this.prefixes.some((prefix) => line.startsWith(prefix))) return
+    const size = Buffer.byteLength(line, 'utf8')
+    if (this.bytes + size > MAX_RETAINED_LINE_BYTES) return
+    this.lines.push(line)
+    this.bytes += size
+  }
+}
 
 export interface CollectOptions {
   readonly now?: () => number
@@ -68,14 +110,47 @@ export function collectProcess(
   let truncated = false
   let timedOut = false
 
-  const onChunk = (chunk: Buffer | string): void => {
-    const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8')
+  const prefixes = command.retainLinePrefixes ?? []
+  const retained = prefixes.length === 0 ? null : new RetainedLines(prefixes)
+  const append = (stream: string, text: string): void => {
+    if (text.length === 0) return
+    retained?.add(stream, text)
     const next = appendTailCapped(output, text, command.maxOutputBytes)
     output = next.text
     truncated = truncated || next.truncated
   }
-  child.stdout?.on('data', onChunk)
-  child.stderr?.on('data', onChunk)
+  // One decoder per stream: a character whose bytes arrive in two chunks is
+  // held until it is whole, rather than decoded as two U+FFFD halves. Test
+  // names are compared exactly, and many of them are not ASCII.
+  const decoders = new Map<string, StringDecoder>()
+  const onChunk =
+    (stream: string) =>
+    (chunk: Buffer | string): void => {
+      if (typeof chunk === 'string') {
+        append(stream, chunk)
+        return
+      }
+      let decoder = decoders.get(stream)
+      if (decoder === undefined) {
+        decoder = new StringDecoder('utf8')
+        decoders.set(stream, decoder)
+      }
+      append(stream, decoder.write(chunk))
+    }
+  /** Whatever a decoder still holds when its stream ends: an incomplete character, as U+FFFD. */
+  const flushDecoders = (): void => {
+    for (const [stream, decoder] of decoders) append(stream, decoder.end())
+    decoders.clear()
+  }
+  child.stdout?.on('data', onChunk('stdout'))
+  child.stderr?.on('data', onChunk('stderr'))
+  /** The tail, with any retained line the cap dropped put back ahead of it. */
+  const collected = (): string => {
+    if (retained === null || !truncated) return output
+    retained.flush()
+    const dropped = retained.lines.filter((line) => !output.includes(line))
+    return dropped.length === 0 ? output : `${dropped.join('\n')}\n${output}`
+  }
 
   return new Promise((resolve, reject) => {
     const onAbort = (): void => {
@@ -116,6 +191,7 @@ export function collectProcess(
       if (timer) clearTimeout(timer)
       if (drain) clearTimeout(drain)
       command.signal?.removeEventListener('abort', onAbort)
+      flushDecoders()
       if (command.signal?.aborted) {
         reject(
           command.signal.reason instanceof Error
@@ -131,7 +207,7 @@ export function collectProcess(
         signal,
         timedOut,
         durationMs: now() - started,
-        output,
+        output: collected(),
         outputTruncated: truncated,
       })
     })
