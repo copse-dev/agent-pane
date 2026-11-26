@@ -453,36 +453,6 @@ const GIT_PUSH_FLAGS: ReadonlySet<string> = new Set([
 const GIT_NETWORK_VALUE_FLAGS: ReadonlySet<string> = new Set(['--depth', '--deepen'])
 
 /**
- * Flags accepted on `git pull` when the run is network-contained. The merge and
- * rebase it performs are local writes, kept inside the sandbox like any other
- * contained command. `--rebase=interactive` (an editor) and every flag that
- * names a strategy program or a file are absent.
- */
-const GIT_PULL_FLAGS: ReadonlySet<string> = new Set([
-  '--ff-only',
-  '--ff',
-  '--no-ff',
-  '--rebase',
-  '-r',
-  '--no-rebase',
-  '--autostash',
-  '--no-autostash',
-  '--no-edit',
-  '--prune',
-  '-p',
-  '--tags',
-  '-t',
-  '--no-tags',
-  '--depth',
-  '--quiet',
-  '-q',
-  '--verbose',
-  '-v',
-  '--progress',
-  '--no-progress',
-])
-
-/**
  * Flags accepted on `git clone` when the run is network-contained. Absent on
  * purpose: `--template` (a directory of hooks), `--recurse-submodules` (URLs the
  * cloned repository chooses), `--reference`/`--separate-git-dir` (paths outside
@@ -523,32 +493,6 @@ export function isNetworkCloneSource(token: string): boolean {
   if (token.includes('::')) return false
   if (/^(?:https|ssh):\/\/[^\s/]+\/\S+$/i.test(token)) return true
   return /^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[^/\s][^\s]*$/.test(token)
-}
-
-function classifyContainedPull(
-  args: readonly string[],
-  configuredRemotes: ReadonlySet<string>,
-): { tier: AutoApprovalTier } | { reason: string } {
-  const partitioned = partitionArgs(args, GIT_PULL_FLAGS, GIT_NETWORK_VALUE_FLAGS)
-  if (!partitioned) return { reason: 'unrecognised or unsafe flag on git pull' }
-  for (const token of args) {
-    if (flagName(token) !== '--rebase' || !token.includes('=')) continue
-    const value = token.slice('--rebase='.length)
-    if (!['true', 'false', 'merges'].includes(value)) {
-      return { reason: 'git pull --rebase mode not recognised' }
-    }
-  }
-  const { positional } = partitioned
-  if (!positional.every(isPlainRefToken)) {
-    return { reason: 'git pull argument is not a plain ref or remote name' }
-  }
-  if (positional.length > 0 && !configuredRemotes.has(positional[0] ?? '')) {
-    return { reason: 'git pull does not name a configured remote' }
-  }
-  if (positional.length === 0 && configuredRemotes.size === 0) {
-    return { reason: 'git pull has no configured remote to fall back on' }
-  }
-  return { tier: 'read' }
 }
 
 function classifyContainedClone(
@@ -822,13 +766,12 @@ function classifyGitSegment(
   if (!split) return { tier: null, reason: `unrecognised git global option: ${segment}` }
   const { subcommand, args } = split
 
-  if (context.networkContained === true && (subcommand === 'pull' || subcommand === 'clone')) {
+  // `git pull` is not a contained shape: its merge checks out files, which runs
+  // the repository's filter drivers and hooks while the scope's egress is open.
+  if (context.networkContained === true && subcommand === 'clone') {
     const [release] = releaseActionReasons(argv)
     if (release !== undefined) return { tier: null, reason: `${release}: ${segment}` }
-    const outcome =
-      subcommand === 'pull'
-        ? classifyContainedPull(args, context.configuredRemotes)
-        : classifyContainedClone(args)
+    const outcome = classifyContainedClone(args)
     return 'tier' in outcome
       ? { tier: outcome.tier, reason: `git ${subcommand} with network contained to its host` }
       : { tier: null, reason: `${outcome.reason}: ${segment}` }

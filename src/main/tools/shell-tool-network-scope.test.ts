@@ -84,6 +84,14 @@ function bundleWorker(stub: string): void {
   })
 }
 
+// resolveProgramOutsideRoots treats the OS temp dir as writable, so a stand-in
+// `git` there never gets a plan: a checkout under /tmp cannot run these.
+const OUTPUT_UNDER_TMP = ((): boolean => {
+  const tmp = realpathSync.native(tmpdir())
+  const out = join(TEST_OUTPUT_DIR)
+  return out === tmp || out.startsWith(tmp + '/')
+})()
+
 describe('run_shell network scope', () => {
   const cleanups: Array<() => void | Promise<void>> = []
   afterEach(async () => {
@@ -120,7 +128,16 @@ describe('run_shell network scope', () => {
     mkdirSync(bin)
     writeFileSync(
       join(bin, 'git'),
-      '#!/bin/sh\necho "fake-git $* hooks=$GIT_CONFIG_KEY_0=$GIT_CONFIG_VALUE_0 token=${GH_TOKEN:-none}"\n',
+      [
+        '#!/bin/sh',
+        // The last core.hooksPath among the execution-time config entries.
+        'i=0; hooks=; while [ "$i" -lt "${GIT_CONFIG_COUNT:-0}" ]; do',
+        '  eval k=\\$GIT_CONFIG_KEY_$i; eval v=\\$GIT_CONFIG_VALUE_$i',
+        '  [ "$k" = core.hooksPath ] && hooks=$v; i=$((i+1))',
+        'done',
+        'echo "fake-git $* hooks=$hooks allow=$GIT_ALLOW_PROTOCOL token=${GH_TOKEN:-none}"',
+        '',
+      ].join('\n'),
     )
     chmodSync(join(bin, 'git'), 0o755)
     const previousPath = process.env['PATH']
@@ -212,11 +229,15 @@ describe('run_shell network scope', () => {
       t.skip('no project OS sandbox on Windows')
       return
     }
+    if (OUTPUT_UNDER_TMP) {
+      t.skip('the test output directory is under the OS temp dir, which counts as writable')
+      return
+    }
     const { root, record, prompts, mainWraps } = await setup()
     const output = await run(root, 'git fetch origin main', true)
     assert.deepEqual(prompts, [])
     assert.deepEqual(mainWraps, [])
-    assert.match(output, /fake-git fetch origin main hooks=core.hooksPath=\/dev\/null token=none/)
+    assert.match(output, /fake-git fetch origin main hooks=\/dev\/null allow=https:ssh token=none/)
     assert.deepEqual(JSON.parse(readFileSync(join(record, 'network.json'), 'utf8')), {
       allowedDomains: ['git.example.com'],
       deniedDomains: [],
@@ -228,6 +249,10 @@ describe('run_shell network scope', () => {
   it('still asks to leave the sandbox for a fetch from a URL the user never configured', async (t) => {
     if (process.platform === 'win32') {
       t.skip('no project OS sandbox on Windows')
+      return
+    }
+    if (OUTPUT_UNDER_TMP) {
+      t.skip('the test output directory is under the OS temp dir, which counts as writable')
       return
     }
     const { root, record, prompts, mainWraps } = await setup()

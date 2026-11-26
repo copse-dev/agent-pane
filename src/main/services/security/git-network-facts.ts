@@ -13,11 +13,15 @@ import { pinnedRemotes, pinRemotes } from './remote-pins.ts'
  * spawning git inside the permission gate is both a latency cost and a place
  * repository config could execute.
  *
- * The facts are only worth anything because contained commands cannot write the
- * common `config`, `config.worktree` or `hooks/` (`gitAdminDenyWrite` in
- * `project-sandbox/config.ts`). A nested repository a contained command created
- * has no such protection, so {@link readRepoNetworkFacts} refuses an execution
- * root whose `.git` does not lead to the project's own common directory.
+ * In a registered Copse worktree contained commands cannot write the common
+ * `config`, `config.worktree` or `hooks/` (`gitAdminDenyWrite` in
+ * `project-sandbox/config.ts`). In a shared checkout they can write `.git/config`
+ * (only `.git/hooks` is a mandatory deny), so there these facts are a preflight
+ * that a background task could race. What holds at run time is the overrides
+ * `scopedNetworkEnv` passes in the environment. A nested repository a contained
+ * command created has no protection at all, so {@link readRepoNetworkFacts}
+ * refuses an execution root whose `.git` does not lead to the project's own
+ * common directory.
  */
 
 const MAX_CONFIG_BYTES = 1024 * 1024
@@ -34,8 +38,15 @@ export interface RepoNetworkFacts {
    * makes git able to run code the facts cannot vouch for, so the scope is refused.
    */
   unsafeConfig: readonly string[]
-  /** `core.hooksPath` is relative or inside the workspace, where contained commands write. */
+  /** `core.hooksPath`, or the default hooks directory, is somewhere contained commands write. */
   workspaceHooks: boolean
+  /**
+   * The hooks directory git would use, when it is write-protected: an absolute
+   * `core.hooksPath` outside every writable root, or the repository's own
+   * `hooks/` (a mandatory write-deny). Null when unknown. A push passes it back
+   * to git at execution time, so a later config edit cannot move it.
+   */
+  hooksPath: string | null
   /**
    * Configured remotes a scope may not use, with the reason: their URLs differ
    * from the ones recorded outside the sandbox ({@link vouchForRemotes}).
@@ -117,8 +128,14 @@ function splitKey(key: string): { section: string; name: string; sub: string | n
   return { section, name, sub }
 }
 
-/** A command value git would run through the shell, or a path to a program. */
-const PLAIN_PROGRAM = /^[A-Za-z0-9_-][A-Za-z0-9._-]*(?:\s+[A-Za-z0-9 %._=/-]*)?$/
+/** The filter driver commands `git lfs install` writes; any other driver refuses the scope. */
+const GIT_LFS_FILTERS: ReadonlySet<string> = new Set([
+  'git-lfs clean -- %f',
+  'git-lfs smudge -- %f',
+  'git-lfs smudge --skip -- %f',
+  'git-lfs filter-process',
+  'git-lfs filter-process --skip',
+])
 
 function unsafeEntry(entry: ConfigEntry): string | null {
   const { section, name, sub } = splitKey(entry.key)
@@ -150,7 +167,9 @@ function unsafeEntry(entry: ConfigEntry): string | null {
     return `remote.${name} names a program or proxy`
   }
   if (section === 'filter' && ['clean', 'smudge', 'process'].includes(name)) {
-    return PLAIN_PROGRAM.test(value) && !value.includes('/')
+    // A plain program name can still be `sh scripts/x.sh`; only git-lfs's own
+    // driver commands are known to run nothing from the repository.
+    return GIT_LFS_FILTERS.has(value.replace(/\s+/g, ' ').trim())
       ? null
       : `filter.${sub ?? ''} runs a command`
   }
@@ -240,10 +259,12 @@ function readSmallFile(path: string): string | null {
 export function repoNetworkFactsFromConfig(
   configText: string,
   workspaceRoots: readonly string[],
+  defaultHooksDir: string | null = null,
 ): RepoNetworkFacts {
   const remotes = new Map<string, RemoteUrls>()
   const unsafe = new Set<string>()
   let workspaceHooks = false
+  let configuredHooks: string | null = null
   for (const entry of parseGitConfig(configText)) {
     const reason = unsafeEntry(entry)
     if (reason) unsafe.add(reason)
@@ -255,19 +276,23 @@ export function repoNetworkFactsFromConfig(
       if (name === 'pushurl' && current.pushUrl === null) current.pushUrl = entry.value
       remotes.set(sub, current)
     }
-    if (section === 'core' && name === 'hookspath') {
-      const value = entry.value
-      if (
-        !isAbsolute(value) ||
-        workspaceRoots.some(
-          (root) => isWithin(resolve(value), root) || isWithin(canonical(value), root),
-        )
-      ) {
-        workspaceHooks = true
-      }
-    }
+    // Like git, the last `core.hooksPath` wins.
+    if (section === 'core' && name === 'hookspath') configuredHooks = entry.value
   }
-  return { remotes, unsafeConfig: [...unsafe], workspaceHooks }
+  const within = (path: string): boolean =>
+    workspaceRoots.some((root) => isWithin(resolve(path), root) || isWithin(canonical(path), root))
+  let hooksPath: string | null = null
+  if (configuredHooks !== null) {
+    if (!isAbsolute(configuredHooks) || within(configuredHooks)) workspaceHooks = true
+    else hooksPath = configuredHooks
+  } else if (defaultHooksDir !== null) {
+    // `<git dir>/hooks` is a mandatory write-deny wherever it is named
+    // `.git/hooks`; any other spelling counts only outside the writable roots.
+    if (/[\\/]\.git[\\/]hooks$/.test(defaultHooksDir) || !within(defaultHooksDir)) {
+      hooksPath = defaultHooksDir
+    } else workspaceHooks = true
+  }
+  return { remotes, unsafeConfig: [...unsafe], workspaceHooks, hooksPath }
 }
 
 /** Whether `extensions.worktreeConfig` is on in a config text. */
@@ -296,6 +321,7 @@ export function readRepoNetworkFacts(
   executionRoot: string,
   projectRoot: string | null,
   protectedWorktreeGitDir: string | null = null,
+  extraWritableRoots: readonly string[] = [],
 ): RepoNetworkFacts | null {
   const dirs = resolveGitDirs(executionRoot)
   if (!dirs) return null
@@ -326,10 +352,13 @@ export function readRepoNetworkFacts(
       executionRoot,
       canonical(executionRoot),
       ...(projectRoot ? [projectRoot, canonical(projectRoot)] : []),
+      // Temp directories: contained commands write there too, so a hooks
+      // directory inside one is as plantable as one in the workspace.
+      ...extraWritableRoots.flatMap((root) => [root, canonical(root)]),
     ]),
   ]
   const facts = vouchForRemotes(
-    repoNetworkFactsFromConfig(texts.join('\n'), roots),
+    repoNetworkFactsFromConfig(texts.join('\n'), roots, canonical(join(commonDir, 'hooks'))),
     canonical(commonDir),
   )
   return unprotectedLayer

@@ -53,6 +53,17 @@ describe('repoNetworkFactsFromConfig', () => {
   })
 })
 
+describe('hooks directory', () => {
+  it('pins the default .git/hooks, and refuses one in any writable root', () => {
+    assert.equal(repoNetworkFactsFromConfig('', ['/w'], '/w/.git/hooks').hooksPath, '/w/.git/hooks')
+    const temp = repoNetworkFactsFromConfig('[core]\n\thooksPath = /tmp/h\n', ['/w', '/tmp'])
+    assert.equal(temp.workspaceHooks, true)
+    assert.equal(temp.hooksPath, null)
+    // A default hooks dir not named `.git/hooks` inside a writable root has no mandatory deny.
+    assert.equal(repoNetworkFactsFromConfig('', ['/tmp'], '/tmp/r.git/hooks').workspaceHooks, true)
+  })
+})
+
 describe('repoNetworkFactsFromConfig unsafe rewrites', () => {
   it('flags url rewrites and an http proxy', () => {
     for (const extra of [

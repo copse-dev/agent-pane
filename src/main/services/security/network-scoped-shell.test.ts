@@ -27,7 +27,20 @@ const CONFIG = `[core]
 `
 
 function facts(extra = ''): RepoNetworkFacts {
-  return repoNetworkFactsFromConfig(CONFIG + extra, [root])
+  return repoNetworkFactsFromConfig(CONFIG + extra, [root], `${root}/.git/hooks`)
+}
+
+/** The execution-time config entries of a scoped env, in order. */
+function configEntries(env: Record<string, string>): Array<[string, string]> {
+  return Array.from({ length: Number(env['GIT_CONFIG_COUNT']) }, (_, index) => [
+    env[`GIT_CONFIG_KEY_${String(index)}`] ?? '',
+    env[`GIT_CONFIG_VALUE_${String(index)}`] ?? '',
+  ])
+}
+
+/** What git would read for `key`: the last entry wins. */
+function lastValue(env: Record<string, string>, key: string): string | undefined {
+  return configEntries(env).findLast(([name]) => name === key)?.[1]
 }
 
 function plan(command: string, repo: RepoNetworkFacts | null = facts()): ScopedNetworkPlan {
@@ -96,11 +109,17 @@ describe('planScopedNetwork', () => {
     assert.deepEqual(result.programs, ['git'])
   })
 
-  it('uses the push URL for a push and keeps hooks on', () => {
+  it('uses the push URL for a push and pins its hooks directory', () => {
     const result = plan('git push -u fork feature')
     assert.deepEqual(result.domains, ['git.example.com'])
     assert.equal(result.github, false)
     assert.equal(result.disableGitHooks, false)
+    assert.equal(result.hooksPath, `${root}/.git/hooks`)
+  })
+
+  it('never scopes git pull, whose merge runs filters and hooks', () => {
+    assert.match(none('git pull origin main'), /not a network shape/)
+    assert.match(none('git pull --ff-only'), /not a network shape/)
   })
 
   it('names the remotes a push publishes to, for the outgoing-secret check', () => {
@@ -118,8 +137,9 @@ describe('planScopedNetwork', () => {
   it('scopes gh to GitHub only', () => {
     const result = plan('gh run view 123 --log-failed | tail -50')
     assert.deepEqual(result.domains, [...GITHUB_DOMAINS].sort())
-    // The filter is resolved outside the workspace like gh itself.
-    assert.deepEqual(result.programs, ['gh', 'tail'])
+    // gh runs git from PATH, and the filter is resolved outside the
+    // workspace like gh itself.
+    assert.deepEqual(result.programs, ['gh', 'git', 'tail'])
   })
 
   it('refuses a line where any other program would share the egress', () => {
@@ -197,21 +217,44 @@ describe('planScopedNetwork', () => {
       '[credential]\n\thelper = !./token.sh\n',
       '[remote "origin"]\n\tuploadpack = ./up.sh\n',
       '[filter "x"]\n\tsmudge = ./scripts/smudge.sh %f\n',
+      // A plain program name can still run a workspace script.
+      '[filter "x"]\n\tclean = sh scripts/clean.sh\n',
+      '[filter "x"]\n\tprocess = node tools/filter.js\n',
+      '[filter "lfs"]\n\tsmudge = git-lfs smudge -- %f && sh x\n',
     ]) {
       assert.match(none('git fetch origin', facts(extra)), /repository config/, extra)
       assert.match(none('gh pr status', facts(extra)), /repository config/, extra)
     }
-    // git-lfs's own filter is a plain program name.
-    plan('git fetch origin', facts('[filter "lfs"]\n\tsmudge = git-lfs smudge -- %f\n'))
+    // git-lfs's own driver commands are the only filters allowed.
+    plan(
+      'git fetch origin',
+      facts(
+        '[filter "lfs"]\n\tclean = git-lfs clean -- %f\n\tsmudge = git-lfs smudge -- %f\n\tprocess = git-lfs filter-process\n\trequired = true\n',
+      ),
+    )
   })
 
-  it('refuses push and pull when hooks live in the workspace, but fetches with hooks off', () => {
+  it('refuses a push when hooks live where contained commands write, but fetches with hooks off', () => {
     const husky = facts('[core]\n\thooksPath = .husky/_\n')
     assert.match(none('git push origin feature', husky), /hooks/)
-    assert.match(none('git pull origin main', husky), /hooks/)
     assert.equal(plan('git fetch origin', husky).disableGitHooks, true)
-    // An absolute hooks directory outside the workspace is the user's own.
-    plan('git push origin feature', facts('[core]\n\thooksPath = /Users/me/.githooks\n'))
+    // Temp directories count as writable, like the workspace.
+    const temp = repoNetworkFactsFromConfig(CONFIG + '[core]\n\thooksPath = /tmp/h\n', [
+      root,
+      '/tmp',
+    ])
+    assert.match(none('git push origin feature', temp), /hooks/)
+    // An absolute hooks directory outside them is the user's own, and pinned.
+    const own = plan(
+      'git push origin feature',
+      facts('[core]\n\thooksPath = /Users/me/.githooks\n'),
+    )
+    assert.equal(own.hooksPath, '/Users/me/.githooks')
+    // Without a known default hooks directory a push cannot pin one.
+    assert.match(
+      none('git push origin feature', repoNetworkFactsFromConfig(CONFIG, [root])),
+      /hooks directory/,
+    )
   })
 
   it('limits clone to github.com and configured remote hosts', () => {
@@ -253,12 +296,9 @@ describe('scopedNetworkEnv', () => {
     const env = scopedNetworkEnv(github, { githubToken: 'tok' })
     assert.equal(env['GH_TOKEN'], 'tok')
     assert.equal(env['GIT_TERMINAL_PROMPT'], '0')
-    const entries = Array.from({ length: Number(env['GIT_CONFIG_COUNT']) }, (_, index) => [
-      env[`GIT_CONFIG_KEY_${String(index)}`],
-      env[`GIT_CONFIG_VALUE_${String(index)}`],
-    ])
-    assert.deepEqual(entries[0], ['core.hooksPath', '/dev/null'])
-    const helpers = entries.filter(([key]) => key?.startsWith('credential.'))
+    const entries = configEntries(env)
+    assert.equal(lastValue(env, 'core.hooksPath'), '/dev/null')
+    const helpers = entries.filter(([key]) => key.startsWith('credential.'))
     // Every configured helper is reset first; the only one added is scoped to
     // github.com and answers from GH_TOKEN alone.
     assert.deepEqual(helpers[0], ['credential.helper', ''])
@@ -267,13 +307,43 @@ describe('scopedNetworkEnv', () => {
     assert.ok(entries.some(([key]) => key === 'url.https://github.com/.insteadOf'))
   })
 
+  it('switches off program-running config at execution time, whatever the files say', () => {
+    for (const env of [
+      scopedNetworkEnv(github, { githubToken: 'tok' }),
+      scopedNetworkEnv(plan('git push -u fork feature'), { githubToken: null }),
+      scopedNetworkEnv(plan('gh pr view 1'), { githubToken: 'tok' }),
+    ]) {
+      // A shared checkout's config can be rewritten after the gate's scan, so
+      // these entries, which outrank every config file, are what holds.
+      assert.equal(lastValue(env, 'core.fsmonitor'), 'false')
+      assert.equal(lastValue(env, 'core.alternateRefsCommand'), '')
+      assert.equal(lastValue(env, 'core.askPass'), '')
+      assert.equal(lastValue(env, 'fetch.recurseSubmodules'), 'false')
+      assert.equal(lastValue(env, 'submodule.recurse'), 'false')
+      assert.equal(lastValue(env, 'gc.auto'), '0')
+      assert.equal(lastValue(env, 'maintenance.auto'), 'false')
+      // Environment that outranks core.sshCommand, core.askPass and every
+      // protocol.* or remote helper a config could name.
+      assert.equal(env['GIT_ALLOW_PROTOCOL'], 'https:ssh')
+      assert.equal(env['GIT_SSH_COMMAND'], '/usr/bin/ssh')
+      assert.equal(env['GIT_ASKPASS'], '/usr/bin/false')
+    }
+  })
+
+  it('pins a push to the hooks directory the gate judged', () => {
+    const env = scopedNetworkEnv(plan('git push -u fork feature'), { githubToken: null })
+    assert.equal(lastValue(env, 'core.hooksPath'), `${root}/.git/hooks`)
+  })
+
+  it('reads attributes from the empty tree for gh, so its git calls run no filter', () => {
+    const gh = scopedNetworkEnv(plan('gh pr view 1'), { githubToken: 'tok' })
+    assert.equal(gh['GIT_ATTR_SOURCE'], '4b825dc642cb6eb9a060e54bf8d69288fbee4904')
+  })
+
   it('resets credential helpers even without a token', () => {
     const env = scopedNetworkEnv(plan('git push -u fork feature'), { githubToken: null })
-    const entries = Array.from({ length: Number(env['GIT_CONFIG_COUNT']) }, (_, index) => [
-      env[`GIT_CONFIG_KEY_${String(index)}`],
-      env[`GIT_CONFIG_VALUE_${String(index)}`],
-    ])
-    assert.deepEqual(entries, [['credential.helper', '']])
+    const helpers = configEntries(env).filter(([key]) => key.startsWith('credential.'))
+    assert.deepEqual(helpers, [['credential.helper', '']])
   })
 
   it('carries no token without one, or for a non-GitHub host', () => {
@@ -291,7 +361,6 @@ describe('network scope with the gates', () => {
       'git fetch origin main',
       'git fetch origin main 2>&1 | tail -20',
       'git ls-remote origin',
-      'git pull --ff-only origin main',
       'git push origin feature-branch',
       'git push -u origin HEAD',
       'gh repo view',

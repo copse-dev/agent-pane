@@ -8,6 +8,7 @@ import {
   stripClearedRedirects,
 } from './auto-approval.ts'
 import type { RepoNetworkFacts } from './git-network-facts.ts'
+import { INTERNAL_GIT_CONFIG } from './git-invocation.ts'
 
 /**
  * Per-command network scope: which hosts ONE contained command may reach.
@@ -66,6 +67,11 @@ export interface ScopedNetworkPlan {
   github: boolean
   /** No segment runs git hooks on purpose (fetch, ls-remote, clone): disable them. */
   disableGitHooks: boolean
+  /**
+   * For a push, the hooks directory judged safe at the gate, passed back to git
+   * at execution time so a config rewrite after the check cannot move it.
+   */
+  hooksPath: string | null
   /** Short human-readable reasons, for the decision log. */
   reasons: string[]
   /** Bare program names the caller must resolve outside every writable root. */
@@ -141,7 +147,8 @@ interface SegmentScope {
   pushRemotes?: string[]
   github: boolean
   runsHooks: boolean
-  program: string
+  /** Programs the segment runs by PATH lookup; `gh` also runs `git`. */
+  programs: string[]
   reason: string
 }
 
@@ -223,11 +230,13 @@ function gitSegmentScope(
       hosts: [host],
       github: host === 'github.com',
       runsHooks: false,
-      program: 'git',
+      programs: ['git'],
       reason: `git clone reaches ${host}`,
     }
   }
-  if (!['fetch', 'pull', 'push', 'ls-remote'].includes(subcommand)) {
+  // Not `pull`: its merge checks out files, which runs the repository's filter
+  // drivers and merge hooks, none of which an execution-time override can name.
+  if (!['fetch', 'push', 'ls-remote'].includes(subcommand)) {
     return { refused: `git ${subcommand} is not a network shape` }
   }
   if (facts === null) return { refused: 'the execution root is not the project repository' }
@@ -239,8 +248,8 @@ function gitSegmentScope(
     hosts,
     ...(push ? { pushRemotes: remote === null ? [...facts.remotes.keys()] : [remote] } : {}),
     github: hosts.includes('github.com'),
-    runsHooks: push || subcommand === 'pull',
-    program: 'git',
+    runsHooks: push,
+    programs: ['git'],
     reason: `git ${subcommand} reaches ${[...new Set(hosts)].join(', ')}`,
   }
 }
@@ -266,7 +275,8 @@ function ghSegmentScope(argv: readonly string[]): SegmentScope | { refused: stri
     hosts: [...GITHUB_DOMAINS],
     github: true,
     runsHooks: false,
-    program: 'gh',
+    // gh finds its repository by running `git` from PATH.
+    programs: ['gh', 'git'],
     reason: `gh ${argv.slice(1, 3).join(' ')} reaches GitHub`,
   }
 }
@@ -325,40 +335,86 @@ export function planScopedNetwork(
   if (runsHooks && facts?.workspaceHooks === true) {
     return { action: 'none', reason: 'git hooks run from a directory contained commands can write' }
   }
+  const hooksPath = runsHooks ? (facts?.hooksPath ?? null) : null
+  if (runsHooks && hooksPath === null) {
+    return { action: 'none', reason: 'the hooks directory is not write-protected' }
+  }
   return {
     action: 'scope',
     plan: {
       domains: [...new Set(scopes.flatMap((scope) => scope.hosts))].sort(),
       github: scopes.some((scope) => scope.github),
       disableGitHooks: !runsHooks,
+      hooksPath,
       reasons: scopes.map((scope) => scope.reason),
-      programs: [...new Set([...scopes.map((scope) => scope.program), ...filters])].sort(),
-      trustEvaluation: scopes.length === 1 && scopes[0]?.program === 'gh',
+      programs: [...new Set([...scopes.flatMap((scope) => scope.programs), ...filters])].sort(),
+      trustEvaluation: scopes.length === 1 && scopes[0]?.programs[0] === 'gh',
       pushRemotes: [...new Set(scopes.flatMap((scope) => scope.pushRemotes ?? []))].sort(),
     },
   }
 }
 
 /**
+ * Git config every scoped git run gets at execution time. A shared checkout's
+ * `.git/config` is writable by contained commands, so the gate's scan
+ * ({@link RepoNetworkFacts}) is only advisory there: a background task can
+ * rewrite the config between the scan and git's own read. These entries outrank
+ * every config file and switch off the keys that make fetch or push run a
+ * program — the same set internal git uses (`INTERNAL_GIT_CONFIG`), with hooks
+ * handled per plan. Submodule recursion is off so no other repository's config
+ * is read.
+ */
+const SCOPED_GIT_OVERRIDES: ReadonlyArray<[string, string]> = [
+  ...INTERNAL_GIT_CONFIG.filter((entry) => !entry.startsWith('core.hooksPath=')).map(
+    (entry): [string, string] => {
+      const eq = entry.indexOf('=')
+      return [entry.slice(0, eq), entry.slice(eq + 1)]
+    },
+  ),
+  ['core.askPass', ''],
+  ['fetch.recurseSubmodules', 'false'],
+  ['push.recurseSubmodules', 'no'],
+]
+
+/** The empty tree: attributes read from it name no filter driver. */
+const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+
+/**
  * Environment for a network-scoped command. Git config travels as
  * `GIT_CONFIG_COUNT` entries, which outrank every config file.
  *
- *  - Hooks are switched off for shapes that never mean to run one, so a hook can
- *    never hold the scope's egress.
+ *  - {@link SCOPED_GIT_OVERRIDES} neutralise program-running config, and
+ *    `GIT_ALLOW_PROTOCOL` limits transports to HTTPS and SSH, which refuses
+ *    `ext::`, `file://` and every remote helper a `remote.*.vcs` could name.
+ *    `GIT_SSH_COMMAND` and `GIT_ASKPASS` outrank `core.sshCommand` and
+ *    `core.askPass`.
+ *  - Hooks are switched off for shapes that never mean to run one. A push gets
+ *    the hooks directory the gate judged write-protected, pinned here.
  *  - With a GitHub token: SSH remotes on github.com are rewritten to HTTPS (the
  *    contained process cannot read `~/.ssh`), and a credential helper that only
  *    answers from `GH_TOKEN` replaces every configured one for github.com.
  *  - gh is given a fresh config directory by the spawn (`freshGhConfig`): the
  *    contained process cannot read `~/.config/gh`, and gh fails rather than
- *    starting empty when that read is denied.
+ *    starting empty when that read is denied. Its own `git` calls read
+ *    attributes from the empty tree, so no filter driver can run.
  */
 export function scopedNetworkEnv(
   plan: ScopedNetworkPlan,
   options: { githubToken: string | null },
 ): Record<string, string> {
-  const config: Array<[string, string]> = []
-  if (plan.disableGitHooks) config.push(['core.hooksPath', '/dev/null'])
-  const env: Record<string, string> = { GIT_TERMINAL_PROMPT: '0' }
+  const config: Array<[string, string]> = [...SCOPED_GIT_OVERRIDES]
+  config.push([
+    'core.hooksPath',
+    plan.disableGitHooks ? '/dev/null' : (plan.hooksPath ?? '/dev/null'),
+  ])
+  const env: Record<string, string> = {
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_ALLOW_PROTOCOL: 'https:ssh',
+    // Absolute, so a planted `ssh` earlier on PATH cannot stand in.
+    GIT_SSH_COMMAND: '/usr/bin/ssh',
+    GIT_ASKPASS: '/usr/bin/false',
+    SSH_ASKPASS: '/usr/bin/false',
+  }
   // An empty helper resets the list collected from every config file. The
   // user's helpers (osxkeychain, store) cannot reach their stores from inside
   // the sandbox anyway; left in place they only fail noisily after each fetch.
@@ -378,13 +434,12 @@ export function scopedNetworkEnv(
     // GH_CONFIG_DIR is set by the spawn, inside the command's own temp directory.
     env['GH_PROMPT_DISABLED'] = '1'
     env['GH_NO_UPDATE_NOTIFIER'] = '1'
+    env['GIT_ATTR_SOURCE'] = EMPTY_TREE
   }
-  if (config.length > 0) {
-    env['GIT_CONFIG_COUNT'] = String(config.length)
-    config.forEach(([key, value], index) => {
-      env[`GIT_CONFIG_KEY_${String(index)}`] = key
-      env[`GIT_CONFIG_VALUE_${String(index)}`] = value
-    })
-  }
+  env['GIT_CONFIG_COUNT'] = String(config.length)
+  config.forEach(([key, value], index) => {
+    env[`GIT_CONFIG_KEY_${String(index)}`] = key
+    env[`GIT_CONFIG_VALUE_${String(index)}`] = value
+  })
   return env
 }

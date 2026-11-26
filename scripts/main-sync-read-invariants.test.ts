@@ -76,7 +76,7 @@ const BASELINE: Readonly<Record<string, SyncReadBaselineEntry>> = {
   'src/main/services/security/git-remotes.ts': {
     calls: 3,
     reason:
-      'Security-sensitive Git indirection/config parser performs bounded reads before validation.',
+      'Security-sensitive Git indirection/config parser performs bounded reads before validation. Its readSmallGitFile also serves git-network-facts.ts (network-scope gate, run per scoped command): candidate for node:fs/promises.',
   },
   'src/main/services/security/git-signing-broker.ts': {
     calls: 1,

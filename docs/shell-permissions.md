@@ -503,7 +503,7 @@ commands do not prompt because they cannot open a network connection.
 
 ### Per-command network scope
 
-A few network commands have a destination Copse can name before they run: `git fetch`, `pull`,
+A few network commands have a destination Copse can name before they run: `git fetch`,
 `ls-remote` and non-force `push` against a configured remote, `git clone` from github.com or a host
 a configured remote already uses, and the `gh` read commands. `gh` writes (`pr create`, `release
 create`, `gist create`, `api` with a method, field or input) never get a plan, whatever the harm
@@ -524,19 +524,38 @@ All of these must hold, or the command takes its ordinary path unchanged
   assignment. The allowlist covers the whole spawn, so `gh repo view && python3 -c …` or `git
   fetch && curl …` gets no plan: the other program would hold the same egress;
 - the auto-approval classifier places every segment in a tier the user enabled. It accepts `git
-  pull` and `git clone` only for a network-scoped run, never for an escape;
+  clone` only for a network-scoped run, never for an escape. `git pull` is never scoped: its merge
+  checks out files, which runs the repository's filter drivers and merge hooks;
 - the harm gate allows the command, so tag pushes and other release actions, `gh` writes, `gh
   gist create` and `gh api` with a method, field or input file still ask;
 - every program in the line resolves on `PATH` outside the workspace and temp directories, with
   no writable directory searched before it;
-- no `cd`, and the execution root's own `.git` leads to the project's common git directory, whose
-  `config` and `hooks/` contained commands cannot write. Repository config that names a program
-  (`core.sshCommand`, `core.fsmonitor`, a `!` credential helper, filter or diff drivers, upload
-  packs) or includes another file refuses the scope. With `extensions.worktreeConfig` on, the
-  worktree's own `config.worktree` is judged the same way, but only where contained commands cannot
-  write it: the primary checkout's, or a registered Copse worktree's, whose sandbox profile now
-  denies writes to that file. Any other linked worktree refuses. A `core.hooksPath` inside the
-  workspace refuses `push` and `pull`; `fetch`, `ls-remote` and `clone` run with hooks off.
+- no `cd`, and the execution root's own `.git` leads to the project's common git directory.
+  Repository config that names a program (`core.sshCommand`, `core.fsmonitor`, a `!` credential
+  helper, any filter driver other than git-lfs's own commands, diff drivers, upload packs) or
+  includes another file refuses the scope. With `extensions.worktreeConfig` on, the worktree's own
+  `config.worktree` is judged the same way, but only where contained commands cannot write it: the
+  primary checkout's, or a registered Copse worktree's, whose sandbox profile denies writes to that
+  file. Any other linked worktree refuses. A `core.hooksPath` that is relative or inside the
+  workspace or a temp directory refuses `push`; `fetch`, `ls-remote` and `clone` run with hooks
+  off.
+
+That scan is advisory where the config is writable. A registered Copse worktree's shared config
+and `hooks/` are write-denied, but a shared checkout's `.git/config` is not (`git push -u` and `git
+branch --set-upstream-to` write it), and a contained background task could rewrite it between the
+gate's read and git's own. So what holds is set at execution time, in `GIT_CONFIG_COUNT` entries
+and environment that outrank every config file (`scopedNetworkEnv`): the program-running keys
+internal git also switches off (`INTERNAL_GIT_CONFIG`: `core.fsmonitor`,
+`core.alternateRefsCommand`, pager, auto gc and maintenance, submodule recursion),
+`core.askPass`, `fetch.recurseSubmodules` and `push.recurseSubmodules` off,
+`GIT_ALLOW_PROTOCOL=https:ssh` (so no `ext::`, `file://` or remote helper a `remote.*.vcs` names),
+`GIT_SSH_COMMAND=/usr/bin/ssh` and `GIT_ASKPASS=/usr/bin/false`. Hooks are `/dev/null` for every
+shape but a push, which gets the hooks directory the gate judged write-protected (an absolute
+`core.hooksPath` outside every writable root, or the repository's own `.git/hooks`, a mandatory
+write-deny), passed back so a later edit cannot move it. `gh` finds its repository by running `git`,
+which must therefore resolve outside the writable roots as well, and those `git` calls read
+attributes from the empty tree (`GIT_ATTR_SOURCE`), so no filter driver applies. Fetch, ls-remote
+and push read no working-tree content, so the filter drivers an override cannot name never run.
 
 A remote's host only counts while its URLs match the ones Copse recorded outside the sandbox
 (`remote-pins.ts`). Contained commands may write the primary checkout's `.git/config` (`git push
@@ -545,7 +564,7 @@ otherwise aim the next scoped push at that host. Trusting a workspace records ev
 stands. A repository Copse first sees without that record has only its github.com, gitlab.com and
 bitbucket.org remotes recorded, since its config may already hold a contained command's edits. A
 remote added or re-pointed later is never recorded on sight: it asks until the workspace is
-trusted again. A fetch, pull or push that names a URL or an unknown remote gets no plan, and
+trusted again. A fetch or push that names a URL or an unknown remote gets no plan, and
 repository `url.*.insteadOf`, `pushInsteadOf` and `http.proxy` refuse the scope, so the host the
 plan names is the host git contacts.
 

