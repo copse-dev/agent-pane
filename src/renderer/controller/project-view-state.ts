@@ -10,6 +10,7 @@ import type { AppState, PanelTab, RightPanelMode } from '@shared/types/state.ts'
 export interface ProjectViewState {
   filesPaneOpen: boolean
   rightPanelMode: RightPanelMode
+  rightPanelSplitMode: RightPanelMode | null
   panelTab: PanelTab
 }
 
@@ -18,6 +19,7 @@ export type ProjectViewStateRegistry = Map<string, ProjectViewState>
 export const DEFAULT_PROJECT_VIEW_STATE: ProjectViewState = {
   filesPaneOpen: false,
   rightPanelMode: 'explorer',
+  rightPanelSplitMode: null,
   panelTab: 'file',
 }
 
@@ -26,6 +28,7 @@ export function captureProjectViewState(state: AppState): ProjectViewState {
   return {
     filesPaneOpen: state.filesPaneOpen,
     rightPanelMode: state.rightPanelMode,
+    rightPanelSplitMode: state.rightPanelSplitMode,
     panelTab: state.panelTab,
   }
 }

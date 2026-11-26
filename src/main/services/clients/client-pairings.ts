@@ -5,6 +5,8 @@ import type { ClientAccess } from '../../../shared/client-auth.ts'
 export interface PairingContext {
   /** The client reached this host over a publicly trusted name its browser verified. */
   trustedName?: boolean
+  /** The client reached this host through the Copse relay. */
+  relayed?: boolean
 }
 
 interface Pairing {

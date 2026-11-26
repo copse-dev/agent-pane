@@ -291,6 +291,28 @@ while (!(traceHas('main:boot-complete') && traceHas('smoke:probe'))) {
 }
 console.log('renderer perf records reach the shared NDJSON trace')
 
+// The preload reports a large renderer call before sending it (#4445). That
+// report is a `send` of its own, so its channel has to be in the bundle-time
+// allowlist: left out, the first large call would close the socket below
+// (4007) and take the window's connection with it. Prove it is accepted and
+// reaches main, which logs the channel the report names.
+socket.send(
+  JSON.stringify({
+    t: 'send',
+    channel: 'diagnostics:ipc-large-call',
+    args: [{ channel: 'smoke:large-call', bytes: 64 * 1024 * 1024, refused: false }],
+  }),
+)
+const reportDeadline = Date.now() + 15_000
+while (!sidecarOutput.includes('[ipc] large renderer call channel=smoke:large-call')) {
+  if (sidecarExited()) fail('sidecar exited after a large-call report')
+  if (socket.readyState !== WebSocket.OPEN)
+    fail('the large-call report closed the socket: its channel is not in the allowlist')
+  if (Date.now() > reportDeadline) fail('the large-call report never reached main')
+  await new Promise((r) => setTimeout(r, 100))
+}
+console.log('large-call reports pass the transport and reach main')
+
 // The transport must enforce the preload contract: a channel outside the
 // bundle-time allowlist closes the socket (4007) instead of reaching the
 // ipcMain handler table — the difference between "no handler" (an invoke

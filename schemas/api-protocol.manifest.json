@@ -1039,6 +1039,13 @@
           1
         ]
       },
+      "gh:reply-to-review-thread": {
+        "api": "gh.replyToReviewThread",
+        "args": [
+          5,
+          5
+        ]
+      },
       "gh:rerun-failed-runs": {
         "api": "gh.rerunFailedRuns",
         "args": [
@@ -1058,6 +1065,13 @@
         "args": [
           2,
           2
+        ]
+      },
+      "gh:set-review-thread-resolved": {
+        "api": "gh.setReviewThreadResolved",
+        "args": [
+          5,
+          5
         ]
       },
       "gh:status": {
@@ -1177,6 +1191,20 @@
         "args": [
           2,
           2
+        ]
+      },
+      "git:set-lines-staged": {
+        "api": "git.setLinesStaged",
+        "args": [
+          5,
+          5
+        ]
+      },
+      "git:set-path-staged": {
+        "api": "git.setPathStaged",
+        "args": [
+          4,
+          4
         ]
       },
       "git:status": {
@@ -1543,6 +1571,20 @@
           4
         ]
       },
+      "mobile:clear-shell-pairing": {
+        "api": "mobile.clearShellPairing",
+        "args": [
+          0,
+          0
+        ]
+      },
+      "mobile:create-shell-pairing": {
+        "api": "mobile.createShellPairing",
+        "args": [
+          0,
+          0
+        ]
+      },
       "mobile:disable": {
         "api": "mobile.disable",
         "args": [
@@ -1618,6 +1660,13 @@
         "args": [
           2,
           3
+        ]
+      },
+      "mobile:set-relay-enabled": {
+        "api": "mobile.setRelayEnabled",
+        "args": [
+          1,
+          1
         ]
       },
       "model-cards:resolve": {
@@ -1835,6 +1884,13 @@
         "args": [
           1,
           1
+        ]
+      },
+      "remote:watched": {
+        "api": "remote.watched",
+        "args": [
+          0,
+          0
         ]
       },
       "review:dismiss-finding": {
@@ -2558,6 +2614,20 @@
           2
         ]
       },
+      "threads:import-external-sessions": {
+        "api": "threads.importExternalSessions",
+        "args": [
+          2,
+          2
+        ]
+      },
+      "threads:list-external-sessions": {
+        "api": "threads.listExternalSessions",
+        "args": [
+          1,
+          1
+        ]
+      },
       "threads:list-orphans": {
         "api": "threads.listOrphans",
         "args": [
@@ -3250,6 +3320,13 @@
       },
       "popout:switch-mode": {
         "api": "panes.onSwitchMode",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "remote:watched-changed": {
+        "api": "remote.onWatchedChanged",
         "args": [
           1,
           1

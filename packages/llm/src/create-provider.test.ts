@@ -5,7 +5,7 @@ import { APP_ATTRIBUTION_TITLE, APP_ATTRIBUTION_URL } from './app-attribution.ts
 import { anthropicMaxOutputTokens, getModelInfo } from './model-catalog.ts'
 import { isRetryableStreamError, streamRetryDelayMs } from './stream-retry.ts'
 import { SERVICE_TIERS } from './service-tier.ts'
-import type { LLMProvider } from './wire-types.ts'
+import type { LLMProvider, LLMStreamOptions, LLMTool } from './wire-types.ts'
 import {
   createExtraCloudProvider,
   createLMStudioProvider,
@@ -89,6 +89,8 @@ describe('createProvider routing', () => {
 })
 
 interface CapturedRequestBody {
+  tool_choice?: unknown
+  tools?: Array<{ function: { name: string } }>
   prompt_cache_key?: string
   service_tier?: string
   store?: boolean
@@ -102,6 +104,8 @@ interface CapturedRequestBody {
   stream_options?: { include_usage?: boolean }
   reasoning?: { effort?: string; enabled?: boolean }
   reasoning_effort?: string
+  chat_template_kwargs?: unknown
+  model?: string
   verbosity?: string
   parallel_tool_calls?: boolean
   temperature?: number
@@ -117,7 +121,11 @@ function expectOpenAIProvider(provider: LLMProvider): OpenAIProvider {
 }
 
 // Capture the request body a provider sends by stubbing its private OpenAI client.
-async function captureRequest(provider: OpenAIProvider): Promise<CapturedRequestBody> {
+async function captureRequest(
+  provider: OpenAIProvider,
+  tools: LLMTool[] = [],
+  options?: LLMStreamOptions,
+): Promise<CapturedRequestBody> {
   const captured: { request?: CapturedRequestBody } = {}
   const create = (
     request: CapturedRequestBody,
@@ -135,7 +143,12 @@ async function captureRequest(provider: OpenAIProvider): Promise<CapturedRequest
     value: { chat: { completions: { create } } },
     configurable: true,
   })
-  for await (const _ of provider.stream([{ role: 'user', content: 'hi' }], [])) {
+  for await (const _ of provider.stream(
+    [{ role: 'user', content: 'hi' }],
+    tools,
+    undefined,
+    options,
+  )) {
     // Drain the stream so the provider sends and captures the request.
   }
   return captured.request ?? {}
@@ -422,6 +435,37 @@ describe('createLMStudioProvider', () => {
     assert.deepEqual(Reflect.get(provider, 'params'), { temperature: 0.4 })
   })
 
+  it('turns reasoning off through the compatible endpoint when a native call asks', async () => {
+    // A review's forced closure can reach the loop's last-chance recovery from a
+    // reasoning runaway; on the SDK a thinking model would think again.
+    const provider = createLMStudioProvider(
+      'http://localhost:1234/v1',
+      'qwen/qwen3.6-35b-a3b',
+      'lm-studio',
+      { temperature: 0.4 },
+    )
+    assert.ok(provider instanceof LMStudioProvider)
+    const reasoningOff: unknown = Reflect.get(provider, 'reasoningOff')
+    assert.ok(reasoningOff instanceof OpenAIProvider)
+    const tools: LLMTool[] = [
+      { name: 'report_finding', description: 'Report', parameters: { type: 'object' } },
+      { name: 'finish_review', description: 'Finish', parameters: { type: 'object' } },
+    ]
+    const request = await captureRequest(reasoningOff, tools, {
+      toolChoice: { name: 'finish_review' },
+      suppressReasoning: true,
+    })
+    assert.equal(request.model, 'qwen/qwen3.6-35b-a3b')
+    assert.equal(request.reasoning_effort, 'none')
+    assert.deepEqual(request.chat_template_kwargs, { enable_thinking: false })
+    assert.equal(request.temperature, 0.4)
+    assert.equal(request.tool_choice, 'required')
+    assert.deepEqual(
+      request.tools?.map((tool) => tool.function.name),
+      ['finish_review'],
+    )
+  })
+
   it('keeps parameters the native SDK cannot represent on the compatible transport', async () => {
     const provider = createLMStudioProvider(
       'http://localhost:1234/v1',
@@ -434,6 +478,30 @@ describe('createLMStudioProvider', () => {
     const request = await captureRequest(provider)
     assert.equal(request.reasoning_effort, 'high')
     assert.equal(request.presence_penalty, 1.25)
+  })
+
+  it('forces a review closure tool in the form LM Studio accepts with reasoning on', async () => {
+    // Reasoning keeps the compatible transport, where LM Studio answers a
+    // named tool_choice with HTTP 400; `required` over that one tool is accepted.
+    const provider = createLMStudioProvider(
+      'http://localhost:1234/v1',
+      'local-model',
+      'lm-studio',
+      {
+        reasoning: 'high',
+      },
+    )
+    assert.ok(provider instanceof OpenAIProvider)
+    const tools: LLMTool[] = [
+      { name: 'report_finding', description: 'Report', parameters: { type: 'object' } },
+      { name: 'finish_review', description: 'Finish', parameters: { type: 'object' } },
+    ]
+    const request = await captureRequest(provider, tools, { toolChoice: { name: 'finish_review' } })
+    assert.equal(request.tool_choice, 'required')
+    assert.deepEqual(
+      request.tools?.map((tool) => tool.function.name),
+      ['finish_review'],
+    )
   })
 })
 

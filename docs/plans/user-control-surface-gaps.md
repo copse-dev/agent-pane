@@ -237,7 +237,13 @@ leads Phase 2 on a dependency.
   [#1573](https://github.com/copse-dev/agent-pane/issues/1573)**, which also records the
   scope question it must not answer by accident: a profile a thread starts from is a
   settings feature, while a named agent the user returns to changes what a thread and a
-  project are.
+  project are. **First slice:** the settings feature only. Settings > Agent > Profiles
+  saves a name, model (native or ACP), effort and instructions
+  (`src/shared/agent-profiles.ts`); the composer's model menu switches a chat to one,
+  which copies the model and effort onto the thread and records `profileId`, so main
+  adds the profile's current instructions to each native system prompt and each ACP
+  turn's guidance. Tool set, MCP servers, permission posture and compaction policy are
+  not part of a profile yet.
 - **R-20 — Delegated task mode.** Hand over a spec, close the window, collect a result.
   Composes with R-01: approve a plan, then delegate its execution. Needs R-06 to be worth
   using. **Specified in [`mission-control.md`](mission-control.md).**

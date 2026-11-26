@@ -5,13 +5,30 @@ import type { RemoteArtifactImageRequest } from '@shared/remote-artifact-image.t
 import type { RemoteArtifactDownloadRequest } from '@shared/remote-artifact-download.ts'
 import type { ApiClient, FilePathBridge } from './api.d.ts'
 import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
-import type { PrComposerCreateRequest } from '@shared/types/git.ts'
+import type { GitLineSelection, PrComposerCreateRequest } from '@shared/types/git.ts'
 import type { ThreadBaseFallback } from '@shared/types/worktree.ts'
 import type { AppleSuggestionAnswer } from '@shared/types/apple-development.ts'
 import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
 import { createWorkspaceNavigation } from './workspace-navigation.ts'
 import { installRemoteReadRelay } from './remote-interface.ts'
+import { createIpcSizeGuard } from './ipc-size-guard.ts'
+import type { IPC_LARGE_CALL_CHANNEL } from '@shared/ipc-size-limits.ts'
 import { errorMessage } from '@shared/errors.ts'
+
+// Innermost, so it checks what is actually sent at the moment of sending: an
+// oversized call is refused here instead of aborting the renderer (#4445).
+const sizeGuardedIpc = createIpcSizeGuard({
+  invoke: ipcRenderer.invoke.bind(ipcRenderer),
+  send: ipcRenderer.send.bind(ipcRenderer),
+  // The channel is a literal here on purpose. The servo bridge builds its
+  // allowlist from the literal channels in this directory and closes a
+  // connection that uses any other, so a computed name would cut it off.
+  report: (report) => {
+    ipcRenderer.send('diagnostics:ipc-large-call' satisfies typeof IPC_LARGE_CALL_CHANNEL, report)
+  },
+})
+ipcRenderer.invoke = sizeGuardedIpc.invoke
+ipcRenderer.send = sizeGuardedIpc.send
 
 // DEBUG BRANCH (`COPSE_PERF=1` only): patch `invoke` before the API object below
 // captures it, so every channel the renderer calls is timed. No-op otherwise.
@@ -26,6 +43,19 @@ installRemoteReadRelay()
 const api: ApiClient = {
   remote: {
     publish: (view) => ipcRenderer.invoke('remote:publish', view),
+    watched: () => ipcRenderer.invoke('remote:watched'),
+    onWatchedChanged: (handler) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        watched: import('@shared/remote-interface.ts').RemoteWatchedThread[],
+      ): void => {
+        handler(watched)
+      }
+      ipcRenderer.on('remote:watched-changed', listener)
+      return () => {
+        ipcRenderer.off('remote:watched-changed', listener)
+      }
+    },
   },
   clientActions: {
     claim: (id) => ipcRenderer.invoke('client-actions:claim', id),
@@ -98,6 +128,9 @@ const api: ApiClient = {
     registerName: (invite: string) => ipcRenderer.invoke('mobile:register-name', invite),
     removeName: () => ipcRenderer.invoke('mobile:remove-name'),
     recheckNameDns: () => ipcRenderer.invoke('mobile:recheck-name-dns'),
+    setRelayEnabled: (enabled: boolean) => ipcRenderer.invoke('mobile:set-relay-enabled', enabled),
+    createShellPairing: () => ipcRenderer.invoke('mobile:create-shell-pairing'),
+    clearShellPairing: () => ipcRenderer.invoke('mobile:clear-shell-pairing'),
     onChat: (handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
@@ -1091,6 +1124,10 @@ const api: ApiClient = {
     catalog: (projectId: string, query?: string) =>
       ipcRenderer.invoke('threads:catalog', projectId, query),
     listOrphans: () => ipcRenderer.invoke('threads:list-orphans'),
+    listExternalSessions: (projectId: string) =>
+      ipcRenderer.invoke('threads:list-external-sessions', projectId),
+    importExternalSessions: (projectId: string, keys: string[]) =>
+      ipcRenderer.invoke('threads:import-external-sessions', projectId, keys),
   },
   archive: {
     attach: (
@@ -1861,6 +1898,15 @@ const api: ApiClient = {
       ipcRenderer.invoke('git:prompt-state', projectId, threadId),
     checkoutBranch: (projectId: string, threadId: string, branch: string) =>
       ipcRenderer.invoke('git:checkout-branch', projectId, threadId, branch),
+    setPathStaged: (projectId: string, threadId: string, path: string, staged: boolean) =>
+      ipcRenderer.invoke('git:set-path-staged', projectId, threadId, path, staged),
+    setLinesStaged: (
+      projectId: string,
+      threadId: string,
+      path: string,
+      staged: boolean,
+      selection: GitLineSelection,
+    ) => ipcRenderer.invoke('git:set-lines-staged', projectId, threadId, path, staged, selection),
     listBranches: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('git:list-branches', projectId, threadId),
     getDefaultBranch: (projectId: string, threadId: string) =>
@@ -1917,6 +1963,21 @@ const api: ApiClient = {
       ipcRenderer.invoke('gh:mark-pr-ready', owner, repo, number),
     enableAutoMerge: (owner: string, repo: string, number: number) =>
       ipcRenderer.invoke('gh:enable-auto-merge', owner, repo, number),
+    replyToReviewThread: (
+      owner: string,
+      repo: string,
+      number: number,
+      threadId: string,
+      body: string,
+    ) => ipcRenderer.invoke('gh:reply-to-review-thread', owner, repo, number, threadId, body),
+    setReviewThreadResolved: (
+      owner: string,
+      repo: string,
+      number: number,
+      threadId: string,
+      resolved: boolean,
+    ) =>
+      ipcRenderer.invoke('gh:set-review-thread-resolved', owner, repo, number, threadId, resolved),
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),

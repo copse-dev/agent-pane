@@ -74,6 +74,7 @@ import {
   getMainWindowNavigation,
   getRestorableMainWindowRecords,
 } from './windows/create-main-window.ts'
+import { installLargeIpcCallChannel, largeIpcCalls } from './windows/renderer-large-ipc.ts'
 import { readBootTheme } from './windows/boot-theme.ts'
 import { setShellOutputSink } from './services/exec/shell-output-context.ts'
 import { setSecretCipher } from './services/storage/secret-cipher.ts'
@@ -608,6 +609,18 @@ app
     perfMark('main:window-create')
     const windows = getRestorableMainWindowRecords().map((record) => createMainWindow(record))
     const win = windows[0] ?? createMainWindow()
+    installLargeIpcCallChannel(
+      ipcMain,
+      (event) => {
+        try {
+          assertMainFrameSender(event, win)
+          return true
+        } catch {
+          return false
+        }
+      },
+      largeIpcCalls,
+    )
     if (app.isPackaged) app.setAsDefaultProtocolClient('copse')
     ipcMain.handle('deep-links:ready', (event) => {
       assertMainFrameSender(event, win)

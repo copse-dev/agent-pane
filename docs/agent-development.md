@@ -123,6 +123,11 @@ the Docker CLI. `COPSE_CONTAINER_ENGINE` accepts `auto`, `apple`, or `docker`:
   running service (`container system start`). It never silently falls back.
 - `docker` requires a reachable Docker daemon and preserves the previous commands.
 
+Copse Reviewer's validation cells (`copse-review pr`, `--backend container`) read the same
+variable; `auto` there tries Docker, Podman, then Apple container. Choose Podman for the reviewer
+with `copse-review pr --engine podman`, not with the variable, which the app rejects as `podman`. See
+[`packages/review/README.md`](../packages/review/README.md#reviewing-a-pull-request-on-this-machine-copse-review-pr).
+
 The autonomy regression is portable across those engines:
 
 ```bash
@@ -316,9 +321,9 @@ the session) before deleting a project the app is still writing.
 ## Focused validation
 
 The post-edit hook runs `scripts/hook-file-check.mts` through the Copse, Cursor, and Claude hook
-configs. It auto-applies oxfmt and reports type-unaware ESLint findings. A reported rewrite makes
-the agent's prior view stale, so re-read that file. Type-aware rules and `tsc` remain part of
-`npm run check:local` and the full `npm run check`.
+configs. It auto-applies oxfmt and reports oxlint findings, type-aware rules included. A reported
+rewrite makes the agent's prior view stale, so re-read that file. `tsc` and ESLint, which stays the
+lint gate, remain part of `npm run check:local` and the full `npm run check`.
 
 While iterating, use a path/base-name/glob filter or the test oracle:
 

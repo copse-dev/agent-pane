@@ -51,6 +51,7 @@ import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
 import { acpBridgeToolMissing, isAcpBridgeStartupFailure } from './acp-bridge-mount.ts'
+import { acpBridgeRelayScriptPath, acpBridgeStdioServer } from './acp-bridge-stdio-relay-config.ts'
 import { acpStaleModelNotice } from './acp-stale-model-notice.ts'
 import type { AgentInitiatedTurnLease } from './agent-initiated-turn.ts'
 import type { AcpTurnEndReason } from './turn-end.ts'
@@ -249,7 +250,7 @@ export interface AcpAgentSpawnConfig {
   /**
    * Copse's native-tool MCP bridge for this turn (issue #602, tier 2). Added to
    * `session/new` `mcpServers` as an http server when the agent advertises
-   * `mcpCapabilities.http`; ignored otherwise.
+   * `mcpCapabilities.http`, and as a stdio relay to the same server otherwise.
    */
   nativeBridge?: { url: string; token: string; serverName: string }
 }
@@ -630,9 +631,13 @@ export async function spawnAcpAgentProcess(
     const executables = await perfSpan('ttft:acp-agent-executable', () =>
       agentExecutables(config.command, withSandboxShellPath(env), config.cwd),
     )
+    const allowLocalhost = options.allowLocalhost ?? Boolean(config.nativeBridge)
     const overlay = acpAgentSandboxOverlay(config.cwd, config.sandbox, {
       executables,
-      allowLocalhost: options.allowLocalhost ?? Boolean(config.nativeBridge),
+      allowLocalhost,
+      // The bridge is offered over a stdio relay to an agent without http MCP;
+      // which one is only known after `initialize`, so grant the relay with it.
+      ...(allowLocalhost ? { nativeToolRelay: { scriptPath: acpBridgeRelayScriptPath() } } : {}),
       ...(config.readonlyCheckout ? { readonlyCheckout: true } : {}),
       ...(config.stateDir ? { stateDirs: [config.stateDir] } : {}),
       // Explicit even in-process (the host-fallback path and probes): the
@@ -796,8 +801,9 @@ export async function settleAcpChildShutdowns(): Promise<void> {
  * per-tool allow/ask/block policies cannot be enforced. Their registered tools
  * are exposed through Copse's authenticated HTTP bridge instead.
  *
- * ACP agents that cannot mount that bridge receive no configured MCP servers.
- * This closed fallback is intentional: ACP has no host-side per-call callback
+ * An agent without http MCP mounts the same bridge through its stdio relay
+ * (`acp-bridge-stdio-relay.ts`), so it reaches these tools the same way. Raw
+ * server configs are never forwarded: ACP has no host-side per-call callback
  * for a server the agent mounts itself.
  */
 export function toAcpMcpServers(
@@ -1445,8 +1451,9 @@ export async function openAcpSession(
     const promptImage = initResponse.agentCapabilities?.promptCapabilities?.image === true
     const mcpServers = toAcpMcpServers(config.mcpServers ?? [], mcpCapabilities)
     // Copse's own tools ride the same channel as forwarded servers: an http
-    // MCP endpoint the agent mounts itself (#602 tier 2). http-capable only —
-    // agents without the capability simply don't get the bridge this session.
+    // MCP endpoint the agent mounts itself (#602 tier 2). An agent without the
+    // http capability mounts the same bridge through a stdio relay instead,
+    // which every ACP agent must support (`acp-bridge-stdio-relay.ts`).
     // Never to a remote (ACP-over-SSH) agent: the URL names this machine's
     // loopback, and the bearer token must not leave it (the pool already skips
     // starting a bridge for one; this keeps a caller-supplied bridge local too).
@@ -1463,12 +1470,8 @@ export async function openAcpSession(
         headers: [{ name: 'Authorization', value: `Bearer ${config.nativeBridge.token}` }],
       })
     } else if (config.nativeBridge) {
-      // The bridge started but this agent cannot mount an http MCP server, so
-      // none of Copse's native tools reach it. Silence here reads downstream as
-      // "the agent chose not to use the tool", which is a different bug.
-      console.warn(
-        '[acp-bridge] agent does not advertise MCP-over-http capability; native tools were not offered this session',
-      )
+      bridgeServer = config.nativeBridge.serverName
+      mcpServers.push(acpBridgeStdioServer(config.nativeBridge))
     }
     const sessionMeta = acpSessionMeta(config, { remote, bridgeServer })
     const canLoad = initResponse.agentCapabilities?.loadSession === true
