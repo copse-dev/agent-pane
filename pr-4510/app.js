@@ -36,7 +36,7 @@ import {
   sleep,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-HZ7TARD7.js";
+} from "./chunks/chunk-A6EBICYV.js";
 import "./chunks/chunk-X6JZSFJR.js";
 import {
   init_icons,
@@ -115,6 +115,7 @@ function parseAgentRunPayload(rawPrompt) {
         ...typeof parsed["workingBrief"] === "string" ? { workingBrief: parsed["workingBrief"] } : {},
         ...typeof parsed["model"] === "string" && parsed["model"] ? { model: parsed["model"] } : {},
         ...isReasoningLevel(parsed["reasoning"]) ? { reasoning: parsed["reasoning"] } : {},
+        ...typeof parsed["profileId"] === "string" && parsed["profileId"] ? { profileId: parsed["profileId"] } : {},
         ...typeof parsed["turnTreeId"] === "string" && parsed["turnTreeId"] ? { turnTreeId: parsed["turnTreeId"] } : {},
         ...typeof parsed["continuationBudgetUsed"] === "number" && Number.isFinite(parsed["continuationBudgetUsed"]) ? { continuationBudgetUsed: parsed["continuationBudgetUsed"] } : {},
         ...reviewContext !== void 0 ? { reviewContext } : {}
@@ -6458,7 +6459,9 @@ function createDemoApi(scenario2, options = {}) {
           prRefs: []
         }))
       ),
-      listOrphans: emptyArray
+      listOrphans: emptyArray,
+      listExternalSessions: () => resolved({ sessions: [], sourcesFound: [] }),
+      importExternalSessions: () => resolved({ imported: [], alreadyImported: [], failed: [] })
     },
     openRouter: { models: emptyArray },
     models: {
@@ -7522,7 +7525,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-PMS6DFIT.js").then(async (main) => {
+    void import("./chunks/main-KPZVSWO4.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
