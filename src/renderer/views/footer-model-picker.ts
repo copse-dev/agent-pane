@@ -1,7 +1,7 @@
 import { CHATGPT_PLAN_MODEL_PREFIX } from '@copse/llm/reserved-prefixes.ts'
 import { el } from '../dom/helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { fetchModelOptions } from './model-options.ts'
+import { fetchModelOptions, modelDisplayLabel } from './model-options.ts'
 import { mountModelPicker } from './model-picker.ts'
 import {
   loadAcpOptionGroups,
@@ -114,7 +114,7 @@ export function mountFooterModelPicker(
         ])
         optionAgentId = loaded?.agentId ?? null
         optionGroups = loaded?.groups ?? []
-        const profile = profileValueGroup(profiles, pickerOpts.getProfileId?.())
+        const profile = profileValueGroup(profiles, pickerOpts.getProfileId?.(), modelDisplayLabel)
         const reasoning = pickerOpts.getReasoning
           ? reasoningValueGroup(current, pickerOpts.getReasoning())
           : null

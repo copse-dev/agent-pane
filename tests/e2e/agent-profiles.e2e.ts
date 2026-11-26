@@ -57,7 +57,7 @@ describe('named agent profiles in Settings', () => {
       .setValue('Review the diff for correctness first. Do not edit files unless asked.')
     await section.$('.agent-profile-save').click()
 
-    const row = section.$('.agent-profile-row[data-profile-id="reviewer"]')
+    const row = section.$('.agent-profile-row')
     await row.waitForDisplayed({ timeout: 10_000 })
     await expect(row.$('strong')).toHaveText('Reviewer')
     await expect(row.$('.field-hint')).toHaveText(

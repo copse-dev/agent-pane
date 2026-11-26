@@ -1448,7 +1448,6 @@ async function runAgentWithInlineCanvas(
       // Copse-managed ACP turns use the canonical turnStart assembly (decision
       // 20). Agent-managed turns leave the agent's own prompt behavior intact.
       // The ACP run calls this once it knows which Copse tools the agent has.
-      const profileBlock = turnProfileInstructions(options?.profileId)
       const copseGuidance =
         options?.executionMode === 'agent'
           ? undefined
@@ -1468,9 +1467,11 @@ async function runAgentWithInlineCanvas(
                   recordHookRun: recordFunctionHookRun,
                 }),
               )
-      // The profile's instructions are the user's own words, so they reach an
-      // agent-managed turn too, which otherwise gets no Copse guidance.
-      const turnGuidance = withProfileGuidance(copseGuidance, profileBlock)
+      // The profile's instructions join Copse's guidance. An agent-managed turn
+      // gets neither: it keeps the agent's own prompt behavior (decision 20).
+      const turnGuidance = copseGuidance
+        ? withProfileGuidance(copseGuidance, await turnProfileInstructions(threadId, options))
+        : undefined
       let result = await runAcpAgentFromSettings({
         threadId,
         agentId: acpRunAgentId,
@@ -2062,7 +2063,7 @@ async function runAgentWithInlineCanvas(
       availableToolNames: parentLoopTools.map((tool) => tool.name),
       trackInstructionActivation: true,
       nestedInstructionTurn,
-      profileInstructions: turnProfileInstructions(options?.profileId),
+      profileInstructions: await turnProfileInstructions(threadId, options),
     })
     const systemPrompt = systemPromptBuild.prompt + threadPlanInstructions()
     const parentProvider = withPromptCatalog(provider, systemPromptBuild.promptCatalog)
@@ -3442,25 +3443,36 @@ export async function runReviewForThread(
   }
 }
 
-/** The instructions block of the thread's named profile, read from Settings now. */
-function turnProfileInstructions(profileId: string | undefined): string {
+/**
+ * The instructions block of the thread's named profile, read from Settings now.
+ * The profile comes from the payload when the renderer dispatched the turn, and
+ * from the thread itself otherwise, so turns main starts on its own (CI and
+ * long-task wakes, background completions) keep the profile too.
+ */
+export async function turnProfileInstructions(
+  threadId: string,
+  options: RunAgentOptions | undefined,
+): Promise<string> {
+  const context = getThreadExecutionContext()
+  const profileId =
+    options?.profileId ??
+    (context
+      ? (await getThreadMeta(context.projectId, threadId).catch(() => null))?.profileId
+      : undefined)
   if (profileId === undefined) return ''
   return agentProfilePromptBlock(
     findAgentProfile(getSetting<AgentProfile[]>(AGENT_PROFILES_SETTING, []), profileId),
   )
 }
 
-/**
- * An ACP turn's guidance with the profile's instructions after Copse's own, or
- * the profile's alone when Copse sends none (agent-managed turns).
- */
+/** A Copse-managed ACP turn's guidance with the profile's instructions after Copse's own. */
 export function withProfileGuidance(
-  copseGuidance: ((bridgeToolNames: readonly string[]) => Promise<string | undefined>) | undefined,
+  copseGuidance: (bridgeToolNames: readonly string[]) => Promise<string | undefined>,
   profileBlock: string,
-): ((bridgeToolNames: readonly string[]) => Promise<string | undefined>) | undefined {
+): (bridgeToolNames: readonly string[]) => Promise<string | undefined> {
   if (!profileBlock) return copseGuidance
   return async (bridgeToolNames) => {
-    const copse = await copseGuidance?.(bridgeToolNames)
+    const copse = await copseGuidance(bridgeToolNames)
     return copse ? `${copse}\n\n${profileBlock}` : profileBlock
   }
 }

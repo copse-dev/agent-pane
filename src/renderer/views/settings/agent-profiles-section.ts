@@ -44,6 +44,12 @@ export function createAgentProfilesSection(
   let profiles: AgentProfile[] = []
   /** The profile the form is editing; `null` while adding a new one. */
   let editingId: string | null = null
+  /**
+   * The form's model. Held here, not read back from the select, which holds
+   * only the "keep" option until the picker's first load fills it: an Edit
+   * saved before then would otherwise drop the profile's model.
+   */
+  let formModel = ''
 
   const list = el('div', { class: 'agent-profile-list' })
   const status = el('p', { class: 'field-hint agent-profile-status', role: 'status' })
@@ -97,7 +103,7 @@ export function createAgentProfilesSection(
       el(
         'span',
         { class: 'field-hint' },
-        'Added to every turn of a chat using this profile, after your custom instructions.',
+        'Added to every turn of a Copse managed chat using this profile, after your custom instructions. Agent managed chats, cloud agents and plugin models don’t receive them.',
       ),
     ),
     el('div', { class: 'provider-actions' }, saveButton, cancelButton),
@@ -158,8 +164,16 @@ export function createAgentProfilesSection(
       list.append(el('p', { class: 'field-hint' }, 'No profiles yet.'))
     }
     for (const profile of profiles) {
-      const edit = el('button', { type: 'button', class: 'agent-profile-edit' }, 'Edit')
-      const remove = el('button', { type: 'button', class: 'agent-profile-delete' }, 'Remove')
+      const edit = el(
+        'button',
+        { type: 'button', class: 'ui-btn ui-btn-secondary ui-btn-compact agent-profile-edit' },
+        'Edit',
+      )
+      const remove = el(
+        'button',
+        { type: 'button', class: 'ui-btn ui-btn-secondary ui-btn-compact agent-profile-delete' },
+        'Remove',
+      )
       edit.addEventListener('click', () => {
         openForm(profile)
       })
@@ -187,13 +201,14 @@ export function createAgentProfilesSection(
     editingId = profile?.id ?? null
     formTitle.textContent = profile ? `Edit ${profile.name}` : 'New profile'
     nameInput.value = profile?.name ?? ''
-    modelSelect.value = profile?.model ?? ''
+    formModel = profile?.model ?? ''
+    modelSelect.value = formModel
     effortSelect.value = profile?.reasoning ?? ''
     instructionsInput.value = profile?.instructions ?? ''
     form.hidden = false
     addButton.hidden = true
     setStatus('')
-    void ensureModelPicker().refresh(modelSelect.value)
+    void ensureModelPicker().refresh(formModel)
     nameInput.focus()
   }
 
@@ -231,6 +246,9 @@ export function createAgentProfilesSection(
     saveButton.click()
   })
   cancelButton.addEventListener('click', closeForm)
+  modelSelect.addEventListener('change', () => {
+    formModel = modelSelect.value
+  })
   saveButton.addEventListener('click', () => {
     const name = nameInput.value.trim()
     if (!name) {
@@ -239,7 +257,7 @@ export function createAgentProfilesSection(
       return
     }
     const instructions = instructionsInput.value.trim()
-    const model = modelSelect.value
+    const model = formModel
     const effort = effortSelect.value
     const id = editingId ?? newAgentProfileId(name, profiles)
     const profile: AgentProfile = {

@@ -50,13 +50,10 @@ describe('findAgentProfile', () => {
 })
 
 describe('newAgentProfileId', () => {
-  it('slugs the name and stays unique', () => {
-    assert.equal(newAgentProfileId('Bug Hunter!', []), 'bug-hunter')
-    assert.equal(
-      newAgentProfileId('Reviewer', [reviewer], () => 'abc123'),
-      'reviewer-abc123',
-    )
-    assert.equal(newAgentProfileId('日本', []), 'profile')
+  it('slugs the name with a fresh suffix, so a deleted profile’s id is not reused', () => {
+    assert.match(newAgentProfileId('Bug Hunter!', []), /^bug-hunter-[a-z0-9]{6}$/)
+    assert.notEqual(newAgentProfileId('Reviewer', []), 'reviewer')
+    assert.match(newAgentProfileId('日本', []), /^profile-[a-z0-9]{6}$/)
     assert.ok(
       agentProfilesSchema.safeParse([{ id: newAgentProfileId('-x-', []), name: 'x' }]).success,
     )

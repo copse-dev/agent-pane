@@ -693,6 +693,7 @@ export function mountInputBar(
     store.setState({ threads })
     store.emit('threads_changed')
     updateFooter()
+    void refreshImageCompatibilityWarning()
     void runContextEstimate()
   }
 
@@ -715,15 +716,14 @@ export function mountInputBar(
     getProfileId: () => getActiveThread(store)?.profileId,
     onSelectProfile: selectProfile,
   })
-  // Name the chat's profile on the trigger from the first paint.
-  void loadAgentProfiles().then(() => {
-    modelPicker.sync()
-  })
-  store.on('settings_changed', () => {
+  // Name the chat's profile on the trigger from the first paint; the
+  // settings_changed handler below reloads it with the rest of the picker.
+  const syncProfileLabel = (): void => {
     void loadAgentProfiles().then(() => {
       modelPicker.sync()
     })
-  })
+  }
+  syncProfileLabel()
   // Re-sync the picker whenever the active thread changes (new thread,
   // thread switch, or thread deletion that shifts the active pointer), and when
   // the project changes so ACP options hide/show with SSH workspaces.
@@ -3200,6 +3200,7 @@ export function mountInputBar(
       void refreshContainerRunsSetting()
       void refreshPlanModeSetting()
       modelPicker.refresh()
+      syncProfileLabel()
       void refreshImageCompatibilityWarning()
       // An added/edited provider (e.g. a freshly fetched HF list) changes pricing.
       refreshModelPricing()

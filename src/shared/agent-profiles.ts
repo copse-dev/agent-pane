@@ -65,12 +65,12 @@ export function agentProfilePromptBlock(profile: AgentProfile | undefined): stri
   return `## Profile instructions: ${profile.name}\n\n${instructions}`
 }
 
-/** A fresh id for a new profile, unique among `existing`. */
-export function newAgentProfileId(
-  name: string,
-  existing: readonly AgentProfile[],
-  random: () => string = () => Math.random().toString(36).slice(2, 8),
-): string {
+/**
+ * A fresh id for a new profile, unique among `existing`. Always suffixed, so a
+ * profile created after one with the same name was deleted never inherits the
+ * old chats still holding that one's id.
+ */
+export function newAgentProfileId(name: string, existing: readonly AgentProfile[]): string {
   const slug =
     name
       .toLowerCase()
@@ -78,9 +78,8 @@ export function newAgentProfileId(
       .replace(/^-+|-+$/g, '')
       .slice(0, 40) || 'profile'
   const taken = new Set(existing.map((profile) => profile.id))
-  if (!taken.has(slug)) return slug
   for (;;) {
-    const id = `${slug}-${random()}`.slice(0, 64)
+    const id = `${slug}-${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}`
     if (!taken.has(id)) return id
   }
 }

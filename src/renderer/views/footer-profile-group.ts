@@ -20,6 +20,7 @@ const NONE_VALUE = ''
 export function profileValueGroup(
   profiles: readonly AgentProfile[],
   currentId: string | undefined,
+  modelLabel: (model: string) => string,
 ): PickerValueGroup | null {
   if (profiles.length === 0) return null
   const current = profiles.find((profile) => profile.id === currentId)
@@ -29,10 +30,14 @@ export function profileValueGroup(
     currentValue: current?.id ?? NONE_VALUE,
     choices: [
       { value: NONE_VALUE, label: 'None', description: 'No profile instructions' },
+      // Say which model a pick moves the chat to, before its instructions.
       ...profiles.map((profile) => ({
         value: profile.id,
         label: profile.name,
-        ...(profile.instructions?.trim() ? { description: oneLine(profile.instructions, 80) } : {}),
+        description: [
+          profile.model ? modelLabel(profile.model) : 'Keeps the chat’s model',
+          ...(profile.instructions?.trim() ? [oneLine(profile.instructions, 80)] : []),
+        ].join(' · '),
       })),
     ],
   }
