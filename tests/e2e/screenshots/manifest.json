@@ -1254,7 +1254,7 @@
       "bytes": 299269
     },
     "changes-chip-committed.png": {
-      "sha256": "9aa4e2c1142da0e1f570786111ef9392a365d7e3c2b5cf80c92a64455ad65465",
+      "sha256": "43f3e78b3c1481e2851feebcd4246df3f49931e9dfeddf2bdd5c3f3fe9f83645",
       "bytes": 1228226
     },
     "chat-layout-activity-home.png": {
@@ -2238,32 +2238,32 @@
       "bytes": 38167
     },
     "git-changes-committed-diff.png": {
-      "sha256": "54e02d6286b0d56349d0d8cc00979d5a0bdb8db2f208f9081e93958594f43873",
-      "bytes": 312719
+      "sha256": "b49b4729644d3a21cea4bef00413dbe7bc15f469f03dfaf2a22febd16b43aa38",
+      "bytes": 312674
     },
     "git-changes-committed-pending.png": {
       "sha256": "6b6e0638699be9760dd9393a03d261bbdf89c118e10647069a1d4a1f8b44a8b6",
       "bytes": 30614
     },
     "git-changes-diff-collapsed.png": {
-      "sha256": "4c0b6d97c9d1bfca84911220e291e3d76d03053e28e4e0ede43e15a3ec454cbb",
-      "bytes": 378048
+      "sha256": "97175335e2e0b2b9e0f07e802969fd0b5b77a6251e2996a286822b7988448727",
+      "bytes": 373673
     },
     "git-changes-diff-expanded.png": {
-      "sha256": "28c0e1a263ccd479562b26935151eacf7b95e2d3439e8bfa9b173a5207595447",
-      "bytes": 576405
+      "sha256": "155c02a52bcdf3e3780da01ef90facfd76dbcdb78e9a30e11ae0573c9e490350",
+      "bytes": 556295
     },
     "git-changes-diff.png": {
-      "sha256": "4c0b6d97c9d1bfca84911220e291e3d76d03053e28e4e0ede43e15a3ec454cbb",
-      "bytes": 378048
+      "sha256": "97175335e2e0b2b9e0f07e802969fd0b5b77a6251e2996a286822b7988448727",
+      "bytes": 373673
     },
     "git-changes-dotfile-path.png": {
       "sha256": "151b24bff98b294fd1a7c526699988dd7ab11cdacf05339ab10823075fe1420a",
       "bytes": 32387
     },
     "git-changes-external-refresh.png": {
-      "sha256": "32ac1a08e98a9681cf170b642153c7ff29be8f7ca2bc7cfc7a854a399e2a2b97",
-      "bytes": 378052
+      "sha256": "c96afa05539cdb56be283af9b077b4587dee5d64f22670471f88c4dc13bc4294",
+      "bytes": 373677
     },
     "git-changes-image-expand.png": {
       "sha256": "a7365c00494f0107ea8bfd766fa7208572f06fd866f6e35412d48dca1c155543",
@@ -2293,17 +2293,21 @@
       "sha256": "195d4f3bfba326549996c21725fb6988ea113e2172aa3825ed77569daab52a1e",
       "bytes": 267769
     },
+    "git-changes-line-comments.png": {
+      "sha256": "ba70be29241bc51aefb624eae830b6a60039d0a144ec5df43a8a7be8a11a315e",
+      "bytes": 389287
+    },
     "git-changes-list-light.png": {
       "sha256": "885aa0c30800dde815332a7adb439add0f59bc0fa3b100a08e461f9c5ed657d3",
       "bytes": 40595
     },
     "git-changes-list.png": {
-      "sha256": "822c5538df3f8aafbee3bd996941857abefdb8ddd25ab79e4b4eb8be8b32b430",
-      "bytes": 374121
+      "sha256": "1a00a630288f4d5d7a0b40cf3e6297facfc1937b38a1b80a4269ef1e47e46a95",
+      "bytes": 369980
     },
     "git-changes-popout-embed-docked.png": {
-      "sha256": "1b3c0c3f302518cbd41e267caa15b4de5a516020717d519a723b2e7ccf150a56",
-      "bytes": 372156
+      "sha256": "51be5d4f2242552db380796e5bf053ad964ef927411494a0506a529e8d5cfd27",
+      "bytes": 367790
     },
     "git-changes-popout-embed-popout.png": {
       "sha256": "a192b2442f7cdd4622a496612f7eef937f7a1576f000c59866a995d0b09795a1",
@@ -2326,16 +2330,16 @@
       "bytes": 11495
     },
     "git-changes-review-button.png": {
-      "sha256": "cf1f4455f8b99e8f6fcb89c59b38a37db2d6c9ea6878c67f8fe5a419d68df8a4",
-      "bytes": 374580
+      "sha256": "a8130feeece0ea148b7aba7e77929373b411810cb6ee14366f05b3f75e987871",
+      "bytes": 370726
     },
     "git-changes-thread-retention.png": {
-      "sha256": "1e2965c463c916bc132e85c3020559b3014c6b9fd0f2a9dfad590fd395403447",
-      "bytes": 278474
+      "sha256": "91c4aa6efcb3d9ac9a3c42c04ed449d24b0e2f24e6ab92c0008a1f9170e4c954",
+      "bytes": 278233
     },
     "git-changes-worker-restart.png": {
-      "sha256": "ca1320355c50815a5a88232da4822b02d09e26793866b9c4f2bcf232a6423f5b",
-      "bytes": 313448
+      "sha256": "3068dc5cd9cfa518713cfdffff99d1363b424494f68c4b27b3f7e976d65e9a76",
+      "bytes": 313215
     },
     "git-commit-approval.png": {
       "sha256": "fc5f33a77c42852acc9ea0f72e54f62efa35acbb7d56fa504731cff68c6176b5",
@@ -2498,8 +2502,8 @@
       "bytes": 570607
     },
     "landing-cupcake-changes.png": {
-      "sha256": "69273e8920137867b136923a62376b594635c831eceb11177c6c8e5d66e99c46",
-      "bytes": 208330
+      "sha256": "533d2f78f7c118d9b8e4a5f72a5e489c4fe0b9b983c613e151dcc14e6069ccd6",
+      "bytes": 206571
     },
     "landing-cupcake-writing.png": {
       "sha256": "0e12a52aebafde87334ad4e4048e54b84be769d55a8dc519f8bcf001bd10682f",
@@ -3090,8 +3094,8 @@
       "bytes": 319642
     },
     "new-thread-detached-head-sent.png": {
-      "sha256": "44d6ddf4c3b9b165b2db7548b80e264526dcf0bea3ad87d516be4728e801837f",
-      "bytes": 263190
+      "sha256": "bb2301d939d7e617af1ad3eb38e366bdfedd49c9f9334479c021d0c41f999fec",
+      "bytes": 255899
     },
     "new-thread-project-picker.png": {
       "sha256": "77f959fdd842ac3e537bed54381b975943fdfde84936789ee82bbf8c6678cfec",
@@ -6394,20 +6398,20 @@
       "bytes": 306178
     },
     "unified-review-default-width.png": {
-      "sha256": "9a652e1b1d8c9541d26dcf11051b9659c3333b754b0f023c73c2859dc92582ed",
-      "bytes": 24240
+      "sha256": "754c1ddeab5521ae2f4c03b3cdc111d0934544b718cc494a33aee4d1d3178b3c",
+      "bytes": 23996
     },
     "unified-review-local.png": {
-      "sha256": "83dde48d8f266b004f96312b6337617403dec7c13cef668afadce4a19cadaaf1",
+      "sha256": "352e596ae88f694a6d7702c35136492f3cd7e4ac6aeb155504ebef842d3a754d",
       "bytes": 25924
     },
     "unified-review-narrow-local.png": {
-      "sha256": "90aaf2208580bdc18f45dd8453a464f2f645976abac96fba2d31740e7a4b4cd8",
-      "bytes": 24410
+      "sha256": "49690c6397ad35705ccebc511a9ab28ecc91580f46a4290f9f887661242ec199",
+      "bytes": 24116
     },
     "unified-review-narrow-picker.png": {
-      "sha256": "3683e0e124c1e8ed8eb617375b1cec0d3e319fbcd763b189832f5270d2d7be7e",
-      "bytes": 29203
+      "sha256": "deb78435c7cfa44dcdee564b523f02b87b879f7d1ab8fb3d55e9f518a4397976",
+      "bytes": 29040
     },
     "unified-review-narrow-pr.png": {
       "sha256": "83b2d503d0e94752b6bbf31c64a2d9634749018414baf582e4dfd238039d9171",
