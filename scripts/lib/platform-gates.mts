@@ -332,16 +332,29 @@ function containsReturn(node: ts.Node): boolean {
   return ts.forEachChild(node, (child) => containsReturn(child) || undefined) ?? false
 }
 
-/** A `.skip(...)` call (t.skip, context.skip), outside nested functions. */
-function callsSkip(node: ts.Node): boolean {
-  if (ts.isFunctionLike(node)) return false
-  if (
+function isSkipCall(expression: ts.Expression): boolean {
+  const node = strip(expression)
+  return (
     ts.isCallExpression(node) &&
     ts.isPropertyAccessExpression(node.expression) &&
     node.expression.name.text === 'skip'
   )
-    return true
-  return ts.forEachChild(node, (child) => callsSkip(child) || undefined) ?? false
+}
+
+/**
+ * The branch always reports a skip: a top-level `t.skip(...)` statement (or
+ * `return t.skip(...)`). A skip behind a further condition does not count,
+ * since the branch can still return without it.
+ */
+function callsSkip(branch: ts.Statement): boolean {
+  const statements = ts.isBlock(branch) ? branch.statements : [branch]
+  return statements.some(
+    (statement) =>
+      (ts.isExpressionStatement(statement) && isSkipCall(statement.expression)) ||
+      (ts.isReturnStatement(statement) &&
+        statement.expression !== undefined &&
+        isSkipCall(statement.expression)),
+  )
 }
 
 /** `if (<host platform>) { … return }` in a test body without a `t.skip()`. */

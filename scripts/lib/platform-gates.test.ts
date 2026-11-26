@@ -54,6 +54,23 @@ describe('unit-platform-early-return', () => {
     assert.deepEqual(rules(text), [])
   })
 
+  it('flags a branch whose skip is behind a further condition', () => {
+    const text = [
+      header,
+      "it('a', (t) => {",
+      "  if (process.platform !== 'darwin') {",
+      "    if (process.env['SKIP']) t.skip('x')",
+      '    return',
+      '  }',
+      '})',
+      "it('b', (t) => {",
+      "  if (process.platform !== 'darwin') return t.skip('mac')",
+      '})',
+    ].join('\n')
+    assert.deepEqual(rules(text), ['unit-platform-early-return:4'])
+    assert.deepEqual(scan(text).inventory, { darwin: 1 })
+  })
+
   it('follows node:os platform() and local const aliases', () => {
     const text = [
       "import { platform } from 'node:os'",
