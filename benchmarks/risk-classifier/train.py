@@ -212,9 +212,11 @@ def structured_features(row: dict) -> list[float]:
     feats += [len(segments), min(len(text), 4000) / 100.0]
     if not USE_VERDICTS:
         return feats
-    feats += [1.0 if row.get("harm") == v else 0.0 for v in ("allow", "prompt", "deny")]
+    # Real rows carry `harm_main`, the gate before this study's rules: a veto is measured on the
+    # families no rule knows yet, so it must not see the verdict those rules produce.
+    harm = row.get("harm_main", row.get("harm"))
+    feats += [1.0 if harm == v else 0.0 for v in ("allow", "prompt", "deny")]
     feats += [1.0 if row.get("scope") == v else 0.0 for v in ("sandbox", "ambiguous", "external")]
-    feats += [1.0 if row.get("auto") == v else 0.0 for v in ("read", "local-write", "remote-write")]
     return feats
 
 

@@ -79,8 +79,8 @@ Share of prompts removed / commands labelled `ask` approved. "Harm gate" is the 
 | TF-IDF veto, P(ask) < 0.5 + harm gate, main                                    | 69% / 4      | 37% / 0       | 67% / 0       |
 | CodeBERTa encoder veto (public data only), P(ask) < 0.1 + harm gate, main      | 37% / 0      | 9% / 0        | 29% / 0       |
 | CodeBERTa encoder veto, P(ask) < 0.5 + harm gate, main                         | 64% / 0      | 26% / 0       | 67% / 0       |
-| Gradient-boosted trees veto (public data only), P(ask) < 0.1 + harm gate, main | 79% / 0      | 47% / 0       | 76% / 0       |
-| Gradient-boosted trees veto, P(ask) < 0.5 + harm gate, main                    | 79% / 1      | 47% / 0       | 76% / 0       |
+| Gradient-boosted trees veto (public data only), P(ask) < 0.1 + harm gate, main | 80% / **8**  | 47% / 0       | 76% / 0       |
+| Gradient-boosted trees veto, P(ask) < 0.5 + harm gate, main                    | 80% / **8**  | 47% / 0       | 76% / 0       |
 
 Caveats. The release-work rules were written from the Studio's misses, so their Studio row is
 in-sample; the MacBook and mini rows are the held-out test, and the models in this table never saw
@@ -119,23 +119,20 @@ nobody wrote a rule for.
    0.71 to 0.79). So a small fine-tuned model earns its place as a second opinion behind the harm
    gate, cheap enough to run locally on every escalation; a bigger model, or more of your own
    labels, is worth it only once it beats that on a machine it has not seen.
-5. **Standard ML on structured signals beats both text models.** Gradient-boosted trees over the
-   product's own verdicts (harm, scope, tier) and a few dozen command-shape flags (network, delete,
-   secret, publish, privilege, interpreter, toolchain, …) separate `ask` far better: AUC 0.93
-   Studio, **0.90 MacBook** (against 0.70 for the encoder and TF-IDF there), 0.98 public. Trained
-   in 22 seconds on public data only, as a veto at P(ask) < 0.1 it stops all 8 release-work misses
-   while removing as many prompts as the harm gate alone (79% Studio, 47% MacBook). The caveat: the
-   shape flags were written after reading the Studio's misses, so the MacBook figure is the fair one.
-   This is the model worth productising: small, explainable per feature, and fast enough to run on
-   every escalation with no GPU.
-6. **More real data can make the veto worse.** Leave-one-machine-out, the tree model's AUC rises
-   with the other machines' labels (Studio 0.93 to 0.94, MacBook 0.90 to 0.93), but held-out on the
-   Studio its veto at P(ask) < 0.1 lets 6 of the 8 release-work misses through, where the
-   public-only model let none. Every MacBook `ask` was already caught by the harm gate, so the model
-   learns that "the gate allowed it" means safe, which is the blind spot the veto exists for. A
-   shape-only model without the gate's verdicts is much worse (Studio AUC 0.62). Ship the
-   public-trained model; use private data for leave-one-machine-out evaluation, and train on it only
-   with the gate's misses weighted up and only when no held-out fold regresses.
+5. **A tree model that reads the gate's verdict cannot cover the gate's blind spots.**
+   Gradient-boosted trees over the harm and scope verdicts plus a few dozen command-shape flags
+   reach AUC 0.90 on the held-out MacBook, but only because every MacBook `ask` was one the harm
+   gate already asked about. On the Studio's release-work misses, where the gate said allow, they
+   score AUC 0.68 and a veto at any threshold up to 0.5 stops none of the 8; training on the MacBook
+   too (Studio held out) gives 0.75 and still none. A first run of this comparison reported the
+   trees catching all 8: it had fed them this change's harm verdict, which already asks for those
+   commands, and is corrected here. The tree model is a good summary of the gate, not a second
+   opinion on it. A shape-only tree model is no better (Studio AUC 0.62).
+6. **The only learned tripwire that worked is the text encoder, and it costs coverage.** The
+   public-trained CodeBERTa veto at P(ask) < 0.5 stops all 8 misses, but removes 64% of Studio
+   prompts instead of 80%, and 26% of MacBook prompts instead of 47%. That is a real price for
+   families that are rare, so it belongs where Copse already puts a model second opinion (the
+   classifier connection under Guarded YOLO), opt-in and measured, not on by default.
 7. **Prompts are friction today, not judgement.** Every answer on three machines was an approval.
    A prompt that is always approved trains the person to approve without reading, which is the
    failure the must-ask rules exist to prevent.
@@ -199,5 +196,6 @@ fail from inside the run. Dependencies are hash-pinned and no newer than two wee
    regression case, each false positive a containment or tier fix.
 4. Score the existing classifier connections (Winnow-12B, Kev) on the same held-out sets before
    building another model.
-5. Port the gradient-boosted veto into the product behind the harm gate (it needs only the verdicts
-   the gate already computes), and re-measure on the next month's real prompts.
+5. Keep must-ask families deterministic: each replay that finds a gate miss becomes a rule and a
+   regression case. A learned veto is worth adding only when one stops a held-out miss without
+   costing more prompts than the misses it stops.
