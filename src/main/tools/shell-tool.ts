@@ -19,6 +19,7 @@ import {
 import {
   shellReadGrantTargets,
   shellRunsOutsideSandbox,
+  shellTempWriteTargets,
 } from '../services/security/command-routing-config.ts'
 import { detectSandboxFailure } from '../services/security/sandbox-failure.ts'
 import {
@@ -306,6 +307,7 @@ export const runShellTool = defineTool({
     'A sandbox-contained failure recognized as one of a known set of sandbox denials (e.g. gh reading its own config, a package install unable to download from inside the sandbox) may be retried once with elevation, subject to the same approval as expects_sandbox_block; the result is prefixed with a one-line note when that happens, and the denial is remembered for that specific operation for the rest of this thread — a denied `git fetch` never implies `git push` or anything else is blocked too. ' +
     'If you already expect a command to need the network or files outside the workspace (e.g. gh, cloud CLIs), set expects_sandbox_block so the user is asked up front instead of after a failed sandboxed attempt. ' +
     'Do not read credential files — .env and its variants, ~/.ssh, ~/.aws, keychains — inside or outside the workspace; ask the user for the value you need instead. ' +
+    "Put scratch files (cookie jars, logs, extracted snippets) under `$TMPDIR` or the working directory: `$TMPDIR` points inside the sandbox, while `/tmp` is machine-wide and makes the command prompt. Start a dev server with run_background and stop it with its `stop` action, not `&`/`nohup` and `pkill`/`killall`, which always prompt because a pattern can match the user's own processes. " +
     'Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) run with install lifecycle scripts disabled, and a download of a package on a known-malware list is refused with a 403. ' +
     'Versions published to the public npm, PyPI and crates.io registries in the last 48 hours are not offered to these installs: a version range resolves to an older version, and an exact pin to a newer one fails as not found. ' +
     'A foreground command may run up to 30 minutes (timeout_ms). Use run_background for dev servers and watchers, and for bounded work expected to leave you waiting (long builds, test suites, evals, data generation, migrations, and similar jobs); arm wake_on_completion and end the turn instead of polling. ' +
@@ -431,6 +433,26 @@ export const runShellTool = defineTool({
       })
     }
 
+    // Likewise a command that leaves the sandbox ONLY to write named /tmp paths
+    // stays contained with just those paths writable. The permission gate asked
+    // about exactly these paths, from the same analysis of the same command.
+    const tempTargets =
+      outsideSandbox && readGrantTargets === null && !isRemote
+        ? shellTempWriteTargets(command, agentRoots, cwd)
+        : null
+    if (tempTargets) {
+      outsideSandbox = false
+      recordDecision({
+        kind: 'shell',
+        actor: 'system',
+        verdict: 'allowed',
+        subject: SHELL_DECISION_SUBJECT,
+        scope: 'sandbox',
+        reasons: [`sandbox write access widened to: ${tempTargets.join(', ')}`],
+        source: 'temp-write-sandbox-relaxation',
+      })
+    }
+
     // A denial confirmed earlier THIS thread for the same operation (issue #1436
     // point 2) pulls the same escalation forward the agent's own
     // `expects_sandbox_block` hint would — so the second attempt at an
@@ -453,7 +475,7 @@ export const runShellTool = defineTool({
     // A read-only grant never authorizes a host execution. A wrapper failure or
     // sandbox denial under this overlay must not turn into an outside retry,
     // including Guarded YOLO's runner-evidence auto-approval path.
-    let suppressUnsandboxedRetry = readGrantTargets !== null
+    let suppressUnsandboxedRetry = readGrantTargets !== null || tempTargets !== null
     let skippedProbeViaCache = false
     if (readonlyCheckout) {
       suppressUnsandboxedRetry = true
@@ -551,6 +573,7 @@ export const runShellTool = defineTool({
         onDetach,
         readonlyCheckout,
         revalidateShellYield(yieldOptions, timeout_ms),
+        tempTargets ?? [],
       )
 
       if (result.backgroundId) return backgroundResult(result.backgroundId)

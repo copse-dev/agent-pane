@@ -84,6 +84,35 @@ export function gitPushApproval(
   }
 }
 
+/** The prompt for a contained command that writes named /tmp paths. */
+export function tempWriteApproval(
+  command: string,
+  targets: readonly string[],
+): ApprovalDetails & { title: string; approveLabel: string; approveOnceLabel: string } {
+  return {
+    title: 'Let this command write to /tmp?',
+    body: command,
+    bodyAdvice: `It stays in the project sandbox, with no internet access. Only these paths become writable: ${targets.join(', ')}`,
+    bodyFooter:
+      'Allow for this chat lets later commands in this chat write the /tmp paths they name, still inside the sandbox, until Copse quits.',
+    approveLabel: 'Allow for this chat',
+    approveOnceLabel: 'Allow once',
+  }
+}
+
+/** The two-tier buttons and footer a fast-forward push of the thread's own branch adds. */
+export function gitPushChatGrantCopy(branch: string): {
+  approveLabel: string
+  approveOnceLabel: string
+  bodyFooter: string
+} {
+  return {
+    approveLabel: 'Allow for this chat',
+    approveOnceLabel: 'Push once',
+    bodyFooter: `Allow for this chat also pushes ${branch} to origin again in this chat without asking, fast-forward only, until Copse quits. Other branches and history rewrites still ask.`,
+  }
+}
+
 export interface ApprovalDetails {
   body: string
   bodyAdvice: string

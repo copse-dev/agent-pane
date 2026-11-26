@@ -53,6 +53,8 @@ export const PROMPT_CAUSES = [
   'shell-port-binding',
   /** A command reads paths outside the project, with every path accounted for. */
   'shell-read-outside-project',
+  /** A contained command writes named paths under /tmp. */
+  'shell-temp-write',
 
   // ── Terminal ─────────────────────────────────────────────────────────────
   /** Opening a terminal while the sandbox network scope is widened. */
@@ -152,6 +154,8 @@ const CONTAINMENT: Readonly<Record<PromptCause, PromptCauseContainment>> = {
   // the project. A container guest holds only the workspace, so there is no
   // host filesystem there to reach and the question does not arise.
   'shell-read-outside-project': 'removed',
+  // A container guest has its own /tmp; nothing on the host is at stake.
+  'shell-temp-write': 'removed',
   'terminal-network-widened': 'removed',
   // A remote terminal is a user-selected host, not something a local container
   // replaces.
@@ -206,6 +210,7 @@ const LABELS: Readonly<Record<PromptCause, string>> = {
     'Shell: outward effect from a contained run (push, publish, GitHub write)',
   'shell-port-binding': 'Shell: binding a local port',
   'shell-read-outside-project': 'Shell: reads outside the project',
+  'shell-temp-write': 'Shell: writes named /tmp paths in the sandbox',
   'terminal-network-widened': 'Terminal: opened with widened network access',
   'terminal-remote': 'Terminal: remote workspace',
   'terminal-unsandboxed': 'Terminal: not contained',

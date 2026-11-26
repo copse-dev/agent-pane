@@ -3,6 +3,8 @@ import { planToolBlockReason } from '../thread-plan-context.ts'
 import { z } from 'zod'
 import {
   browserApprovalDetails,
+  gitPushChatGrantCopy,
+  tempWriteApproval,
   projectPortBindingApproval,
   webApprovalDetails,
 } from '@shared/approval-copy.ts'
@@ -16,7 +18,7 @@ import {
   currentBrowserScope,
   grantBrowserOrigin,
 } from '../browser/browser-network-grants.ts'
-import { existsSync, realpathSync } from 'node:fs'
+import { realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { relative, resolve } from 'node:path'
 import { getChatStoreRoot } from '../workspace.ts'
@@ -98,6 +100,7 @@ import {
   offerableTrustedCommand,
   routeShellCommand,
   type ShellRoutingTool,
+  safeTempWriteTargets,
 } from './command-routing-config.ts'
 import { resolveAutoApproval } from './auto-approval-config.ts'
 import {
@@ -124,6 +127,8 @@ import {
   hasReadOutsideProjectGrant,
   safeCanonicalReadTarget,
 } from './read-outside-grant.ts'
+import { chatPushTarget, grantChatPush, hasChatPushGrant } from './push-grant.ts'
+import { grantTempWrites, hasTempWriteGrant } from './temp-write-grant.ts'
 import { getMcpToolMeta, isMcpToolRemembered, rememberMcpTool } from '../mcp/mcp-registry.ts'
 import { CUSTOM_TOOL_PREFIX, customToolLabel } from '../mcp/custom-tools-config.ts'
 import {
@@ -136,7 +141,7 @@ import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
 import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/plugins/background-tasks-plugin.ts'
-import { assessShellHarm, type ShellHarmContext } from './shell-harm.ts'
+import { assessShellHarm } from './shell-harm.ts'
 import {
   guardedYoloTierReason,
   shadowTierScreening,
@@ -144,18 +149,7 @@ import {
   tierScreeningClassifier,
 } from './tier-screening.ts'
 import { isCompiledProgram, readScriptForHarm } from '@copse/shell-guard/script-files.ts'
-import {
-  TRUSTED_SSH_HOSTS_SETTING,
-  sanitizeTrustedSshHosts,
-} from '@copse/shell-guard/trusted-ssh-hosts.ts'
-import {
-  sanitizeTrustedPackageRegistries,
-  TRUSTED_PACKAGE_REGISTRIES_SETTING,
-} from '@copse/shell-guard/trusted-package-registries.ts'
-import {
-  PRODUCTION_TARGETS_SETTING,
-  sanitizeProductionTargets,
-} from '@copse/shell-guard/production-targets.ts'
+import { harmHostReachContext } from './shell-harm-context.ts'
 import { currentRunUsesGuardedYolo } from './guarded-yolo.ts'
 import { recordPermissionDecision } from './permission-audit.ts'
 import { resolveToolPermission } from './tool-permissions.ts'
@@ -498,6 +492,49 @@ async function resolveReadOutsideProject(
   if (approved && remember && threadId) {
     grantReadOutsideProject(threadId, analysis.resolvedTargets)
   }
+  return approved
+}
+
+/**
+ * Answer a command whose only escape is writing named `/tmp` paths: the
+ * thread's standing grant covers it, or the user is asked whether those paths
+ * may be written inside the sandbox. Null when the command is not that shape.
+ */
+async function resolveTempWrite(
+  command: string,
+  workspaceRoot: string | null,
+  signal?: AbortSignal,
+): Promise<boolean | null> {
+  if (spawnRunsOnSshTarget(workspaceRoot)) return null
+  const targets = safeTempWriteTargets(command, workspaceRoot)
+  if (targets === null) return null
+  const reasons = [`writes inside the sandbox to: ${targets.join(', ')}`]
+  const threadId = getActiveRunThread()
+  if (threadId && hasTempWriteGrant(threadId)) {
+    recordDecision({
+      kind: 'shell',
+      actor: 'user',
+      verdict: 'allowed',
+      subject: SHELL_DECISION_SUBJECT,
+      scope: 'sandbox',
+      reasons,
+      source: 'temp-write-grant',
+    })
+    return true
+  }
+  const { approved, remember } = await requestApproval(
+    {
+      ...tempWriteApproval(command, targets),
+      type: 'shell',
+      subject: SHELL_DECISION_SUBJECT,
+      scope: 'sandbox',
+      cause: 'shell-temp-write',
+      reasons,
+      allowRemember: Boolean(threadId),
+    },
+    signal,
+  )
+  if (approved && remember && threadId) grantTempWrites(threadId)
   return approved
 }
 
@@ -1171,6 +1208,26 @@ async function checkGithubWriteToolPermission(
   const workspaceRepositorySlug = needsWorkspaceRepository
     ? await getGithubRepoSlug(getAgentExecutionRoot())
     : null
+  // A fast-forward push of the thread's own branch can be allowed for the
+  // rest of the chat (see push-grant.ts). Never with an automation grant on
+  // offer, nor when the user set git_push to always ask.
+  const threadId = getActiveRunThread()
+  const pushTarget =
+    toolName === 'git_push' && automation === null && explicitPolicy !== 'ask' && threadId
+      ? await chatPushTarget(args, getAgentExecutionRoot())
+      : null
+  if (threadId && pushTarget && hasChatPushGrant(threadId, pushTarget)) {
+    recordDecision({
+      kind: 'mcp',
+      actor: 'user',
+      verdict: 'allowed',
+      subject: toolName,
+      cause: 'github-write',
+      reasons: [`push ${pushTarget.branch} to origin (fast-forward)`],
+      source: 'chat-push-grant',
+    })
+    return true
+  }
   const prompt = formatGithubWritePrompt(toolName, args, workspaceRepositorySlug)
   const { approved, remember } = await requestApproval(
     {
@@ -1181,14 +1238,16 @@ async function checkGithubWriteToolPermission(
               'Approval covers this action once. Remembering permits this GitHub action for other pull requests in this project in future runs of the named schedule.',
           }
         : {}),
+      ...(pushTarget ? gitPushChatGrantCopy(pushTarget.branch) : {}),
       type: 'mcp',
       cause: 'github-write',
-      allowRemember: automation !== null,
+      allowRemember: automation !== null || pushTarget !== null,
       ...(automation ? automationRememberOptions(automation, permission) : {}),
       subject: toolName,
     },
     signal,
   )
+  if (approved && remember && pushTarget && threadId) grantChatPush(threadId, pushTarget)
   if (approved && remember && automation) {
     await getAutomationService().grantPermission(
       automation.projectId,
@@ -1344,23 +1403,6 @@ function sandboxCommandNormallyAllowed(command: string, workspaceRoot: string): 
       classification: null,
     }).action === 'allow'
   )
-}
-
-/** The user's trusted SSH hosts and a filesystem probe, for the harm gate's host-reach rules. */
-function harmHostReachContext(): Pick<
-  ShellHarmContext,
-  'trustedSshHosts' | 'trustedPackageRegistries' | 'productionTargets' | 'pathExists'
-> {
-  return {
-    trustedSshHosts: sanitizeTrustedSshHosts(getSetting<unknown>(TRUSTED_SSH_HOSTS_SETTING, [])),
-    trustedPackageRegistries: sanitizeTrustedPackageRegistries(
-      getSetting<unknown>(TRUSTED_PACKAGE_REGISTRIES_SETTING, []),
-    ),
-    productionTargets: sanitizeProductionTargets(
-      getSetting<unknown>(PRODUCTION_TARGETS_SETTING, []),
-    ),
-    pathExists: existsSync,
-  }
 }
 
 /**
@@ -1786,6 +1828,14 @@ export async function ensureShellCommandPermitted(
   if (!forceAsk) {
     const readOutside = await resolveReadOutsideProject(command, workspaceRoot, opts.signal)
     if (readOutside !== null) return readOutside
+  }
+
+  // A command that leaves the sandbox only to write named /tmp paths is asked
+  // the narrower question and stays contained with just those paths writable
+  // (shell-tool routes it the same way, from the same analysis).
+  if (!forceAsk && sandboxEnabled && outsideSandbox) {
+    const tempWrite = await resolveTempWrite(command, workspaceRoot, opts.signal)
+    if (tempWrite !== null) return tempWrite
   }
 
   // A plain package install gets a dedicated, readable approval rather than the

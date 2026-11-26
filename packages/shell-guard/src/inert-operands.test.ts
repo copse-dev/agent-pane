@@ -56,6 +56,21 @@ describe('inertOperandIndexes', () => {
     assert.deepEqual(inert('sed', '-n', 'w /tmp/out', 'a'), [])
   })
 
+  it('finds the program of a filter-only awk, and nothing in any other awk', () => {
+    assert.deepEqual(inert('awk', '/^import/', 'a.ts'), [1])
+    assert.deepEqual(inert('awk', '/<script>/{p=1;next}/<\\/script>/{p=0}p', 'a.html'), [1])
+    assert.deepEqual(inert('awk', '/[/]x/', 'a'), [1])
+    assert.deepEqual(inert('gawk', '-F', ':', '-vx=1', '/x/', 'a'), [4])
+    assert.deepEqual(inert('awk', '--', '/x/', 'a'), [2])
+    assert.deepEqual(inert('awk', '/x/ { print > "/tmp/out" }', 'a'), [])
+    assert.deepEqual(inert('awk', '{ print | "sh" }', 'a'), [])
+    assert.deepEqual(inert('awk', '{ while ((getline l) > 0) print l }', 'a'), [])
+    assert.deepEqual(inert('awk', 'BEGIN { system("x") }'), [])
+    assert.deepEqual(inert('awk', '@load "x"', 'a'), [])
+    assert.deepEqual(inert('awk', '-f', '/tmp/prog.awk', 'a'), [])
+    assert.deepEqual(inert('awk', '--posix', '/x/', 'a'), [])
+  })
+
   it('ignores other programs', () => {
     assert.deepEqual(inert('cat', '/etc/hosts'), [])
     assert.deepEqual(inert('sed', '-n', 's|/etc|x|p', 'a'), [])

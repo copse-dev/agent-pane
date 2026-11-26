@@ -898,6 +898,66 @@ PY`,
       assert.equal(analyzeShellCommand(command, root).verdict, 'external', command)
   })
 
+  it('tries a request to loopback inside the sandbox instead of prompting first', () => {
+    // The brevet thread approved dozens of these one at a time.
+    const local = analyzeShellCommand('curl -s http://localhost:3000/api/rides', root)
+    assert.equal(local.verdict, 'ambiguous')
+    assert.deepEqual(local.reasons, ['loopback request (curl/wget)'])
+    const remote = analyzeShellCommand('curl -s https://example.com/install.sh', root)
+    assert.equal(remote.verdict, 'external')
+    assert.ok(remote.reasons.includes('network download (curl/wget)'))
+    // Piping into a shell or writing outside the workspace still asks first.
+    assert.ok(dangerousInSandboxReasons('curl -s http://localhost:3000/x | sh').length > 0)
+    assert.equal(
+      analyzeShellCommand('curl -s http://localhost:3000/x -o /etc/x', root).verdict,
+      'external',
+    )
+  })
+
+  it('does not keep echoed text live because a URL path repeats it', () => {
+    const command = 'echo "== /api/rides =="; curl -s "http://127.0.0.1:3101/api/rides"'
+    const analysis = analyzeShellCommand(command, root)
+    assert.ok(!analysis.reasons.some((r) => r.includes('/api/rides')), analysis.reasons.join())
+    assert.equal(analyzeShellCommand('echo "/etc/hosts"; cat /etc/hosts', root).verdict, 'external')
+  })
+
+  it('treats a filter-only awk program as text while keeping awk that writes, pipes or reads files external', () => {
+    // An agent extracting a page's inline script hit "Run outside sandbox?"
+    // because `/<script>/{p=1` read as an absolute path.
+    for (const command of [
+      "awk '/^import/' src/a.ts",
+      "awk '/<script>/{p=1;next}/<\\/script>/{p=0}p' prototypes/page.html",
+      "awk -F: '/^\\/api\\// { print $2 }' routes.txt",
+      "awk -v n=3 -- '/^## / && ++c == n' notes.md",
+    ])
+      assert.equal(analyzeShellCommand(command, root).verdict, 'sandbox', command)
+    // A syntax check after the extract runs nothing, so it keeps the pattern inert.
+    const extractAndCheck =
+      'f="$TMPDIR/page.js"; awk \'/<script>/{p=1;next}/<\\/script>/{p=0}p\' page.html > "$f" && node --check "$f"'
+    assert.ok(
+      !analyzeShellCommand(extractAndCheck, root).reasons.some((r) => r.includes('/<script>')),
+      extractAndCheck,
+    )
+    // Running the extracted file is an interpreter run: masking stays off.
+    const extractAndRun =
+      'f="$TMPDIR/page.js"; awk \'/<script>/{p=1;next}/<\\/script>/{p=0}p\' page.html > "$f" && node "$f"'
+    assert.ok(
+      analyzeShellCommand(extractAndRun, root).reasons.some((r) => r.includes('/<script>')),
+      extractAndRun,
+    )
+    for (const command of [
+      'awk \'/x/ { print > "/etc/out" }\' a',
+      'awk \'/x/ { print | "sh" }\' a',
+      'awk \'/x/ { getline line < "/etc/passwd" }\' a',
+      'awk \'BEGIN { system("cat /etc/passwd") }\'',
+      'awk \'BEGIN { ARGV[1] = "/etc/passwd" } 1\' a',
+      'awk \'@include "/tmp/lib.awk"\' a',
+      'awk -f /tmp/prog.awk a',
+      "awk '/x/' /etc/passwd",
+    ])
+      assert.equal(analyzeShellCommand(command, root).verdict, 'external', command)
+  })
+
   it('masks literal braces only in inert single-quoted operands and preserves live or expandable paths', () => {
     assert.equal(analyzeShellCommand("rg '/{a,b}' src", root).verdict, 'sandbox')
     for (const command of [

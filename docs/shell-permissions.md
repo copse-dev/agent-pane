@@ -490,6 +490,38 @@ while one is active, Copse pauses auto-run and names the holder in an approval p
 starting a new network-capable command. Structurally read-only
 commands do not prompt because they cannot open a network connection.
 
+### Writing named /tmp paths inside the sandbox
+
+A command whose only reason to leave the sandbox is writing literal paths under `/tmp`
+(`curl -c /tmp/cookies.txt …`, `node server.js > /tmp/server.log`) is not run outside. The gate
+asks **Let this command write to /tmp?** (cause `shell-temp-write`), and on approval `run_shell`
+runs it contained with exactly those paths writable (`tempWriteTargets`, `withTempWrites`): no
+internet, no other path. Every `/tmp` mention must be a plain literal path (no variable, glob, `..`
+or bare `/tmp`), the command with those paths set aside must not be `external`, and destructive
+commands keep their own prompt. The seatbelt grant uses the canonical `/private/tmp` spelling, and
+a named path that is or sits under a symlink is refused. **Allow for this chat** lets later
+commands in that thread write the `/tmp` paths they name the same way, until Copse quits
+(`temp-write-grant.ts`, `source: temp-write-grant`); **Allow once** grants nothing further.
+
+### Reaching the thread's own dev server
+
+A contained `run_shell` command may connect to a loopback port when, at spawn, a listener on that
+port descends from one of the same thread's running background tasks that runs inside the project
+sandbox (`threadLoopbackPorts`). Ownership comes from the host's port table and process ancestry,
+never from a URL the task printed, and a task approved to run outside the sandbox lends no port,
+since it may hold a tunnel to anywhere. On macOS the patched ASRT turns each port into a
+connect-only seatbelt rule (`allowLoopbackPorts`) in that spawn's own profile: no bind, no inbound,
+no other port, and no change to the process-wide proxy allow-list, so no other running command
+gains access. Other platforms ignore the field and stay offline.
+
+The classifier pairs with this. A `curl`/`wget` whose every URL is `http(s)` to `localhost`,
+`127.x.x.x` or `[::1]` reports `loopback request (curl/wget)`, which is ambiguous rather than a
+hard network download, so it runs contained first. A URL held in a variable counts only when a
+literal assignment on its own line sets it. A request to a port the thread does not own is blocked
+by the sandbox and offered as the usual outside-sandbox retry; without an OS sandbox it prompts as
+before. Substitution, wrappers (`xargs curl`, `timeout 5 curl`), userinfo, `file:` and any
+non-loopback URL keep the up-front prompt.
+
 ### Linked worktree recovery
 
 A contained command in a validated linked thread worktree may update that worktree's own Git
@@ -1412,10 +1444,15 @@ Text that names no file is not a path. The pattern of a `grep`/`rg` search and t
 `grep -v "//"` is not a read of the filesystem root and `echo "/tmp/x"` does not leave the
 workspace. Recognition is an allow-list (`inert-operands.ts`): one unknown search flag, any
 substitution, or a head that turns text into commands or paths (`xargs`, a shell, an interpreter)
-disables it, and a masked path that appears in any other word stays visible. A `sed` script is
+disables it, and a masked path that appears in any other word stays visible. `node --check FILE`
+(or `-c`) only parses its file, so it does not disable masking; any other `node` run does. A `sed` script is
 masked only when the whole `sed` is a read-only filter (no `-i`, script file, or `r`/`w`/`e`
 command), so `sed -n '/^\/api\//p' a.ts` reads `a.ts`; an escaped path is kept when any other word
-holds it with or without its escapes. `awk` scripts are not masked: they can read and write files.
+holds it with or without its escapes. An `awk` program is masked only when it is a filter: no
+`-f` program file, no flag other than `-F`/`-v`, and, outside its regex and string literals, no
+`<`, `>`, `|`, `@` directive, `getline`, `system`, `close`, `fflush`, `ARGV` or `ARGC`. So
+`awk '/<script>/{p=1;next}/<\/script>/{p=0}p' page.html` reads `page.html`, while
+`awk '{ print > "/etc/x" }' a` still leaves the workspace.
 A `../` in a pattern (`rg "from '../lib'" src`) is text only when no other word holds `..` and the
 command has no `$` expansion, so `rg '../x' ../other` still leaves the workspace. A program name in
 a pattern (`rg 'close|open' src`) is not that program running: it is ambiguous and runs contained.
@@ -1488,6 +1525,13 @@ includes a request id; `deferred_approval_status` reads only requests owned by
 the current thread. Later user turns use ordinary interactive approval.
 Resolving a queued request records the human decision; it does not prove that
 the original action ran.
+
+In an interactive chat, a fast-forward `git_push` of the branch checked out where the agent runs
+offers **Push once** and **Allow for this chat** (`push-grant.ts`), unless that branch is the
+repository's default branch, the default branch is unknown, the call carries
+`expected_remote_sha`, or the user set `git_push` to always ask. The grant covers pushes of that
+branch from that checkout in that thread until Copse quits, logged with
+`source: chat-push-grant`. Other branches and history rewrites still ask.
 
 PR maintenance also offers separate grants for `git_push`, `gh_pr_merge`, `gh_pr_comment`,
 and `gh_pr_resolve_review_thread`. Push publishes one branch to origin and only replaces

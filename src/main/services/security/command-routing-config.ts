@@ -1,3 +1,5 @@
+import { tempWriteTargets } from '@copse/shell-guard/temp-write-targets.ts'
+import { localShellHarmAllows } from './shell-harm-context.ts'
 import { getSetting, updateSetting } from '../storage/settings.ts'
 import type { AgentRoots } from '../execution-root.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
@@ -141,6 +143,38 @@ export function shellReadGrantTargets(
     }
     return target
   })
+}
+
+/**
+ * The named `/tmp` paths a command may write while staying contained, when
+ * writing them is its only reason to leave the sandbox (see
+ * `tempWriteTargets`). Null without an active sandbox, or when the command is
+ * trusted to run outside anyway.
+ */
+export function shellTempWriteTargets(
+  command: string,
+  roots: AgentRoots,
+  executionRoot: string | null,
+  toolName: ShellRoutingTool = 'run_shell',
+): string[] | null {
+  if (!isProjectSandboxEnabled()) return null
+  if (routeShellCommand(command, roots, toolName).outcome === 'allow') return null
+  return safeTempWriteTargets(command, executionRoot)
+}
+
+/**
+ * {@link tempWriteTargets}, further limited to commands the Guarded YOLO harm
+ * gate would allow. A `/tmp` path is not always just written: `rg --pre
+ * /tmp/tool` runs it, and `screencapture /tmp/s.png` captures the screen, so
+ * the "write to /tmp" question would describe them wrongly. The permission
+ * gate and shell routing share this one answer.
+ */
+export function safeTempWriteTargets(
+  command: string,
+  executionRoot: string | null,
+): string[] | null {
+  const targets = tempWriteTargets(command, executionRoot)
+  return targets !== null && localShellHarmAllows(command, executionRoot) ? targets : null
 }
 
 /**
