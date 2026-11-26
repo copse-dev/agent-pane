@@ -10,7 +10,7 @@ import { testFailureReportSchema } from './test-failures.ts'
 import { findingSchema } from './finding.ts'
 import { CHECK_KINDS, REVIEW_CONFIG_FILENAME } from './project-commands.ts'
 import { STAGE0_REPORT_VERSION, type Stage0Report } from './stage0.ts'
-import { inconclusiveCheckReason } from './check-failure.ts'
+import { inconclusiveCheckReason, transientCheckFailure } from './check-failure.ts'
 
 const checkKindSchema = z.enum(CHECK_KINDS)
 const targetSchema = z.enum(['base', 'head'])
@@ -43,12 +43,14 @@ const checkOutcomeSchema = z
     base: checkRunSchema.nullable(),
     headConfirmation: checkRunSchema.optional(),
     reason: z.string().optional(),
+    transient: z.literal(true).optional(),
   })
   // `reason` is present or absent, never `undefined` (exactOptionalPropertyTypes).
-  .transform(({ reason, headConfirmation, ...outcome }) => ({
+  .transform(({ reason, headConfirmation, transient, ...outcome }) => ({
     ...outcome,
     ...(reason === undefined ? {} : { reason }),
     ...(headConfirmation === undefined ? {} : { headConfirmation }),
+    ...(transient === undefined ? {} : { transient }),
   }))
 
 const projectSchema = z.union([
@@ -114,7 +116,16 @@ function normalizeIncompleteChecks(report: Stage0Report): Stage0Report {
     ...report,
     checks: report.checks.map((check) => {
       const reason = incomplete.get(check.kind)
-      return reason === undefined ? check : { ...check, verdict: 'undetermined', reason }
+      return reason === undefined
+        ? check
+        : {
+            ...check,
+            verdict: 'undetermined',
+            reason,
+            ...([check.head, check.base].some((run) => run !== null && transientCheckFailure(run))
+              ? { transient: true }
+              : {}),
+          }
     }),
     findings: report.findings.filter((finding) => {
       if (!finding.provenance.raisedBy.some((source) => source.kind === 'stage0')) return true

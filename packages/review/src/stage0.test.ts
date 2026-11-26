@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { access, chmod, mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
-import { TEST_FAILURE_REPORT_PREFIX } from './test-failures.ts'
+import { TEST_FAILURE_REPORT_PREFIX, TEST_FAILURE_REPORT_UNAVAILABLE } from './test-failures.ts'
 import { decodeStage0Report } from './stage0-report.ts'
 import { decodeFindings } from './finding.ts'
 import { createHostProcessBackend } from './host-process-backend.ts'
@@ -44,7 +44,8 @@ if (entry.stdout) process.stdout.write(entry.stdout)
 if (entry.env) process.stdout.write(JSON.stringify(process.env))
 if (entry.signal) process.kill(process.pid, entry.signal)
 if (entry.sleepMs) setTimeout(() => process.exit(entry.exit ?? 0), entry.sleepMs)
-else process.exit(entry.exit ?? 0)
+// Not process.exit: a natural exit drains stdout into the pipe first.
+else process.exitCode = entry.exit ?? 0
 `
 
 function config(kinds: readonly string[], timeoutsMs: Record<string, number> = {}): string {
@@ -414,6 +415,11 @@ describe('runStage0', () => {
       const incomplete = report.checks.find((check) => check.verdict === 'undetermined')
       assert.ok(incomplete)
       assert.equal(incomplete.base, null, 'an incomplete head check needs no base execution')
+      // Out of time, memory or killed: another run may settle it. A checker
+      // that could not start, or exited with no diagnostic, fails the same way.
+      const exit = incomplete.head?.exitCode
+      const settles = !(exit === 127 || (incomplete.kind === 'typecheck' && exit === 1))
+      assert.equal(incomplete.transient, settles ? true : undefined)
       assert.equal(incomplete.headConfirmation, undefined)
       assert.deepEqual(report.findings, [])
       assert.match(
@@ -549,6 +555,169 @@ describe('runStage0', () => {
     assert.deepEqual(unknown.findings, [])
   })
 
+  it('compares a suite whose tests lack a tool on both sides instead of calling it unstartable', async () => {
+    // The cell has no bwrap, so the same sandbox test fails on base and head;
+    // the runner still started and reported its failures, so they are compared.
+    const output = (names: string[], notRun?: number): string =>
+      'Error: spawn bwrap ENOENT\n' +
+      TEST_FAILURE_REPORT_PREFIX +
+      JSON.stringify({
+        tier: 'unit-component',
+        complete: true,
+        failed: names.length,
+        failures: names.map((name) => ({ path: 'src/sandbox.test.ts', name })),
+        ...(notRun === undefined ? {} : { notRun }),
+      }) +
+      '\n'
+    const same = await run(
+      await scenario(
+        { test: { exit: 1, stdout: output(['wraps the command']) } },
+        { test: { exit: 1, stdout: output(['wraps the command']) } },
+        { kinds: ['test'] },
+      ),
+    )
+    assert.equal(same.checks[0]?.verdict, 'failing-on-base')
+    assert.deepEqual(same.findings, [])
+    // Tests the failed suite cancelled were accounted for, not compared: say so.
+    const cancelled = await run(
+      await scenario(
+        { test: { exit: 1, stdout: output(['wraps the command'], 9) } },
+        { test: { exit: 1, stdout: output(['wraps the command'], 9) } },
+        { kinds: ['test'] },
+      ),
+    )
+    assert.equal(cancelled.checks[0]?.verdict, 'failing-on-base')
+    assert.match(
+      cancelled.coverage.notChecked.map((note) => note.reason).join('\n'),
+      /9 test\(s\) on head did not run, because a suite above them failed/,
+    )
+    const regressed = await run(
+      await scenario(
+        { test: { exit: 1, stdout: output(['wraps the command']) } },
+        { test: { exit: 1, stdout: output(['wraps the command', 'a new regression']) } },
+        { kinds: ['test'] },
+      ),
+    )
+    assert.equal(regressed.checks[0]?.verdict, 'regressed')
+    assert.match(regressed.findings[0]?.claim ?? '', /a new regression/)
+    // The runner's detailed failure listing after the inventory can outrun the
+    // output cap on its own; the inventory still reaches the comparison.
+    const detail = 'stack frame of a failing test\n'.repeat(12_000)
+    const failing = { exit: 1, stdout: output(['wraps the command']) + detail }
+    const long = await run(
+      await scenario({ test: failing }, { test: failing }, { kinds: ['test'] }),
+    )
+    assert.equal(long.checks[0]?.verdict, 'failing-on-base')
+    assert.equal(long.checks[0].head?.outputTruncated, true)
+    assert.deepEqual(long.findings, [])
+  })
+
+  it('does not confirm a failure in a test that base never ran', async () => {
+    const output = (failures: { path?: string; name: string }[], notRun?: number): string =>
+      TEST_FAILURE_REPORT_PREFIX +
+      JSON.stringify({
+        tier: 'unit-component',
+        complete: true,
+        failed: failures.length,
+        failures: failures.map(({ path = 'src/sandbox.test.ts', name }) => ({ path, name })),
+        ...(notRun === undefined ? {} : { notRun }),
+      }) +
+      '\n'
+    // Base's suite failed in its `before` hook, so its two tests never ran;
+    // on head the hook passed and one of them failed. Head runs twice, base
+    // once: one flaky base hook was enough to report this as confirmed.
+    const baseSuiteFailed = { test: { exit: 1, stdout: output([{ name: 'sandbox' }], 2) } }
+    const hookFlaked = await run(
+      await scenario(
+        baseSuiteFailed,
+        { test: { exit: 1, stdout: output([{ name: 'sandbox > wraps the command' }]) } },
+        { kinds: ['test'] },
+      ),
+    )
+    assert.equal(hookFlaked.checks[0]?.verdict, 'undetermined')
+    assert.deepEqual(hookFlaked.findings, [])
+    assert.match(
+      hookFlaked.coverage.notChecked.map((note) => note.reason).join('\n'),
+      /1 test failure\(s\) on head are in a suite or file that failed on base before its tests ran; they were not compared/,
+    )
+    // A new failure elsewhere is still confirmed beside it.
+    const alongside = await run(
+      await scenario(
+        baseSuiteFailed,
+        {
+          test: {
+            exit: 1,
+            stdout: output([
+              { name: 'sandbox > wraps the command' },
+              { path: 'src/other.test.ts', name: 'a new regression' },
+            ]),
+          },
+        },
+        { kinds: ['test'] },
+      ),
+    )
+    assert.equal(alongside.checks[0]?.verdict, 'regressed')
+    assert.deepEqual(
+      alongside.findings.map((finding) => finding.anchor.path),
+      ['src/other.test.ts'],
+    )
+    assert.match(
+      alongside.coverage.notChecked.map((note) => note.reason).join('\n'),
+      /1 test failure\(s\) on head are in a suite or file that failed on base/,
+    )
+    // A file that failed as a whole on base (named by its path) covers every
+    // test in it, and a suite's name is only a prefix at a ` > ` boundary.
+    const fileFailed = await run(
+      await scenario(
+        { test: { exit: 1, stdout: output([{ name: 'src/sandbox.test.ts' }]) } },
+        {
+          test: {
+            exit: 1,
+            stdout: output([{ name: 'src/sandbox.test.ts > sandbox > wraps the command' }]),
+          },
+        },
+        { kinds: ['test'] },
+      ),
+    )
+    assert.equal(fileFailed.checks[0]?.verdict, 'undetermined')
+    assert.deepEqual(fileFailed.findings, [])
+    const similarName = await run(
+      await scenario(
+        baseSuiteFailed,
+        { test: { exit: 1, stdout: output([{ name: 'sandboxed > wraps the command' }]) } },
+        { kinds: ['test'] },
+      ),
+    )
+    assert.equal(similarName.checks[0]?.verdict, 'regressed')
+    assert.equal(similarName.findings.length, 1)
+  })
+
+  it('still compares a failed test run whose failure list was incomplete against base', async () => {
+    // A head that breaks a test file's import: its reporter finished but could
+    // not list every failure. That is a failed check, not an unstartable one,
+    // so base still runs and a clean base confirms the regression.
+    const incomplete = {
+      exit: 1,
+      stdout:
+        'Error: spawn ps ENOENT\n' +
+        TEST_FAILURE_REPORT_UNAVAILABLE +
+        'incomplete, cancelled, or ambiguous test results.\n',
+    }
+    const regressed = await run(await scenario({}, { test: incomplete }, { kinds: ['test'] }))
+    assert.equal(regressed.checks[0]?.verdict, 'regressed')
+    assert.equal(regressed.findings[0]?.verdict.status, 'confirmed')
+    // Failing on both sides without complete lists: undetermined, and says why.
+    const both = await run(
+      await scenario({ test: incomplete }, { test: incomplete }, { kinds: ['test'] }),
+    )
+    const [check] = both.checks
+    assert.equal(check?.verdict, 'undetermined')
+    assert.match(check.reason ?? '', /head and base reported an incomplete failure list/)
+    // Both sides fail the same way every run: running again would not settle it.
+    assert.equal(check.transient, undefined)
+    assert.deepEqual(both.findings, [])
+  })
+
   it('anchors a new type diagnostic at its line and ignores one that only moved', async () => {
     const repo = await scenario(
       { typecheck: { exit: 2, stdout: "src/a.ts(9,1): error TS2304: Cannot find name 'x'.\n" } },
@@ -608,6 +777,7 @@ describe('runStage0', () => {
     const test = report.checks.find((check) => check.kind === 'test')
     assert.ok(test)
     assert.equal(test.verdict, 'undetermined')
+    assert.equal(test.transient, true)
     assert.equal(test.head?.status, 'timed-out')
     assert.deepEqual(report.coverage.checked, ['build', 'typecheck', 'lint'])
     assert.match(

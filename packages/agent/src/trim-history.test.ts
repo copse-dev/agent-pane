@@ -8,7 +8,7 @@ import {
   repairToolUseToolResultPairing,
   CANCELLED_TOOL_RESULT,
   ESTIMATED_IMAGE_TOKENS,
-  setLastMeasuredInputTokens,
+  setLastInputMeasurement,
   effectiveConversationTokens,
   estimateConversationTokens,
   conversationTokenBudget,
@@ -17,8 +17,14 @@ import {
 } from './trim-history.ts'
 
 beforeEach(() => {
-  setLastMeasuredInputTokens(null)
+  setLastInputMeasurement(null)
 })
+
+function lastMessage(messages: readonly LLMMessage[]): LLMMessage {
+  const last = messages.at(-1)
+  assert.ok(last)
+  return last
+}
 
 // Faithful copy of the pre-#583 algorithm: it re-measures the WHOLE conversation
 // every iteration via effectiveConversationTokens. The precompute rewrite must
@@ -213,16 +219,18 @@ describe('repairToolUseToolResultPairing', () => {
 
 describe('effectiveConversationTokens', () => {
   it('uses measured input tokens when set', () => {
-    setLastMeasuredInputTokens(null)
+    setLastInputMeasurement(null)
     const messages: LLMMessage[] = [{ role: 'user', content: 'hi' }]
     assert.ok(effectiveConversationTokens(messages) < 100)
-    setLastMeasuredInputTokens(50_000)
+    const [only] = messages
+    assert.ok(only)
+    setLastInputMeasurement({ tokens: 50_000, through: only })
     assert.equal(effectiveConversationTokens(messages), 50_000)
-    setLastMeasuredInputTokens(null)
+    setLastInputMeasurement(null)
   })
 
   it('counts image blocks at flat token estimate', () => {
-    setLastMeasuredInputTokens(null)
+    setLastInputMeasurement(null)
     const messages: LLMMessage[] = [
       {
         role: 'user',
@@ -235,7 +243,7 @@ describe('effectiveConversationTokens', () => {
   })
 
   it('excludes base64 image data from estimateConversationTokens (#53)', () => {
-    setLastMeasuredInputTokens(null)
+    setLastInputMeasurement(null)
     const big = 'A'.repeat(200_000)
     const withImage: LLMMessage[] = [
       { role: 'user', content: [{ type: 'image', dataUrl: 'data:image/png;base64,' + big }] },
@@ -248,8 +256,33 @@ describe('effectiveConversationTokens', () => {
 
   it('prefers measured input tokens over the estimate for trimming (#52)', () => {
     const messages: LLMMessage[] = [{ role: 'user', content: 'short' }]
-    setLastMeasuredInputTokens(75_000)
+    const [only] = messages
+    assert.ok(only)
+    setLastInputMeasurement({ tokens: 75_000, through: only })
     assert.equal(effectiveConversationTokens(messages), 75_000)
+  })
+  it('adds the messages appended after the measured request to its measurement', () => {
+    const request: LLMMessage = { role: 'user', content: 'read the files' }
+    const reply: LLMMessage = {
+      role: 'assistant',
+      content: [{ id: 'a1', name: 'read_file', args: { path: 'big.ts' } }],
+    }
+    const results: LLMMessage = {
+      role: 'tool',
+      toolResults: [{ toolCallId: 'a1', result: 'r'.repeat(40_000) }],
+    }
+    const messages = [request, reply, results]
+    setLastInputMeasurement({ tokens: 2_000, through: request })
+    const appended = estimateConversationTokens(messages) - estimateConversationTokens([request])
+    assert.equal(effectiveConversationTokens(messages), 2_000 + appended)
+    assert.ok(effectiveConversationTokens(messages) > 12_000)
+  })
+
+  it('estimates when the measured request is no longer in the history', () => {
+    // A trim dropped it, or the measurement belongs to another loop.
+    const messages: LLMMessage[] = [{ role: 'user', content: 'short' }]
+    setLastInputMeasurement({ tokens: 75_000, through: { role: 'user', content: 'elsewhere' } })
+    assert.equal(effectiveConversationTokens(messages), estimateConversationTokens(messages))
   })
 })
 
@@ -354,19 +387,19 @@ describe('trimMessagesInPlace precompute (#583)', () => {
     // exactly as the pre-#583 code did, ignoring per-message estimates entirely.
     const withMeasured = fixtures.plainText()
     const withoutMeasured = fixtures.plainText()
-    setLastMeasuredInputTokens(500_000)
+    setLastInputMeasurement({ tokens: 500_000, through: lastMessage(withMeasured) })
     const trimmedMeasured = trimMessagesInPlace(withMeasured, 1_000, {
       reserveTokens: 0,
       completionReserveTokens: 0,
       minTailMessages: 3,
     })
-    setLastMeasuredInputTokens(500_000)
+    setLastInputMeasurement({ tokens: 500_000, through: lastMessage(withoutMeasured) })
     const refMeasured = refTrimMessagesInPlace(withoutMeasured, 1_000, {
       reserveTokens: 0,
       completionReserveTokens: 0,
       minTailMessages: 3,
     })
-    setLastMeasuredInputTokens(null)
+    setLastInputMeasurement(null)
     assert.equal(trimmedMeasured, refMeasured)
     assert.equal(JSON.stringify(withMeasured), JSON.stringify(withoutMeasured))
     // The constant measured size never shrinks, so trimming drops every droppable
@@ -390,7 +423,7 @@ describe('trimMessagesInPlace precompute (#583)', () => {
     const lengthBefore = messages.length
 
     const estimated = estimateConversationTokens(messages)
-    setLastMeasuredInputTokens(Math.round(estimated))
+    setLastInputMeasurement({ tokens: Math.round(estimated), through: lastMessage(messages) })
     // Budget ~10% under the measured size — a few pairs of headroom.
     const maxContextTokens = Math.round(estimated * 0.9)
 
@@ -399,7 +432,7 @@ describe('trimMessagesInPlace precompute (#583)', () => {
       minTailMessages: 5,
       completionReserveTokens: 0,
     })
-    setLastMeasuredInputTokens(null)
+    setLastInputMeasurement(null)
 
     assert.equal(trimmed, true)
     // The regression would have left ~minTail (5-6) messages. The fix should keep

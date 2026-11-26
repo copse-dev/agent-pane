@@ -93,6 +93,14 @@ export class OpenAIProvider implements LLMProvider {
       openRouterCache?: boolean
       /** First-party OpenAI only: send `strict: true` on tools whose schema qualifies. */
       strictTools?: boolean
+      /**
+       * How a call-scoped `toolChoice` is sent. `'named'` (the default) is
+       * OpenAI's `{ type: 'function', function: { name } }`. `'only-tool'`
+       * offers just that tool with `tool_choice: 'required'`, which forces
+       * the same call, for servers that reject the named form (LM Studio does
+       * with reasoning on, answering HTTP 400).
+       */
+      forcedToolChoice?: 'named' | 'only-tool'
     } = {},
   ) {
     this.model = model
@@ -110,6 +118,7 @@ export class OpenAIProvider implements LLMProvider {
     this.maxOutputTokens = opts.maxOutputTokens
     this.openRouterCache = opts.openRouterCache ?? false
     this.strictTools = opts.strictTools ?? false
+    this.forcedToolChoice = opts.forcedToolChoice ?? 'named'
     // Already sanitized for the selected model by the caller; empty unless the
     // user tuned this model, so an untouched request body is unchanged.
     this.tuned = openAiParameterFields(opts.params ?? {})
@@ -129,6 +138,7 @@ export class OpenAIProvider implements LLMProvider {
   private readonly cacheDiagnostics: PromptCacheDiagnostics
   private readonly openRouterCache: boolean
   private strictTools: boolean
+  private readonly forcedToolChoice: 'named' | 'only-tool'
   private readonly extraBody: Record<string, unknown> | undefined
   private readonly reasoningSuppressionBody: Record<string, unknown> | undefined
   private readonly promptCacheKey: string | undefined
@@ -200,8 +210,25 @@ export class OpenAIProvider implements LLMProvider {
         let stream
         let reportCache: ReturnType<PromptCacheDiagnostics['begin']> | undefined
         let mappedTools = buildTools()
+        const forced = options?.toolChoice?.name
+        // Only the requested tool, when the server forces a call with
+        // `required` rather than by name; unchanged when it is not offered.
+        const offered = (): WireFunctionTool[] | undefined => {
+          const only =
+            forced !== undefined && self.forcedToolChoice === 'only-tool'
+              ? mappedTools.mapped?.filter((tool) => tool.function.name === forced)
+              : undefined
+          return only?.length ? only : mappedTools.mapped
+        }
+        const toolChoice =
+          forced === undefined
+            ? undefined
+            : self.forcedToolChoice === 'only-tool' && offered()?.length === 1
+              ? ('required' as const)
+              : { type: 'function' as const, function: { name: forced } }
         for (;;) {
           try {
+            const tools = offered()
             const request = {
               model,
               stream: true as const,
@@ -209,7 +236,7 @@ export class OpenAIProvider implements LLMProvider {
                 ? markOpenRouterCacheBreakpoints(toOpenAIMessages(outbound))
                 : toOpenAIMessages(outbound),
               ...(self.includeUsage ? { stream_options: { include_usage: true } } : {}),
-              ...(mappedTools.mapped ? { tools: mappedTools.mapped } : {}),
+              ...(tools ? { tools } : {}),
               ...(self.promptCacheKey ? { prompt_cache_key: self.promptCacheKey } : {}),
               ...serviceTierBody(self.serviceTier),
               ...(ceiling === undefined ? {} : { max_tokens: ceiling }),
@@ -219,14 +246,7 @@ export class OpenAIProvider implements LLMProvider {
               ...self.tuned,
               ...(self.extraBody ?? {}),
               ...(options?.suppressReasoning ? (self.reasoningSuppressionBody ?? {}) : {}),
-              ...(options?.toolChoice
-                ? {
-                    tool_choice: {
-                      type: 'function' as const,
-                      function: { name: options.toolChoice.name },
-                    },
-                  }
-                : {}),
+              ...(toolChoice === undefined ? {} : { tool_choice: toolChoice }),
             }
             const leading = request.messages[0]
             reportCache = self.cacheDiagnostics.begin(

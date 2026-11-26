@@ -23,7 +23,7 @@ describe('hermetic bundled Cursor skills', () => {
     assert.match(build, /await assertBundledCursorSkillsSnapshot\(\)/)
     assert.match(
       build,
-      /cpSync\(BUNDLED_CURSOR_SKILLS_VENDOR_DIR, 'dist\/resources\/bundled-cursor-skills'/,
+      /await cp\(BUNDLED_CURSOR_SKILLS_VENDOR_DIR, 'dist\/resources\/bundled-cursor-skills'/,
     )
     assert.doesNotMatch(gitignore, /^vendor\/bundled-cursor-skills\/$/m)
     assert.match(prettierIgnore, /^vendor\/bundled-cursor-skills\/plugins\/$/m)

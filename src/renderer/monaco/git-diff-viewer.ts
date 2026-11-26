@@ -7,6 +7,7 @@ import {
   waitForViewModelDiff,
 } from './diff-scroll.ts'
 import type { MonacoShortcutApi, MonacoShortcutSource } from './selection-to-chat.ts'
+import type { CommentableCodeEditor } from './diff-line-comments.ts'
 import { COPSE_MONACO_THEME } from '../dom/editor-theme.ts'
 
 export interface GitDiffModel {
@@ -14,7 +15,7 @@ export interface GitDiffModel {
   getValue(): string
 }
 
-export interface GitDiffCodeEditor extends MonacoShortcutSource {
+export interface GitDiffCodeEditor extends MonacoShortcutSource, CommentableCodeEditor {
   revealLineInCenterIfOutsideViewport(line: number): void
   updateOptions(options: Monaco.editor.IEditorOptions): void
 }

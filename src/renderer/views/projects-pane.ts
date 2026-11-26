@@ -1,4 +1,5 @@
 import { openAppRunDialog } from './app-run-dialog.ts'
+import { openImportSessionsDialog } from './import-sessions-dialog.ts'
 import { createArchivedThreads } from './archived-threads.ts'
 import { showThreadArchiveToast } from './thread-archive-toast.ts'
 import { withoutSideChats } from '@shared/threads/side-chat.ts'
@@ -119,7 +120,6 @@ import {
   getCachedAutomationSchedules,
   getCachedEventAutomations,
 } from '../controller/automations.ts'
-import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
 import { maybeRenameThreadBranch } from '../controller/thread-naming.ts'
 import { flushProjectThreads, invalidateProjectThreadLoads } from '../controller/persistence.ts'
 import {
@@ -411,14 +411,14 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   // The sidebar's thread list is narrowed from two rows at its top, as in the prototype:
   // the search field with the Activity bell and "+" beside it, then the project
   // filter and the sort and grouping choice.
-  // One "+" entry point for every way to add a project. The remote action is
-  // included only while SSH workspaces are enabled.
+  // One "+" entry point for every way to add a project, remote ones included:
+  // with SSH workspaces off, opening a remote project asks to turn them on.
   const addBtn = el(
     'button',
     {
       class: 'projects-add-btn',
       'aria-label': 'Add project',
-      'data-tooltip': 'New thread, new project or open a folder',
+      'data-tooltip': 'New project, open a folder, or connect remotely',
     },
     plusIcon('ui-icon ui-icon-sm'),
   )
@@ -608,8 +608,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     el('div', { class: 'projects-settings-actions' }, settingsBtn),
   )
 
-  let sshWorkspaceEnabled = false
-
   const SORT_LABELS: Readonly<Record<ThreadSortMode, string>> = {
     activity: 'Activity order',
     created: 'Created',
@@ -781,18 +779,15 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           void addProject(store, api)
         },
       },
-      ...(sshWorkspaceEnabled
-        ? [
-            {
-              label: 'Open remote project',
-              onSelect: (): void => {
-                void addRemoteProject(store, api).catch((err: unknown) => {
-                  showErrorToast('Could not open remote folder', err)
-                })
-              },
-            },
-          ]
-        : []),
+      {
+        // Always offered: with SSH workspaces off, the dialog asks to turn them on.
+        label: 'Open remote project',
+        onSelect: (): void => {
+          void addRemoteProject(store, api).catch((err: unknown) => {
+            showErrorToast('Could not open remote folder', err)
+          })
+        },
+      },
       {
         label: 'New group',
         onSelect: (): void => {
@@ -803,20 +798,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       },
     ])
   })
-
-  const syncRemoteOpenAvailability = (): void => {
-    void isSshWorkspaceEnabled(api).then((enabled) => {
-      sshWorkspaceEnabled = enabled
-      addBtn.setAttribute(
-        'data-tooltip',
-        enabled
-          ? 'New project, open a folder, or connect remotely'
-          : 'New project or open a folder',
-      )
-    })
-  }
-  syncRemoteOpenAvailability()
-  store.on('settings_changed', syncRemoteOpenAvailability)
 
   const visibleThreadCounts = new Map<string, number>()
   const prBackfillRequested = new Map<string, Set<string>>()
@@ -2517,6 +2498,31 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             void removeProject(store, api, project.id)
           },
         },
+        // Saved sessions live on this computer, so a remote project has none to offer.
+        ...(project.missing || project.sshHost
+          ? []
+          : [
+              {
+                label: 'Import sessions…',
+                onSelect: (): void => {
+                  const open = (): void => {
+                    if (store.getState().activeProjectId === project.id) {
+                      openImportSessionsDialog(store, api, {
+                        id: project.id,
+                        name: projectDisplayName(project),
+                      })
+                    }
+                  }
+                  if (store.getState().activeProjectId === project.id) {
+                    open()
+                    return
+                  }
+                  void switchProjectAndWait(store, api, project.id)
+                    .then(open)
+                    .catch(() => undefined)
+                },
+              },
+            ]),
         ...groupMenuEntries(project, projectGroups),
       ]
       projectRow.addEventListener('contextmenu', (e) => {

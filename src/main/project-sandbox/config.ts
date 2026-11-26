@@ -1124,6 +1124,13 @@ export function acpAgentSandboxOverlay(
      * nothing in it becomes writable.
      */
     executables?: readonly string[]
+    /**
+     * The stdio relay an agent without http MCP spawns to reach the native-tool
+     * bridge (`acp-bridge-stdio-relay.ts`). The agent runs it under Copse's own
+     * executable, so the Electron runtime and the relay script become readable,
+     * nothing writable. Only meaningful together with `allowLocalhost`.
+     */
+    nativeToolRelay?: { scriptPath: string }
   },
 ): Partial<SandboxRuntimeConfig> {
   const overlay = acpAgentSandboxOverlayWithCheckoutWrites(workspaceRoot, sandbox, opts)
@@ -1139,6 +1146,7 @@ function acpAgentSandboxOverlayWithCheckoutWrites(
         chatReadRoots?: readonly string[]
         stateDirs?: readonly string[]
         executables?: readonly string[]
+        nativeToolRelay?: { scriptPath: string }
       }
     | undefined,
 ): Partial<SandboxRuntimeConfig> {
@@ -1193,7 +1201,22 @@ function acpAgentSandboxOverlayWithCheckoutWrites(
         return []
       }
     })
-  const homeReadPaths = [...keychainReadPaths, ...configuredHomePaths, ...executables]
+  // The relay's script and the `package.json` beside it, which stops Node's
+  // ancestor walk inside the grant (see `StandaloneMainBundle.manifest`).
+  const relayReadPaths =
+    opts?.allowLocalhost === true && opts.nativeToolRelay
+      ? [
+          ...electronRuntimeAllowReadPaths(),
+          opts.nativeToolRelay.scriptPath,
+          join(dirname(opts.nativeToolRelay.scriptPath), 'package.json'),
+        ]
+      : []
+  const homeReadPaths = [
+    ...keychainReadPaths,
+    ...configuredHomePaths,
+    ...executables,
+    ...relayReadPaths,
+  ]
   const localDomains = opts?.allowLocalhost ? ['localhost', '127.0.0.1', '::1'] : []
   return {
     ...base,
