@@ -26,7 +26,7 @@ function pathCandidates(token: string): string[] {
 }
 
 /** The secret file a token names, if any: `.env`, `./config/prod.env.local`, `@id_rsa`. */
-function secretFileName(token: string): string | null {
+export function secretFileName(token: string): string | null {
   for (const candidate of pathCandidates(token)) {
     if (!candidate || candidate.includes('://')) continue
     const name = basename(candidate.replace(/[\\/]+$/, ''))

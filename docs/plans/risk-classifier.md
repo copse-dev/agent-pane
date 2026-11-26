@@ -143,6 +143,39 @@ nobody wrote a rule for.
    A prompt that is always approved trains the person to approve without reading, which is the
    failure the must-ask rules exist to prevent.
 
+## Red team: disguised must-ask commands
+
+Eight real misses are too few to trust zero. `redteam_gen.py` writes 868 synthetic must-ask
+commands: 85 base commands over 11 families (secret loading and reading, release signing and entry
+points, tag publishing, credential overrides, remote shells, system and process control, download
+and run, destructive, exfiltration), each behind up to ten disguises (`bash -c`, `sh -lc`, `env`,
+`nohup`, `timeout`, `fnm exec`, a `cd` chain, after a build, inside a multi-line script).
+
+| Harm gate   | Must-ask variants it runs unasked |
+| ----------- | --------------------------------: |
+| main        |                   334 / 868 (38%) |
+| this change |                           0 / 868 |
+
+This change closes four more families the red team found (a secret fed through `<`, a secret
+copied elsewhere, `GIT_ASKPASS`/`core.sshCommand`, `ssh-add` that changes identities, and `env`
+behind another wrapper), with no new prompt on the three machines' real history. The red team was
+written by the same hand as the rules, so zero here is a floor on effort, not proof.
+
+**Is more data the limit for a learned veto?** Leave one red-team family out and train TF-IDF on
+public data, the other families (gate misses weighted up) and Studio non-`ask` commands: it catches
+84% of the held-out family's gate misses at P(ask) ≥ 0.5 for about 1% more MacBook prompts (93% at
+0.3). Gradient-boosted trees catch 61%. But synthetic families share a writer's style. On the real
+test (trained on public data, the plain red-team variants and MacBook negatives, nothing from the
+Studio), TF-IDF catches 4 of the Studio's 8 real misses for 3% more Studio prompts, or 5 for 9%;
+the trees catch none. More, better-targeted data helps the text model a lot on synthetic families
+and only partly on real ones. Deterministic rules stay the floor; a data-fed text veto is a
+partial net on top.
+
+**Code mode** (Codex's orchestration cells) already removes the prompt per cell when Codex runs in
+the project sandbox. It does not change the prompts measured here: 99% of the Studio's shell
+prompts came from Codex sessions, and they are the concrete commands inside those cells, which
+still pass the shell gate.
+
 ## Design: a blend, each layer with one job
 
 ```mermaid

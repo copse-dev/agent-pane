@@ -1,5 +1,5 @@
-import { commandName } from './shell-argv.ts'
-import { secretFilesIn } from './secrets.ts'
+import { commandName, shellInputRedirects } from './shell-argv.ts'
+import { secretFileName, secretFilesIn } from './secrets.ts'
 
 /**
  * Release work that a person must see: loading a secret file into the shell,
@@ -141,8 +141,8 @@ function gitWords(argv: readonly string[]): { config: string[]; words: string[] 
 function gitReleaseReasons(argv: readonly string[]): string[] {
   const { config, words } = gitWords(argv)
   const reasons: string[] = []
-  if (config.some((setting) => /^credential\./i.test(setting))) {
-    reasons.push("overrides git's credential helper for this command")
+  if (config.some((setting) => /^(?:credential\.|core\.(?:sshCommand|askPass)=)/i.test(setting))) {
+    reasons.push("overrides git's credentials or SSH command for this command")
   }
   const [subcommand = '', ...rest] = words
   if (subcommand === 'push') {
@@ -175,6 +175,37 @@ const SHELL_KEYWORDS = new Set([
   '(',
 ])
 
+/**
+ * Programs that copy a file somewhere else: a secret file copied is a secret exposed there. For
+ * these the last operand is the destination, so `cp .env.example .env` (making one) is fine.
+ */
+const COPIERS = new Set(['cp', 'mv', 'ditto', 'rsync', 'scp', 'install', 'ln'])
+/** Archivers read every operand they are given. */
+const ARCHIVERS = new Set(['tar', 'zip', '7z'])
+
+/** Variables that hand git or ssh a program to fetch credentials or open the connection. */
+const CREDENTIAL_PROGRAM_VARIABLES =
+  /(?:^|[\s;&|(])(?:GIT_ASKPASS|SSH_ASKPASS|GIT_SSH|GIT_SSH_COMMAND)=/
+
+/**
+ * Command-line reasons no single argv shows: a secret file fed in through `<`
+ * (`base64 < .env`, `while read l; do export "$l"; done < .env`), and a credential
+ * program chosen through the environment (`GIT_ASKPASS=/tmp/x git push`), which
+ * `unwrapWrappers` strips as an assignment before any argv rule sees it.
+ */
+export function releaseCommandReasons(command: string): string[] {
+  const reasons: string[] = []
+  const fed = shellInputRedirects(command)
+    .map((target) => secretFileName(target))
+    .filter((name) => name !== null)
+  if (fed.length > 0)
+    reasons.push(`reads a secret file through a redirect (${[...new Set(fed)].join(', ')})`)
+  if (CREDENTIAL_PROGRAM_VARIABLES.test(command)) {
+    reasons.push('chooses the program git or ssh uses for credentials')
+  }
+  return reasons
+}
+
 /** Why one unwrapped argv is release work a person must see; empty when it is not. */
 export function releaseActionReasons(segment: readonly string[]): string[] {
   // `if . ./.env; then` reaches here as one segment headed by the keyword.
@@ -186,6 +217,15 @@ export function releaseActionReasons(segment: readonly string[]): string[] {
   if (head === '.' || head === 'source') {
     const names = secretFilesIn(argv)
     if (names.length > 0) reasons.push(`loads a secret file into the shell (${names.join(', ')})`)
+  }
+  if (COPIERS.has(head) || ARCHIVERS.has(head)) {
+    const operands = argv.slice(1).filter((arg) => !arg.startsWith('-'))
+    const sources = COPIERS.has(head) ? operands.slice(0, -1) : operands
+    const names = secretFilesIn(['', ...sources])
+    if (names.length > 0) reasons.push(`copies a secret file (${names.join(', ')})`)
+  }
+  if (head === 'ssh-add' && !argv.slice(1).every((arg) => /^-[lL]+$/.test(arg))) {
+    reasons.push("changes the SSH agent's identities (ssh-add)")
   }
   const entryPoint = releaseEntryPoint(head, argv)
   if (entryPoint) reasons.push(entryPoint)

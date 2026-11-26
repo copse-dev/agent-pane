@@ -1388,8 +1388,11 @@ While active:
     starts with `ship`, `release`, `publish`, `deploy`, `notarize` or `upload`
     (`make ship-release`, `npm run release:mac`; `make -n`/`--dry-run` runs), pushing a tag
     (`refs/tags/…`, a version-shaped ref such as `v1.7.0`, `--tags`, `--follow-tags`), moving one
-    (`git tag --force`), and a `git -c credential.*` override. A replay of real history found each
-    of these allowed unsandboxed;
+    (`git tag --force`), a `git -c credential.*`, `core.sshCommand` or `core.askPass` override, a
+    `GIT_ASKPASS`/`SSH_ASKPASS`/`GIT_SSH`/`GIT_SSH_COMMAND` assignment, a secret file fed through `<` or
+    copied (`cp .env /tmp/e`; making `.env` from `.env.example` runs), `ssh-add` other than `-l`/`-L`,
+    and `env` behind another wrapper (`nohup env`). Replays of real history and a red-team set found
+    each of these allowed unsandboxed;
   - `find` deletions rooted outside the workspace (`find /x -exec rm {} +`,
     `find /x | xargs rm`), and `git filter-repo`.
 - Credential reads stay hard-denied when a redirect such as `2>&1` follows them and when the gate
