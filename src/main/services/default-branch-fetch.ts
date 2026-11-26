@@ -184,7 +184,9 @@ async function fetchThroughScratchRepositoryOnce(
     }
     // A shallow project lacks its seeds' ancestors. Sharing its shallow
     // boundary tells the remote so, instead of a thin pack whose delta bases
-    // the scratch cannot resolve.
+    // the scratch cannot resolve. The scratch is then itself shallow, so the
+    // project-side copy below reads from a shallow repository; Git handles
+    // that, and dropping this copy brings back the failing fetch.
     await copyFile(join(gitDir, 'shallow'), join(scratch, 'shallow')).catch((error: unknown) => {
       if (!(error instanceof Error && Reflect.get(error, 'code') === 'ENOENT')) throw error
     })
