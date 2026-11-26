@@ -18,6 +18,7 @@ import argparse
 import json
 import random
 import sys
+import time
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -94,8 +95,9 @@ class EncoderModel:
 
     name = "encoder"
 
-    def __init__(self, checkpoint: str, epochs: int, max_len: int, seed: int):
+    def __init__(self, checkpoint: str, epochs: int, max_len: int, seed: int, device: str = "cpu"):
         self.checkpoint, self.epochs, self.max_len, self.seed = checkpoint, epochs, max_len, seed
+        self.device = device
 
     def fit(self, tiered: list[dict], risk: list[dict]) -> "EncoderModel":
         import torch
@@ -121,13 +123,13 @@ class EncoderModel:
                 h = self.drop(h)
                 return self.tier(h), self.ask(h).squeeze(-1)
 
-        self.net = Net()
+        self.net = Net().to(self.device)
         rows = tiered * 3 + risk  # tiered rows are scarcer and carry both labels
         random.Random(self.seed).shuffle(rows)
         tier_counts = Counter(r["tier"] for r in tiered)
-        tier_weight = torch.tensor([len(tiered) / (len(TIERS) * max(1, tier_counts[t])) for t in TIERS], dtype=torch.float)
+        tier_weight = torch.tensor([len(tiered) / (len(TIERS) * max(1, tier_counts[t])) for t in TIERS], dtype=torch.float).to(self.device)
         pos = sum(1 for r in rows if r["risky"])
-        ask_pos_weight = torch.tensor((len(rows) - pos) / max(1, pos))
+        ask_pos_weight = torch.tensor((len(rows) - pos) / max(1, pos)).to(self.device)
         opt = torch.optim.AdamW(self.net.parameters(), lr=3e-5, weight_decay=0.01)
         batch = 32
         steps = self.epochs * ((len(rows) + batch - 1) // batch)
@@ -140,11 +142,11 @@ class EncoderModel:
             random.Random(self.seed + epoch).shuffle(rows)
             for i in range(0, len(rows), batch):
                 chunk = rows[i : i + batch]
-                enc = self.tok([r["text"] for r in chunk], truncation=True, max_length=self.max_len, padding=True, return_tensors="pt")
+                enc = self.tok([r["text"] for r in chunk], truncation=True, max_length=self.max_len, padding=True, return_tensors="pt").to(self.device)
                 tier_logits, ask_logits = self.net(**enc)
-                has_tier = torch.tensor([r.get("tier") is not None for r in chunk])
-                tier_y = torch.tensor([TIERS.index(r["tier"]) if r.get("tier") else 0 for r in chunk])
-                ask_y = torch.tensor([1.0 if r["risky"] else 0.0 for r in chunk])
+                has_tier = torch.tensor([r.get("tier") is not None for r in chunk], device=self.device)
+                tier_y = torch.tensor([TIERS.index(r["tier"]) if r.get("tier") else 0 for r in chunk], device=self.device)
+                ask_y = torch.tensor([1.0 if r["risky"] else 0.0 for r in chunk], device=self.device)
                 loss = bce(ask_logits, ask_y)
                 if has_tier.any():
                     loss = loss + (ce(tier_logits, tier_y) * has_tier).sum() / has_tier.sum()
@@ -164,14 +166,75 @@ class EncoderModel:
         out = []
         with torch.no_grad():
             for i in range(0, len(texts), 64):
-                enc = self.tok(texts[i : i + 64], truncation=True, max_length=self.max_len, padding=True, return_tensors="pt")
+                enc = self.tok(texts[i : i + 64], truncation=True, max_length=self.max_len, padding=True, return_tensors="pt").to(self.device)
                 tier_logits, ask_logits = self.net(**enc)
-                tier_p = torch.softmax(tier_logits, -1).numpy()
-                ask_p = torch.sigmoid(ask_logits).numpy()
+                tier_p = torch.softmax(tier_logits, -1).cpu().numpy()
+                ask_p = torch.sigmoid(ask_logits).cpu().numpy()
                 for row, p_ask in zip(tier_p, ask_p):
                     probs = dict(zip(TIERS, row.tolist()))
                     out.append({"tier": TIERS[int(row.argmax())], "probs": probs, "p_ask": float(max(p_ask, probs["ask"]))})
         return out
+
+
+# Structured signals for the tree model: the product's own verdicts plus what the command does.
+FEATURE_PATTERNS = {
+    "network": r"\b(curl|wget|ssh|scp|rsync|nc|gh|git (push|fetch|pull|clone)|npm (publish|install)|pip install)\b",
+    "remote_shell": r"\b(ssh|scp|sftp|mosh)\b",
+    "delete": r"\brm\s+-\S*[rf]|\bfind\b[^\n]*-delete|\bgit (reset --hard|clean -f)",
+    "privilege": r"\b(sudo|doas|su -|launchctl|osascript|screencapture|pkill|killall|security)\b",
+    "secret": r"(?<![\w])\.env\b|id_(rsa|ed25519)|\.ssh\b|TOKEN|SECRET|PRIVATE_KEY|PASSWORD|keychain",
+    "publish": r"\b(publish|release|deploy|ship)\b|refs/tags|--tags",
+    "interpreter_inline": r"\b(python3?|node|ruby|perl|bash|sh|zsh)\s+(-c|-e|--eval|-)\b|<<",
+    "pipe_to_shell": r"\|\s*(sudo\s+)?(ba|z)?sh\b",
+    "substitution": r"\$\(|`",
+    "home_path": r"(^|[\s\"'=])(~|\$HOME)",
+    "abs_outside": r"(^|[\s\"'=])/(?!dev/null)(etc|usr|opt|Applications|Library|tmp|private|var)\b",
+    "tmp": r"/tmp\b|\$TMPDIR|mktemp",
+    "redirect_write": r"[^2&]>\s*[^&\s]",
+    "package_install": r"\b(npm (i|install|ci)|pnpm (i|install|add)|yarn add|pip3? install|brew install|cargo install)\b",
+    "build_test": r"\b(test|build|check|lint|typecheck|tsc|cargo (build|check|test)|make|swift (build|test))\b",
+    "git_local": r"\bgit (status|log|diff|show|add|commit|checkout|switch|branch|stash|rev-parse)\b",
+    "toolchain": r"\b(corepack|fnm|nvm|rustup|xcrun|DEVELOPER_DIR)\b",
+    "read_only": r"^\s*(ls|cat|head|tail|grep|rg|sed -n|wc|find|git (status|log|diff|show))\b",
+}
+
+
+def structured_features(row: dict) -> list[float]:
+    import re
+
+    text = row.get("raw") or row["text"]
+    feats = [1.0 if re.search(p, text) else 0.0 for p in FEATURE_PATTERNS.values()]
+    segments = [s for s in re.split(r"&&|\|\||;|\n|\|", text) if s.strip()]
+    feats += [len(segments), min(len(text), 4000) / 100.0]
+    feats += [1.0 if row.get("harm") == v else 0.0 for v in ("allow", "prompt", "deny")]
+    feats += [1.0 if row.get("scope") == v else 0.0 for v in ("sandbox", "ambiguous", "external")]
+    feats += [1.0 if row.get("auto") == v else 0.0 for v in ("read", "local-write", "remote-write")]
+    return feats
+
+
+class TreeModel:
+    """Gradient-boosted trees over structured signals (product verdicts and command shape), not
+    raw text. Only tiered rows carry the product verdicts, so the public risk sets are not used."""
+
+    name = "gbdt"
+
+    def fit(self, tiered: list[dict], risk: list[dict]) -> "TreeModel":
+        from sklearn.ensemble import HistGradientBoostingClassifier
+
+        x = [structured_features(r) for r in tiered]
+        self.tier = HistGradientBoostingClassifier(max_iter=300, learning_rate=0.05, class_weight="balanced", random_state=7).fit(x, [r["tier"] for r in tiered])
+        self.ask = HistGradientBoostingClassifier(max_iter=300, learning_rate=0.05, class_weight="balanced", random_state=7).fit(x, [r["tier"] == "ask" for r in tiered])
+        return self
+
+    def predict_rows(self, rows: list[dict]) -> list[dict]:
+        x = [structured_features(r) for r in rows]
+        tier_p = self.tier.predict_proba(x)
+        ask_p = self.ask.predict_proba(x)[:, list(self.ask.classes_).index(True)]
+        classes = list(self.tier.classes_)
+        return [
+            {"tier": classes[int(t.argmax())], "probs": dict(zip(classes, t)), "p_ask": float(max(a, dict(zip(classes, t)).get("ask", 0.0)))}
+            for t, a in zip(tier_p, ask_p)
+        ]
 
 
 # ----------------------------------------------------------------------------- policies
@@ -229,6 +292,7 @@ def main(argv=None):
     ap.add_argument("--max-len", type=int, default=160)
     ap.add_argument("--hf-sample", type=int, default=12000)
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--device", default="cpu", help="cpu, or mps for the Apple GPU (host runs only)")
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
@@ -270,16 +334,25 @@ def main(argv=None):
     report = {"train": {"tiered": len(tiered_train), "risk": len(risk_train), "train_private": args.train_private}, "sets": {}}
     models = []
     for name in args.models.split(","):
+        started = time.monotonic()
         if name == "tfidf":
             models.append(TfidfModel().fit(tiered_train, risk_train))
+        elif name == "encoder-mlx":
+            from mlx_encoder import MlxEncoderModel
+
+            models.append(MlxEncoderModel(args.encoder, args.epochs, args.max_len, args.seed).fit(tiered_train, risk_train))
+        elif name == "gbdt":
+            models.append(TreeModel().fit(tiered_train, risk_train))
         elif name == "encoder":
-            models.append(EncoderModel(args.encoder, args.epochs, args.max_len, args.seed).fit(tiered_train, risk_train))
-        print(f"trained {name}", flush=True)
+            models.append(EncoderModel(args.encoder, args.epochs, args.max_len, args.seed, args.device).fit(tiered_train, risk_train))
+        print(f"trained {name} in {time.monotonic() - started:.0f}s", flush=True)
 
     for set_name, rows in eval_sets.items():
         entry = {"rows": len(rows), "policies": {}, "models": {}}
         if set_name.startswith("agent-approve"):
             for model in models:
+                if hasattr(model, "predict_rows"):
+                    continue  # no product verdicts on these rows
                 preds = model.predict([r["text"] for r in rows])
                 from sklearn.metrics import roc_auc_score
 
@@ -293,7 +366,7 @@ def main(argv=None):
             entry["policies"][f"harm gate | {mode}"] = score(rows, none, mode, 1.0, False)
             entry["policies"][f"harm gate + rules | {mode}"] = score(rows, none, mode, 1.0, True)
         for model in models:
-            preds = model.predict([r["text"] for r in rows])
+            preds = model.predict_rows(rows) if hasattr(model, "predict_rows") else model.predict([r["text"] for r in rows])
             entry["models"][model.name] = tier_metrics(rows, preds)
             for mode in MODES:
                 for threshold in THRESHOLDS:
