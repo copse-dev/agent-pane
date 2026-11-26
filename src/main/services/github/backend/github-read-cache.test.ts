@@ -63,6 +63,8 @@ function emptyBackend(calls: { status: number; details: number; approve: number 
     },
     markPrReady: async () => ok,
     enableAutoMerge: async () => ok,
+    replyToReviewThread: async () => ok,
+    setReviewThreadResolved: async () => ok,
   }
 }
 

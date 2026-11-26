@@ -6,6 +6,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { safeJsonParse, decodeWithSchema } from '../../src/shared/safe-json.ts'
 import { copseUserDataDir } from '../../src/main/services/storage/copse-paths.ts'
 import { parseSpineEntries } from '@copse/thread-store/spine-schema.ts'
+import { clickReplaceable } from './helpers/replaceable-click.ts'
 import {
   e2eWorkspaceDir,
   resetUserData,
@@ -93,11 +94,40 @@ function threadDirectories(): string[] {
     .sort()
 }
 
+async function selectedThreadId(): Promise<string | null> {
+  return browser.execute(
+    () => document.querySelector<HTMLElement>('.chat-row.selected')?.dataset['threadId'] ?? null,
+  )
+}
+
+// The sidebar rebuilds every row on any thread change, and a click that lands
+// while a row is being replaced reaches a detached node and selects nothing.
+// Repeat the click on the current row until the selection moves, so a redraw
+// costs one more click rather than the test.
+async function clickUntilSelected(threadId: string, click: () => Promise<void>): Promise<void> {
+  const deadline = Date.now() + 30_000
+  for (;;) {
+    await click()
+    const selected = await browser
+      .waitUntil(async () => (await selectedThreadId()) === threadId, { timeout: 5_000 })
+      .then(
+        () => true,
+        () => false,
+      )
+    if (selected) return
+    if (Date.now() >= deadline)
+      throw new Error(
+        `Clicking the ${threadId} row left ${String(await selectedThreadId())} selected`,
+      )
+  }
+}
+
 async function selectThread(threadId: string): Promise<void> {
-  const row = $(`.chat-row[data-thread-id="${threadId}"]`)
-  await row.waitForDisplayed({ timeout: 30_000 })
-  await row.click()
-  await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', threadId)
+  const row = `.chat-row[data-thread-id="${threadId}"]`
+  await $(row).waitForDisplayed({ timeout: 30_000 })
+  await clickUntilSelected(threadId, () =>
+    clickReplaceable(row, `The ${threadId} row stayed stale`),
+  )
 }
 
 async function mainPid(): Promise<number> {
@@ -541,38 +571,44 @@ describe('persistent subthread recovery and revocation', function () {
     // Click the current visible title with native pointer input, without a
     // captured WebDriver element ID that can survive a sidebar row replacement.
     await $(`.chat-row[data-thread-id="${buildId}"]`).waitForDisplayed({ timeout: 30_000 })
-    const buildTitlePoint = await browser.execute((id) => {
-      const row = [...document.querySelectorAll<HTMLElement>('.chat-row')].find(
-        (entry) => entry.dataset['threadId'] === id,
-      )
-      const title = row?.querySelector<HTMLElement>('.chat-title')
-      if (!row || !title || row.closest('[inert]') || row.getAttribute('aria-disabled') === 'true')
-        throw new Error('The build thread row is unavailable or disabled')
-      const rect = title.getBoundingClientRect()
-      const left = Math.max(0, rect.left)
-      const top = Math.max(0, rect.top)
-      const right = Math.min(innerWidth, rect.right)
-      const bottom = Math.min(innerHeight, rect.bottom)
-      if (right <= left || bottom <= top)
-        throw new Error('The build thread title is outside the viewport')
-      const x = Math.floor((left + right) / 2)
-      const y = Math.floor((top + bottom) / 2)
-      const hit = document.elementFromPoint(x, y)
-      if (
-        !hit ||
-        hit.closest('.chat-row') !== row ||
-        hit.closest('button, a, input, textarea, select, [role="button"]')
-      )
-        throw new Error('The build thread title is covered or contains another control')
-      return { x, y }
-    }, buildId)
-    await browser
-      .action('pointer', { parameters: { pointerType: 'mouse' } })
-      .move({ duration: 0, origin: 'viewport', ...buildTitlePoint })
-      .down({ button: 0 })
-      .up({ button: 0 })
-      .perform()
-    await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', buildId)
+    await clickUntilSelected(buildId, async () => {
+      const buildTitlePoint = await browser.execute((id) => {
+        const row = [...document.querySelectorAll<HTMLElement>('.chat-row')].find(
+          (entry) => entry.dataset['threadId'] === id,
+        )
+        const title = row?.querySelector<HTMLElement>('.chat-title')
+        if (
+          !row ||
+          !title ||
+          row.closest('[inert]') ||
+          row.getAttribute('aria-disabled') === 'true'
+        )
+          throw new Error('The build thread row is unavailable or disabled')
+        const rect = title.getBoundingClientRect()
+        const left = Math.max(0, rect.left)
+        const top = Math.max(0, rect.top)
+        const right = Math.min(innerWidth, rect.right)
+        const bottom = Math.min(innerHeight, rect.bottom)
+        if (right <= left || bottom <= top)
+          throw new Error('The build thread title is outside the viewport')
+        const x = Math.floor((left + right) / 2)
+        const y = Math.floor((top + bottom) / 2)
+        const hit = document.elementFromPoint(x, y)
+        if (
+          !hit ||
+          hit.closest('.chat-row') !== row ||
+          hit.closest('button, a, input, textarea, select, [role="button"]')
+        )
+          throw new Error('The build thread title is covered or contains another control')
+        return { x, y }
+      }, buildId)
+      await browser
+        .action('pointer', { parameters: { pointerType: 'mouse' } })
+        .move({ duration: 0, origin: 'viewport', ...buildTitlePoint })
+        .down({ button: 0 })
+        .up({ button: 0 })
+        .perform()
+    })
     await expect($('.conversation-queued .message-text')).toHaveText(QUEUED)
     await $('.conversation-queued .queued-edit').click()
     await expect($('.conversation-queued textarea')).toHaveValue(QUEUED)
