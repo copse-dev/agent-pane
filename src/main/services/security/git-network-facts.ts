@@ -1,6 +1,7 @@
 import { readFileSync, realpathSync, statSync } from 'node:fs'
 import { isAbsolute, join, resolve, sep } from 'node:path'
 import { resolveGitCommonDir, resolveGitDirs } from './git-remotes.ts'
+import { pinnedRemotes, pinRemotes } from './remote-pins.ts'
 
 /**
  * What a per-command network scope needs to know about the repository a contained
@@ -35,7 +36,19 @@ export interface RepoNetworkFacts {
   unsafeConfig: readonly string[]
   /** `core.hooksPath` is relative or inside the workspace, where contained commands write. */
   workspaceHooks: boolean
+  /**
+   * Configured remotes a scope may not use, with the reason: their URLs differ
+   * from the ones recorded outside the sandbox ({@link vouchForRemotes}).
+   */
+  unvouchedRemotes?: ReadonlyMap<string, string>
 }
+
+/** Forges whose remotes may be recorded on first sight, before the user re-trusts the workspace. */
+const WELL_KNOWN_FORGES: ReadonlySet<string> = new Set([
+  'github.com',
+  'gitlab.com',
+  'bitbucket.org',
+])
 
 interface ConfigEntry {
   /** Lower-cased `section.subsection.key`, subsection case kept as git does. */
@@ -127,6 +140,12 @@ function unsafeEntry(entry: ConfigEntry): string | null {
   }
   if (section === 'gpg' && name === 'program') return 'gpg program configured'
   if (section === 'protocol' && name === 'allow') return 'protocol allow-list changed'
+  // Neither can leave the scope's allowlist, but both make the host the plan
+  // names differ from the host git actually contacts.
+  if (section === 'url' && (name === 'insteadof' || name === 'pushinsteadof')) {
+    return 'url rewrite configured'
+  }
+  if (section === 'http' && name === 'proxy') return 'http.proxy configured'
   if (section === 'remote' && ['uploadpack', 'receivepack', 'vcs', 'proxy'].includes(name)) {
     return `remote.${name} names a program or proxy`
   }
@@ -139,6 +158,66 @@ function unsafeEntry(entry: ConfigEntry): string | null {
   if (section === 'merge' && name === 'driver') return 'merge driver configured'
   if (section === 'sequence' && name === 'editor') return 'sequence.editor names a program'
   return null
+}
+
+function urlHost(url: string | null): string | null {
+  if (url === null) return null
+  const match =
+    /^(?:https|ssh|git\+ssh|ssh\+git):\/\/(?:[^@/\s]+@)?([^/:\s]+)/i.exec(url.trim()) ??
+    /^[A-Za-z0-9._-]+@([A-Za-z0-9.-]+):(?!\/\/)/.exec(url.trim())
+  return match?.[1]?.toLowerCase() ?? null
+}
+
+function sameUrls(a: RemoteUrls, b: RemoteUrls): boolean {
+  return a.url === b.url && a.pushUrl === b.pushUrl
+}
+
+/**
+ * Keep only the remotes whose URLs match the record kept outside the sandbox
+ * (`remote-pins.ts`). With no record yet, the well-known-forge remotes are
+ * recorded now and every other one is left out until the workspace is trusted
+ * again, since the config may already carry a contained command's edits.
+ */
+export function vouchForRemotes(facts: RepoNetworkFacts, commonDir: string): RepoNetworkFacts {
+  let pins = pinnedRemotes(commonDir)
+  if (pins === null) {
+    const firstSight = new Map(
+      [...facts.remotes].filter(([, urls]) =>
+        [urls.url, urls.pushUrl].every((url) => {
+          const host = urlHost(url)
+          return url === null || (host !== null && WELL_KNOWN_FORGES.has(host))
+        }),
+      ),
+    )
+    pinRemotes(commonDir, firstSight)
+    pins = firstSight
+  }
+  const remotes = new Map<string, RemoteUrls>()
+  const unvouched = new Map<string, string>()
+  for (const [name, urls] of facts.remotes) {
+    const pinned = pins.get(name)
+    if (pinned && sameUrls(pinned, urls)) remotes.set(name, urls)
+    else
+      unvouched.set(
+        name,
+        pinned
+          ? `remote ${name} changed since the workspace was trusted`
+          : `remote ${name} was not recorded when the workspace was trusted`,
+      )
+  }
+  return { ...facts, remotes, unvouchedRemotes: unvouched }
+}
+
+/**
+ * Record the remotes of the repository at `root` as the user trusts it. Called
+ * from `setWorkspaceTrusted`; a root that is not a repository records nothing.
+ */
+export function pinRemotesAtTrust(root: string): void {
+  const dirs = resolveGitDirs(root)
+  if (!dirs) return
+  const shared = readSmallFile(join(dirs.commonDir, 'config'))
+  if (shared === null) return
+  pinRemotes(canonical(dirs.commonDir), repoNetworkFactsFromConfig(shared, [root]).remotes)
 }
 
 function isWithin(path: string, root: string): boolean {
@@ -255,7 +334,10 @@ export function readRepoNetworkFacts(
       ...(projectRoot ? [projectRoot, canonical(projectRoot)] : []),
     ]),
   ]
-  const facts = repoNetworkFactsFromConfig(texts.join('\n'), roots)
+  const facts = vouchForRemotes(
+    repoNetworkFactsFromConfig(texts.join('\n'), roots),
+    canonical(commonDir),
+  )
   return unprotectedLayer
     ? {
         ...facts,

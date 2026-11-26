@@ -6,9 +6,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   parseGitConfig,
+  pinRemotesAtTrust,
   readRepoNetworkFacts,
   repoNetworkFactsFromConfig,
 } from './git-network-facts.ts'
+import { planScopedNetwork } from './network-scoped-shell.ts'
 
 describe('parseGitConfig', () => {
   it('reads sections, subsections, quoting and comments', () => {
@@ -48,6 +50,19 @@ describe('repoNetworkFactsFromConfig', () => {
       repoNetworkFactsFromConfig('[core]\n\thooksPath = /h/hooks\n', ['/w']).workspaceHooks,
       false,
     )
+  })
+})
+
+describe('repoNetworkFactsFromConfig unsafe rewrites', () => {
+  it('flags url rewrites and an http proxy', () => {
+    for (const extra of [
+      '[url "https://evil.example/"]\n\tinsteadOf = https://github.com/\n',
+      '[url "https://evil.example/"]\n\tpushInsteadOf = https://github.com/\n',
+      '[http]\n\tproxy = http://evil.example:8080\n',
+      '[http "https://github.com"]\n\tproxy = http://evil.example:8080\n',
+    ]) {
+      assert.notDeepEqual(repoNetworkFactsFromConfig(extra, ['/w']).unsafeConfig, [], extra)
+    }
   })
 })
 
@@ -131,6 +146,64 @@ describe('readRepoNetworkFacts', () => {
       assert.deepEqual(readRepoNetworkFacts(worktree, repo, join(fixture, 'other'))?.unsafeConfig, [
         'per-worktree config is not write-protected',
       ])
+    } finally {
+      rmSync(fixture, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('remote URLs recorded outside the sandbox', () => {
+  const git = (cwd: string, args: string[]): void => {
+    execFileSync('git', args, { cwd, stdio: 'pipe' })
+  }
+  function repoWith(url: string): { fixture: string; repo: string } {
+    const fixture = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-remote-pins-')))
+    const repo = join(fixture, 'repo')
+    mkdirSync(repo)
+    git(repo, ['init', '-q'])
+    git(repo, ['remote', 'add', 'origin', url])
+    return { fixture, repo }
+  }
+
+  it('refuses a remote a contained command re-pointed after it was recorded', () => {
+    const { fixture, repo } = repoWith('https://github.com/acme/app')
+    try {
+      // First sight records the github.com remote.
+      const first = planScopedNetwork('git push origin HEAD', readRepoNetworkFacts(repo, repo))
+      assert.equal(first.action, 'scope')
+      git(repo, ['remote', 'set-url', 'origin', 'https://evil.example/x.git'])
+      const after = planScopedNetwork('git push origin HEAD', readRepoNetworkFacts(repo, repo))
+      if (after.action !== 'none') assert.fail('expected no scope after set-url')
+      assert.match(after.reason, /changed since/)
+      assert.equal(planScopedNetwork('git fetch', readRepoNetworkFacts(repo, repo)).action, 'none')
+      // A remote added later is not recorded on sight, even on github.com.
+      git(repo, ['remote', 'set-url', 'origin', 'https://github.com/acme/app'])
+      git(repo, ['remote', 'add', 'drop', 'https://github.com/me/public'])
+      assert.equal(
+        planScopedNetwork('git push drop HEAD', readRepoNetworkFacts(repo, repo)).action,
+        'none',
+      )
+      assert.equal(
+        planScopedNetwork('git push origin HEAD', readRepoNetworkFacts(repo, repo)).action,
+        'scope',
+      )
+    } finally {
+      rmSync(fixture, { recursive: true, force: true })
+    }
+  })
+
+  it('records a non-forge remote only when the workspace is trusted', () => {
+    const { fixture, repo } = repoWith('https://git.example.com/acme/app.git')
+    try {
+      assert.equal(
+        planScopedNetwork('git fetch origin', readRepoNetworkFacts(repo, repo)).action,
+        'none',
+      )
+      pinRemotesAtTrust(repo)
+      assert.equal(
+        planScopedNetwork('git fetch origin', readRepoNetworkFacts(repo, repo)).action,
+        'scope',
+      )
     } finally {
       rmSync(fixture, { recursive: true, force: true })
     }

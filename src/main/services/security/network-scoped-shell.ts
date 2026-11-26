@@ -146,8 +146,13 @@ function remoteHosts(
   name: string | null,
   push: boolean,
 ): string[] | { refused: string } {
-  const names = name === null ? [...facts.remotes.keys()] : [name]
+  const unvouched = facts.unvouchedRemotes ?? new Map<string, string>()
+  const names = name === null ? [...facts.remotes.keys(), ...unvouched.keys()] : [name]
   if (names.length === 0) return { refused: 'no configured remote' }
+  for (const remote of names) {
+    const reason = unvouched.get(remote)
+    if (reason !== undefined) return { refused: reason }
+  }
   const hosts: string[] = []
   for (const remote of names) {
     const urls = facts.remotes.get(remote)
@@ -161,15 +166,20 @@ function remoteHosts(
   return hosts
 }
 
-/** The positional remote name of a fetch/pull/push/ls-remote, or null for the implicit one. */
-function namedRemote(args: readonly string[], facts: RepoNetworkFacts): string | null {
+/**
+ * The first positional argument of a fetch/pull/push/ls-remote — the remote or
+ * URL git will contact — or null for the implicit upstream. A URL or unknown
+ * name is returned as is, so the caller refuses it rather than planning the
+ * configured remotes' hosts for a command that would contact another.
+ */
+function namedRemote(args: readonly string[]): string | null {
   for (let index = 0; index < args.length; index++) {
     const token = args[index] ?? ''
     if (isFlag(token)) {
       if (['--depth', '--deepen'].includes(flagName(token)) && !token.includes('=')) index++
       continue
     }
-    return facts.remotes.has(token) ? token : null
+    return token
   }
   return null
 }
@@ -218,7 +228,7 @@ function gitSegmentScope(
   }
   if (facts === null) return { refused: 'the execution root is not the project repository' }
   const push = subcommand === 'push'
-  const hosts = remoteHosts(facts, namedRemote(args, facts), push)
+  const hosts = remoteHosts(facts, namedRemote(args), push)
   if (!Array.isArray(hosts)) return hosts
   return {
     hosts,
