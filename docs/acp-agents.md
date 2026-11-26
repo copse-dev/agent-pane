@@ -646,6 +646,7 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   can write (its workspace, project root, state and thread dirs, home dirs or
   temp dirs), since running a file the agent could replace outside the sandbox
   would be an escape.
+
 - **`gh` does not run in a sandboxed agent's own shell.** `~/.config/gh` holds
   the user's GitHub token, so it stays unreadable, and `gh` fails on its config
   before it reaches the network (`failed to read configuration: open
