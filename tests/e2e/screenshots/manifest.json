@@ -5481,6 +5481,14 @@
       "sha256": "1568df507e43f5b6f5cdcb5f49a30bbbd36d23216412bfe66681cc1f7b51b200",
       "bytes": 93568
     },
+    "sidebar-rows-in-place-running.png": {
+      "sha256": "eed0b5a222b7d768ac87a80f5397732440930fd5563680166493eaf3d99811ba",
+      "bytes": 39752
+    },
+    "sidebar-rows-in-place-settled.png": {
+      "sha256": "93c90b20973bea092e83b5d7848db1e4a305867cc6b0e16e8240d502864c550b",
+      "bytes": 39416
+    },
     "sidebar-search-and-filters.png": {
       "sha256": "c7628ab25ee384dee086851f74feed7b3f55b717bf0e23e75bb67396696d89d6",
       "bytes": 93342
