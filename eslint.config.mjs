@@ -259,9 +259,10 @@ export default ts.config(
     // them, so Node never resolves Electron, and several pure modules legitimately type
     // their injected handles as `BrowserWindow` / `IpcMain`.
     //
-    // Only the bare `electron` module is restricted. `electron-updater` and
-    // `electron-store` are separate packages and do not match a `paths` entry; bringing
-    // them under the boundary is a follow-up, not a silent side effect of this rule.
+    // Only `electron` and its declared `electron/*` subpaths are restricted.
+    // `electron-updater` and `electron-store` are separate packages and match neither the
+    // `paths` entry nor the `electron/*` pattern; bringing them under the boundary is a
+    // follow-up, not a silent side effect of this rule.
     // `.mts` is listed alongside `.ts` because `src/shared` has two of them, and shared
     // code is exactly where an Electron import would do the most damage.
     files: ['src/**/*.ts', 'src/**/*.mts', 'packages/*/src/**/*.ts', 'packages/*/src/**/*.mts'],
