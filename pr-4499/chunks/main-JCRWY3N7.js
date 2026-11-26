@@ -91091,6 +91091,7 @@ function attachPrPanelFollow(store2, api2) {
     const { activeProjectId, activeThreadId, filesPaneOpen, rightPanelMode } = store2.getState();
     if (projectId !== activeProjectId || threadId !== activeThreadId) return;
     if (!filesPaneOpen || rightPanelMode !== "changes") return;
+    if (rightPanelSplitOf(store2.getState()) !== null) return;
     openPullRequest(store2, ref);
   });
 }

@@ -3774,6 +3774,12 @@ summary.pr-check-group-heading::-webkit-details-marker {
   .review-files-heading {
     padding-bottom: 0;
   }
+  .pane-files-body.is-split {
+    grid-template-columns: min(var(--tree-width, 200px), 40%) var(--pane-divider-width, 1px) minmax(0, 1fr);
+  }
+  .pane-files-body.is-split > #resizer-tree {
+    display: block;
+  }
 }
 .review-local-meta {
   flex-shrink: 0;
