@@ -16,13 +16,13 @@ It is an eval only. It changes no gate.
 
 ## Grants and what they cover
 
-| Grant          | Covers                                                                               |
-| -------------- | ------------------------------------------------------------------------------------ |
-| `pr.open`      | fetch, rebase/merge `origin/*`, commit, push of this thread's branch, `gh pr create` |
-| `branch.push`  | the same, minus PR creation; a branch the user named is also a valid target          |
-| `pr.merge` etc | merge, auto-merge, ready, comment, re-run CI on the bound PR number                  |
-| `ci.inspect`   | `gh pr checks`, `gh run view/list`, `gh api` GETs                                    |
-| `dep.add`      | `pnpm add/remove/view` of a package the user named, or a loose name for an existing dependency |
+| Grant          | Covers                                                                                                                           |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `pr.open`      | fetch, rebase/merge `origin/*`, commit, push of this thread's branch, `gh pr create`                                             |
+| `branch.push`  | the same, minus PR creation; a branch the user named is also a valid target                                                      |
+| `pr.merge` etc | merge, auto-merge, ready, comment, re-run CI on the bound PR number                                                              |
+| `ci.inspect`   | `gh pr checks`, `gh run view/list`, `gh api` GETs                                                                                |
+| `dep.add`      | `pnpm add/remove/view` of a package the user named, or a loose name for an existing dependency                                   |
 | `code.work`    | the project dev loop: allow-listed `pnpm run` scripts, `pnpm test`, `pnpm exec` of oxfmt/eslint/tsc/vitest/wdio, frozen installs |
 
 Harmless operations (version probes, local reads, `fnm`/`nvm` setup, redirects into the
