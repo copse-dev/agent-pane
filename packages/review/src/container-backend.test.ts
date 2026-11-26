@@ -1,15 +1,23 @@
+import { spawn } from 'node:child_process'
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { access, mkdtemp, mkdir, readFile, realpath, rm } from 'node:fs/promises'
+import { access, mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import {
+  APPLE_CONTAINER_ENGINE,
+  appleCellShortfall,
+  appleCreateArgs,
   containerCreateArgs,
   createContainerBackend,
+  defaultContainerEngines,
   detectContainerBackend,
   DEFAULT_CONTAINER_LIMITS,
+  DOCKER_ENGINE,
+  imageInspectArgs,
+  PODMAN_ENGINE,
   type ContainerRunInput,
 } from './container-backend.ts'
 import { FAKE_IMAGE, writeFakeContainerEngine } from './fake-container-engine.ts'
@@ -109,6 +117,49 @@ describe('container backend', () => {
         args.some((arg) => arg.startsWith('--user=')),
         false,
       )
+    })
+
+    it('spells every wall in Apple container dialect, with no-new-privileges set by setpriv', () => {
+      const args = containerCreateArgs(input, 'apple')
+      assert.deepEqual(args, appleCreateArgs(input))
+      assert.deepEqual(args.slice(0, 3), ['create', '--name', 'copse-review-abc-1'])
+      const pairs: [string, string][] = [
+        ['--cap-drop', 'ALL'],
+        ['--ulimit', 'nproc=512:512'],
+        ['--memory', '4g'],
+        ['--cpus', '2'],
+        ['--network', 'none'],
+        ['--user', '501:20'],
+        ['--tmpfs', '/tmp:rw,exec,nosuid,nodev,size=1g,mode=1777'],
+        ['--workdir', '/scratch/head'],
+      ]
+      for (const [flag, value] of pairs) {
+        assert.equal(args[args.indexOf(flag) + 1], value, `${flag} ${value}`)
+      }
+      assert.ok(args.includes('--init') && args.includes('--read-only'))
+      // Apple container has neither flag; the backend deletes every container itself.
+      assert.equal(args.includes('--rm'), false)
+      assert.equal(
+        args.some((arg) => arg.startsWith('--pull') || arg.startsWith('--security-opt')),
+        false,
+      )
+      assert.ok(args.includes('/scratch/head:/scratch/head'))
+      assert.ok(args.includes('/repo/.git:/repo/.git:ro'))
+      assert.equal(
+        args.some((arg) => arg.startsWith('PATH=')),
+        false,
+      )
+      assert.deepEqual(args.slice(-8), [
+        '--entrypoint',
+        'setpriv',
+        'copse-worker:local',
+        '--no-new-privs',
+        '--',
+        'pnpm',
+        'run',
+        'test',
+      ])
+      assert.doesNotMatch(args.join(' '), /--privileged|--cap-add|docker\.sock/)
     })
 
     it('mounts a shared base and head checkout only once', () => {
@@ -290,6 +341,65 @@ describe('container backend', () => {
       }
     })
 
+    it('keeps a command result when its container cannot be removed, and reports one that stays', async () => {
+      // An engine too busy to remove a container (an Apple container VM under
+      // memory pressure) must not cost the check that already finished.
+      const engine = await writeFakeContainerEngine(registry)
+      const cellFor = async (
+        failures: number,
+        unremoved: string[],
+      ): Promise<{ cell: ExecutionCell; removals: () => number }> => {
+        let removals = 0
+        const cell = await createContainerBackend({
+          image: FAKE_IMAGE,
+          engine,
+          containerName: (id) => `copse-busy-${id}`,
+          onUnremoved: (name, reason, command) => {
+            unremoved.push(`${name}|${reason}|${command}`)
+          },
+          spawn: (file, args, options) => {
+            if (args.includes('rm') && removals++ < failures) {
+              return spawn(
+                process.execPath,
+                [
+                  '-e',
+                  "process.stderr.write('Error: removal already in progress\\n'); process.exit(1)",
+                ],
+                options,
+              )
+            }
+            return spawn(file, args, options)
+          },
+        }).createCell(spec)
+        return { cell, removals: () => removals }
+      }
+      const command = {
+        target: 'head' as const,
+        argv: [process.execPath, '-e', "console.log('checked')"] as [string, ...string[]],
+        timeoutMs: 10_000,
+        maxOutputBytes: 1024,
+      }
+
+      const retried: string[] = []
+      const once = await cellFor(1, retried)
+      const result = await once.cell.run(command)
+      assert.equal(result.exitCode, 0)
+      assert.match(result.output, /checked/)
+      await once.cell.destroy()
+      assert.equal(once.removals(), 2, 'retried once when the cell ended')
+      assert.deepEqual(retried, [])
+
+      const stuck: string[] = []
+      const always = await cellFor(Infinity, stuck)
+      assert.equal((await always.cell.run(command)).exitCode, 0)
+      await always.cell.destroy()
+      assert.equal(stuck.length, 1)
+      assert.match(
+        stuck[0] ?? '',
+        /^copse-busy-\S+\|Error: removal already in progress\|.* rm --force copse-busy-/,
+      )
+    })
+
     for (const action of ['abort', 'destroy']) {
       it(`waits for container creation before cleanup on ${action}`, async () => {
         const slowRegistry = join(scratch, `slow-${action}`)
@@ -348,15 +458,25 @@ describe('container backend', () => {
     })
 
     it('returns the backend when an engine holds the image', async () => {
-      const engine = await writeFakeContainerEngine(registry)
+      const engine = { argv: await writeFakeContainerEngine(registry), dialect: 'docker' as const }
       const detection = await detectContainerBackend({ image: FAKE_IMAGE, engines: [engine] })
       assert.equal(detection.reason, null)
       assert.equal(detection.backend.strength, 'container')
       assert.deepEqual(detection.engine, engine)
     })
 
+    it('tries the next engine and keeps the dialect of the one that answers', async () => {
+      const apple = { argv: await writeFakeContainerEngine(registry), dialect: 'apple' as const }
+      const detection = await detectContainerBackend({
+        image: FAKE_IMAGE,
+        engines: [{ argv: ['copse-review-no-such-engine-binary'], dialect: 'docker' }, apple],
+      })
+      assert.equal(detection.reason, null)
+      assert.deepEqual(detection.engine, apple)
+    })
+
     it('says why when the image is missing or no engine answers', async () => {
-      const engine = await writeFakeContainerEngine(registry)
+      const engine = { argv: await writeFakeContainerEngine(registry), dialect: 'docker' as const }
       const missing = await detectContainerBackend({
         image: 'copse-review-fake:absent',
         engines: [engine],
@@ -365,10 +485,269 @@ describe('container backend', () => {
       assert.match(missing.reason, /No such image/)
       const none = await detectContainerBackend({
         image: FAKE_IMAGE,
-        engines: [['copse-review-no-such-engine-binary']],
+        engines: [{ argv: ['copse-review-no-such-engine-binary'], dialect: 'docker' }],
       })
       assert.equal(none.backend, null)
       assert.match(none.reason, /not installed/)
+    })
+
+    it('reports an unknown engine preference instead of guessing', async () => {
+      const previous = process.env['COPSE_CONTAINER_ENGINE']
+      process.env['COPSE_CONTAINER_ENGINE'] = 'lxc'
+      try {
+        const detection = await detectContainerBackend({ image: FAKE_IMAGE })
+        assert.equal(detection.backend, null)
+        assert.match(detection.reason, /Unsupported COPSE_CONTAINER_ENGINE="lxc"/)
+      } finally {
+        if (previous === undefined) delete process.env['COPSE_CONTAINER_ENGINE']
+        else process.env['COPSE_CONTAINER_ENGINE'] = previous
+      }
+    })
+  })
+
+  describe('engine choice', () => {
+    const mac = { platform: 'darwin' as const, arch: 'arm64' }
+    it('tries Docker, then Podman, then Apple container only on Apple silicon', () => {
+      assert.deepEqual(defaultContainerEngines({ env: {}, ...mac }), [
+        DOCKER_ENGINE,
+        PODMAN_ENGINE,
+        APPLE_CONTAINER_ENGINE,
+      ])
+      assert.deepEqual(defaultContainerEngines({ env: {}, platform: 'darwin', arch: 'x64' }), [
+        DOCKER_ENGINE,
+        PODMAN_ENGINE,
+      ])
+      assert.deepEqual(defaultContainerEngines({ env: {}, platform: 'linux', arch: 'arm64' }), [
+        DOCKER_ENGINE,
+        PODMAN_ENGINE,
+      ])
+    })
+
+    it('tries only the engine COPSE_CONTAINER_ENGINE names', () => {
+      for (const [value, engine] of [
+        ['docker', DOCKER_ENGINE],
+        ['Podman', PODMAN_ENGINE],
+        [' apple ', APPLE_CONTAINER_ENGINE],
+      ] as const) {
+        assert.deepEqual(
+          defaultContainerEngines({ env: { COPSE_CONTAINER_ENGINE: value }, ...mac }),
+          [engine],
+        )
+      }
+      assert.deepEqual(
+        defaultContainerEngines({ env: { COPSE_CONTAINER_ENGINE: 'auto' }, ...mac }).length,
+        3,
+      )
+      assert.throws(
+        () => defaultContainerEngines({ env: { COPSE_CONTAINER_ENGINE: 'lxc' }, ...mac }),
+        /Unsupported/,
+      )
+    })
+
+    it('inspects an image in each dialect without a template Apple container does not take', () => {
+      assert.deepEqual(imageInspectArgs('docker', 'img'), [
+        'image',
+        'inspect',
+        '--format',
+        '{{.Id}}',
+        'img',
+      ])
+      assert.deepEqual(imageInspectArgs('apple', 'img'), ['image', 'inspect', 'img'])
+    })
+  })
+
+  describe('over the fake engine in Apple container dialect', () => {
+    let scratch = ''
+    let registry = ''
+    let cell: ExecutionCell
+
+    before(async () => {
+      scratch = await realpath(await mkdtemp(join(tmpdir(), 'review-apple-backend-')))
+      registry = join(scratch, 'registry')
+      await mkdir(registry)
+      await mkdir(join(scratch, 'base'))
+      await mkdir(join(scratch, 'head'))
+      cell = await createContainerBackend({
+        image: FAKE_IMAGE,
+        engine: await writeFakeContainerEngine(registry),
+        dialect: 'apple',
+        containerName: () => 'apple-cell',
+      }).createCell({
+        checkouts: { base: join(scratch, 'base'), head: join(scratch, 'head') },
+        scratchDir: scratch,
+        readOnlyPaths: [],
+        env: cellEnvironment({ PATH: process.env['PATH'] }),
+      })
+    })
+
+    after(async () => {
+      await cell.destroy()
+      await rm(scratch, { recursive: true, force: true })
+    })
+
+    it('runs the command under setpriv and deletes the container afterwards', async () => {
+      const result = await cell.run({
+        target: 'head',
+        argv: [process.execPath, '-e', 'console.log(process.cwd())'],
+        timeoutMs: 30_000,
+        maxOutputBytes: 1024,
+      })
+      assert.equal(result.exitCode, 0, result.output)
+      assert.equal(result.output.trim(), join(scratch, 'head'))
+      const record = recordSchema.parse(
+        JSON.parse(await readFile(join(registry, 'apple-cell.json'), 'utf8')),
+      )
+      assert.ok(record.flags.includes('--network') && record.flags.includes('none'))
+      assert.deepEqual(record.argv, [process.execPath, '-e', 'console.log(process.cwd())'])
+      await access(join(registry, 'apple-cell.removed'))
+    })
+
+    it('refuses to run in a cell whose walls do not read back, and runs nothing', async () => {
+      // An engine that accepted --read-only and did not apply it.
+      await writeFile(join(registry, 'inspect-override.json'), JSON.stringify({ readOnly: false }))
+      const marker = join(scratch, 'ran-in-a-writable-cell')
+      try {
+        await assert.rejects(
+          cell.run({
+            target: 'head',
+            argv: [
+              process.execPath,
+              '-e',
+              `require('fs').writeFileSync(${JSON.stringify(marker)}, 'ran')`,
+            ],
+            timeoutMs: 30_000,
+            maxOutputBytes: 1024,
+          }),
+          /Apple container did not create the review cell as asked \(the root filesystem is writable\)/,
+        )
+        await assert.rejects(access(marker), /ENOENT/)
+        await access(join(registry, 'apple-cell.removed'))
+      } finally {
+        await rm(join(registry, 'inspect-override.json'), { force: true })
+      }
+    })
+
+    it('never starts the change when the run is cancelled during the read-back', async () => {
+      const controller = new AbortController()
+      const name = 'apple-cancelled'
+      // The cancel lands as the backend spawns the container's read-back:
+      // after create and its signal check, before start.
+      const cancelling = await createContainerBackend({
+        image: FAKE_IMAGE,
+        engine: await writeFakeContainerEngine(registry),
+        dialect: 'apple',
+        containerName: () => name,
+        spawn: (file, args, options) => {
+          if (args.at(-2) === 'inspect' && args.at(-1) === name) {
+            controller.abort(new Error('cancelled during the read-back'))
+          }
+          return spawn(file, args, options)
+        },
+      }).createCell({
+        checkouts: { base: join(scratch, 'base'), head: join(scratch, 'head') },
+        scratchDir: scratch,
+        readOnlyPaths: [],
+        env: cellEnvironment({ PATH: process.env['PATH'] }),
+      })
+      const marker = join(scratch, 'ran-after-cancel')
+      try {
+        await assert.rejects(
+          cancelling.run({
+            target: 'head',
+            argv: [
+              process.execPath,
+              '-e',
+              `require('fs').writeFileSync(${JSON.stringify(marker)}, 'ran')`,
+            ],
+            timeoutMs: 30_000,
+            maxOutputBytes: 1024,
+            signal: controller.signal,
+          }),
+          /cancelled during the read-back/,
+        )
+        assert.equal(controller.signal.aborted, true)
+        await assert.rejects(access(join(registry, `${name}.started`)), /ENOENT/)
+        await assert.rejects(access(marker), /ENOENT/)
+        await access(join(registry, `${name}.removed`))
+      } finally {
+        await cancelling.destroy()
+      }
+    })
+
+    it('reads back each mount and its access mode', () => {
+      const input: ContainerRunInput = {
+        name: 'apple-cell',
+        image: FAKE_IMAGE,
+        labels: {},
+        user: { uid: 501, gid: 20 },
+        limits: DEFAULT_CONTAINER_LIMITS,
+        writable: ['/scratch/head'],
+        readOnly: ['/store'],
+        cwd: '/scratch/head',
+        env: {},
+        argv: ['true'],
+      }
+      const inspect = (mounts: unknown[]): string =>
+        JSON.stringify([
+          {
+            configuration: {
+              capAdd: [],
+              capDrop: ['ALL'],
+              readOnly: true,
+              networks: [],
+              useInit: true,
+              ssh: false,
+              virtualization: false,
+              publishedPorts: [],
+              publishedSockets: [],
+              labels: {},
+              resources: { cpus: 2, memoryInBytes: 4 * 1024 ** 3 },
+              initProcess: {
+                user: { raw: { userString: '501:20' } },
+                rlimits: [{ limit: 'RLIMIT_NPROC', soft: 512, hard: 512 }],
+              },
+              mounts,
+            },
+          },
+        ])
+      const tmp = {
+        destination: '/tmp',
+        source: 'tmpfs',
+        options: ['rw', 'nosuid', 'nodev'],
+        type: { tmpfs: {} },
+      }
+      const head = {
+        destination: '/scratch/head',
+        source: '/scratch/head',
+        options: [],
+        type: { virtiofs: {} },
+      }
+      const store = (options: string[]): unknown => ({
+        destination: '/store',
+        source: '/store',
+        options,
+        type: { virtiofs: {} },
+      })
+      assert.equal(appleCellShortfall(input, inspect([tmp, head, store(['ro'])])), null)
+      assert.equal(
+        appleCellShortfall(input, inspect([tmp, head, store([])])),
+        'the mount at /store is not the one asked for',
+      )
+      assert.equal(
+        appleCellShortfall(input, inspect([tmp, head])),
+        'the mount at /store is missing',
+      )
+      assert.equal(
+        appleCellShortfall(
+          input,
+          inspect([tmp, head, store(['ro']), { ...head, destination: '/home' }]),
+        ),
+        'unexpected mount at /home',
+      )
+      assert.equal(
+        appleCellShortfall(input, 'not json'),
+        'container inspect did not describe the container',
+      )
     })
   })
 })

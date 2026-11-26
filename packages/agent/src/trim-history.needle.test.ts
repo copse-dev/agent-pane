@@ -10,7 +10,7 @@ import {
   trimHistory,
   conversationTokenBudget,
   estimateConversationTokens,
-  setLastMeasuredInputTokens,
+  setLastInputMeasurement,
 } from './trim-history.ts'
 import { nextWorkingBrief, resolveParentGoal } from './working-brief.ts'
 
@@ -55,7 +55,7 @@ function containsNeedle(messages: LLMMessage[], needle: string): boolean {
 
 describe('trim-history needle retention', () => {
   beforeEach(() => {
-    setLastMeasuredInputTokens(null)
+    setLastInputMeasurement(null)
   })
 
   it('keeps user-turn needles under arbitrarily heavy trimming', () => {

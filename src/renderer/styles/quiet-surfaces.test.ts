@@ -99,6 +99,8 @@ describe('Settings rows sit on the page', () => {
     '.remote-folder-list',
     '.ssh-host-row',
     '.mobile-companion-device-row',
+    '.mcp-server-row',
+    '.acp-row',
   ]
 
   for (const selector of ROWS) {
@@ -109,6 +111,22 @@ describe('Settings rows sit on the page', () => {
       }
     })
   }
+
+  // A border style on its own is not a no-op: with no width or colour from a
+  // base rule it draws a medium border in the text colour. A declared MCP server
+  // row kept `border-style: dashed` after server rows lost their border, and
+  // drew exactly that.
+  it('sets no border style on a row or a declared MCP server row', () => {
+    for (const selector of [...ROWS, '.mcp-declared-row']) {
+      for (const rule of allRules.filter((candidate) => candidate.selectors.includes(selector))) {
+        assert.doesNotMatch(
+          rule.body,
+          /(^|[;\s])border(-(top|right|bottom|left))?-style\s*:/,
+          `${where(rule)} sets a border style`,
+        )
+      }
+    }
+  })
 
   it('keeps no fill on a row, except the plates that carry a state or a scroll region', () => {
     const PLATES = new Set(['.remote-folder-list', '.automation-permission-row:hover'])

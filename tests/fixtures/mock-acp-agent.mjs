@@ -55,9 +55,14 @@
  * | `--list-mcp-tools`     | list each offered http server's tools before `session/new` returns |
  * | `--report-mcp-failure` | on the first prompt, report each offered server as failed the |
  * |                        | way Claude Agent ACP does for a client without notices        |
+ * | `--ignore-mcp`         | never start the stdio servers it is offered                   |
  *
  * `--mcp-http` alone is an agent that is offered the bridge and never mounts it,
  * until a `list-mcp-tools` prompt mounts it late.
+ *
+ * Without `--mcp-http` the agent behaves like any ACP agent offered stdio
+ * servers: it starts each one and lists its tools while `session/new` runs.
+ * Copse offers its bridge that way, through its stdio relay.
  *
  * No permission request ever runs anything: the agent only reports the
  * client's answer.
@@ -70,6 +75,7 @@ import {
   RequestError,
 } from '@agentclientprotocol/sdk/unstable'
 import { Writable } from 'node:stream'
+import { mountStdioServers } from './acp-mount-stdio-servers.mjs'
 import { copyFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
@@ -155,6 +161,10 @@ agent({ name: 'mock-acp-agent' })
     offeredServers.set(sessionId, servers)
     sessionCwds.set(sessionId, ctx.params.cwd)
     if (flags.has('--list-mcp-tools')) await listTools(servers)
+    // `--ignore-mcp`: an agent that silently ignores the servers it is offered.
+    if (!flags.has('--mcp-http') && !flags.has('--ignore-mcp')) {
+      await mountStdioServers(ctx.params.mcpServers, 'mock-acp-agent')
+    }
     return { sessionId }
   })
   .onRequest('session/prompt', async (ctx) => {

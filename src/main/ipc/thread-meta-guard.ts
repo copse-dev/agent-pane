@@ -9,11 +9,15 @@
  * `worktree` belongs to main's checkout lifecycle. Renderer copies of prepare,
  * rename or completion results cannot allocate or revive a checkout through
  * create/autosave. Explicit native restore/adopt/clear operations write directly.
+ *
+ * `importedSession` records which external session main imported a thread from;
+ * the renderer must not be able to claim or forge that provenance.
  */
 const MAIN_OWNED_THREAD_FIELDS: readonly string[] = [
   'remoteAgentLink',
   'cursorAgentIds',
   'worktree',
+  'importedSession',
 ]
 
 /** `payload` without the fields only main may write. */

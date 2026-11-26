@@ -118,3 +118,24 @@ describe('persisted Cursor launch history', () => {
     }
   })
 })
+
+describe('an imported session link', () => {
+  it('keeps a well-formed link and drops a malformed one', () => {
+    const base = meta({ inputTokens: 0, outputTokens: 0 })
+    const link = { source: 'codex', key: 'a'.repeat(32), importedAt: 1 }
+    assert.deepEqual(
+      parseThreadMetaValue({ ...base, importedSession: link })?.importedSession,
+      link,
+    )
+    for (const invalid of [
+      { ...link, source: 'cursor' },
+      { ...link, key: '' },
+      { source: 'codex' },
+      'codex',
+    ]) {
+      const parsed = parseThreadMetaValue({ ...base, importedSession: invalid })
+      assert.ok(parsed)
+      assert.equal(Object.hasOwn(parsed, 'importedSession'), false)
+    }
+  })
+})
