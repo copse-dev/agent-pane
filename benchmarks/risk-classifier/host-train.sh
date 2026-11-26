@@ -6,6 +6,7 @@
 #   benchmarks/risk-classifier/host-train.sh <run-name> [train.py args...]
 #   benchmarks/risk-classifier/host-train.sh --probe      # prove the sandbox holds and the GPU works
 #   benchmarks/risk-classifier/host-train.sh --export-veto [--split dev]   # export_veto.py, sandboxed
+#   benchmarks/risk-classifier/host-train.sh --family-holdout              # family_holdout.py, sandboxed
 #
 # Set up the venv once, outside the sandbox (it needs the network):
 #   uv venv --python 3.12 bench-results/risk-classifier/host-venv
@@ -28,6 +29,7 @@ shift
 case $name in
 --probe) out="$base/out/probe" ;;
 --export-veto) out="$base/out/export-veto" ;;
+--family-holdout) out="$base/out/family-holdout" ;;
 *) out="$base/out/$name" ;;
 esac
 mkdir -p "$out"
@@ -66,6 +68,12 @@ print(("ok    " if mps else "FAIL  ") + "Apple GPU (MPS) usable inside the sandb
 raise SystemExit(0 if all(results) and mps else 1)
 PY
   run "$out/probe.py"
+  exit
+fi
+
+if [ "$name" = "--family-holdout" ]; then
+  run "$repo/benchmarks/risk-classifier/family_holdout.py" --repo "$repo" \
+    --private "$base/data/private-labelled.jsonl" --redteam "$base/data/redteam.jsonl" "$@"
   exit
 fi
 
