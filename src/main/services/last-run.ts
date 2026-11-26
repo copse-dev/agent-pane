@@ -9,8 +9,11 @@ import { z } from 'zod'
  *
  * Each launch records when it started. An orderly quit then adds how it ended:
  * `update` when the updater relaunches the app to install, `quit` for every other
- * quit (the menu, a confirmed close, SIGINT/SIGTERM/SIGHUP). A crash or a kill
- * leaves the record without an ending.
+ * quit (the menu, a confirmed close, SIGINT/SIGTERM/SIGHUP, and the quit after an
+ * uncaught exception or lost stdio, so a turn that may have caused a fault is not
+ * rerun unattended). A crash or a kill leaves the record without an ending, and
+ * so does a Windows shutdown or logoff, which skips `before-quit`; those are
+ * continued.
  *
  * A quit the user chose stops the run, which is what the close dialog tells
  * them, so its turns are not continued. A crash or an update relaunch was not

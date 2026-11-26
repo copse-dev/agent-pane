@@ -122,7 +122,7 @@ revisiting this document, not silently diverging in an implementation PR.
    foreground yields), change-acceptance wakes, durable CI status-change wakes,
    long-horizon task wakes (`long-task-wake.ts`, dispatched through `dispatchMachine` on the
    originating turn tree), ACP agent self-resumes (below), ACP unfinished-turn recovery, restart resumes
-   of turns a quit, update relaunch or crash cut off (below), post-turn remediation cycles,
+   of turns an update relaunch or crash cut off (below), post-turn remediation cycles,
    pre-review todo attempts, and todo-closeout turns. Agent-managed external-agent
    turns leave unfinished-turn recovery to the agent, so they spend no recovery
    continuation. **In-loop nudges do not count**
@@ -201,6 +201,12 @@ revisiting this document, not silently diverging in an implementation PR.
    thread `running` on disk with no outcome. Only an update relaunch or a crash is continued: a
    quit the user chose (the menu, a confirmed close, a signal) stops the run, as the close dialog
    says, so it is a refusal under this decision and its threads keep the manual Continue card.
+   Two edge cases follow the same record on purpose. A quit after an uncaught exception or lost
+   stdio goes through the orderly quit path and counts as a quit, so a turn that may have caused
+   the fault is not rerun unattended. A Windows shutdown or logoff skips `before-quit`, leaves
+   no ending and is continued like a crash; on Linux the same shutdown arrives as SIGTERM and
+   counts as a quit. "Restart now" for an update marks its own quit as an update relaunch, and
+   the mark is cleared again if the updater fails, so a later quit is still the user's.
    `last-run.ts` records how each run ended, and only threads the previous run started are
    continued, so a thread cut off further back is never picked up. On the next launch, once tools and MCP servers are
    back, `interrupted-turn-resume.ts` dispatches one `dispatchMachine` continuation per such

@@ -4,6 +4,7 @@ import type { Message, Thread } from '@shared/types'
 import type { MachineDispatchResult } from '@shared/types/machine-dispatch.ts'
 import { explicitAgentForMessage } from '@shared/threads/explicit-agent.ts'
 import { INTERRUPTED_TURN_CONTINUATION } from '@shared/turn-recovery.ts'
+import { isReasoningLevel } from '@copse/llm/model-parameters.ts'
 import type { MachineAgentDispatchRequest } from './agent-dispatcher.ts'
 import { listRunningThreadIds } from './agent-service.ts'
 import { previousRun, previousRunAllowsResume, type LastRunRecord } from './last-run.ts'
@@ -175,8 +176,11 @@ export async function resumeInterruptedTurns(
                 invokedSkills: [],
                 priorTodos: thread.todos ?? [],
                 ...(thread.workingBrief !== undefined ? { workingBrief: thread.workingBrief } : {}),
-                ...(thread.model !== undefined ? { model: thread.model } : {}),
-                ...(thread.reasoning !== undefined ? { reasoning: thread.reasoning } : {}),
+                // meta.json is read without checking these two; pass only valid values.
+                ...(typeof thread.model === 'string' && thread.model !== ''
+                  ? { model: thread.model }
+                  : {}),
+                ...(isReasoningLevel(thread.reasoning) ? { reasoning: thread.reasoning } : {}),
                 ...(thread.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
               },
             })
