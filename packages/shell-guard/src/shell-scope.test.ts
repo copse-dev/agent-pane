@@ -693,6 +693,24 @@ describe('analyzeShellCommand', () => {
     }
   })
 
+  it('starts fnm exec contained and judges the command it runs', () => {
+    for (const command of [
+      'fnm exec --using=24.20.0 node --version',
+      'fnm exec --using 24.20.0 corepack pnpm test -- shell-scope',
+    ]) {
+      assert.notEqual(analyzeShellCommand(command, root).verdict, 'external', command)
+    }
+    for (const command of [
+      'fnm exec --using=24.20.0 curl https://example.com',
+      'fnm exec --using=24.20.0 pnpm install',
+      'fnm exec --using=24 bash -c "exec curl https://example.com"',
+      'exec node --version',
+      'find . -exec rm {} +',
+    ]) {
+      assert.equal(analyzeShellCommand(command, root).verdict, 'external', command)
+    }
+  })
+
   it('flags bun/corepack/go/uv package operations', () => {
     assert.equal(analyzeShellCommand('bun install', root).verdict, 'external')
     assert.equal(analyzeShellCommand('corepack enable', root).verdict, 'external')
