@@ -230,7 +230,7 @@ describe('withWorkspaceIntegrity', () => {
       if (request.command.kind !== 'shell') throw new Error('shell only')
       const child = spawn('/bin/sh', ['-c', request.command.commandLine], {
         cwd: request.cwd,
-        stdio: 'ignore',
+        stdio: request.stdio ?? 'ignore',
       })
       return Promise.resolve({
         child,
@@ -240,10 +240,15 @@ describe('withWorkspaceIntegrity', () => {
     },
   }
 
-  function request(commandLine: string, sandbox: boolean): RuntimeExecRequest {
+  function request(
+    commandLine: string,
+    sandbox: boolean,
+    stdio: RuntimeExecRequest['stdio'] = 'ignore',
+  ): RuntimeExecRequest {
     return {
       command: { kind: 'shell', commandLine },
       cwd: root,
+      stdio,
       local: { sandbox, plan: () => ({ config: {} }) },
     }
   }
@@ -278,12 +283,17 @@ describe('withWorkspaceIntegrity', () => {
       owner: () => null,
     })
     const background = await runtime.exec(
-      request('git config core.fsmonitor ./watch.sh && sleep 30', true),
+      request('git config core.fsmonitor ./watch.sh && echo configured && exec sleep 30', true, [
+        'ignore',
+        'pipe',
+        'ignore',
+      ]),
     )
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-      if (readFileSync(join(root, '.git/config'), 'utf8').includes('fsmonitor')) break
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, 20))
-    }
+    // The task has written its config once it prints; it keeps running.
+    await new Promise((resolveConfigured) =>
+      background.child.stdout?.once('data', resolveConfigured),
+    )
+    assert.equal(readFileSync(join(root, '.git/config'), 'utf8').includes('fsmonitor'), true)
     const host = await runtime.exec(request('true', false))
     await new Promise((resolveClose) => host.child.once('close', resolveClose))
     assert.equal(readFileSync(join(root, '.git/config'), 'utf8').includes('fsmonitor'), false)
