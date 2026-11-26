@@ -1122,6 +1122,10 @@ const api: ApiClient = {
     catalog: (projectId: string, query?: string) =>
       ipcRenderer.invoke('threads:catalog', projectId, query),
     listOrphans: () => ipcRenderer.invoke('threads:list-orphans'),
+    listExternalSessions: (projectId: string) =>
+      ipcRenderer.invoke('threads:list-external-sessions', projectId),
+    importExternalSessions: (projectId: string, keys: string[]) =>
+      ipcRenderer.invoke('threads:import-external-sessions', projectId, keys),
   },
   archive: {
     attach: (

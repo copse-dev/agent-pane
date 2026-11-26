@@ -13,6 +13,7 @@ import {
   type PredictionResult,
 } from '@lmstudio/sdk'
 import { withoutProviderState, type ConversationMessage } from './provider-state.ts'
+import { hasLastUsage } from './provider-usage.ts'
 import {
   openAiParameterFields,
   resolvedOutputCeiling,
@@ -21,12 +22,19 @@ import {
 import { TOOL_CALL_MALFORMED_STOP_REASON } from './provider-stop-reason.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { toolCallIdOrSynthesized } from './tool-call-id.ts'
-import type { LLMMessage, LLMProvider, LLMTool, ProviderStreamChunk } from './wire-types.ts'
+import type {
+  LLMMessage,
+  LLMProvider,
+  LLMStreamOptions,
+  LLMTool,
+  ProviderStreamChunk,
+} from './wire-types.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
 
 type RespondOptions = Pick<
   LLMRespondOpts,
   | 'rawTools'
+  | 'toolChoice'
   | 'signal'
   | 'onPredictionFragment'
   | 'onPromptProcessingProgress'
@@ -169,6 +177,13 @@ export interface LMStudioProviderOptions {
   params?: ModelParameters
   /** Test seam: production callers use the official SDK adapter. */
   client?: ClientAdapter
+  /**
+   * Serves a call that sets `suppressReasoning`. The SDK has no field that turns
+   * thinking off, so `createLMStudioProvider` passes LM Studio's
+   * OpenAI-compatible route to the same server and model, which has one. Without
+   * it such a call stays on the SDK and the hint is ignored.
+   */
+  reasoningOff?: LLMProvider
 }
 
 /**
@@ -182,10 +197,12 @@ export class LMStudioProvider implements LLMProvider {
   private readonly client: ClientAdapter
   private readonly modelName: string
   private readonly params: ModelParameters
+  private readonly reasoningOff: LLMProvider | undefined
 
   constructor(modelName: string, opts: LMStudioProviderOptions = {}) {
     this.modelName = modelName
     this.params = opts.params ?? {}
+    this.reasoningOff = opts.reasoningOff
     this.client = opts.client ?? new SdkClientAdapter(opts.baseURL ?? 'http://localhost:1234/v1')
   }
 
@@ -193,21 +210,50 @@ export class LMStudioProvider implements LLMProvider {
     messages: LLMMessage[],
     tools: LLMTool[],
     signal?: AbortSignal,
+    options?: LLMStreamOptions,
   ): AsyncIterable<ProviderStreamChunk> {
+    // The agent loop asks for no reasoning on its last-chance recovery from a
+    // reasoning runaway, and a review's forced closure can end there. On the SDK
+    // a thinking model would think again and the turn would fail, so that one
+    // call goes where thinking can be turned off.
+    if (options?.suppressReasoning && this.reasoningOff) {
+      return this.streamWithoutReasoning(this.reasoningOff, messages, tools, signal, options)
+    }
     const self = this
     const sendable = withoutProviderState(messages)
+    // The SDK forces a tool call only generically (`required`), so a call that
+    // must use one named tool is offered just that tool.
+    const forced = options?.toolChoice
+      ? tools.filter((tool) => tool.name === options.toolChoice?.name)
+      : []
+    const offered = forced.length === 1 ? forced : tools
     return yieldStreamWithRetry(
       async function* () {
-        yield* self.streamOnce(sendable, tools, signal)
+        yield* self.streamOnce(sendable, offered, signal, forced.length === 1)
       },
       { ...(signal ? { signal } : {}) },
     )
   }
 
+  private async *streamWithoutReasoning(
+    provider: LLMProvider,
+    messages: LLMMessage[],
+    tools: LLMTool[],
+    signal: AbortSignal | undefined,
+    options: LLMStreamOptions,
+  ): AsyncIterable<ProviderStreamChunk> {
+    // Usage is read back from this provider, so it must describe this call,
+    // not the SDK prediction before it.
+    this.lastUsage = null
+    yield* provider.stream(messages, tools, signal, options)
+    this.lastUsage = hasLastUsage(provider) ? provider.lastUsage : null
+  }
+
   private async *streamOnce(
     messages: ConversationMessage[],
     tools: LLMTool[],
-    signal?: AbortSignal,
+    signal: AbortSignal | undefined,
+    requireTool: boolean,
   ): AsyncIterable<ProviderStreamChunk> {
     // Own the prediction's abort controller here so the consumer walking away
     // cancels it, not just the producer's own error paths.
@@ -215,7 +261,7 @@ export class LMStudioProvider implements LLMProvider {
     const queue = new AsyncChunkQueue<ProviderStreamChunk>(() => {
       cancel.abort(new Error('Prediction cancelled: the consumer stopped reading the stream.'))
     })
-    void this.produce(messages, tools, signal, queue, cancel)
+    void this.produce(messages, tools, signal, queue, cancel, requireTool)
     yield* queue
   }
 
@@ -249,6 +295,7 @@ export class LMStudioProvider implements LLMProvider {
     signal: AbortSignal | undefined,
     queue: AsyncChunkQueue<ProviderStreamChunk>,
     cancel: AbortController,
+    requireTool: boolean,
   ): Promise<void> {
     // Failing the queue ends the stream for our consumer, but the server keeps
     // predicting until it is told to stop. `cancel` lets those exits (and the
@@ -265,6 +312,7 @@ export class LMStudioProvider implements LLMProvider {
       const prediction = model.respond(chat, {
         ...this.predictionConfig(),
         rawTools: rawTools.length ? { type: 'toolArray', tools: rawTools } : { type: 'none' },
+        ...(requireTool ? { toolChoice: { type: 'generic', mode: 'required' } } : {}),
         signal: signal ? AbortSignal.any([signal, cancel.signal]) : cancel.signal,
         onPromptProcessingProgress: (progress) => {
           queue.push({ type: 'prompt_progress', fraction: clampProgress(progress) })

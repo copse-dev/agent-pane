@@ -36,7 +36,7 @@ import {
   watchEditorTheme,
   xtermThemeFromTokens,
 } from '../dom/editor-theme.ts'
-import { selectRightPanelMode } from '../controller/panels.ts'
+import { selectRightPanelMode, rightPanelShows } from '../controller/panels.ts'
 
 /* xterm only renders whole rows, so the fit addon leaves a few pixels of
    remainder at the bottom of the pane. xterm 6 paints the theme background on
@@ -116,8 +116,7 @@ interface TerminalTab {
 }
 
 function terminalModeActive(store: AppStore): boolean {
-  const { filesPaneOpen, rightPanelMode } = store.getState()
-  return filesPaneOpen && rightPanelMode === 'terminal'
+  return rightPanelShows(store.getState(), 'terminal')
 }
 
 export function mountTerminalsPane(

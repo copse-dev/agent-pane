@@ -140,6 +140,12 @@ export interface BuildSystemPromptOptions {
    * its thread's checkout). A turn omits it and uses its own roots (#3958).
    */
   roots?: AgentRoots
+  /**
+   * The thread's named profile instructions, already framed by
+   * `agentProfilePromptBlock`. Placed after the user's global instructions so
+   * the profile, being the narrower choice, reads last.
+   */
+  profileInstructions?: string
 }
 
 export interface SystemPromptBuildResult {
@@ -238,7 +244,8 @@ export async function buildSystemPromptWithMetadata(
     (customInstructions ? `\n\n---\n\n## Custom instructions\n\n${customInstructions}` : '') +
     (instructionLayers.global
       ? `\n\n---\n\n## User instructions\n\n${instructionLayers.global}`
-      : '')
+      : '') +
+    (opts.profileInstructions ? `\n\n---\n\n${opts.profileInstructions}` : '')
   return {
     prompt,
     instructionMetadata: instructionLayers.metadata,

@@ -1338,4 +1338,77 @@ describe('automation plugin settings detail', () => {
     })
     assert.match(root.querySelector('.automation-status')?.textContent ?? '', /stop here/)
   })
+
+  it('sends author and commenter scopes for pull request bots', async () => {
+    const { api } = stubApi([])
+    const upserts: BranchCiAutomationInput[] = []
+    api.automations.upsertBranchCi = (_projectId, input): Promise<BranchCiAutomation> => {
+      upserts.push(input)
+      return Promise.reject(new Error('stop here'))
+    }
+    const store = createStore({
+      activeProjectId: 'project-a',
+      projects: [{ id: 'project-a', path: '/repo/a', name: 'Project A' }],
+    })
+    const root = createAutomationPluginSettings(store, api, true)
+    document.body.append(root)
+    await tick()
+    root.querySelector<HTMLButtonElement>('.automation-add-btn')?.click()
+    await tick()
+    const scheduleWhen = root.querySelector<HTMLSelectElement>(
+      '.automation-form:not(.automation-ci-form) .automation-when-select',
+    )
+    assert.ok(scheduleWhen)
+    scheduleWhen.value = 'github-ci-failed'
+    scheduleWhen.dispatchEvent(new Event('change'))
+    await tick()
+    const form = root.querySelector<HTMLFormElement>('.automation-ci-form')
+    assert.ok(form)
+    const when = form.querySelector<HTMLSelectElement>('.automation-when-select')
+    assert.ok(when)
+    const visible = (selector: string): boolean =>
+      form.querySelector(selector)?.closest<HTMLElement>('[data-trigger-field]')?.hidden === false
+    const set = (selector: string, value: string, event = 'input'): void => {
+      const input = form.querySelector<HTMLInputElement | HTMLSelectElement>(selector)
+      assert.ok(input, selector)
+      input.value = value
+      input.dispatchEvent(new Event(event, { bubbles: true }))
+    }
+    const summary = (): string => form.querySelector('.automation-ci-summary')?.textContent ?? ''
+
+    set('.automation-when-select', 'github-pr-ci-failed', 'change')
+    assert.equal(visible('.automation-pr-base'), true)
+    assert.equal(visible('.automation-pr-authors'), true)
+    assert.equal(visible('.automation-ci-checks'), true)
+    assert.equal(visible('.automation-ci-branch'), false)
+    assert.equal(visible('.automation-pr-commenters'), false)
+    set('.automation-pr-base', 'main')
+    set('.automation-ci-checks', 'CI')
+    assert.match(
+      summary(),
+      /When CI fails \(only CI\) on the current head of one of my pull requests into main/,
+    )
+
+    set('.automation-when-select', 'github-pr-review-comment', 'change')
+    assert.equal(visible('.automation-pr-commenters'), true)
+    assert.equal(visible('.automation-ci-checks'), false)
+    assert.match(
+      summary(),
+      /bots and my own comments, including replies a run posts as me, are ignored/,
+    )
+    set('.automation-pr-commenters', 'anyone', 'change')
+    assert.match(
+      summary(),
+      /including bots and strangers, can start a run that acts as you, and replies/,
+    )
+    set('.automation-ci-name', 'Address review')
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await tick()
+    assert.deepEqual(upserts[0]?.trigger, {
+      kind: 'github-pr-review-comment',
+      baseBranch: 'main',
+      authors: 'mine',
+      commenters: 'anyone',
+    })
+  })
 })
