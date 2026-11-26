@@ -267,9 +267,10 @@ describe('terminal-service', () => {
             .map((key) => `printf '__COPSE_${key}__:%s\\n' "\${${key}-unset}"`)
             .join('; ')
           writeTerminalSession(sessionId, OWNER, `${print}\n`)
+          // Wait for the whole last line: the PTY can deliver a path in pieces.
           const output = await waitForTerminalOutput(
             win,
-            /__COPSE_CLAUDE_CODE_TMPDIR__:(?:unset|\/)/,
+            /__COPSE_CLAUDE_CODE_TMPDIR__:(?:unset|\/[^\r\n]*)\r?\n/,
           )
           for (const key of tempKeys) {
             const expected = variant === 'set' ? join(fixture, 'human-temp', key) : 'unset'
