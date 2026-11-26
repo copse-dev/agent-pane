@@ -19,7 +19,7 @@ import {
 } from './config.ts'
 import { isProjectSandboxEnabled } from './enabled.ts'
 import { formatArgvForShell, withSandboxShellPath } from './sandbox-argv.ts'
-import { linuxSandboxBinaryPaths } from './sandbox-binaries.ts'
+import { linuxWrapperBinaryPaths } from './sandbox-binaries.ts'
 import { withSandboxTmpEnv } from './tmp-env.ts'
 import {
   linkPreparationNodeToolchain,
@@ -375,10 +375,14 @@ async function runContainedPreparationProcess(
         allowLocalBinding: preparing && !options.offline,
       })
     } else {
+      // This wrap bypasses SandboxManager, so it takes the launcher paths
+      // itself. Naming seccompConfig makes a SandboxRuntimeConfig-shaped
+      // source (whose key is `seccomp`) a type error, not a silently dropped key.
+      const { seccompConfig, ...launchers } = linuxWrapperBinaryPaths()
       wrapped = await wrapCommandWithSandboxLinux({
         ...params,
-        // This wrap bypasses SandboxManager, so it takes the launcher paths itself.
-        ...linuxSandboxBinaryPaths(),
+        ...launchers,
+        ...(seccompConfig === undefined ? {} : { seccompConfig }),
         ...(options.signal ? { abortSignal: options.signal } : {}),
       })
       // Only a completed wrap holds a mount-point reference to release.
