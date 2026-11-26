@@ -68,8 +68,7 @@ function isElectronSpecifier(specifier: string): boolean {
  * and is erased. Other dynamic imports are not followed as graph edges: they are lazy on
  * purpose, and this pins the eager graph.
  */
-const DYNAMIC_ELECTRON_IMPORT =
-  /(?<!typeof\s+)\bimport\(\s*(['"`])electron(?:\/[^'"`$]*)?\1\s*\)/
+const DYNAMIC_ELECTRON_IMPORT = /(?<!typeof\s+)\bimport\(\s*(['"`])electron(?:\/[^'"`$]*)?\1\s*\)/
 
 function electronImportPaths(roots: string[]): string[] {
   const seen = new Set(roots)
