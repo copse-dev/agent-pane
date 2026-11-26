@@ -285,7 +285,10 @@ describe('reportPublicationWindow', () => {
       const report = reportPublicationWindow(tag, { state: 'unbuilt', run: builtBy }, now)
       assert.equal(report.level, 'warning')
       assert.equal(report.issue?.title, 'Release unpublished: v0.1.0-beta.16')
-      assert.match(report.message, /dispatch `Release \(macOS\)` with tag `v0\.1\.0-beta\.16`/)
+      // Dispatched from main, the rebuild's head_sha is main's, which the
+      // publisher refuses: the advice must name the tag as the ref.
+      assert.match(report.message, /dispatch `Release \(macOS\)` from the tag, not from main/)
+      assert.match(report.issue.body, /--ref v0\.1\.0-beta\.16 -f tag=v0\.1\.0-beta\.16/)
       assert.match(report.issue.body, /for example `0\.1\.0-beta\.17`/)
     }
   })

@@ -366,6 +366,11 @@ abandoned the same way; see [Publication window](#publication-window).
 
 A manual dispatch of `Release (macOS)` accepts only an existing matching tag
 reachable from `release`; it does not provide a bypass around those gates.
+Dispatch it from the tag itself (choose the tag under "Use workflow from", or
+`gh workflow run release-mac.yml --ref <tag> -f tag=<tag>`). A dispatch run
+records the commit of the ref it ran from, and `Publish release artifacts`
+accepts only a run of the tag's commit, so a rebuild dispatched from `main`
+can never be published.
 
 Private-repository artifact attestation requires GitHub Enterprise Cloud and
 this organization is on Team. While the source remains private, both workflows

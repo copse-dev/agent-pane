@@ -279,7 +279,9 @@ export function reportPublicationWindow(
         run === null
           ? 'has never run'
           : `ended ${run.conclusion ?? 'without a conclusion'}: ${run.url}`
-      const build = `dispatch \`Release (macOS)\` with tag \`${tag}\` to build it again`
+      // From the tag, not the default branch: a dispatch run's head_sha is the
+      // ref it ran from, and the publisher accepts only the tag's commit.
+      const build = `dispatch \`Release (macOS)\` from the tag, not from main (choose \`${tag}\` under "Use workflow from", or run \`gh workflow run release-mac.yml --ref ${tag} -f tag=${tag}\`), so the rebuild can be published`
       return {
         level: 'warning',
         message: `${tag} is not published, and its Release (macOS) build ${why}. Nothing will build it unless a person does: ${build}, or ${cutPast}.`,
