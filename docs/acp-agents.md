@@ -616,6 +616,7 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   `CLAUDE_CODE_OAUTH_TOKEN` for the agent stops it recurring. Outside Copse's
   sandbox the same message usually means a locked Keychain, so there it
   suggests `security unlock-keychain` first.
+
 - **`gh` does not run in a sandboxed agent's own shell.** `~/.config/gh` holds
   the user's GitHub token, so it stays unreadable, and `gh` fails on its config
   before it reaches the network (`failed to read configuration: open
