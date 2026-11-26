@@ -1027,8 +1027,12 @@ contained whatever role it plays: the program being run
 variable (`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift --version`), or an operand
 of any command (`plutil -p /Applications/Xcode.app/Contents/Info.plist`). It never counts as a
 redirect target, nor anywhere on a line that runs a file-writing command (`cp`, `mv`, `rm`, `touch`,
-`mkdir`, `ln`, `tee`, `rsync`, `tar`, `sed -i`, …): the sandbox would refuse that write, so the line
-keeps its outside-path reason and asks first. A credential path inside a root never counts.
+`mkdir`, `ln`, `tee`, `rsync`, `tar`, `sed -i`, …), a git subcommand that is not a read
+(`git -C ~/code/sibling commit`), a `gh` command that is not a read (`gh release create`), or release
+work from `release-actions.ts` (`sign_update`, `make ship-release`, a tag push, a secret fed in
+through `<`), nor on a line with a dangerous-in-sandbox reason. The sandbox would only block those
+steps and offer a retry outside, so the line keeps its outside-path reason and asks first. A
+credential path inside a root never counts.
 
 | Group (setting)                                                   | Default | What it covers                                                                                                                                                                                                                                                                      |
 | ----------------------------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

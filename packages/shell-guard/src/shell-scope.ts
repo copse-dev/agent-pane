@@ -1,7 +1,9 @@
 import { homedir } from 'node:os'
 import { resolve, sep } from 'node:path'
 import { parse as parseShell } from 'shell-quote'
+import { classifyGhSegment } from './gh-argv.ts'
 import { inertOperandIndexes } from './inert-operands.ts'
+import { gitWords, releaseActionReasons, releaseCommandReasons } from './release-actions.ts'
 import { sensitiveTargetReason } from './sensitive-paths.ts'
 import {
   CODE_INTERPRETERS,
@@ -13,6 +15,7 @@ import {
   inlineLeadingLiteralAssignments,
   isInertReadArgv,
   isStructurallyReadOnlyShellCommand,
+  READ_ONLY_GIT_SUBCOMMANDS,
   parsedShellSegments,
   shellRedirects,
   shellSegmentsQuoteAware,
@@ -1035,27 +1038,47 @@ const FILE_WRITING_HEADS: ReadonlySet<string> = new Set([
 ])
 
 /**
- * The standing read roots that apply to `command`: none when a segment runs a
- * file-writing head or `sed -i`, or when the line cannot be parsed. Redirect
- * targets are excluded per token by {@link maskContainedReadPaths}.
+ * Whether one unwrapped segment keeps a standing root's outside-path reason:
+ * it writes files (a file-writing head, `sed -i`, a git subcommand that is not
+ * a read), publishes (`gh` other than a read), or is release work a person must
+ * see up front (signing, a release entry point, a tag push). For these the
+ * sandbox would only block the step and offer a retry outside, so the person
+ * would meet a must-ask command one step late.
+ */
+function keepsOutsideReason(argv: readonly string[]): boolean {
+  const head = commandName(argv[0])
+  if (head === '') return false
+  if (FILE_WRITING_HEADS.has(head)) return true
+  if (
+    head === 'sed' &&
+    argv.some((arg) => /^-[a-zA-Z]*i/.test(arg) || arg.startsWith('--in-place'))
+  )
+    return true
+  if (head === 'git') {
+    const [subcommand = ''] = gitWords(argv).words
+    if (!READ_ONLY_GIT_SUBCOMMANDS.has(subcommand)) return true
+  }
+  if (head === 'gh' && classifyGhSegment(argv) !== 'read') return true
+  return releaseActionReasons(argv).length > 0
+}
+
+/**
+ * The standing read roots that apply to `command`: none when a segment
+ * {@link keepsOutsideReason}, when the line carries release or
+ * dangerous-in-sandbox reasons, or when it cannot be parsed. Redirect targets
+ * are excluded per token by {@link maskContainedReadPaths}.
  */
 function standingReadRoots(command: string): string[] {
   const roots = environment.standingReadRoots()
   if (roots.length === 0) return []
   const segments = parsedShellSegments(command)
   if (segments === null) return []
+  if (releaseCommandReasons(command).length > 0) return []
+  if (dangerousInSandboxReasons(command).length > 0) return []
   for (const segment of segments) {
     const words = [...segment.argv]
     while (words.length > 0 && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0] ?? '')) words.shift()
-    const argv = unwrapWrappers(words)
-    const head = commandName(argv[0])
-    if (head === '') continue
-    if (FILE_WRITING_HEADS.has(head)) return []
-    if (
-      head === 'sed' &&
-      argv.some((arg) => /^-[a-zA-Z]*i/.test(arg) || arg.startsWith('--in-place'))
-    )
-      return []
+    if (keepsOutsideReason(unwrapWrappers(words))) return []
   }
   return roots.map((root) => resolve(root))
 }

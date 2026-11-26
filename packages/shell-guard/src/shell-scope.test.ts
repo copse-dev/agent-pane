@@ -642,6 +642,15 @@ describe('analyzeShellCommand', () => {
         'cp README.md /Users/dev/code/sibling/README.md',
         'rm /Users/dev/code/sibling/a.txt',
         "sed -i '' s/a/b/ /Users/dev/code/sibling/a.txt",
+        // Git writes and release work keep asking up front rather than after a
+        // sandbox block (the replay's must-ask shapes with approved siblings).
+        'git -C /Users/dev/code/sibling add appcast.xml',
+        "git -C /Users/dev/code/sibling commit -m 'Release 1.7.0'",
+        'git -C /Users/dev/code/sibling push origin main',
+        'export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer && make ship-release VERSION=1.7.0',
+        '/Users/dev/code/sibling/bin/sign_update /Users/dev/code/sibling/build/App.zip',
+        'gh release create v1.7.0 /Users/dev/code/sibling/build/App.zip',
+        'cat /Users/dev/code/sibling/build/App.zip | gh release upload v1.7.0 -',
         // A credential inside a root, whatever the role.
         'plutil -p /Users/dev/code/sibling/.env',
         // A path outside every root.
