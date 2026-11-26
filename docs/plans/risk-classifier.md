@@ -81,6 +81,8 @@ Share of prompts removed / commands labelled `ask` approved. "Harm gate" is the 
 | CodeBERTa encoder veto, P(ask) < 0.5 + harm gate, main                         | 64% / 0      | 26% / 0       | 67% / 0       |
 | Gradient-boosted trees veto (public data only), P(ask) < 0.1 + harm gate, main | 80% / **8**  | 47% / 0       | 76% / 0       |
 | Gradient-boosted trees veto, P(ask) < 0.5 + harm gate, main                    | 80% / **8**  | 47% / 0       | 76% / 0       |
+| Winnow-12B veto (existing connection, local), P(ask) < 0.5 + harm gate, main   | 70% / **4**  | 30% / 0       | 76% / 0       |
+| Winnow-12B veto, P(ask) < 0.1 + harm gate, main                                | 57% / 1      | 22% / 0       | 76% / 0       |
 
 Caveats. The release-work rules were written from the Studio's misses, so their Studio row is
 in-sample; the MacBook and mini rows are the held-out test, and the models in this table never saw
@@ -133,6 +135,10 @@ nobody wrote a rule for.
    prompts instead of 80%, and 26% of MacBook prompts instead of 47%. That is a real price for
    families that are rare, so it belongs where Copse already puts a model second opinion (the
    classifier connection under Guarded YOLO), opt-in and measured, not on by default.
+   Winnow-12B, the LLM Copse already offers in that slot, ranks `ask` best on the MacBook (AUC
+   0.95; Studio 0.90), but at its shipped threshold of P(ask) ≥ 0.5 it lets 4 of the 8 misses
+   through and still costs coverage (Studio 80% to 70%, MacBook 47% to 30%). No model tried here
+   is a free second opinion: each one either misses the blind spot or adds prompts.
 7. **Prompts are friction today, not judgement.** Every answer on three machines was an approval.
    A prompt that is always approved trains the person to approve without reading, which is the
    failure the must-ask rules exist to prevent.
@@ -194,8 +200,7 @@ fail from inside the run. Dependencies are hash-pinned and no newer than two wee
 2. A trust offer on project add, so the deterministic tiers run (9% Studio).
 3. Re-run this replay on every machine monthly; each new `ask` family becomes a rule and a
    regression case, each false positive a containment or tier fix.
-4. Score the existing classifier connections (Winnow-12B, Kev) on the same held-out sets before
-   building another model.
+4. Score Kev and Strands Decider on the same held-out sets, as Winnow-12B is here.
 5. Keep must-ask families deterministic: each replay that finds a gate miss becomes a rule and a
    regression case. A learned veto is worth adding only when one stops a held-out miss without
    costing more prompts than the misses it stops.
