@@ -18,6 +18,11 @@ export {
   sandboxViolationCountForBackgroundProcess,
 } from './spawn.ts'
 export {
+  integrityNoteForCommand,
+  setWorkspaceIntegritySink,
+  workspaceIntegrityOutcome,
+} from './workspace-integrity.ts'
+export {
   gatewayReadFile,
   gatewayWriteFile,
   gatewayReaddir,

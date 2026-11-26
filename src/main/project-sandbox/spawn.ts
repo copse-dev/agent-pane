@@ -28,6 +28,8 @@ import {
   afterSandboxedCommand,
 } from './local-runtime.ts'
 import { withExecutionAudit } from '../services/execution-runtime/audit.ts'
+import { currentThreadExecutionContext } from '../services/thread-execution-context-store.ts'
+import { withWorkspaceIntegrity } from './workspace-integrity.ts'
 import type { ExecutionRuntime } from '../services/execution-runtime/runtime.ts'
 import { createSshExecutionRuntime } from '../services/ssh-workspace/ssh-runtime.ts'
 import {
@@ -69,7 +71,17 @@ function sshRemoteWorkingDirectory(
 }
 
 const localRuntime = createLocalExecutionRuntime()
-const auditedLocalRuntime = withExecutionAudit(localRuntime)
+// Agent commands are checked for changes to host-run configuration (agent
+// settings, hooks, git config) that a contained run must not leave behind.
+const auditedLocalRuntime = withExecutionAudit(
+  withWorkspaceIntegrity(localRuntime, {
+    isContained: (request) => request.local?.sandbox === true && isProjectSandboxEnabled(),
+    owner: () => {
+      const context = currentThreadExecutionContext()
+      return context ? { projectId: context.projectId, threadId: context.threadId } : null
+    },
+  }),
+)
 
 /**
  * The runtime that executes for a resolved target (R1 of

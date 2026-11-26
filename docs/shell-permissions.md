@@ -1605,6 +1605,54 @@ plaintext tokens, so it is denied again inside that grant: on macOS ASRT emits t
 the allows, and on Linux it masks the file with `/dev/null` (a missing file cannot be created
 contained, because the directory is bound read-only).
 
+### Host-run configuration written by contained commands
+
+A contained command can write anything in its workspace, and some workspace files configure
+programs that run later outside the sandbox. ASRT's mandatory write denies cover only some of them
+(`.mcp.json`, `.claude/commands`, `.claude/agents`, `.git/hooks`, …), Copse keeps
+`allowGitConfig: true` so ordinary git work runs contained, and on Linux bubblewrap can deny only a
+path that already exists. So every agent command that runs contained (`run_shell`,
+`run_background`, hook commands) is wrapped in a snapshot-and-compare check
+([`workspace-integrity.ts`](../src/main/project-sandbox/workspace-integrity.ts)):
+
+- **What is guarded.** Agent and hook configuration in the workspace: `.claude/settings.json`,
+  `.claude/settings.local.json`, `.claude/hooks/`, `.codex/`, `.cursor/{mcp,hooks,cli,environment}.json`,
+  `.cursor/hooks/`, `.gemini/settings.json`, `.qwen/settings.json`, `.copse/hooks.json` and
+  `.copse/worktree-preparation.json`. Git administration the command can reach: `config` and
+  `config.worktree` of the checkout's git directory (and its common directory for a linked
+  worktree), each `worktrees/*/config.worktree`, submodule `config` files and `hooks/` under
+  `modules/`, a linked worktree's `.git` pointer file, any file the config includes from inside the
+  workspace, and the directory `core.hooksPath` names when it is inside the workspace. Every
+  directory between the workspace and a guarded path is recorded too, so a planted symlink counts as
+  a change.
+- **When it is checked.** The snapshot is taken before the command starts and compared when it
+  closes. Overlapping contained commands in one workspace share a baseline, and an unsandboxed agent
+  command first checks every workspace that still has a contained command running, so a background
+  task cannot leave a change for an approved host command to pick up.
+- **What is reverted.** Any change to agent or hook configuration is reverted: an edit is restored, a
+  new file or directory is removed, a redirected parent is replaced. Git config is compared through
+  git's own parser (`git config --file - --no-includes --null --list`), and a change is reverted only
+  when an entry that can start a program was added, changed or removed. That is an allowlist
+  ([`git-config-policy.ts`](../src/main/project-sandbox/git-config-policy.ts)): upstream tracking,
+  `remote.*`, `submodule.*` (built-in update modes only), `user.name`/`user.email`, the exact
+  `git lfs install` filter and inert sections such as `branch`, `color` and `gc` stay; everything else,
+  including `core.fsmonitor`, `core.hooksPath`, `core.sshCommand`, `core.pager`, `core.worktree`,
+  `alias.*`, filter/diff/merge drivers, credential helpers, `include*`, `url.*.insteadOf` and keys git
+  adds in future, is reverted. A reverted config is restored whole, so an inert key written by the
+  same command is lost with it. A `.git` directory replaced by a gitdir pointer is removed, not
+  recreated empty, because git would then search parent directories.
+- **How it is reported.** The command's result gets a note naming each path and git key and telling
+  the model to ask the user. A `decision` line with `kind: "workspace-integrity"`, `actor: "system"`
+  records paths and keys, never config values.
+
+Limits: the check cannot tell who made a change, so an edit the user makes outside Copse to a guarded
+file while a contained background task runs in that workspace is reverted when the task ends or an
+unsandboxed command starts. Files that run only when the user runs the project itself
+(`package.json` scripts, `conftest.py`, `.cargo/config.toml`, `.bundle/config`) are workspace code,
+not configuration, and are not guarded; `.envrc` is left to direnv, which refuses to load changed
+content until the user runs `direnv allow` again. Instruction-only directories (rules, skills) start
+no program and are often written on request, so they are not guarded either.
+
 For each `node` on `PATH` the sandbox re-allows the binary and the directory holding it. It
 re-allows the directory above `bin` only when that looks like a version install (nvm's
 `versions/node/vX.Y.Z`, a Homebrew Cellar keg): it must hold `lib/node_modules`, must not be home or
