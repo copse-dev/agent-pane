@@ -21868,6 +21868,12 @@ var init_machine_dispatch = __esm({
   }
 });
 
+// src/shared/types/external-sessions.ts
+var init_external_sessions = __esm({
+  "src/shared/types/external-sessions.ts"() {
+  }
+});
+
 // src/shared/types/index.ts
 var init_types = __esm({
   "src/shared/types/index.ts"() {
@@ -21890,6 +21896,7 @@ var init_types = __esm({
     init_automations();
     init_apple_development();
     init_machine_dispatch();
+    init_external_sessions();
   }
 });
 
@@ -21914,6 +21921,7 @@ function createStore(initial) {
     stagedDiffs: [],
     filesPaneOpen: false,
     rightPanelMode: "explorer",
+    rightPanelSplitMode: null,
     rightPanelMaximized: false,
     projectsPaneOpen: true,
     layout: { ...DEFAULT_LAYOUT },
@@ -28253,6 +28261,7 @@ function captureProjectViewState(state) {
   return {
     filesPaneOpen: state.filesPaneOpen,
     rightPanelMode: state.rightPanelMode,
+    rightPanelSplitMode: state.rightPanelSplitMode,
     panelTab: state.panelTab
   };
 }
@@ -28272,6 +28281,7 @@ var init_project_view_state = __esm({
     DEFAULT_PROJECT_VIEW_STATE = {
       filesPaneOpen: false,
       rightPanelMode: "explorer",
+      rightPanelSplitMode: null,
       panelTab: "file"
     };
   }
@@ -28926,6 +28936,7 @@ function applyProjectSelection(store, api, id, path, loaded, revision, pendingTh
     panelTab: view.panelTab,
     filesPaneOpen: view.filesPaneOpen,
     rightPanelMode: view.rightPanelMode,
+    rightPanelSplitMode: view.rightPanelSplitMode,
     // Opening succeeded — lift any prior "folder missing" quarantine (#997).
     projects: projectsWithMissingCleared(store.getState().projects, id)
   });
@@ -47263,8 +47274,11 @@ function createToolPermissionsPanel(api) {
     const count = document.createElement("span");
     count.className = "tool-permission-count";
     count.textContent = String(group.tools.length);
-    count.setAttribute("aria-label", String(group.tools.length) + " tools");
-    summary.append(disclosure, heading, count);
+    count.setAttribute("aria-hidden", "true");
+    const spokenCount = document.createElement("span");
+    spokenCount.className = "tool-permission-count-sr";
+    spokenCount.textContent = `${String(group.tools.length)} tool${group.tools.length === 1 ? "" : "s"}`;
+    summary.append(disclosure, heading, count, spokenCount);
     if (group.origin) {
       const origin = document.createElement("span");
       origin.className = "tool-permission-group-origin";
@@ -66978,11 +66992,13 @@ function mountBranchCiEditor(options) {
   const rows = el("div", { class: "automation-list" });
   section.append(sectionHeading, rows);
   const fields = [];
-  function field(kind, node2) {
-    node2.dataset["triggerField"] = kind;
-    fields.push({ kind, node: node2 });
+  function field(kinds, node2) {
+    const list = typeof kinds === "string" ? [kinds] : kinds;
+    node2.dataset["triggerField"] = list.join(" ");
+    fields.push({ kinds: list, node: node2 });
     return node2;
   }
+  const PULL_REQUEST_KINDS = ["github-pr-ci-failed", "github-pr-review-comment"];
   const form = el("form", { class: "automation-form automation-ci-form", hidden: true });
   const title = el("h4", { class: "automation-form-title" }, "New automation");
   const when = el(
@@ -66990,6 +67006,8 @@ function mountBranchCiEditor(options) {
     { class: "automation-input automation-when-select" },
     el("option", { value: "schedule" }, "On a schedule"),
     el("option", { value: "github-ci-failed" }, "When CI fails on a branch"),
+    el("option", { value: "github-pr-ci-failed" }, "When CI fails on a pull request"),
+    el("option", { value: "github-pr-review-comment" }, "When a pull request gets review comments"),
     el("option", { value: "github-pr-changed" }, "When a pull request changes"),
     el("option", { value: "github-issue-labeled" }, "When an issue gets a label")
   );
@@ -67038,6 +67056,23 @@ function mountBranchCiEditor(options) {
     { class: "automation-input automation-pr-transition" },
     el("option", { value: "ready-for-review" }, "A draft becomes ready for review"),
     el("option", { value: "new-commits" }, "A ready pull request gets new commits")
+  );
+  const authors = el(
+    "select",
+    { class: "automation-input automation-pr-authors" },
+    el("option", { value: "mine" }, "Only pull requests I opened"),
+    el("option", { value: "anyone" }, "Pull requests by anyone")
+  );
+  const commenters = el(
+    "select",
+    { class: "automation-input automation-pr-commenters" },
+    el(
+      "option",
+      { value: "collaborators" },
+      "Collaborators and organization members, not bots or me"
+    ),
+    el("option", { value: "others" }, "Anyone but me, including bots and strangers"),
+    el("option", { value: "anyone" }, "Anyone, including me, bots and strangers")
   );
   const label = el("input", {
     type: "text",
@@ -67102,12 +67137,17 @@ function mountBranchCiEditor(options) {
       el("label", { class: "automation-label" }, "Pull request (optional)", pullRequest)
     ),
     field(
-      "github-ci-failed",
+      ["github-pr-changed", ...PULL_REQUEST_KINDS],
+      el("label", { class: "automation-label" }, "Base branch", baseBranch)
+    ),
+    field(PULL_REQUEST_KINDS, el("label", { class: "automation-label" }, "Watch", authors)),
+    field(
+      ["github-ci-failed", "github-pr-ci-failed"],
       el("label", { class: "automation-label" }, "Only these workflows (optional)", checks)
     ),
     field(
-      "github-pr-changed",
-      el("label", { class: "automation-label" }, "Base branch", baseBranch)
+      "github-pr-review-comment",
+      el("label", { class: "automation-label" }, "Comments from", commenters)
     ),
     field(
       "github-pr-changed",
@@ -67129,7 +67169,15 @@ function mountBranchCiEditor(options) {
     loadOnMount: false
   });
   function currentKind() {
-    return when.value === "github-pr-changed" || when.value === "github-issue-labeled" ? when.value : "github-ci-failed";
+    switch (when.value) {
+      case "github-pr-changed":
+      case "github-issue-labeled":
+      case "github-pr-ci-failed":
+      case "github-pr-review-comment":
+        return when.value;
+      default:
+        return "github-ci-failed";
+    }
   }
   function splitChecks() {
     return checks.value.split(",").map((item) => item.trim()).filter((item) => item.length > 0);
@@ -67144,7 +67192,22 @@ function mountBranchCiEditor(options) {
       };
     }
     if (kind === "github-issue-labeled") return { kind, label: label.value.trim() };
+    const who = authors.value === "anyone" ? "anyone" : "mine";
+    if (kind === "github-pr-review-comment")
+      return {
+        kind,
+        baseBranch: baseBranch.value.trim(),
+        authors: who,
+        commenters: commenters.value === "anyone" || commenters.value === "others" ? commenters.value : "collaborators"
+      };
     const selected = splitChecks();
+    if (kind === "github-pr-ci-failed")
+      return {
+        kind,
+        baseBranch: baseBranch.value.trim(),
+        authors: who,
+        ...selected.length > 0 ? { checks: selected } : {}
+      };
     const number4 = Number.parseInt(pullRequest.value, 10);
     return {
       kind,
@@ -67155,7 +67218,22 @@ function mountBranchCiEditor(options) {
   function updateSummary() {
     const kind = currentKind();
     branch.required = kind === "github-ci-failed" && pullRequest.value.trim() === "";
-    for (const item of fields) item.node.hidden = item.kind !== kind;
+    for (const item of fields) item.node.hidden = !item.kinds.includes(kind);
+    baseBranch.required = kind !== "github-ci-failed" && kind !== "github-issue-labeled";
+    if (kind === "github-pr-ci-failed" || kind === "github-pr-review-comment") {
+      const base = baseBranch.value.trim() || "the base branch";
+      const whose = authors.value === "anyone" ? "a pull request" : "one of my pull requests";
+      const strangers = authors.value === "anyone" ? " Warning: this includes pull requests from forks, so a run checks out and runs code written by people outside the repository." : "";
+      if (kind === "github-pr-review-comment") {
+        const from = commenters.value === "anyone" ? "Warning: anyone who can comment, including bots and strangers, can start a run that acts as you, and replies a run posts can start another run." : commenters.value === "others" ? "Warning: anyone who can comment, including bots and strangers, can start a run that acts as you. My own comments are ignored." : "Only comments from the repository owner, its collaborators and organization members count; bots and my own comments, including replies a run posts as me, are ignored.";
+        summary.textContent = `When ${whose} into ${base} gets new review or conversation comments, address them. New comments are batched into one task per pull request; at most three runs per pull request and ten in total per 24 hours. ${from}${strangers}`;
+        return;
+      }
+      const selected2 = splitChecks();
+      const only2 = selected2.length > 0 ? ` (only ${selected2.join(", ")})` : "";
+      summary.textContent = `When CI fails${only2} on the current head of ${whose} into ${base}, fix it. One task per pull request head; at most three runs per pull request and ten in total per 24 hours.${strangers}`;
+      return;
+    }
     if (kind === "github-pr-changed") {
       const base = baseBranch.value.trim() || "the base branch";
       summary.textContent = transition.value === "new-commits" ? `When a ready pull request into ${base} gets new commits, review them. One task per pull request head; at most three runs per 24 hours.` : `When a draft pull request into ${base} becomes ready for review, review it. One task per pull request head; at most three runs per 24 hours.`;
@@ -67174,7 +67252,8 @@ function mountBranchCiEditor(options) {
   for (const input2 of [branch, pullRequest, checks, baseBranch, label]) {
     input2.addEventListener("input", updateSummary);
   }
-  transition.addEventListener("change", updateSummary);
+  for (const select of [transition, authors, commenters])
+    select.addEventListener("change", updateSummary);
   function close() {
     editingId = null;
     form.hidden = true;
@@ -67193,8 +67272,10 @@ function mountBranchCiEditor(options) {
     name.value = definition?.name ?? draft?.name ?? "";
     branch.value = trigger?.kind === "github-ci-failed" ? trigger.branch : "";
     pullRequest.value = trigger?.kind === "github-ci-failed" && trigger.pullRequest !== void 0 ? String(trigger.pullRequest) : "";
-    checks.value = trigger?.kind === "github-ci-failed" ? (trigger.checks ?? []).join(", ") : "";
-    baseBranch.value = trigger?.kind === "github-pr-changed" ? trigger.baseBranch : "";
+    checks.value = trigger?.kind === "github-ci-failed" || trigger?.kind === "github-pr-ci-failed" ? (trigger.checks ?? []).join(", ") : "";
+    baseBranch.value = trigger?.kind === "github-pr-changed" || trigger?.kind === "github-pr-ci-failed" || trigger?.kind === "github-pr-review-comment" ? trigger.baseBranch : "";
+    authors.value = trigger?.kind === "github-pr-ci-failed" || trigger?.kind === "github-pr-review-comment" ? trigger.authors : "mine";
+    commenters.value = trigger?.kind === "github-pr-review-comment" ? trigger.commenters : "collaborators";
     transition.value = trigger?.kind === "github-pr-changed" ? trigger.transition : "ready-for-review";
     label.value = trigger?.kind === "github-issue-labeled" ? trigger.label : "";
     prompt.value = definition?.prompt ?? draft?.prompt ?? "";
@@ -67218,6 +67299,13 @@ function mountBranchCiEditor(options) {
     await modelPicker.refresh(selected);
   }
   function triggerLabel(trigger) {
+    if (trigger.kind === "github-pr-ci-failed" || trigger.kind === "github-pr-review-comment") {
+      const whose = trigger.authors === "mine" ? `PRs by ${trigger.viewer}` : "all PRs";
+      if (trigger.kind === "github-pr-review-comment")
+        return `PR review comments \xB7 ${trigger.repository} \xB7 ${whose} into ${trigger.baseBranch}`;
+      const only2 = trigger.checks && trigger.checks.length > 0 ? ` \xB7 ${trigger.checks.join(", ")}` : "";
+      return `Failed PR CI \xB7 ${trigger.repository} \xB7 ${whose} into ${trigger.baseBranch}${only2}`;
+    }
     if (trigger.kind === "github-pr-changed") {
       return `${trigger.transition === "new-commits" ? "PR new commits" : "PR ready for review"} \xB7 ${trigger.repository} \xB7 ${trigger.baseBranch}`;
     }
@@ -70479,7 +70567,7 @@ var init_agent_markup = __esm({
                 <textarea
                   name="customInstructions"
                   rows="4"
-                  placeholder="Always-on guidance added to every conversation (e.g. preferred style, conventions)."
+                  placeholder="e.g. Prefer small commits. Use British spelling."
                 ></textarea>
                 <span class="field-hint">
                   Added to every conversation, in every project. A project
@@ -70949,13 +71037,10 @@ var init_mcp_markup = __esm({
           <section class="settings-section" data-section="mcp">
             <h3>MCP servers</h3>
             <p class="settings-section-desc">
-              Model Context Protocol servers expose external tools to the agent. This section is
-              the whole picture of what Copse talks to over MCP, servers you configured, servers
-              the open project asks for, and servers your plugins bring with them. Each row says
-              where it came from. Add your own with <strong>Add server</strong>; Copse keeps them in
-              its own config. It also reads <code>.cursor/mcp.json</code> and
-              <code>.mcp.json</code> (project) and <code>~/.cursor/mcp.json</code> (global), which
-              you edit yourself. Plugins are installed and turned on under Customise.
+              Servers that give the agent external tools: the ones you add, the ones the open
+              project asks for, and the ones your plugins bring. Copse also reads
+              <code>.cursor/mcp.json</code> and <code>.mcp.json</code> in the project and
+              <code>~/.cursor/mcp.json</code>, which you edit yourself.
             </p>
 
             <fieldset>
@@ -71270,12 +71355,10 @@ var init_appearance_markup = __esm({
                 Hide tool details and reasoning from highly capable models
               </label>
               <p class="field-hint" id="concise-threads-hint">
-                For models scoring above 50 on the Artificial Analysis Intelligence Index, the
-                thread keeps all assistant messages and screenshots visible. Tool calls, reasoning,
-                and the tool errors the model recovers from stay hidden, and every finished turn
-                has a Show steps button to open it in full; while a model works, you see what it
-                is doing now. Turn off to always show the full thread. Other models always show the
-                full thread.
+                For models scoring above 50 on the Artificial Analysis Intelligence Index, tool
+                calls and reasoning fold into Show steps on each finished turn, and messages and
+                screenshots stay visible. Turn off to always show the full thread, as other models
+                do.
               </p>
             </fieldset>
 
@@ -72418,14 +72501,33 @@ function syncFilesPaneDom(store) {
   const pane = document.getElementById("pane-files");
   if (pane) pane.hidden = !store.getState().filesPaneOpen;
 }
+function canSplitRightPanel(mode) {
+  return SPLITTABLE_MODES.has(mode);
+}
+function normalizeRightPanelSplit(primary, split) {
+  if (split === null || split === primary || !canSplitRightPanel(primary)) {
+    return { rightPanelMode: primary, rightPanelSplitMode: null };
+  }
+  if (!canSplitRightPanel(split)) return { rightPanelMode: primary, rightPanelSplitMode: null };
+  if (split === "changes") return { rightPanelMode: "changes", rightPanelSplitMode: primary };
+  return { rightPanelMode: primary, rightPanelSplitMode: split };
+}
+function rightPanelSplitOf(state) {
+  if (!state.filesPaneOpen) return null;
+  return normalizeRightPanelSplit(state.rightPanelMode, state.rightPanelSplitMode).rightPanelSplitMode;
+}
 function rightPanelShows(state, mode) {
-  return state.filesPaneOpen && state.rightPanelMode === mode;
+  if (!state.filesPaneOpen) return false;
+  return state.rightPanelMode === mode || rightPanelSplitOf(state) === mode;
 }
 function selectRightPanelMode(store, mode, listener) {
   return store.select((state) => rightPanelShows(state, mode), listener);
 }
 function selectRightPanel(store, listener) {
-  return store.select((state) => state.filesPaneOpen ? state.rightPanelMode : null, listener);
+  return store.select(
+    (state) => state.filesPaneOpen ? `${state.rightPanelMode}|${rightPanelSplitOf(state) ?? ""}` : null,
+    listener
+  );
 }
 function setRightPanelMaximized(store, maximized) {
   if (store.getState().rightPanelMaximized === maximized) return;
@@ -72449,19 +72551,35 @@ function toggleFilesPane(store) {
   const open2 = !store.getState().filesPaneOpen;
   store.setState({
     filesPaneOpen: open2,
-    ...open2 ? { rightPanelMode: "explorer" } : {}
+    // Closing the whole panel closes both of its panes.
+    ...open2 ? { rightPanelMode: "explorer" } : { rightPanelSplitMode: null }
   });
   if (!open2) clearMaximizedOnClose(store);
   syncFilesPaneDom(store);
 }
 function openRightPanel(store, mode) {
-  const { filesPaneOpen, rightPanelMode } = store.getState();
-  if (filesPaneOpen && rightPanelMode === mode) {
+  const state = store.getState();
+  if (rightPanelShows(state, mode)) {
     syncFilesPaneDom(store);
     return;
   }
-  store.setState({ filesPaneOpen: true, rightPanelMode: mode });
+  const split = state.filesPaneOpen ? rightPanelSplitOf(state) : null;
+  store.setState({ filesPaneOpen: true, ...normalizeRightPanelSplit(mode, split) });
   syncFilesPaneDom(store);
+}
+function openRightPanelBeside(store, mode) {
+  const state = store.getState();
+  if (!state.filesPaneOpen || !canSplitRightPanel(mode) || !canSplitRightPanel(state.rightPanelMode)) {
+    openRightPanel(store, mode);
+    return;
+  }
+  if (rightPanelShows(state, mode)) return;
+  store.setState(normalizeRightPanelSplit(state.rightPanelMode, mode));
+  syncFilesPaneDom(store);
+}
+function closeRightPanelSplit(store) {
+  if (store.getState().rightPanelSplitMode === null) return;
+  store.setState({ rightPanelSplitMode: null });
 }
 function navigateToChange(store, path) {
   store.emit("git_change_navigate", path);
@@ -72486,15 +72604,23 @@ function showCanvasArtefact(store, identity) {
   store.emit("canvas_artefact_show_requested", identity);
 }
 function toggleRightPanel(store, mode) {
-  const { filesPaneOpen, rightPanelMode } = store.getState();
-  if (filesPaneOpen && rightPanelMode === mode) {
-    store.setState({ filesPaneOpen: false });
+  const state = store.getState();
+  const split = rightPanelSplitOf(state);
+  if (split !== null && split === mode) {
+    store.setState({ rightPanelSplitMode: null });
+    return;
+  }
+  if (split !== null && state.rightPanelMode === mode) {
+    store.setState({ rightPanelMode: split, rightPanelSplitMode: null });
+    return;
+  }
+  if (state.filesPaneOpen && state.rightPanelMode === mode) {
+    store.setState({ filesPaneOpen: false, rightPanelSplitMode: null });
     clearMaximizedOnClose(store);
     syncFilesPaneDom(store);
     return;
   }
-  store.setState({ filesPaneOpen: true, rightPanelMode: mode });
-  syncFilesPaneDom(store);
+  openRightPanel(store, mode);
 }
 function ensureWorkspaceForPanel(api, store) {
   if (store.getState().workspaceRoot) return true;
@@ -72504,6 +72630,10 @@ function ensureWorkspaceForPanel(api, store) {
 function openRightPanelWithWorkspace(store, api, mode) {
   if (!ensureWorkspaceForPanel(api, store)) return;
   openRightPanel(store, mode);
+}
+function openRightPanelBesideWithWorkspace(store, api, mode) {
+  if (!ensureWorkspaceForPanel(api, store)) return;
+  openRightPanelBeside(store, mode);
 }
 function toggleRightPanelWithWorkspace(store, api, mode) {
   if (!ensureWorkspaceForPanel(api, store)) return;
@@ -72516,9 +72646,20 @@ function toggleFilesPaneWithWorkspace(store, api) {
   }
   toggleFilesPane(store);
 }
+var SPLITTABLE_MODES;
 var init_panels = __esm({
   "src/renderer/controller/panels.ts"() {
     init_projects();
+    SPLITTABLE_MODES = /* @__PURE__ */ new Set([
+      "explorer",
+      "side-chat",
+      "terminal",
+      "changes",
+      "browser",
+      "memories",
+      "roadmap",
+      "vnc"
+    ]);
   }
 });
 
@@ -75585,6 +75726,9 @@ export {
   sameProjectThreadBesidesDraft,
   init_active_thread_owner,
   syncFilesPaneDom,
+  normalizeRightPanelSplit,
+  rightPanelSplitOf,
+  rightPanelShows,
   selectRightPanelMode,
   selectRightPanel,
   toggleRightPanelMaximized,
@@ -75592,6 +75736,7 @@ export {
   toggleProjectsPane,
   toggleFilesPane,
   openRightPanel,
+  closeRightPanelSplit,
   navigateToChange,
   navigateToRoadmapItem,
   openBrowserUrl,
@@ -75599,6 +75744,7 @@ export {
   openCanvasArtefact,
   showCanvasArtefact,
   openRightPanelWithWorkspace,
+  openRightPanelBesideWithWorkspace,
   toggleRightPanelWithWorkspace,
   toggleFilesPaneWithWorkspace,
   init_panels,
