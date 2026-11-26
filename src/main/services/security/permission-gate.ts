@@ -95,6 +95,7 @@ import {
 import { detectPackageInstall } from './safe-install.ts'
 import {
   addTrustedShellCommand,
+  guardedYoloContainFirstRequested,
   guardedYoloContainsShellCommand,
   offerableTrustedCommand,
   routeShellCommand,
@@ -1485,6 +1486,10 @@ function refuseCheckoutDetachingCommand(
   throw new Error(`Command blocked: ${reason}. ${found.advice}`)
 }
 
+/** Why contain-first asks when there is no project sandbox to keep a command in. */
+export const CONTAIN_FIRST_NO_SANDBOX_REASON =
+  'Keep commands in the project sandbox is on, but the project sandbox is not running, so this command could reach outside the project'
+
 /** Gate a raw shell command string through the same approval flow as run_shell. */
 export async function ensureShellCommandPermitted(
   command: string,
@@ -1689,6 +1694,29 @@ export async function ensureShellCommandPermitted(
       reasons: promptedBy ?? effectiveReasons,
       userResponse,
     })
+  }
+
+  // Contain-first with no project sandbox to contain in (Windows, or a sandbox
+  // that failed to start): fail safe rather than silently behave as if the
+  // setting were off. A command that could reach outside the project gets the
+  // harm gate's one-time confirmation, as every such command does in standard
+  // mode without a sandbox. Trusted commands, a remote (SSH) workspace, where
+  // the local sandbox never applies, and an ACP agent's own commands are left
+  // as they are, matching where contain-first applies with a sandbox.
+  if (
+    guardedYolo &&
+    effectiveAction === 'allow' &&
+    !sandboxEnabled &&
+    opts.sandboxEnabled === undefined &&
+    !spawnRunsOnSshTarget(workspaceRoot) &&
+    guardedYoloContainFirstRequested(runThread) &&
+    routeShellCommand(command, currentAgentRoots(), routingTool).outcome !== 'allow' &&
+    analyzeShellCommand(command, workspaceRoot).verdict !== 'sandbox'
+  ) {
+    const reasons = [CONTAIN_FIRST_NO_SANDBOX_REASON]
+    const approved = await promptGuardedYoloHarm(command, reasons, false, opts.signal)
+    auditGuardedYolo(approved ? 'approved' : 'declined', reasons)
+    return approved
   }
 
   // Guarded YOLO's second opinion (tier-screening.ts). A classifier connection

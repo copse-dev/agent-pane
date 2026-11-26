@@ -270,7 +270,9 @@ async function maybeRetryUnsandboxed(
     ) ||
     (await promptUnsandboxedShell(rawCommand, detection.reasons, signal, {
       readGrantApplied: options.readGrantApplied,
-      requireInteractiveApproval: evidence === 'signature',
+      // Contain-first promises a person answers every escape, so the
+      // auto-approval level, a replay lease and a standing read grant do not.
+      requireInteractiveApproval: evidence === 'signature' || options.containFirst,
     }))
   if (signatureMatch) {
     // The output signature is forgeable. It becomes useful cache evidence only
@@ -512,6 +514,8 @@ export const runShellTool = defineTool({
           (await promptExpectedSandboxBlock(command, reasons, signal, {
             source: cachedAdvice === null ? 'agent' : 'prior-denial',
             executionRoot: cwd,
+            // No replay lease answers it either under contain-first.
+            ...(containFirst ? { requireInteractiveApproval: true } : {}),
           }))
         ) {
           outsideSandbox = true

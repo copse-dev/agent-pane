@@ -353,13 +353,37 @@ describe('run_shell under Guarded YOLO contain-first', () => {
    */
   async function runGuarded(
     command: string,
-    opts: { containFirst: boolean; sandboxExit: number; expectsBlock?: boolean },
+    opts: {
+      containFirst: boolean
+      sandboxExit: number
+      expectsBlock?: boolean
+      /** A trusted project with an `origin` remote and the `read` auto-approval level. */
+      readAutoApproval?: boolean
+    },
   ): Promise<{ prompts: ApprovalRequest[]; outcome: string; wrapped: number; base: string }> {
     const base = await realpath(await mkdtemp(join(tmpdir(), 'copse-contain-first-')))
     const root = join(base, 'project')
     await mkdir(root)
     cleanups.push(async () => rm(base, { recursive: true, force: true }))
     cleanups.push(setWorkspaceRootForTest(root))
+    if (opts.readAutoApproval === true) {
+      await mkdir(join(root, '.git'))
+      await writeFile(
+        join(root, '.git', 'config'),
+        '[remote "origin"]\n\turl = https://example.com/x.git\n',
+      )
+      clearGitRemotesCache()
+      cleanups.push(clearGitRemotesCache)
+      setWorkspaceTrusted(root, true)
+      cleanups.push(() => {
+        setWorkspaceTrusted(root, false)
+      })
+      await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'read')
+      await setSetting('autoRunSandboxCommands', true)
+      cleanups.push(async () => {
+        await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+      })
+    }
     const threadId = 'contain-first'
     armGuardedYolo(threadId)
     activateGuardedYoloForRun(threadId)
@@ -481,6 +505,22 @@ describe('run_shell under Guarded YOLO contain-first', () => {
       containFirst: true,
       sandboxExit: 1,
     })
+    assert.equal(outcome, 'User declined to run outside the sandbox.')
+    assert.deepEqual(
+      prompts.map((p) => p.cause),
+      ['shell-sandbox-retry'],
+    )
+  })
+
+  // `git fetch origin` is a shape the `read` auto-approval level allows outside
+  // the sandbox. Contain-first still puts the escape in front of a person.
+  it('asks before an auto-approvable retry when the setting is on', async () => {
+    const { outcome, wrapped, prompts } = await runGuarded('git fetch origin', {
+      containFirst: true,
+      sandboxExit: 1,
+      readAutoApproval: true,
+    })
+    assert.equal(wrapped, 1)
     assert.equal(outcome, 'User declined to run outside the sandbox.')
     assert.deepEqual(
       prompts.map((p) => p.cause),

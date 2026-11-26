@@ -109,8 +109,17 @@ export const GUARDED_YOLO_CONTAIN_FIRST_SETTING = 'guardedYoloContainFirst'
  * `expects_sandbox_block` hint no longer moves a command outside unasked.
  */
 export function guardedYoloContainsFirst(threadId: string | null): boolean {
+  return isProjectSandboxEnabled() && guardedYoloContainFirstRequested(threadId)
+}
+
+/**
+ * The contain-first setting is on and this thread is in Guarded YOLO, whether
+ * or not a sandbox is there to honour it. With no project sandbox (Windows, or
+ * one that failed to start) the permission gate fails safe on this: a command
+ * that would reach outside the project asks instead of running unasked.
+ */
+export function guardedYoloContainFirstRequested(threadId: string | null): boolean {
   if (threadId === null || !isGuardedYoloActive(threadId)) return false
-  if (!isProjectSandboxEnabled()) return false
   return getSetting<boolean>(GUARDED_YOLO_CONTAIN_FIRST_SETTING, false)
 }
 

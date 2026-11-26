@@ -35,6 +35,8 @@ describe('Guarded YOLO contain-first setting', () => {
     assert.match(hint, /Off by default/)
     assert.match(hint, /The cost is more prompts/)
     assert.match(hint, /trusted list still run outside without asking/)
+    assert.match(hint, /Without the project sandbox .* ask before they run instead/)
+    assert.match(hint, /coding agents you add from outside Copse/)
 
     await toggle().click()
     await expect(toggle()).toBeSelected()

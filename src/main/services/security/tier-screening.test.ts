@@ -545,6 +545,28 @@ describe('tier screening through the safety-screening classifier', () => {
     }
   })
 
+  // With no project sandbox there is nothing to contain in. Contain-first then
+  // fails safe: a command that could reach outside the project asks once.
+  it('asks before an outside command when contain-first is on without a sandbox', async () => {
+    const seen = answering(distribution(0.1))
+    await setSetting(GUARDED_YOLO_CONTAIN_FIRST_SETTING, true)
+    try {
+      const allowed = await underGuardedYolo(() =>
+        ensureToolPermitted({ toolName: 'run_shell', args: { command: EXTERNAL_READ } }),
+      )
+      assert.equal(allowed, true, 'the user approved the prompt')
+      assert.equal(prompts, 1)
+      assert.equal(seen.calls, 0)
+      const local = await underGuardedYolo(() =>
+        ensureToolPermitted({ toolName: 'run_shell', args: { command: 'ls' } }),
+      )
+      assert.equal(local, true)
+      assert.equal(prompts, 1, 'a command that stays in the project does not ask')
+    } finally {
+      await setSetting(GUARDED_YOLO_CONTAIN_FIRST_SETTING, false)
+    }
+  })
+
   it('asks nothing when no screening connection is chosen', async () => {
     const seen = answering(distribution(0.9))
     const allowed = await underGuardedYolo(() =>

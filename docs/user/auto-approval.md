@@ -123,7 +123,11 @@ writes and operation-specific consent still have their own rules. Three lists in
 Settings → Permissions tune it: **Trusted SSH hosts** and **Trusted package
 registries** stop it asking about `ssh` to those hosts and installs from those
 registries; **Production targets** makes it ask about any `kubectl`, cloud,
-`ssh` or database command that names one of them, reads included.
+`ssh` or database command that names one of them, reads included. **Keep
+commands in the project sandbox until you approve leaving** (Settings →
+Permissions → Guarded YOLO, off by default) runs those external commands inside
+the project sandbox first and asks before any of them leaves it, at the cost of
+more prompts; without a project sandbox they ask before running instead.
 
 **Deferred approvals** queue work needing approval instead of opening a modal.
 Queued work has not been authorized or executed. An automation can have exact
