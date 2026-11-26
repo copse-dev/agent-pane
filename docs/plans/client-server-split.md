@@ -127,10 +127,13 @@ Landed since (25 November 2026), toward the same outcome before a daemon exists:
 - Linux and Windows detach on close mid-turn like macOS. With no Dock, a second launch is the
   way back, and the hidden app quits on its own once its turns end and no phone needs it
   (`shouldQuitDetachedApp` in `src/main/windows/window-detach.ts`).
-- A quit, update relaunch or crash still ends running turns, but the next launch continues each
-  one once from its persisted history (`src/main/services/interrupted-turn-resume.ts`; budget
-  and once-per-interruption rules in hooks plan decision 5). The daemon below removes the
-  interruption itself; this keeps the outcome close to it meanwhile.
+- A quit, update relaunch or crash still ends running turns. After an update relaunch or a
+  crash, the next launch continues each one once from its persisted history
+  (`src/main/services/interrupted-turn-resume.ts`; budget and once-per-interruption rules in
+  hooks plan decision 5). A quit the user chose stops the run, as the close dialog says, so
+  its turns keep the manual Continue card (`src/main/services/last-run.ts` records how each run
+  ended). The daemon below removes the interruption itself; this keeps the outcome close to it
+  meanwhile.
 
 Later slices, in order:
 

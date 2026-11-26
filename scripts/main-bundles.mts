@@ -109,6 +109,14 @@ export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
     entry: 'src/main/services/acp/acp-session-host-worker.ts',
     outfile: 'dist/main/acp-session-host-worker.js',
   },
+  // The stdio MCP server an ACP agent without http MCP spawns to reach Copse's
+  // native-tool bridge. The agent may run sandboxed, so it gets the manifest
+  // that stops Node's package.json walk at its own directory.
+  {
+    entry: 'src/main/services/acp/acp-bridge-stdio-relay.ts',
+    outfile: 'dist/main/acp-bridge-relay.js',
+    manifest: { type: 'commonjs' },
+  },
   // Owns ASRT for one approved loopback-binding background task. ASRT's
   // process-global proxy config must never widen an already-running contained
   // command in Electron main.

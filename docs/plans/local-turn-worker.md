@@ -16,9 +16,8 @@ Today, after the continuation and the lease:
   continues it once from the saved history.
 
 The gap is the time between those two events. A quit at 6 pm with the next launch at 9 am
-means the work waits all night. This plan keeps the turn going through a quit and an
-update relaunch, without hosting external CLIs, by running Copse's own loop in a process
-that is not the app.
+means the work waits all night. This plan keeps the turn going through a quit, without
+hosting external CLIs, by running Copse's own loop in a process that is not the app.
 
 ## What runs where
 
@@ -51,9 +50,16 @@ without Electron.
    lease and attach contract.
 2. **Hand-off happens at a turn boundary.** A live provider stream cannot move between
    processes. On quit the desktop stops the turn as it does today. The worker then runs the
-   same restart continuation a relaunch would have run (`INTERRUPTED_TURN_CONTINUATION`,
+   same restart continuation a relaunch runs after a crash (`INTERRUPTED_TURN_CONTINUATION`,
    budget-charged, once per interruption). So the worker reuses semantics that are already
-   reviewed, rather than inventing a second resume path.
+   reviewed, rather than inventing a second resume path. A quit that hands off is recorded
+   as `hand-off` in `last-run.json` (hooks plan decision 5), so a turn no worker took, because
+   the worker declined it or never started, is continued by the next launch instead. Only a
+   quit the user confirmed hands off: a signal (Ctrl+C on `make run`, SIGTERM) or a fault quit
+   has nobody to confirm it, so it stops the run and is recorded as `quit`.
+   The worker runs only Copse's own loop. A thread on an external coding agent (ACP) or a
+   remote agent is left for the next launch, because the worker could not stop that agent or
+   the processes it starts once it exits.
 3. **The writer lease is the only ownership signal.** The desktop releases the lease when its
    turn stops, and the worker takes it before writing. A desktop that relaunches while the
    worker runs finds the lease live, so its own boot continuation gets `AgentTurnBusyError`
@@ -71,13 +77,17 @@ without Electron.
    policy would ask about is deferred with the existing deferral mode (`deferral-mode.ts`,
    used by scheduled automation runs), not approved. The deferred items surface on the thread
    when the desktop returns (`deferred-approvals.md`).
-7. **Opt-out setting.** `continueTurnsAfterQuit` defaults to on. With it off, quit behaves as
-   in the restart-continuation PR.
+7. **Opt-out setting.** `continueTurnsAfterQuit` turns the hand-off on. It defaults to off
+   until Settings offers the switch and Stop reaches a worker's turn, and then to on. With it
+   off, quit behaves as in the restart-continuation PR.
 8. **Never for an update that changes the store format.** The worker must not run against a
    thread store whose format is newer than it understands. The worker is the quitting app's
    own binary, so this only matters if a later change starts workers from another version.
    _Not implemented yet:_ the store has no format version to compare, so the guard lands
-   with the first format change.
+   with the first format change. Until then a quit that installs an update (a downloaded
+   update installs on any quit, and "Restart now") starts no worker at all: the updater
+   replaces the binary a worker would run from, and the relaunched version continues the
+   turns itself.
 
 ## Slices
 
@@ -121,17 +131,26 @@ without Electron.
 
 ### W4: attach and stop from the desktop
 
-- The worker takes the thread's lease as soon as it starts, before its slow boot, so an app
-  relaunched meanwhile follows it instead of continuing the turn too.
-- While the turn runs, the worker serves it on a local socket (`turn-worker-socket.ts`): a
+- The worker first checks, from the read-only profile and the thread files, that it would
+  continue the thread at all (the resume rules and the model checks above). Only then does it
+  take the thread's lease, before its slow boot, so an app relaunched meanwhile follows it
+  instead of continuing the turn too; a thread the worker declines is never held.
+- The turn runs under that same claim, and the worker gives the lease back only after the
+  turn's last write has landed and its socket has closed, so nothing else starts on the
+  thread under that write.
+- From the takeover until it exits, the worker serves the thread on a local socket (`turn-worker-socket.ts`): a
   Unix socket under `<profile>/run/` (a named pipe on Windows), named by a hash of the profile
   and thread, newline-delimited JSON. `attach` replies with the turn's runtime snapshot and
   then streams every stamped chunk, the same order an in-process turn reaches the window.
-  `stop` aborts the turn as Stop does in-process.
+  `stop` aborts the turn as Stop does in-process. A stop that arrives during the boot is
+  kept: the continuation then never starts, and the thread is settled interrupted, so the
+  window offers Continue.
 - The app's follower attaches to that socket and forwards into `agent:transcript-snapshot`
   and `agent:chunk`, so a handed-off turn streams live. Without an answer there (an older
-  worker, or one still booting) it repaints from disk as in W3. A window reload re-sends
-  `attach`. Stop on a followed thread goes to the worker.
+  worker, or one just starting) it repaints from disk as in W3. A window reload re-sends
+  `attach`. Stop on a followed thread goes to the worker; pressed before the worker answers,
+  it is sent as soon as it does. A thread whose worker died without releasing its lease is
+  settled interrupted rather than left spinning.
 - Not covered by e2e yet: a live attach needs a worker turn slow enough to outlast a
   relaunch, and mock scenarios live in the app process.
 

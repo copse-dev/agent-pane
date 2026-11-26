@@ -98,7 +98,11 @@ export async function serveTurnWorker(
   handlers: { onAttach: () => void; onStop: () => void },
 ): Promise<TurnWorkerServer> {
   const clients = new Set<Socket>()
+  // Every connection, attached or not: `server.close` waits for all of them.
+  const sockets = new Set<Socket>()
   const server: Server = createServer((socket) => {
+    sockets.add(socket)
+    socket.on('close', () => sockets.delete(socket))
     lines(socket, (line) => {
       const message = decode(appToWorkerSchema, line)
       if (message?.t === 'attach') {
@@ -132,6 +136,8 @@ export async function serveTurnWorker(
     close: (): Promise<void> =>
       new Promise<void>((resolve) => {
         for (const socket of clients) socket.end()
+        // One that never attached gets nothing more; it must not hold the worker open.
+        for (const socket of sockets) if (!clients.has(socket)) socket.destroy()
         server.close(() => {
           resolve()
         })

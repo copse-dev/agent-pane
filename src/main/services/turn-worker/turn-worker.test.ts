@@ -18,7 +18,8 @@ import {
   saveProjectThread,
   threadDirectoryPath,
 } from '../thread-store.ts'
-import { runTurnWorker } from './turn-worker.ts'
+import { readdir } from 'node:fs/promises'
+import { runTurnWorker, TurnControl } from './turn-worker.ts'
 
 const RESTART_NOTE = 'Copse restarted during this turn. Continuing where it stopped.'
 
@@ -74,9 +75,6 @@ function app(): WriterLeaseEnvironment {
     owner: { id: 'quitting-app', host: hostname(), pid: process.ppid },
     now: Date.now,
     isAlive: () => true,
-    sleep: async (): Promise<void> => {
-      await Promise.resolve()
-    },
   }
 }
 
@@ -137,6 +135,49 @@ describe('runTurnWorker', () => {
       (await loadProjectThreadMetas('p1')).find((meta) => meta.id === 't5')?.status,
       'running',
     )
+  })
+
+  it('leaves an external coding agent turn for the next launch', async () => {
+    await saveProjectThread('p1', cutOff('t6', { model: 'acp:claude-acp' }))
+    const outcome = await runTurnWorker(
+      { projectId: 'p1', threadId: 't6' },
+      { registry: new ToolRegistry(), log: silent },
+    )
+    assert.deepEqual(outcome, { status: 'not-resumable' })
+    assert.equal(
+      (await loadProjectThreadMetas('p1')).find((meta) => meta.id === 't6')?.status,
+      'running',
+    )
+  })
+
+  it('never takes a thread it then declines', async () => {
+    await saveProjectThread('p1', cutOff('t7', { model: chatGptPlanModelValue('codex', 'gpt-5') }))
+    const outcome = await runTurnWorker(
+      { projectId: 'p1', threadId: 't7' },
+      { registry: new ToolRegistry(), log: silent },
+    )
+    assert.deepEqual(outcome, { status: 'not-resumable' })
+    const files = await readdir(threadDirectoryPath('p1', 't7'))
+    assert.deepEqual(
+      files.filter((name) => name.startsWith(WRITER_LEASE_FILE)),
+      [],
+      'a relaunched app must not see the thread held while the worker decides',
+    )
+  })
+
+  it('does not start a turn whose Stop came while the worker was starting', async () => {
+    await saveProjectThread('p1', cutOff('t8'))
+    const control = new TurnControl()
+    control.handleStop()
+    const outcome = await runTurnWorker(
+      { projectId: 'p1', threadId: 't8' },
+      { registry: new ToolRegistry(), log: silent, control },
+    )
+    assert.deepEqual(outcome, { status: 'stopped' })
+    const meta = (await loadProjectThreadMetas('p1')).find((m) => m.id === 't8')
+    assert.equal(meta?.status, 'idle')
+    assert.ok(meta.interruptedTurnAt !== undefined)
+    assert.equal((await loadThreadMessages('p1', 't8')).length, 2, 'nothing was added')
   })
 
   it('does nothing for a thread that finished', async () => {

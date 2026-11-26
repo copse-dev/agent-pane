@@ -41,6 +41,15 @@ describe('RunRecorder', () => {
     assert.deepEqual(await readLastRun(handOff), { startedAt: 7, ended: 'hand-off' })
   })
 
+  it('records a quit when the update relaunch was abandoned first', async () => {
+    const path = recordPath()
+    const recorder = new RunRecorder(path, 7)
+    recorder.noteUpdateRelaunch()
+    recorder.clearUpdateRelaunch()
+    await recorder.end()
+    assert.deepEqual(await readLastRun(path), { startedAt: 7, ended: 'quit' })
+  })
+
   it('reads back a start time with a fraction of a millisecond', async () => {
     const path = recordPath()
     writeFileSync(path, JSON.stringify({ startedAt: 1795659222761.8193 }))

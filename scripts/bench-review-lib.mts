@@ -21,8 +21,8 @@
 // src/main — so it doubles as an external-consumer proof of `@copse/review`.
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { cp, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -49,7 +49,6 @@ import { createHostProcessBackend } from '@copse/review/host-process-backend.ts'
 import { serializeCell } from '@copse/review/isolation.ts'
 import { resolveLenses } from '@copse/review/lenses.ts'
 import {
-  DEFAULT_LOCAL_BASE_URL,
   isProviderKind,
   PROVIDER_KINDS,
   selectProvider,
@@ -91,6 +90,10 @@ export const USAGE = `usage: node scripts/bench-review.mts [options]
   --provider <kind>      ${PROVIDER_KINDS.join(' | ')}
   --model <id>           reviewer model (repeat, or comma-separate, to fan out)
   --challenger <id>      challenger / reproducer model (default: the first --model)
+  --challenger-provider <kind>
+                         the challenger's provider (default: --provider, else inferred)
+  --challenger-base-url <url>
+                         the challenger's endpoint (default: --base-url), for a second server
   --base-url <url>       endpoint for lmstudio / openai-compatible
   --lenses <ids|all>     lenses to run (default ${DEFAULT_LENSES})
   --max-steps <n>        tool-using steps per reviewer (default: each lens's budget)
@@ -282,18 +285,20 @@ export async function materialiseCase(
   reviewCase: ReviewCase,
 ): Promise<{ root: string; remove: () => Promise<void> }> {
   const root = await mkdtemp(join(tmpdir(), `review-bench-${reviewCase.spec.id}-`))
-  const copyTree = (tree: string): void => {
+  // Async `cp`, not recursive `cpSync`: Node's native sync tree copy fails with
+  // EACCES on the virtiofs shares an Apple container mounts the checkout from.
+  const copyTree = async (tree: string): Promise<void> => {
     for (const entry of readdirSync(root)) {
       if (entry !== '.git') execFileSync('rm', ['-rf', join(root, entry)])
     }
-    cpSync(join(reviewCase.dir, tree), root, { recursive: true })
+    await cp(join(reviewCase.dir, tree), root, { recursive: true })
   }
   git(root, 'init', '-q', '-b', 'main')
-  copyTree('base')
+  await copyTree('base')
   git(root, 'add', '-A')
   git(root, 'commit', '-q', '-m', 'base')
   git(root, 'checkout', '-q', '-b', 'head')
-  copyTree('head')
+  await copyTree('head')
   git(root, 'add', '-A')
   git(root, 'commit', '-q', '--allow-empty', '-m', 'head')
   return { root, remove: () => rm(root, { recursive: true, force: true }) }
@@ -336,6 +341,8 @@ export interface ModelProfileOptions {
   readonly provider?: ProviderKind | undefined
   readonly models: readonly string[]
   readonly challenger?: string | undefined
+  readonly challengerProvider?: ProviderKind | undefined
+  readonly challengerBaseUrl?: string | undefined
   readonly baseUrl?: string | undefined
   readonly env: Readonly<Record<string, string | undefined>>
 }
@@ -347,25 +354,29 @@ export function modelProfile(options: ModelProfileOptions): BenchProfile {
   )
   const [first] = selections
   if (first === undefined) throw new Error('no model selected')
-  const challenger =
-    options.challenger === undefined
-      ? first
-      : selectProvider(
-          { kind: options.provider, model: options.challenger, baseUrl: options.baseUrl },
-          options.env,
-        )
-  const byModel = new Map(selections.map((selection) => [selection.model, selection]))
-  const identityFor = (selection: (typeof selections)[number]): BenchModelIdentity => {
-    let endpoint: string | null = null
-    if (selection.kind === 'lmstudio') {
-      endpoint = sanitiseEndpoint(
-        options.baseUrl ?? options.env['LM_STUDIO_URL']?.trim() ?? DEFAULT_LOCAL_BASE_URL,
+  const separateChallenger =
+    options.challenger !== undefined ||
+    options.challengerProvider !== undefined ||
+    options.challengerBaseUrl !== undefined
+  const challenger = separateChallenger
+    ? selectProvider(
+        {
+          kind: options.challengerProvider ?? options.provider,
+          model: options.challenger ?? first.model,
+          baseUrl: options.challengerBaseUrl ?? options.baseUrl,
+        },
+        options.env,
       )
-    } else if (selection.kind === 'openai-compatible') {
-      endpoint = sanitiseEndpoint(options.baseUrl ?? DEFAULT_LOCAL_BASE_URL)
-    }
-    return { model: selection.model, provider: selection.kind, endpoint }
-  }
+    : first
+  const byModel = new Map(selections.map((selection) => [selection.model, selection]))
+  // Each role's own server, so a reviewer and a challenger on two endpoints
+  // are two identities in the baseline key, never one.
+  const identityFor = (selection: (typeof selections)[number]): BenchModelIdentity => ({
+    model: selection.model,
+    provider: selection.kind,
+    endpoint:
+      selection.endpoint === undefined ? null : sanitiseEndpoint(selection.endpoint.baseUrl),
+  })
   return {
     id: selections.map((selection) => selection.model).join('+'),
     reviewerModels: selections.map((selection) => selection.model),
@@ -821,6 +832,8 @@ export async function main(
         provider: { type: 'string' },
         model: { type: 'string', multiple: true },
         challenger: { type: 'string' },
+        'challenger-provider': { type: 'string' },
+        'challenger-base-url': { type: 'string' },
         'base-url': { type: 'string' },
         lenses: { type: 'string' },
         'max-steps': { type: 'string' },
@@ -866,12 +879,20 @@ export async function main(
       if (values.provider !== undefined && !isProviderKind(values.provider)) {
         throw new Error(`unknown provider ${values.provider}; one of ${PROVIDER_KINDS.join(', ')}`)
       }
+      const challengerProvider = values['challenger-provider']
+      if (challengerProvider !== undefined && !isProviderKind(challengerProvider)) {
+        throw new Error(
+          `unknown challenger provider ${challengerProvider}; one of ${PROVIDER_KINDS.join(', ')}`,
+        )
+      }
       profile = modelProfile({
         provider: values.provider,
         models: (values.model ?? [])
           .flatMap((entry) => entry.split(','))
           .filter((id) => id.length > 0),
         challenger: values.challenger,
+        challengerProvider,
+        challengerBaseUrl: values['challenger-base-url'],
         baseUrl: values['base-url'],
         env: process.env,
       })

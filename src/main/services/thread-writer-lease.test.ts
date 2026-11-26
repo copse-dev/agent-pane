@@ -26,9 +26,6 @@ function env(id: string, now: () => number): WriterLeaseEnvironment {
     owner: { id, host: 'host', pid: id === 'app' ? 1 : 2 },
     now,
     isAlive: () => true,
-    sleep: async (): Promise<void> => {
-      await Promise.resolve()
-    },
   }
 }
 

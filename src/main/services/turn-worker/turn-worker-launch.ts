@@ -12,8 +12,20 @@ import { join } from 'node:path'
  * still held, exits by itself; the next launch then continues the turn as before.
  */
 
-/** Opt-out for the hand-off; on by default. */
+/** Whether a quit hands its turns to workers. */
 export const CONTINUE_TURNS_AFTER_QUIT_SETTING = 'continueTurnsAfterQuit'
+/**
+ * Off until Settings offers the switch and Stop reaches a worker's turn; until
+ * then a quit stops its turns, as it did before the worker.
+ */
+export const CONTINUE_TURNS_AFTER_QUIT_DEFAULT = false
+
+/** Whether a quit the user confirmed should hand its turns off. */
+export function continuesTurnsAfterQuit(
+  read: (key: string, fallback: boolean) => unknown,
+): boolean {
+  return read(CONTINUE_TURNS_AFTER_QUIT_SETTING, CONTINUE_TURNS_AFTER_QUIT_DEFAULT) === true
+}
 
 export interface HandOffTarget {
   projectId: string
