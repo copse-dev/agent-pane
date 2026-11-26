@@ -138,6 +138,14 @@ describe('assessAutoApproval — network commands need a configured remote', () 
     prompts('git push --delete origin main')
   })
 
+  it('refuses tag pushes, which publish a release', () => {
+    prompts('git push origin v1.7.0')
+    prompts('git push origin refs/tags/v1.7.0')
+    prompts('git push --tags')
+    prompts('git push --follow-tags origin main')
+    assert.equal(approved('git push origin main', 'remote-write', ['origin']), 'remote-write')
+  })
+
   it('refuses an unrecognised flag rather than guessing', () => {
     prompts('git push --receive-plugin=/tmp/evil origin main')
     prompts('git fetch --upload-plugin=/tmp/evil origin')

@@ -8,6 +8,7 @@ import {
 } from '@shared/auto-approval.ts'
 import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts'
 import { classifyGhSegment, flagName, isFlag } from '@copse/shell-guard/gh-argv.ts'
+import { releaseActionReasons } from '@copse/shell-guard/release-actions.ts'
 import { secretFilesIn } from '@copse/shell-guard/secrets.ts'
 import { SAFE_PREP_COMMANDS, splitSegments } from './command-routing.ts'
 import { isReadOnlySimpleCommand, READ_ONLY_GIT_SUBCOMMANDS } from './permission-policy.ts'
@@ -682,6 +683,10 @@ function classifyGitSegment(
   const { subcommand, args } = split
 
   if (GIT_NETWORK_SUBCOMMANDS.has(subcommand)) {
+    // Pushing a tag publishes a release (`git push origin v1.7.0`, `--tags`): the
+    // harm gate asks for it, and a tier must not approve what that gate would ask.
+    const release = releaseActionReasons(argv)
+    if (release.length > 0) return { tier: null, reason: `${release[0]}: ${segment}` }
     const outcome = classifyNetworkGitSubcommand(subcommand, args, context.configuredRemotes)
     return 'tier' in outcome
       ? { tier: outcome.tier, reason: `git ${subcommand} against a configured remote` }
