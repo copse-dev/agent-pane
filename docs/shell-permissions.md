@@ -472,7 +472,12 @@ contained `pnpm run` treatment described above. A command run through Corepack
 sandbox re-allows Corepack's cache read-only, so a pinned package manager that is already downloaded
 starts contained, and one Corepack would download is blocked and asks before an outside retry.
 Corepack's own `enable`, `disable`, `install`, `prepare`, `use`, `up`, `pack` and `cache` commands
-write shims or package managers outside the workspace and stay hard-external. Explicit package
+write shims or package managers outside the workspace and stay hard-external. `fnm exec --using=<version> <cmd>`
+is read as `<cmd>` with that Node first on `PATH`: its `exec` is fnm's subcommand, not the shell
+builtin, so the command it runs decides the verdict and the harm gate inspects it. The sandbox
+re-allows fnm's `node-versions` and `aliases` read-only, which `fnm exec` lists before it starts.
+`eval "$(fnm env)"` and `fnm use` still ask: they write multishell links under `~/.local/state`,
+and a contained command must not write a directory that later sits on an unsandboxed `PATH`. Explicit package
 installs remain hard-external. The
 shell `exec` builtin in command position, `find -exec`, and container `exec` remain hard-external as
 dynamic execution.
@@ -1640,7 +1645,8 @@ shim mode) get only the shim directory, so their `node` fails contained and offe
 
 It also re-allows, read-only and only when the directory exists, the installed package-manager and
 interpreter caches: Corepack's cache (`$COREPACK_HOME`, else `${XDG_CACHE_HOME:-~/.cache}/node/corepack`,
-plus `~/Library/Caches/node/corepack` on macOS), `~/.bun/bin`, `~/.pyenv/versions`, and
+plus `~/Library/Caches/node/corepack` on macOS), fnm's `node-versions` and `aliases` (under `$FNM_DIR`, else
+`${XDG_DATA_HOME:-~/.local/share}/fnm`, plus `~/Library/Application Support/fnm` on macOS), `~/.bun/bin`, `~/.pyenv/versions`, and
 `~/.local/share/uv/python`. A Corepack-pinned pnpm or yarn, `bun test`, and a uv or pyenv `.venv`
 whose `bin/python` links into those installs therefore start contained instead of failing and
 offering to run outside. None of these roots is writable (a writable shim on `PATH` would run later

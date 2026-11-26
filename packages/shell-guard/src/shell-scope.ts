@@ -392,7 +392,9 @@ const EXTERNAL_PATTERNS: Array<{
     // `find -exec` and container exec. Package-manager subcommands alone, global
     // options included (`pnpm -s exec`), are tried inside the OS sandbox.
     re: new RegExp(
-      String.raw`(?<!\b(?:npm|yarn|pnpm|bun)${PKG_GLOBAL_OPTIONS}[ \t]+)\bexec\b`,
+      // `fnm exec --using=24 cmd` selects a Node version and runs `cmd`, which is judged on its
+      // own (`unwrapWrappers` looks through it): the exec is fnm's subcommand, not the builtin.
+      String.raw`(?<!\b(?:npm|yarn|pnpm|bun)${PKG_GLOBAL_OPTIONS}[ \t]+)(?<!\bfnm[ \t]+)\bexec\b`,
       'i',
     ),
     reason: 'dynamic execution / encoding',
