@@ -55,6 +55,26 @@ describe('keyboard-shortcuts', () => {
     })
   })
 
+  it('matchPanelShortcut adds Alt/Option to open a pane beside the open one', () => {
+    // Option+Shift+B types "ı" on a US Mac layout, so the chord matches on code.
+    assert.deepEqual(
+      matchPanelShortcut(
+        keyEvent({ metaKey: true, altKey: true, shiftKey: true, key: 'ı', code: 'KeyB' }),
+      ),
+      { openPanelBeside: 'browser' },
+    )
+    assert.deepEqual(
+      matchPanelShortcut(
+        keyEvent({ ctrlKey: true, altKey: true, shiftKey: true, key: 'G', code: 'KeyG' }),
+      ),
+      { openPanelBeside: 'changes' },
+    )
+    assert.deepEqual(
+      matchPanelShortcut(keyEvent({ ctrlKey: true, altKey: true, key: '`', code: 'Backquote' })),
+      { openPanelBeside: 'terminal' },
+    )
+  })
+
   it('matchPanelShortcut ignores unrelated chords', () => {
     assert.equal(matchPanelShortcut(keyEvent({ ctrlKey: true, key: 't' })), null)
     assert.equal(matchPanelShortcut(keyEvent({ ctrlKey: true, shiftKey: true, key: 't' })), null)
