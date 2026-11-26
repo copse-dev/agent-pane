@@ -4,7 +4,14 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { headlessEventSchema } from '@copse/agent/headless-contract.ts'
-import type { LLMMessage, LLMProvider, ProviderStreamChunk } from '@copse/llm/wire-types.ts'
+import { LMStudioProvider } from '@copse/llm/lm-studio-provider.ts'
+import type {
+  LLMMessage,
+  LLMProvider,
+  LLMStreamOptions,
+  LLMTool,
+  ProviderStreamChunk,
+} from '@copse/llm/wire-types.ts'
 import { materialiseCheckouts, type MaterialisedCheckouts } from './checkouts.ts'
 import { buildReviewContext, type ReviewContext } from './context.ts'
 import {
@@ -22,6 +29,104 @@ import { runReviewers, runStage2 } from './stage2.ts'
 import { createHostProcessBackend } from './host-process-backend.ts'
 import { cellEnvironment } from './isolation.ts'
 import { createTestRepo, type TestRepo } from './test-repo.ts'
+
+interface SdkFragment {
+  readonly content: string
+  readonly tokensCount: number
+  readonly containsDrafted: boolean
+  readonly reasoningType: 'none' | 'reasoning'
+  readonly isStructural: boolean
+}
+
+function sdkFragment(content: string, reasoningType: SdkFragment['reasoningType']): SdkFragment {
+  return {
+    content,
+    tokensCount: Math.ceil(content.length / 4),
+    containsDrafted: false,
+    reasoningType,
+    isStructural: false,
+  }
+}
+
+/**
+ * LM Studio's SDK serving a thinking model: the first prediction drafts the
+ * review in prose, and every later one thinks without end until it is cancelled.
+ */
+class ThinkingSdkClient {
+  predictions = 0
+
+  model(): Promise<ThinkingSdkClient> {
+    return Promise.resolve(this)
+  }
+
+  prepareImageBase64(): Promise<never> {
+    return Promise.reject(new Error('unexpected image'))
+  }
+
+  respond(
+    _chat: unknown,
+    opts: {
+      readonly onPredictionFragment?: (fragment: SdkFragment) => void
+      readonly signal?: AbortSignal
+    },
+  ): { result: () => Promise<{ stats: { stopReason: 'eosFound' } }> } {
+    this.predictions++
+    if (this.predictions === 1) {
+      opts.onPredictionFragment?.(
+        sdkFragment('I inspected src/math.ts and found no further defects.', 'none'),
+      )
+      return { result: () => Promise.resolve({ stats: { stopReason: 'eosFound' } }) }
+    }
+    return {
+      result: () =>
+        new Promise((_resolve, reject) => {
+          for (let step = 0; step < 400 && !(opts.signal?.aborted ?? false); step++) {
+            opts.onPredictionFragment?.(
+              sdkFragment(
+                `Step ${String(step)}: does finish_review need one more check? `,
+                'reasoning',
+              ),
+            )
+          }
+          opts.signal?.addEventListener(
+            'abort',
+            () => {
+              reject(new Error('prediction cancelled'))
+            },
+            { once: true },
+          )
+        }),
+    }
+  }
+}
+
+/** LM Studio's OpenAI-compatible route with thinking off: it calls the tool at once. */
+class ReasoningOffRoute implements LLMProvider {
+  readonly options: Array<LLMStreamOptions | undefined> = []
+
+  async *stream(
+    _messages: LLMMessage[],
+    _tools: LLMTool[],
+    _signal?: AbortSignal,
+    options?: LLMStreamOptions,
+  ): AsyncIterable<ProviderStreamChunk> {
+    await Promise.resolve()
+    this.options.push(options)
+    yield {
+      type: 'tool_call',
+      toolCall: {
+        id: 'finish-without-reasoning',
+        name: 'finish_review',
+        args: {
+          checked: 'src/math.ts and the changed implementation.',
+          couldNotVerify: 'Nothing beyond the draft.',
+          findings: [],
+        },
+      },
+    }
+    yield { type: 'done', stopReason: 'tool_use' }
+  }
+}
 
 function textOf(message: LLMMessage): string {
   return 'content' in message && typeof message.content === 'string' ? message.content : ''
@@ -426,6 +531,41 @@ describe('runStage2', () => {
     assert.equal(provider.streamOptions[2], undefined)
   })
 
+  it("keeps the loop's run-limit notice out of a failed reviewer's summary", async () => {
+    // The reviewer spends every step reading, so the loop ends its investigation
+    // with its own run-limit notice, and the closure repair then answers in prose.
+    const provider = new ScriptedProvider([
+      { type: 'tool_call', name: 'read_file', args: { path: 'src/math.ts' } },
+      { type: 'tool_call', name: 'read_file', args: { path: 'src/other.ts' } },
+      { type: 'tool_call', name: 'read_file', args: { path: 'src/third.ts' } },
+      { type: 'text', text: 'Still reviewing.' },
+      { type: 'text', text: 'Still reviewing.' },
+      { type: 'text', text: 'Still reviewing.' },
+    ])
+    const result = await runStage2({
+      provider,
+      model: 'scripted',
+      lens: CORRECTNESS_LENS,
+      context,
+      validation,
+      headCheckout: checkouts.head,
+      cell: null,
+      shellDecision: 'deny',
+      scrub: (text) => text,
+      threadId: 'thread-run-limit',
+      turnId: 'turn-run-limit',
+      maxSteps: 3,
+    })
+    assert.equal(result.outcome, 'failed')
+    assert.equal(result.toolCalls, 3)
+    // The notice is still in the transcript, as the loop's message...
+    assert.ok(
+      result.events.some((event) => JSON.stringify(event).includes('reached its step limit')),
+    )
+    // ...but the reviewer said nothing, so its summary is empty, not the notice.
+    assert.equal(result.summary, '')
+  })
+
   it('feeds a rejected closure reason back so the repair can correct its arguments', async () => {
     const provider = new ScriptedProvider([
       { type: 'text', text: 'I checked the changed implementation and found no defect.' },
@@ -473,6 +613,36 @@ describe('runStage2', () => {
     )
     assert.ok(rejectedResult?.type === 'tool_result')
     assert.match(rejectedResult.result, /checked:.*8/)
+  })
+
+  it('closes a review on LM Studio’s SDK when a thinking model reasons through the closure repair', async () => {
+    // Regression: the forced closure and its retry each ran away reasoning, and
+    // the loop's last-chance no-reasoning call stayed on the SDK, which cannot
+    // turn thinking off, so the review ended without finish_review.
+    const sdk = new ThinkingSdkClient()
+    const reasoningOff = new ReasoningOffRoute()
+    const result = await runStage2({
+      provider: new LMStudioProvider('thinking-model', { client: sdk, reasoningOff }),
+      model: 'thinking-model',
+      lens: CORRECTNESS_LENS,
+      context,
+      validation,
+      headCheckout: checkouts.head,
+      cell: null,
+      shellDecision: 'deny',
+      scrub: (text) => text,
+      threadId: 'thread-thinking-closure',
+      turnId: 'turn-thinking-closure',
+    })
+    assert.equal(result.error, undefined)
+    assert.equal(result.outcome, 'completed')
+    assert.deepEqual(result.completion, {
+      checked: 'src/math.ts and the changed implementation.',
+      couldNotVerify: 'Nothing beyond the draft.',
+    })
+    // The draft, then the forced closure and its retry, both cut as runaways.
+    assert.equal(sdk.predictions, 3)
+    assert.deepEqual(reasoningOff.options, [{ suppressReasoning: true }])
   })
 
   it('reserves the budget-edge continuation for the required structured closure', async () => {
@@ -738,6 +908,60 @@ describe('runStage2', () => {
         ],
       ],
     )
+  })
+
+  it('runs a reviewer only under its own lenses and keeps view_image from a text-only model', async () => {
+    const offered: string[][] = []
+    const finish = (): ScriptedProvider =>
+      new ScriptedProvider([
+        {
+          type: 'tool_call',
+          name: 'finish_review',
+          args: { checked: 'The changed code.', couldNotVerify: 'Nothing' },
+        },
+        { type: 'text', text: 'Done.' },
+      ])
+    const recording = (scripted: ScriptedProvider): LLMProvider => ({
+      stream: (messages, tools, signal, options): AsyncIterable<ProviderStreamChunk> => {
+        offered.push(tools.map((tool) => tool.name))
+        return scripted.stream(messages, tools, signal, options)
+      },
+    })
+    const results = await runReviewers({
+      context,
+      validation,
+      headCheckout: checkouts.head,
+      cell: null,
+      shellDecision: 'deny',
+      scrub: (text) => text,
+      reviewers: [
+        {
+          model: 'text-only',
+          providerFor: (): LLMProvider => recording(finish()),
+          lenses: [CORRECTNESS_LENS],
+          canSeeImages: false,
+        },
+        { model: 'sighted', providerFor: (): LLMProvider => recording(finish()) },
+      ],
+      lenses: [CORRECTNESS_LENS, CONTRACTS_LENS],
+      threadId: 'thread',
+      turnPrefix: 'turn',
+      concurrency: 1,
+    })
+    assert.deepEqual(
+      results.map((result) => [result.model, result.lens]),
+      [
+        ['text-only', 'correctness'],
+        ['sighted', 'correctness'],
+        ['sighted', 'contracts'],
+      ],
+    )
+    const [textOnly] = offered
+    const sighted = offered.at(-1)
+    assert.ok(textOnly !== undefined && sighted !== undefined)
+    assert.equal(textOnly.includes('view_image'), false)
+    assert.equal(textOnly.includes('read_file'), true)
+    assert.equal(sighted.includes('view_image'), true)
   })
 
   it('resolves lens specs and rejects unknown ids', () => {

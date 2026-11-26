@@ -15,6 +15,7 @@ import {
   writeSettings,
 } from './helpers/seed-config.ts'
 import { parkPointer, pinTextForCapture, saveAppScreenshot } from './helpers/screenshot.ts'
+import { clickReplaceable } from './helpers/replaceable-click.ts'
 
 const PROJECT = 'e2e-interrupted-automation'
 const OTHER_PROJECT = 'e2e-interrupted-automation-other'
@@ -189,7 +190,10 @@ describe('inactive automation after an interrupted app session', function () {
       null,
     )
 
-    await $(`.project-entry[data-project-id="${PROJECT}"] .project-menu-btn`).click()
+    await clickReplaceable(
+      `.project-entry[data-project-id="${PROJECT}"] .project-menu-btn`,
+      'the project menu button stayed stale in the redrawn sidebar',
+    )
     await $('.context-menu-item=Automations').click()
     const dialog = $('#automation-dialog')
     await dialog.$('.automation-run-btn').click()
@@ -277,7 +281,10 @@ describe('inactive automation after an interrupted app session', function () {
       )}\n`,
     )
     await browser.keys('Escape')
-    await $('.project-row*=health project').click()
+    await clickReplaceable(
+      '.project-row*=health project',
+      'the health project row stayed stale in the redrawn sidebar',
+    )
     for (const selector of [
       '.automation-threads-toggle',
       `.automation-schedule-group[data-schedule-id="${SCHEDULE}"] .automation-schedule-toggle`,
@@ -294,7 +301,10 @@ describe('inactive automation after an interrupted app session', function () {
         if (expanded === 'false') currentToggle.click()
       }, selector)
     }
-    await $(`.chat-row[data-thread-id="${newId}"]`).click()
+    await clickReplaceable(
+      `.chat-row[data-thread-id="${newId}"]`,
+      'the new run row stayed stale in the redrawn sidebar',
+    )
     await expect($('.messages-list')).toHaveText(
       expect.stringContaining('The fresh health check is complete.'),
     )
@@ -317,7 +327,10 @@ describe('inactive automation after an interrupted app session', function () {
     } finally {
       await restoreBranch()
     }
-    await $(`.chat-row[data-thread-id="${OLD}"]`).click()
+    await clickReplaceable(
+      `.chat-row[data-thread-id="${OLD}"]`,
+      'the interrupted run row stayed stale in the redrawn sidebar',
+    )
     const card = $('[data-turn-recovery-card]')
     await expect(card.$('.turn-recovery-title')).toHaveText('Turn interrupted')
     await expect(card.$('.turn-recovery-button')).toHaveText('Retry this turn')

@@ -178,3 +178,122 @@ it('the real Node reporter produces stable names, excludes failed parent suites,
     await rm(root, { recursive: true, force: true })
   }
 })
+
+it('accounts for tests a failed suite cancelled with that suite, so a missing tool still yields a complete inventory', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'review-reporter-'))
+  try {
+    const hooks = join(root, 'hooks.test.mjs')
+    const unloadable = join(root, 'unloadable.test.mjs')
+    await writeFile(
+      hooks,
+      `import { describe, it, before, after } from 'node:test';
+      describe('needs a tool', () => {
+        before(() => { throw Error('spawn bwrap ENOENT') });
+        describe('nested', () => { it('never runs', () => {}) });
+        it('never runs either', () => {});
+      });
+      describe('cleanup', () => { after(() => { throw Error('cleanup failed') }); it('passes', () => {}) });
+      it('fails', () => { throw Error('failure') });`,
+    )
+    await writeFile(
+      unloadable,
+      `import './missing-module.mjs'; import { it } from 'node:test'; it('never loads', () => {});`,
+    )
+    const childEnv: NodeJS.ProcessEnv = { ...process.env, COPSE_TEST_OUTPUT_DIR: root }
+    delete childEnv['NODE_TEST_CONTEXT']
+    const result = spawnSync(
+      process.execPath,
+      [
+        '--test',
+        `--test-reporter=${resolve('scripts/lib/review-test-reporter.mts')}`,
+        hooks,
+        unloadable,
+      ],
+      { encoding: 'utf8', env: childEnv },
+    )
+    assert.equal(result.status, 1, result.stderr)
+    assert.match(result.stdout, /"failureType":"cancelledByParent"/)
+    const report = parseTestFailureReport(result.stdout)
+    assert.ok(report, result.stdout + result.stderr)
+    assert.deepEqual(
+      [...report.failures].sort((a, b) => a.name.localeCompare(b.name)),
+      [
+        { path: 'hooks.test.ts', name: 'cleanup' },
+        { path: 'hooks.test.ts', name: 'fails' },
+        { path: 'hooks.test.ts', name: 'needs a tool' },
+        { path: 'unloadable.test.ts', name: 'unloadable.test.ts' },
+      ],
+    )
+    assert.equal(report.failed, 4)
+    // The two tests the failed suite cancelled ran on neither side.
+    assert.equal(report.notRun, 2)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+it('records a test that outran its timeout, which Node counts as cancelled, and keeps the inventory', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'review-reporter-'))
+  try {
+    const file = join(root, 'slow.test.mjs')
+    await writeFile(
+      file,
+      `import { it } from 'node:test';
+      it('passes', () => {});
+      it('fails', () => { throw Error('failure') });
+      it('times out', { timeout: 50 }, () => new Promise((done) => setTimeout(done, 500)));`,
+    )
+    const childEnv: NodeJS.ProcessEnv = { ...process.env, COPSE_TEST_OUTPUT_DIR: root }
+    delete childEnv['NODE_TEST_CONTEXT']
+    const result = spawnSync(
+      process.execPath,
+      ['--test', `--test-reporter=${resolve('scripts/lib/review-test-reporter.mts')}`, file],
+      { encoding: 'utf8', env: childEnv },
+    )
+    assert.equal(result.status, 1, result.stderr)
+    assert.match(result.stdout, /"failureType":"testTimeoutFailure"/)
+    const report = parseTestFailureReport(result.stdout)
+    assert.ok(report, result.stdout + result.stderr)
+    assert.deepEqual(
+      [...report.failures].sort((a, b) => a.name.localeCompare(b.name)),
+      [
+        { path: 'slow.test.ts', name: 'fails' },
+        { path: 'slow.test.ts', name: 'times out' },
+      ],
+    )
+    assert.equal(report.failed, 2)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+it('leaves the inventory unavailable when a cancelled test has no failed suite above it', async () => {
+  const file = join(process.env['COPSE_TEST_OUTPUT_DIR'] ?? process.cwd(), 'example.test.mjs')
+  async function* events(): AsyncGenerator<unknown, undefined> {
+    yield { type: 'test:start', data: { file, name: 'suite', testId: 1 } }
+    yield { type: 'test:start', data: { file, name: 'cancelled', testId: 2, parentId: 1 } }
+    yield {
+      type: 'test:fail',
+      data: {
+        file,
+        name: 'cancelled',
+        testId: 2,
+        details: { error: { failureType: 'cancelledByParent' } },
+      },
+    }
+    yield {
+      type: 'test:fail',
+      data: {
+        file,
+        name: 'suite',
+        testId: 1,
+        details: { type: 'suite', error: { failureType: 'subtestsFailed' } },
+      },
+    }
+    yield { type: 'test:summary', data: { counts: { failed: 0, cancelled: 1 } } }
+  }
+  const outputs: string[] = []
+  for await (const output of reviewTestReporter(events())) outputs.push(output)
+  assert.equal(parseTestFailureReport(outputs.join('')), null)
+  assert.match(outputs.at(-1) ?? '', /inventory unavailable/)
+})

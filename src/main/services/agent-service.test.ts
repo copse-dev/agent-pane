@@ -249,6 +249,10 @@ for (const ending of ['send-now', 'stop', 'run-timeout'] as const) {
         registry,
       })
       assert.ok(entry.bridge)
+      // Every agent is offered the bridge (over stdio when it lacks http MCP).
+      // This one mounts it at once, so the turn does not wait out the mount
+      // window, whose timer the run-timeout case has mocked.
+      t.mock.method(entry.bridge, 'whenToolsListed', () => Promise.resolve(true))
       const setTurnSignal = t.mock.method(entry.bridge, 'setTurnSignal')
       const pending = runWithThreadExecutionContext(context, () =>
         runWithActiveRunIdentity(threadId, () =>
@@ -374,7 +378,7 @@ for (const dispatched of [true, false]) {
     dispatched
       ? 'binds the dispatched turn tree to a turn the ACP agent starts itself'
       : 'binds no turn tree to a self-started ACP turn in a thread without a dispatched epoch',
-    async () => {
+    async (t) => {
       const previousWorkspace = process.env['COPSE_WORKSPACE_DIR']
       const root = await mkdtemp(join(tmpdir(), 'copse-agent-self-start-tree-'))
       process.env['COPSE_WORKSPACE_DIR'] = root
@@ -439,6 +443,9 @@ for (const dispatched of [true, false]) {
         })
         const bridge = entry.bridge
         assert.ok(bridge)
+        // This in-process agent mounts nothing; say it listed the tools so the
+        // turn does not wait out the 5 s mount window.
+        t.mock.method(bridge, 'whenToolsListed', () => Promise.resolve(true))
         // The Copse turn after which the ACP service installs its self-start lease.
         await runWithThreadExecutionContext(context, () =>
           runWithActiveRunIdentity(threadId, () =>

@@ -67,7 +67,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { memberOf } from '@shared/member-of.ts'
 import { isNonNull } from '@shared/nullish.ts'
-import { selectRightPanelMode } from '../controller/panels.ts'
+import { selectRightPanelMode, rightPanelShows } from '../controller/panels.ts'
 import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 // A roadmap item is one `Roadmap`-typed knowledge note. Derive the shapes from
@@ -108,8 +108,7 @@ function knownThreadsKey(
 }
 
 function roadmapModeActive(store: AppStore): boolean {
-  const { filesPaneOpen, rightPanelMode } = store.getState()
-  return filesPaneOpen && rightPanelMode === 'roadmap'
+  return rightPanelShows(store.getState(), 'roadmap')
 }
 
 function itemNotes(item: RoadmapItem): string {
