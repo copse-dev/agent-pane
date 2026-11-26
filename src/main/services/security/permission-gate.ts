@@ -1411,7 +1411,7 @@ export function scopedNetworkRunFor(
   // Where contained commands write. A program, or a PATH entry ahead of it,
   // inside one of these could be a stand-in planted to hold the scope's egress.
   const writableRoots = [executionRoot, projectRoot, darwinUserTempDir(), tmpdir(), '/tmp'].filter(
-    (root): root is string => root !== null,
+    (root) => root !== null,
   )
   for (const program of assessment.plan.programs) {
     if (resolveProgramOutsideRoots(program, process.env['PATH'] ?? '', writableRoots) === null) {

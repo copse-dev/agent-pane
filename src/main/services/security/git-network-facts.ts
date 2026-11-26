@@ -1,6 +1,6 @@
-import { readFileSync, realpathSync, statSync } from 'node:fs'
+import { realpathSync } from 'node:fs'
 import { isAbsolute, join, resolve, sep } from 'node:path'
-import { resolveGitCommonDir, resolveGitDirs } from './git-remotes.ts'
+import { readSmallGitFile, resolveGitCommonDir, resolveGitDirs } from './git-remotes.ts'
 import { pinnedRemotes, pinRemotes } from './remote-pins.ts'
 
 /**
@@ -233,13 +233,7 @@ function canonical(path: string): string {
 }
 
 function readSmallFile(path: string): string | null {
-  try {
-    const stat = statSync(path)
-    if (!stat.isFile() || stat.size > MAX_CONFIG_BYTES) return null
-    return readFileSync(path, 'utf8')
-  } catch {
-    return null
-  }
+  return readSmallGitFile(path, MAX_CONFIG_BYTES)
 }
 
 /** Derive facts from already-read config text. Pure; exported for tests. */

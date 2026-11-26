@@ -106,12 +106,8 @@ export function configuredGitRemotes(workspaceRoot: string | null): ReadonlySet<
   const cached = cache.get(workspaceRoot)
   if (cached?.signature === signature) return cached.remotes
 
-  let text: string
-  try {
-    text = readFileSync(configPath, 'utf8')
-  } catch {
-    return new Set()
-  }
+  const text = readSmallGitFile(configPath, MAX_CONFIG_BYTES)
+  if (text === null) return new Set()
 
   const remotes = new Set<string>()
   for (const match of text.matchAll(REMOTE_SECTION)) {
@@ -126,4 +122,19 @@ export function configuredGitRemotes(workspaceRoot: string | null): ReadonlySet<
 /** Drop cached config reads. Exported for tests. */
 export function clearGitRemotesCache(): void {
   cache.clear()
+}
+
+/**
+ * A bounded read of one Git administrative file (`config`, `config.worktree`),
+ * or null when it is missing, not a regular file or larger than `maxBytes`.
+ * Shared with `git-network-facts.ts` so the gate's config reads stay in one place.
+ */
+export function readSmallGitFile(path: string, maxBytes: number): string | null {
+  try {
+    const stat = statSync(path)
+    if (!stat.isFile() || stat.size > maxBytes) return null
+    return readFileSync(path, 'utf8')
+  } catch {
+    return null
+  }
 }
