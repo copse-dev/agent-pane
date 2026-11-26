@@ -59569,10 +59569,11 @@ ${description}
   });
   async function submit(sendNow = false) {
     const id = getActiveThreadId();
-    if (!id || imageDescriptionInProgress || !beginThreadSubmission(store2, id)) return;
+    if (!id || imageDescriptionInProgress || !beginThreadSubmission(store2, id)) return false;
     updateState();
+    let recorded = false;
     try {
-      await performSubmit(id, sendNow);
+      recorded = await performSubmit(id, sendNow);
     } catch (error) {
       console.error("Could not send prompt", { threadId: id, error });
       checkoutErrors.set(id, error instanceof Error ? error.message : "Could not send message");
@@ -59581,6 +59582,7 @@ ${description}
       updateState();
       updateCheckoutControl();
     }
+    return recorded;
   }
   async function performSubmit(id, sendNow) {
     mark("ttft:composer-submit");
@@ -59616,18 +59618,18 @@ ${description}
         );
         if (target) sendQueuedMessageNow(store2, api2, id, target.messageId);
       }
-      return;
+      return false;
     }
     const projectId = store2.getState().activeProjectId;
     const thread = getThreadById(store2, id);
-    if (!projectId || !thread) return;
+    if (!projectId || !thread) return false;
     const choice = checkoutChoice(id);
     const model = thread.model ?? store2.getState().settings?.model;
     if (!targetSelect.hidden && targetSelect.value === "container") {
-      if (!rawText) return;
+      if (!rawText) return false;
       const started = await containerRun.followUp(rawText);
       if (started) updateState();
-      return;
+      return started;
     }
     const requiresCheckoutPreparation = thread.messages.length === 0 && !thread.worktreeChoice;
     const baseBranchResult = requiresCheckoutPreparation ? Promise.allSettled([branchControl.resolveBaseBranch(projectId, id)]) : null;
@@ -59636,7 +59638,7 @@ ${description}
       const incompatibility = await incompatibleImageModel();
       if (incompatibility) {
         if (getActiveThreadId() === id) await refreshImageCompatibilityWarning();
-        return;
+        return false;
       }
     }
     const prefetchedGitState = requiresCheckoutPreparation ? null : await Promise.allSettled([
@@ -59652,7 +59654,7 @@ ${description}
     const isolatedWorktree = thread.worktree !== void 0 || thread.deferredWorktree !== void 0;
     if (threadBranch && threadGitBranchMismatch(threadBranch, currentBranch, { isolatedWorktree })) {
       if (getActiveThreadId() === id) showBranchMismatch(threadBranch);
-      return;
+      return false;
     }
     if (getActiveThreadId() === id) hideBranchMismatch();
     const isBlankSharedCandidate = thread.messages.length === 0 && !thread.worktreeChoice;
@@ -59663,9 +59665,9 @@ ${description}
         const state = await api2.git.promptState(projectId, id);
         if (state.dirty) {
           if (getActiveThreadId() !== id || activeComposerThreadId !== id || store2.getState().activeProjectId !== projectId)
-            return;
+            return false;
           showDirtyWarning(id);
-          return;
+          return false;
         }
       }
     }
@@ -59691,7 +59693,7 @@ ${description}
     const invokedSkill = invocation?.kind === "skill" ? skills.find((skill) => skill.name === invocation.name) : void 0;
     if (invocation && invocation.kind === null) {
       showToast(`Unknown skill or agent: /${invocation.name}`, { variant: "error" });
-      return;
+      return false;
     }
     if (invokedSkill && invokedSkill.externalLinks.length > 0) {
       const warnEnabled = await api2.settings.get("skillExternalLinkWarnings") !== false;
@@ -59749,13 +59751,13 @@ ${description}
           // becomes the worktree's base, or the shared checkout's branch.
           baseBranch
         );
-        if (!getThreadById(store2, id)) return;
+        if (!getThreadById(store2, id)) return false;
         preparedPromptState = prepared.promptState;
         applyPreparedThreadCheckout(store2, id, prepared);
       } catch (error) {
         await api2.agent.resetDefaultBranchCache().catch(() => void 0);
         checkoutErrors.set(id, checkoutErrorMessage(error));
-        return;
+        return false;
       } finally {
         checkoutPreparations.delete(id);
         updateCheckoutControl();
@@ -59764,7 +59766,7 @@ ${description}
     }
     if (prefetchedPromptState?.status === "rejected") throw prefetchedPromptState.reason;
     const promptState = preparedPromptState ?? (prefetchedPromptState?.status === "fulfilled" ? prefetchedPromptState.value : await api2.git.promptState(projectId, id));
-    if (!getThreadById(store2, id)) return;
+    if (!getThreadById(store2, id)) return false;
     const priorTodos = thread.todos ?? [];
     const workingBrief = nextWorkingBrief(thread.workingBrief, fullContent);
     if (workingBrief && workingBrief !== thread.workingBrief) {
@@ -59859,6 +59861,7 @@ ${description}
       draftAttachmentsByThread.delete(id);
       setThreadDraftPrompt(store2, id, "");
     }
+    return true;
   }
   function addChip(file) {
     attachedFiles.push(file);
@@ -60104,8 +60107,7 @@ ${reply}`);
       const end = composer.value.length;
       composer.setSelectionRange(end, end);
       composer.insertText(`${composer.value.trim() ? "\n\n" : ""}${content}`);
-      await submit();
-      return true;
+      return submit();
     },
     attachImage: addImageChip,
     attachVideo: addVideoChip,
@@ -74035,25 +74037,36 @@ var init_staged_diff_ui = __esm({
 });
 
 // src/renderer/monaco/diff-line-comments.ts
+function longestBacktickRun(text) {
+  return Math.max(0, ...(text.match(/`+/g) ?? []).map((run4) => run4.length));
+}
 function codeFence(text) {
-  const longestRun = Math.max(0, ...(text.match(/`+/g) ?? []).map((run4) => run4.length));
-  return "`".repeat(Math.max(3, longestRun + 1));
+  return "`".repeat(Math.max(3, longestBacktickRun(text) + 1));
+}
+function inlineCode(text) {
+  const ticks = "`".repeat(longestBacktickRun(text) + 1);
+  const pad = text.startsWith("`") || text.endsWith("`") ? " " : "";
+  return `${ticks}${pad}${text}${pad}${ticks}`;
 }
 function indent(text, prefix) {
   return text.split("\n").map((line) => line ? `${prefix}${line}` : line).join("\n");
+}
+function quotedLine(text) {
+  return text.length > MAX_QUOTED_LINE ? `${text.slice(0, MAX_QUOTED_LINE)}\u2026` : text;
 }
 function lineCommentBatchLabel(count) {
   return count === 1 ? "1 review comment" : `${String(count)} review comments`;
 }
 function formatLineCommentBatch(comments) {
   const ordered = [...comments].sort(
-    (a, b2) => a.path.localeCompare(b2.path) || (a.side === b2.side ? 0 : a.side === "before" ? -1 : 1) || a.line - b2.line
+    (a, b2) => a.path.localeCompare(b2.path) || a.version.localeCompare(b2.version) || a.line - b2.line
   );
   const items = ordered.map((comment, index) => {
-    const where = comment.side === "before" ? `\`${comment.path}\` line ${String(comment.line)} (removed by your change)` : `\`${comment.path}\` line ${String(comment.line)}`;
-    const fence = codeFence(comment.lineText);
+    const where = `${inlineCode(comment.path)} line ${String(comment.line)}${VERSION_NOTE[comment.version]}`;
+    const text = quotedLine(comment.lineText);
+    const fence = codeFence(text);
     const quoted = `${fence}
-${comment.lineText}
+${text}
 ${fence}`;
     return `${String(index + 1)}. ${where}:
 ${indent(quoted, "   ")}
@@ -74064,38 +74077,54 @@ ${indent(comment.body.trim(), "   ")}`;
 
 ${items.join("\n\n")}`;
 }
-function reanchorLine(lines, line, lineText) {
-  if (lines.length === 0) return 1;
-  if (lines[line - 1] === lineText) return line;
-  for (let distance = 1; distance < lines.length; distance++) {
-    if (lines[line - 1 - distance] === lineText) return line - distance;
-    if (lines[line - 1 + distance] === lineText) return line + distance;
+function removeComments(drafts, owner, ids) {
+  const sent = new Set(ids);
+  for (const comment of drafts.list(owner)) {
+    if (sent.has(comment.id)) drafts.remove(owner, comment.id);
   }
-  return Math.min(Math.max(1, line), lines.length);
 }
-function commentSurface(editor) {
-  const { onMouseMove, onMouseLeave, onMouseDown, createDecorationsCollection, changeViewZones } = editor;
-  if (!onMouseMove || !onMouseLeave || !onMouseDown) return null;
-  if (!createDecorationsCollection || !changeViewZones) return null;
+async function sendLineCommentBatch(drafts, owner, send) {
+  const comments = drafts.list(owner.key);
+  if (comments.length === 0) return null;
+  const batch = {
+    owner: owner.key,
+    threadId: owner.threadId,
+    text: formatLineCommentBatch(comments),
+    ids: comments.map((comment) => comment.id)
+  };
+  if (!await send(batch.text)) return batch;
+  removeComments(drafts, batch.owner, batch.ids);
+  return null;
+}
+function settleLineCommentBatch(drafts, batch, threadId, message2) {
+  if (threadId !== batch.threadId || message2?.role !== "user") return false;
+  if (!message2.content.includes(batch.text)) return false;
+  removeComments(drafts, batch.owner, batch.ids);
+  return true;
+}
+function anchorAt(lines, line) {
   return {
-    onMouseMove: (listener) => onMouseMove.call(editor, listener),
-    onMouseLeave: (listener) => onMouseLeave.call(editor, listener),
-    onMouseDown: (listener) => onMouseDown.call(editor, listener),
-    createDecorationsCollection: () => createDecorationsCollection.call(editor),
-    changeViewZones: (callback) => {
-      changeViewZones.call(editor, callback);
-    },
-    updateOptions: (options) => {
-      editor.updateOptions(options);
-    }
+    line,
+    lineText: lines[line - 1] ?? "",
+    above: lines[line - 2],
+    below: lines[line]
   };
 }
-function fitToEditor(zoneNode) {
-  const editor = zoneNode.closest(".monaco-editor");
-  const margin = editor?.querySelector(".margin");
-  if (!editor || !margin) return;
-  const width = Math.max(0, editor.clientWidth - margin.offsetWidth - SCROLLBAR_ALLOWANCE);
-  editor.style.setProperty("--diff-line-comment-width", `${String(width)}px`);
+function reanchorLine(lines, anchor) {
+  if (lines.length === 0) return 1;
+  let best = null;
+  for (let index = 0; index < lines.length; index++) {
+    if (lines[index] !== anchor.lineText) continue;
+    const score = (lines[index - 1] === anchor.above ? 1 : 0) + (lines[index + 1] === anchor.below ? 1 : 0);
+    const distance = Math.abs(index + 1 - anchor.line);
+    if (!best || score > best.score || score === best.score && distance < best.distance) {
+      best = { line: index + 1, score, distance };
+    }
+  }
+  return best?.line ?? Math.min(Math.max(1, anchor.line), lines.length);
+}
+function contextKey(context) {
+  return JSON.stringify([context.owner, context.version, context.path]);
 }
 function isolate(node) {
   for (const type of ISOLATED_EVENTS) {
@@ -74105,64 +74134,53 @@ function isolate(node) {
   }
 }
 function attachDiffLineComments(diffEditor, drafts, getContext) {
-  const sides = [
-    { side: "before", editor: diffEditor.getOriginalEditor() },
-    { side: "after", editor: diffEditor.getModifiedEditor() }
-  ].flatMap(({ side, editor }) => {
-    const surface = commentSurface(editor);
-    return surface ? [{ side, surface, hover: surface.createDecorationsCollection() }] : [];
-  });
-  if (sides.length === 0) return () => {
-  };
-  let draft = null;
-  let draftContext = null;
-  let draftNode = null;
-  let focusDraft = false;
-  const zoneIds = /* @__PURE__ */ new Map();
+  const editor = diffEditor.getModifiedEditor();
+  const hover = editor.createDecorationsCollection();
+  let hoverLine = null;
+  const openDrafts = /* @__PURE__ */ new Map();
+  let zoneIds = [];
   const resizeObservers = [];
   const disposables = [];
-  function linesFor(side) {
-    const models = diffEditor.getModel();
-    if (!models) return [];
-    return (side === "before" ? models.original : models.modified).getValue().split("\n");
+  let fitObserver = null;
+  function currentLines() {
+    return diffEditor.getModel()?.modified.getValue().split("\n") ?? [];
   }
-  function openDraft(side, line, editingId) {
-    const context = getContext();
-    if (!context) return;
-    draft = editingId ? { side, line, editingId } : { side, line };
-    draftContext = context;
-    draftNode = draftCard(context, draft);
-    focusDraft = true;
+  function watchWidth(zoneNode) {
+    if (fitObserver) return;
+    const root = zoneNode.closest(".monaco-editor");
+    const margin = root?.querySelector(".margin");
+    if (!root || !margin) return;
+    const fit = () => {
+      const width = Math.max(0, root.clientWidth - margin.offsetWidth - SCROLLBAR_ALLOWANCE);
+      root.style.setProperty("--diff-line-comment-width", `${String(width)}px`);
+    };
+    fitObserver = new ResizeObserver(fit);
+    fitObserver.observe(root);
+    fit();
+  }
+  function openDraft(context, anchor, editingId) {
+    const draft = editingId ? { anchor, editingId, node: null, focusPending: true } : { anchor, node: null, focusPending: true };
+    draft.node = draftCard(context, draft);
+    openDrafts.set(contextKey(context), draft);
     render2();
   }
-  function dropDraft() {
-    draft = null;
-    draftContext = null;
-    draftNode = null;
-  }
-  function closeDraft() {
-    dropDraft();
+  function closeDraft(context) {
+    openDrafts.delete(contextKey(context));
     render2();
   }
   function commentCard(context, comment) {
     const edit = el(
       "button",
-      {
-        type: "button",
-        class: "ui-btn ui-btn-ghost ui-btn-compact diff-line-comment-edit"
-      },
+      { type: "button", class: "ui-btn ui-btn-ghost ui-btn-compact diff-line-comment-edit" },
       "Edit"
     );
     const remove = el(
       "button",
-      {
-        type: "button",
-        class: "ui-btn ui-btn-ghost ui-btn-compact diff-line-comment-delete"
-      },
+      { type: "button", class: "ui-btn ui-btn-ghost ui-btn-compact diff-line-comment-delete" },
       "Delete"
     );
     edit.addEventListener("click", () => {
-      openDraft(comment.side, comment.line, comment.id);
+      openDraft(context, comment, comment.id);
     });
     remove.addEventListener("click", () => {
       drafts.remove(context.owner, comment.id);
@@ -74174,29 +74192,23 @@ function attachDiffLineComments(diffEditor, drafts, getContext) {
       el("div", { class: "diff-line-comment-actions" }, edit, remove)
     );
   }
-  function draftCard(context, open) {
-    const existing = open.editingId ? drafts.list(context.owner).find((comment) => comment.id === open.editingId) : void 0;
+  function draftCard(context, draft) {
+    const existing = draft.editingId ? drafts.list(context.owner).find((comment) => comment.id === draft.editingId) : void 0;
     const input = el("textarea", {
       class: "diff-line-comment-input",
       rows: "3",
       placeholder: "Comment for the agent",
-      "aria-label": `Comment on line ${String(open.line)}`
+      "aria-label": `Comment on line ${String(draft.anchor.line)}`
     });
     input.value = existing?.body ?? "";
     const cancel = el(
       "button",
-      {
-        type: "button",
-        class: "ui-btn ui-btn-secondary ui-btn-compact diff-line-comment-cancel"
-      },
+      { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact diff-line-comment-cancel" },
       "Cancel"
     );
     const save = el(
       "button",
-      {
-        type: "button",
-        class: "ui-btn ui-btn-primary ui-btn-compact diff-line-comment-save"
-      },
+      { type: "button", class: "ui-btn ui-btn-primary ui-btn-compact diff-line-comment-save" },
       existing ? "Save" : "Add comment"
     );
     const syncSave = () => {
@@ -74206,30 +74218,32 @@ function attachDiffLineComments(diffEditor, drafts, getContext) {
     const commit = () => {
       const body = input.value.trim();
       if (!body) return;
+      const { line } = draft.anchor;
+      openDrafts.delete(contextKey(context));
       if (existing) {
-        drafts.update(context.owner, existing.id, { body });
+        drafts.update(context.owner, existing.id, { body, line });
       } else {
         drafts.add(context.owner, {
+          ...draft.anchor,
           path: context.path,
-          side: open.side,
-          line: open.line,
-          lineText: linesFor(open.side)[open.line - 1] ?? "",
+          version: context.version,
           body
         });
       }
-      closeDraft();
     };
     input.addEventListener("input", syncSave);
     input.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        closeDraft();
+        closeDraft(context);
       } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
         commit();
       }
     });
-    cancel.addEventListener("click", closeDraft);
+    cancel.addEventListener("click", () => {
+      closeDraft(context);
+    });
     save.addEventListener("click", commit);
     return el(
       "div",
@@ -74240,16 +74254,14 @@ function attachDiffLineComments(diffEditor, drafts, getContext) {
   }
   function clearZones() {
     for (const observer of resizeObservers.splice(0)) observer.disconnect();
-    for (const { side, surface } of sides) {
-      const ids = zoneIds.get(side) ?? [];
-      if (ids.length === 0) continue;
-      surface.changeViewZones((accessor) => {
-        for (const id of ids) accessor.removeZone(id);
-      });
-      zoneIds.set(side, []);
-    }
+    if (zoneIds.length === 0) return;
+    const ids = zoneIds;
+    zoneIds = [];
+    editor.changeViewZones((accessor) => {
+      for (const id of ids) accessor.removeZone(id);
+    });
   }
-  function addZone(surface, side, line, card) {
+  function addZone(line, card, draft) {
     const domNode = el("div", { class: "diff-line-comment-zone" }, card);
     isolate(domNode);
     const zone = {
@@ -74257,110 +74269,112 @@ function attachDiffLineComments(diffEditor, drafts, getContext) {
       heightInPx: 72,
       domNode,
       suppressMouseDown: true,
+      // A line inside a collapsed unchanged region still shows its comment.
+      showInHiddenAreas: true,
       // Monaco shows the zone on its next render, after this call; a
       // just-opened draft takes focus once it can.
       onDomNodeTop: () => {
-        fitToEditor(domNode);
-        if (card !== draftNode || !focusDraft) return;
+        watchWidth(domNode);
+        if (!draft?.focusPending) return;
         requestAnimationFrame(() => {
           const input = card.querySelector("textarea");
-          if (!focusDraft || card !== draftNode || !input) return;
+          if (!draft.focusPending || !input) return;
           input.focus({ preventScroll: true });
-          focusDraft = document.activeElement !== input;
+          draft.focusPending = document.activeElement !== input;
         });
       }
     };
-    let id = "";
-    surface.changeViewZones((accessor) => {
-      id = accessor.addZone(zone);
-    });
-    zoneIds.set(side, [...zoneIds.get(side) ?? [], id]);
-    const observer = new ResizeObserver(() => {
-      const height = Math.ceil(domNode.scrollHeight);
-      if (height <= 0 || height === zone.heightInPx) return;
-      zone.heightInPx = height;
-      surface.changeViewZones((accessor) => {
-        accessor.layoutZone(id);
+    editor.changeViewZones((accessor) => {
+      const id = accessor.addZone(zone);
+      zoneIds.push(id);
+      const observer = new ResizeObserver(() => {
+        const height = Math.ceil(domNode.scrollHeight);
+        if (height <= 0 || height === zone.heightInPx) return;
+        zone.heightInPx = height;
+        editor.changeViewZones((layout) => {
+          layout.layoutZone(id);
+        });
       });
+      observer.observe(card);
+      resizeObservers.push(observer);
     });
-    observer.observe(card);
-    resizeObservers.push(observer);
   }
   function render2() {
-    const draftFocused = draftNode?.contains(document.activeElement) === true;
+    const focused = [...openDrafts.values()].find(
+      (draft) => draft.node?.contains(document.activeElement) === true
+    );
     clearZones();
     renderZones();
-    if (draftFocused) draftNode?.querySelector("textarea")?.focus();
+    if (focused?.node?.isConnected) focused.node.querySelector("textarea")?.focus();
   }
   function renderZones() {
     const context = getContext();
-    if (draft && (!context || context.owner !== draftContext?.owner || context.path !== draftContext.path)) {
-      dropDraft();
-    }
     if (!context) return;
-    for (const { side, surface } of sides) {
-      const lines = linesFor(side);
-      for (const comment of drafts.list(context.owner)) {
-        if (comment.path !== context.path || comment.side !== side) continue;
-        if (draft?.editingId === comment.id) continue;
-        const line = reanchorLine(lines, comment.line, comment.lineText);
-        if (line !== comment.line) {
-          drafts.update(context.owner, comment.id, { line });
-          return;
-        }
-        addZone(surface, side, line, commentCard(context, comment));
+    const lines = currentLines();
+    if (lines.length === 0) return;
+    const draft = openDrafts.get(contextKey(context));
+    for (const comment of drafts.list(context.owner)) {
+      if (comment.path !== context.path || comment.version !== context.version) continue;
+      if (draft?.editingId === comment.id) continue;
+      const line = reanchorLine(lines, comment);
+      if (line !== comment.line) {
+        drafts.update(context.owner, comment.id, { line });
+        return;
       }
-      if (draft?.side === side && draftNode) addZone(surface, side, draft.line, draftNode);
+      addZone(line, commentCard(context, comment));
+    }
+    if (draft?.node) {
+      draft.anchor = { ...draft.anchor, line: reanchorLine(lines, draft.anchor) };
+      addZone(draft.anchor.line, draft.node, draft);
     }
   }
-  for (const { side, surface, hover } of sides) {
-    surface.updateOptions({ glyphMargin: true });
-    disposables.push(
-      surface.onMouseMove(({ target }) => {
-        const line = target.position?.lineNumber;
-        if (line === void 0 || !getContext()) {
-          hover.clear();
-          return;
+  function setHover(line) {
+    if (line === hoverLine) return;
+    hoverLine = line;
+    if (line === null) {
+      hover.clear();
+      return;
+    }
+    hover.set([
+      {
+        range: { startLineNumber: line, startColumn: 1, endLineNumber: line, endColumn: 1 },
+        options: {
+          glyphMarginClassName: "diff-line-comment-add",
+          glyphMarginHoverMessage: { value: "Comment on this line" }
         }
-        hover.set([
-          {
-            range: {
-              startLineNumber: line,
-              startColumn: 1,
-              endLineNumber: line,
-              endColumn: 1
-            },
-            options: {
-              glyphMarginClassName: "diff-line-comment-add",
-              glyphMarginHoverMessage: { value: "Comment on this line" }
-            }
-          }
-        ]);
-      }),
-      surface.onMouseLeave(() => {
-        hover.clear();
-      }),
-      surface.onMouseDown(({ target, event }) => {
-        if (target.type !== GLYPH_MARGIN_TARGET || !target.position) return;
-        event.preventDefault();
-        openDraft(side, target.position.lineNumber);
-      })
-    );
+      }
+    ]);
   }
+  editor.updateOptions({ glyphMargin: true });
+  disposables.push(
+    editor.onMouseMove(({ target }) => {
+      const onLine = LINE_TARGETS.has(target.type) && getContext() !== null;
+      setHover(onLine ? target.position?.lineNumber ?? null : null);
+    }),
+    editor.onMouseLeave(() => {
+      setHover(null);
+    }),
+    editor.onMouseDown(({ target, event }) => {
+      const context = getContext();
+      if (target.type !== GLYPH_MARGIN_TARGET || !target.position || !context) return;
+      event.preventDefault();
+      openDraft(context, anchorAt(currentLines(), target.position.lineNumber));
+    }),
+    // A new file, or new text for this one, moves the comments drawn.
+    diffEditor.onDidUpdateDiff(render2)
+  );
   const unsubscribe = drafts.subscribe(render2);
-  disposables.push(diffEditor.onDidUpdateDiff(render2));
   render2();
   return () => {
     unsubscribe();
     clearZones();
-    for (const { hover, surface } of sides) {
-      hover.clear();
-      surface.updateOptions({ glyphMargin: false });
-    }
+    setHover(null);
+    fitObserver?.disconnect();
+    editor.updateOptions({ glyphMargin: false });
     for (const disposable of disposables) disposable.dispose();
   };
 }
-var LineCommentDrafts, GLYPH_MARGIN_TARGET, ISOLATED_EVENTS, SCROLLBAR_ALLOWANCE;
+var LineCommentDrafts, MAX_QUOTED_LINE, VERSION_NOTE, GLYPH_MARGIN_TARGET, LINE_TARGETS, ISOLATED_EVENTS, SCROLLBAR_ALLOWANCE;
 var init_diff_line_comments = __esm({
   "src/renderer/monaco/diff-line-comments.ts"() {
     init_helpers();
@@ -74409,7 +74423,25 @@ var init_diff_line_comments = __esm({
         for (const listener of this.listeners) listener();
       }
     };
+    MAX_QUOTED_LINE = 240;
+    VERSION_NOTE = {
+      working: "",
+      staged: " (staged version)",
+      committed: " (as committed)",
+      proposed: " (in your proposed edit)"
+    };
     GLYPH_MARGIN_TARGET = 2;
+    LINE_TARGETS = /* @__PURE__ */ new Set([
+      GLYPH_MARGIN_TARGET,
+      3,
+      // GUTTER_LINE_NUMBERS
+      4,
+      // GUTTER_LINE_DECORATIONS
+      6,
+      // CONTENT_TEXT
+      7
+      // CONTENT_EMPTY
+    ]);
     ISOLATED_EVENTS = [
       "pointerdown",
       "mousedown",
@@ -74875,7 +74907,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
         detachLineComments = attachDiffLineComments(diffEditor, lineComments, () => {
           const owner = lineCommentOwner();
           if (!owner || !selection || diffWrap.hidden) return null;
-          return { owner, path: selection.path };
+          const version = selection.kind === "git" ? selection.staged ? "staged" : "working" : selection.kind === "committed" ? "committed" : "proposed";
+          return { owner: owner.key, path: selection.path, version };
         });
       }
     }
@@ -74883,38 +74916,45 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   }
   function lineCommentOwner() {
     const owner = activeOwner();
-    return owner ? `${owner.projectId}/${owner.threadId}` : null;
+    return owner ? { key: `${owner.projectId}/${owner.threadId}`, threadId: owner.threadId } : null;
   }
+  let pendingBatch = null;
   function syncCommentsBar() {
     const owner = lineCommentOwner();
-    const count = owner ? lineComments.list(owner).length : 0;
+    const count = owner ? lineComments.list(owner.key).length : 0;
     commentsBar.hidden = count === 0;
-    commentsCount.textContent = count === 0 ? "" : lineCommentBatchLabel(count);
+    const waiting = pendingBatch !== null && pendingBatch.owner === owner?.key;
+    commentsCount.textContent = count === 0 ? "" : `${lineCommentBatchLabel(count)}${waiting ? " \xB7 in the composer" : ""}`;
   }
   async function sendLineComments() {
     const owner = lineCommentOwner();
-    const comments = owner ? lineComments.list(owner) : [];
-    if (!owner || comments.length === 0) return;
+    if (!owner) return;
     const send = getPromptAttachmentHandlers()?.sendText;
+    if (!send) {
+      showToast("There is no message box to send these comments from. They are kept here.");
+      return;
+    }
     sendCommentsBtn.disabled = true;
     try {
-      const sent = await send?.(formatLineCommentBatch(comments));
-      if (!sent) {
-        showToast("Open a thread to send these comments. They are kept until you send them.");
-        return;
-      }
-      const sentIds = new Set(comments.map((comment) => comment.id));
-      for (const comment of lineComments.list(owner)) {
-        if (sentIds.has(comment.id)) lineComments.remove(owner, comment.id);
-      }
+      pendingBatch = await sendLineCommentBatch(lineComments, owner, send);
     } finally {
       sendCommentsBtn.disabled = false;
+      syncCommentsBar();
     }
+  }
+  function onMessageAdded(threadId, messageId) {
+    if (!pendingBatch) return;
+    const message2 = getThreadById(store2, threadId)?.messages.find((m2) => m2.id === messageId);
+    if (!settleLineCommentBatch(lineComments, pendingBatch, threadId, message2)) return;
+    pendingBatch = null;
+    syncCommentsBar();
   }
   sendCommentsBtn.addEventListener("click", () => void sendLineComments());
   discardCommentsBtn.addEventListener("click", () => {
     const owner = lineCommentOwner();
-    if (owner) lineComments.clear(owner);
+    if (!owner) return;
+    if (pendingBatch?.owner === owner.key) pendingBatch = null;
+    lineComments.clear(owner.key);
   });
   function requireMonaco() {
     if (monaco === null) throw new Error("Monaco is unavailable while rendering a diff");
@@ -75559,7 +75599,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   });
   const unsubs = [
     lineComments.subscribe(syncCommentsBar),
-    store2.select(lineCommentOwner, syncCommentsBar),
+    store2.select(() => lineCommentOwner()?.key ?? null, syncCommentsBar),
+    store2.on("message_added", onMessageAdded),
     selectRightPanelMode(store2, "changes", (active2) => {
       if (active2) void refresh();
     }),
@@ -75683,6 +75724,7 @@ var init_git_changes_pane = __esm({
     init_selection_to_chat();
     init_diff_line_comments();
     init_prompt_attachments();
+    init_thread_helpers();
     init_ui_scale();
     init_git_image_diff();
     init_material_file_icons();

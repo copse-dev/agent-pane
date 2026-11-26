@@ -9336,9 +9336,9 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   font-size: var(--font-size-sm);
   line-height: 1.4;
   white-space: normal;
-  user-select: text;
 }
 .diff-line-comment-body {
+  user-select: text;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
