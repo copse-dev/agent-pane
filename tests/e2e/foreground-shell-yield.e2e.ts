@@ -65,54 +65,19 @@ async function approvePending(): Promise<void> {
     await dialog.$('.approval-approve').click()
 }
 
-// DEBUG (temporary): print the card and the stored tool calls when a check fails.
-async function dumpCard(label: string): Promise<void> {
-  const dump = await browser.execute(
-    async (selector, project) => {
-      const threadId =
-        document.querySelector<HTMLElement>('.chat-row.selected')?.dataset['threadId'] ?? ''
-      const messages = threadId ? await window.api.threads.loadMessages(project, threadId) : []
-      return {
-        threadId,
-        html: document.querySelector(selector)?.outerHTML.slice(0, 2500) ?? null,
-        status: document.querySelector('.chat-row.selected')?.getAttribute('data-status'),
-        stored: messages.map((message) => ({
-          id: message.id,
-          role: message.role,
-          text: message.content.slice(0, 120),
-          calls: message.toolCalls.map((call) => ({
-            id: call.id,
-            status: call.status,
-            result: call.result?.slice(0, 160) ?? null,
-            phase: call.commandPhase,
-          })),
-        })),
-      }
-    },
-    card,
-    projectId,
-  )
-  console.log(`[fsy-debug] ${label} ${JSON.stringify(dump)}`)
-}
-
 async function expectPhase(phase: string, text: string | RegExp): Promise<void> {
   const label = $(`${card} > summary .tool-command-phase`)
-  await browser
-    .waitUntil(
-      async () => {
-        if (!(await label.isExisting())) return false
-        const seen = String(await label.getProperty('textContent'))
-        return (
-          (typeof text === 'string' ? seen === text : text.test(seen)) &&
-          (await label.getAttribute('data-phase')) === phase
-        )
-      },
-      { timeout: 30_000, interval: 100, timeoutMsg: `expected command state ${phase}` },
-    )
-    .catch(async (error: unknown) => {
-      await dumpCard(`phase ${phase}`)
-      throw error
-    })
+  await browser.waitUntil(
+    async () => {
+      if (!(await label.isExisting())) return false
+      const seen = String(await label.getProperty('textContent'))
+      return (
+        (typeof text === 'string' ? seen === text : text.test(seen)) &&
+        (await label.getAttribute('data-phase')) === phase
+      )
+    },
+    { timeout: 30_000, interval: 100, timeoutMsg: `expected command state ${phase}` },
+  )
 }
 
 async function openCard(): Promise<void> {
@@ -223,12 +188,7 @@ async function start(
   card = `details.tool-card[data-tool-id="${id}"]`
   await expectPhase('running', /^Background task \S+$/)
   await openCard()
-  try {
-    await expect($(`${card} .tool-result`)).toHaveText(expect.stringContaining('has not completed'))
-  } catch (error) {
-    await dumpCard('result')
-    throw error
-  }
+  await expect($(`${card} .tool-result`)).toHaveText(expect.stringContaining('has not completed'))
   assert.equal(existsSync(join(root, 'dependent.txt')), false)
   assert.equal(readFileSync(join(root, 'starts.txt'), 'utf8'), 'once\n')
   return scenario

@@ -273,11 +273,10 @@ in it, and folding container runs into it are separate steps, not part of this o
    the socket. The per-turn hand-off (W2) stays for turns that were running in main.
    Signals, faults and update installs stop the host's turns as they stop handed-off ones,
    and with `continueTurnsAfterQuit` off, quit stops them too.
-8. **Experimental first, then the default.** The setting `turnsRunInHost` (Experimental)
-   routes turns to the host. A crash mid-turn is shown not to interrupt the turn, in an e2e
-   that kills the app's main process (`tests/e2e/turn-host.e2e.ts`, H5). With the gaps the
-   e2e suite found fixed (H6, H7), it is on by default; turning it off keeps every turn in
-   the app.
+8. **Experimental first.** The setting `turnsRunInHost` (Experimental, off) routes turns to
+   the host. A crash mid-turn is now shown not to interrupt the turn, in an e2e that kills
+   the app's main process (`tests/e2e/turn-host.e2e.ts`, H5). It becomes the default once
+   the e2e suite passes with it on (H6).
 
 ### Slices
 
@@ -329,7 +328,7 @@ in it, and folding container runs into it are separate steps, not part of this o
   turn's approval in the window. It found the follower missing a turn the host took before
   writing its running status; the link now hands the follower the taken thread directly.
 - **H6, on by default.** Run with the setting on, a sample of e2e specs found these that pass
-  with it off and fail with it on, each now fixed:
+  with it off and fail with it on. Fixed:
   - A host turn's tool card showed `done` while its command still ran (`tool-activity-icon`):
     a host left by an earlier spec served the next with its stale profile. The e2e launcher
     now stops the profile's host whenever it applies a new fixture.
@@ -344,30 +343,18 @@ in it, and folding container runs into it are separate steps, not part of this o
     turns to end, their commands drained.
   - A crash no longer needs the app's restart continuation (`reopen-turn-recovery`), which
     now pins the setting off to keep covering it.
-  - **Background tasks** (`foreground-shell-yield`), H7 below.
-  - The same message written twice (`background-start-rejected`): the thread store's
-    per-process cache of a thread's message ids did not see the other process's appends.
-    It now seeds again when the spine changed since this process last saw it.
 
-  With those fixed, the setting is on by default; turning it off keeps every turn in the
-  app. The full e2e suite runs with it on.
+  Still open, so the default stays off:
+  - **Background tasks** (`foreground-shell-yield`). The task supervisor, which gives a
+    background command its durable, cancellable handle and its completion wake, runs in the
+    app; a host turn has none, so `run_shell` with `yield_after_ms` (and `run_background`)
+    refuse to start. The command runs in the host while its task record and the Background
+    tasks control are the app's, so this needs the host to adopt, settle and cancel its
+    processes through the app's supervisor over the line, and the app's startup
+    reconciliation to leave tasks a live host owns alone.
 
-  The e2e launcher stops the profile's host whenever it applies a new fixture, since the
+  The e2e seed helpers stop the profile's host before they write a new profile, since the
   host outlives each spec's app and would serve the next one with what it read before.
-
-- **H7, background commands from host turns.** A command a host turn sends to the
-  background (`run_background`, or `run_shell` with `yield_after_ms`) runs in the host, while
-  its task record stays the app's: the app's task supervisor owns the profile's task store
-  and the Background tasks control. The host's supervisor (`host-task-supervisor.ts`) keeps
-  no store. It asks the app to adopt, settle and cancel each task over the prompt line
-  (`task-call`, replayed to an app that attaches), and the app sends back its later changes
-  (`task-changed`). A cancel from the control stops the process in the host (`process`
-  `stop`), the window reads its logs from there (`logs`), and after a relaunch the app's
-  supervisor asks the host whether a running task's command is still alive (`alive`), so
-  it keeps its task rather than failing it. The completion wake runs in the host, where the
-  command and its turn ran (`taken` tells the window to follow it), and the command's late
-  stage, its exit, is written there. A background command keeps the host from going idle.
-  A quit that keeps its turns keeps their commands; any other quit stops them.
 
 - **C3** (container runs, below) lands alongside, so a run that ends with no app is
   recorded in its thread straight away.
