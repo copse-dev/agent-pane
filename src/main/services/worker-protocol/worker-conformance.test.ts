@@ -208,15 +208,22 @@ class RawClient {
   }
 
   /** The first line, from the `from`th on, that passes `check`. */
+  // Woken by each line the worker writes; the suite's timeout bounds the wait.
   async next(check: (line: unknown) => boolean, from = 0): Promise<unknown> {
-    const deadline = Date.now() + 5_000
     for (;;) {
       const found = this.lines.slice(from).find(check)
       if (found !== undefined) return found
-      if (Date.now() > deadline) throw new Error('the worker did not answer in time')
       await new Promise<void>((resolve) => {
         this.waiters.push(resolve)
-        setTimeout(resolve, 100).unref()
+      })
+    }
+  }
+
+  /** Resolves once the worker has written `count` lines that pass `check`. */
+  async count(check: (line: unknown) => boolean, count: number): Promise<void> {
+    while (this.lines.filter(check).length < count) {
+      await new Promise<void>((resolve) => {
+        this.waiters.push(resolve)
       })
     }
   }
@@ -268,9 +275,10 @@ for (const worker of [turnHost, containerRunHost]) {
       const client = await open()
       client.send({ t: 'hello', version: VERSION, protocol: worker.protocol })
       client.send({ t: 'attach' })
-      await client.next(isHello)
-      // Whatever attaching brings, give it a moment to arrive.
-      await new Promise((resolve) => setTimeout(resolve, 200))
+      // A worker answers in order on one line, so what attaching brings comes
+      // before the answer to a second hello.
+      client.send({ t: 'hello', version: VERSION, protocol: worker.protocol })
+      await client.count(isHello, 2)
       client.close()
       assert.ok(client.lines.length > 0)
       for (const line of client.lines) {
