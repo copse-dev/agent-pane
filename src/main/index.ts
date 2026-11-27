@@ -33,6 +33,7 @@ import {
   initThreadPrompts,
   sendThreadPrompt,
 } from './services/thread-prompts.ts'
+import { recordForeignNestedActivation } from './services/project-instructions.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
 import { abortScratchFetchesForQuit } from './services/default-branch-fetch.ts'
 import { removeOrphanedPlanWindowHistory } from './services/storage/plan-window-history-cleanup.ts'
@@ -123,6 +124,7 @@ import {
   setQuitHandOffCheck,
   initCloseConfirm,
 } from './services/close-confirm.ts'
+import { setForeignProcessRoots } from './services/process-manager-owned.ts'
 import { checkToolAvailability } from './services/tool-availability.ts'
 import {
   createRegistry,
@@ -359,7 +361,13 @@ const isThreadBaseFallback = memberOf(THREAD_BASE_FALLBACKS)
  * detached instead of quitting.
  */
 function workInFlight(): number {
-  return listRunningThreadIds().length + getContainerRunService().activeThreadIds().length
+  const turns = new Set([...listRunningThreadIds(), ...hostRunningThreadIds()])
+  return turns.size + getContainerRunService().activeThreadIds().length
+}
+
+/** Threads whose turn the turn host is running for this window. */
+function hostRunningThreadIds(): string[] {
+  return turnHostLink?.runningThreadIds() ?? []
 }
 
 let unattendedQuit = false
@@ -809,6 +817,7 @@ app
     initUpdatePrompt(win)
     initCloseConfirm(win)
     setCloseConfirmContainerRuns(() => getContainerRunService().activeThreadIds())
+    setForeignProcessRoots(() => turnHostLink?.processes() ?? Promise.resolve([]))
     guardWindowClose(win, ({ rendererGone }) => {
       const mobile = getMobileCompanionState().enabled
       const detach = shouldDetachOnClose({
@@ -935,11 +944,16 @@ app
           console.log(line)
         },
         onThreadTaken: (projectId: string, threadId: string): void => {
+          // The host writes this thread's history now: this process's cached
+          // copy goes stale, and the next turn run here reads it from disk.
+          agentDispatcher.forgetHistory(projectId, threadId)
           void foreignTurns.follow({ projectId, threadId })
         },
         onShellOutput: (chunk: string, taskId: string | null): void => {
           getMainWindow()?.webContents.send('agent:shell-output', chunk, taskId)
         },
+        // Settings → Sources shows which nested instructions a host turn activated.
+        onInstructionActivation: recordForeignNestedActivation,
         // A host turn's subthread start or peer prompt: this window submits it.
         sendThreadPrompt,
         // A host turn's background commands keep their task records here (H7).
@@ -1127,6 +1141,7 @@ app
     const ownsAutomationAgentWork = (projectId: string, threadId: string): boolean =>
       agentDispatcher.isActive(projectId, threadId) ||
       listRunningThreadIds().includes(threadId) ||
+      hostRunningThreadIds().includes(threadId) ||
       hasActiveAcpTurn(threadId) ||
       getContainerRunService().isActive(threadId) ||
       hasBackgroundCompletionWake({ projectId, threadId })
@@ -1407,6 +1422,7 @@ app
         // write lands, so the follower's repaint at the release can still read
         // the turn as running. `ended` comes after that write: paint it again.
         if (ranInHost) {
+          agentDispatcher.forgetHistory(projectId, threadId)
           await foreignTurnDependencies.repaint({ projectId, threadId }).catch((error: unknown) => {
             console.warn('[turn-host] could not repaint a finished host turn:', error)
           })

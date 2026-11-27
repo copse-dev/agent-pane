@@ -3,6 +3,7 @@ import { mkdirSync, openSync } from 'node:fs'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { requestApproval, runWithApprovalOwner } from '../approval.ts'
+import { canAskUser, requestUserAnswers, type AskUserResult } from '../ask-user.ts'
 import { reviewRemoteStagedDiff } from '../diff-queue.ts'
 import { requestSshPrompt } from '../ssh-workspace/ssh-prompt.ts'
 import { deleteSetting, setSetting } from '../storage/settings.ts'
@@ -48,6 +49,7 @@ export interface TurnHostLaunchDependencies {
   onThreadTaken: (projectId: string, threadId: string) => void
   /** Paint a host turn's live command output into the window's terminal pane. */
   onShellOutput?: (chunk: string, taskId: string | null) => void
+  onInstructionActivation?: (projectKey: string, threadId: string, names: string[]) => void
   sendThreadPrompt?: TurnHostLinkDependencies['sendThreadPrompt']
   callTaskSupervisor?: TurnHostLinkDependencies['callTaskSupervisor']
   onUnfollowedChunk?: TurnHostLinkDependencies['onUnfollowedChunk']
@@ -115,6 +117,17 @@ export function createTurnHostLink(deps: TurnHostLaunchDependencies): TurnHostLi
         grantScope: response.grantScope,
       }
     },
+    // The window's question dialog, filed under the host turn's thread.
+    // With no window to ask, or one that closed before an answer, the host
+    // keeps the question for the next window rather than taking blanks.
+    askQuestions: async (
+      { projectId, threadId, request },
+      signal,
+    ): Promise<AskUserResult | null> => {
+      if (!canAskUser()) return null
+      const result = await requestUserAnswers({ ...request, projectId, threadId }, signal)
+      return result.windowClosed ? null : result
+    },
     // The thread's diff panel shows it; deciding there answers the host.
     reviewDiff: ({ projectId, threadId, entry }, signal) =>
       reviewRemoteStagedDiff({ projectId, threadId }, entry, signal),
@@ -126,6 +139,9 @@ export function createTurnHostLink(deps: TurnHostLaunchDependencies): TurnHostLi
     },
     onThreadTaken: deps.onThreadTaken,
     ...(deps.onShellOutput ? { onShellOutput: deps.onShellOutput } : {}),
+    ...(deps.onInstructionActivation
+      ? { onInstructionActivation: deps.onInstructionActivation }
+      : {}),
     ...(deps.sendThreadPrompt ? { sendThreadPrompt: deps.sendThreadPrompt } : {}),
     ...(deps.callTaskSupervisor ? { callTaskSupervisor: deps.callTaskSupervisor } : {}),
     ...(deps.onUnfollowedChunk ? { onUnfollowedChunk: deps.onUnfollowedChunk } : {}),

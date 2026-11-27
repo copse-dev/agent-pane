@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { TurnWorkerConnection, WorkerToApp } from '../turn-worker/turn-worker-socket.ts'
 import type { SshPromptResponse } from '../ssh-workspace/ssh-prompt.ts'
 import type { ThreadPromptResult } from '@shared/thread-prompt.ts'
+import type { AskUserResult } from '../ask-user.ts'
 import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
 import type { HostTaskCall, HostTaskCallResult } from './host-task-supervisor.ts'
 import type { HostDispatchRecord } from './host-dispatch-record.ts'
@@ -11,6 +12,7 @@ import {
   type DispatchState,
   type HostApprovalAnswer,
   type HostProcessOp,
+  type HostProcessRoot,
   type HostThreadPromptCommand,
   type HostToApp,
   type TestScenarioOp,
@@ -74,6 +76,14 @@ export interface TurnHostLinkDependencies {
     prompt: Extract<HostToApp, { t: 'ssh-prompt' }>,
     signal: AbortSignal,
   ) => Promise<SshPromptResponse>
+  /**
+   * Put a host turn's own questions (`ask_user`) to the user. Null when no
+   * window could answer (it closed): the question stays with the host.
+   */
+  askQuestions?: (
+    prompt: Extract<HostToApp, { t: 'ask-user' }>,
+    signal: AbortSignal,
+  ) => Promise<AskUserResult | null>
   /** Have the window submit a host turn's prompt to another thread. */
   sendThreadPrompt?: (
     command: HostThreadPromptCommand,
@@ -85,6 +95,8 @@ export interface TurnHostLinkDependencies {
   onUnfollowedChunk?: (message: Extract<HostToApp, { t: 'chunk' }>) => void
   /** A host turn's live command output, for the window's terminal pane. */
   onShellOutput?: (chunk: string, taskId: string | null) => void
+  /** A host turn activated nested instruction files. */
+  onInstructionActivation?: (projectKey: string, threadId: string, names: string[]) => void
   /** Apply a host turn's change to a shared profile store, which the app owns. */
   applyStoreWrite?: (message: Extract<HostToApp, { t: 'store-write' }>) => void
   /** A host thread's lease is held: the follower should follow it now. */
@@ -94,7 +106,7 @@ export interface TurnHostLinkDependencies {
 }
 
 type PromptKinds = {
-  t: 'approval' | 'review-diff' | 'ssh-prompt' | 'thread-prompt' | 'task-call'
+  t: 'approval' | 'review-diff' | 'ssh-prompt' | 'thread-prompt' | 'task-call' | 'ask-user'
 }
 
 /** How many answered prompts the link remembers, to answer a replay the same way. */
@@ -139,6 +151,7 @@ export class TurnHostLink {
    * call is never carried out twice.
    */
   private readonly answered = new Map<string, AppToHost>()
+  private readonly processListWaiters = new Map<string, (processes: HostProcessRoot[]) => void>()
   private readonly processWaiters = new Map<
     string,
     (result: Extract<HostToApp, { t: 'process-result' }> | null) => void
@@ -193,6 +206,9 @@ export class TurnHostLink {
       connection.close()
       this.lost()
     }
+    // The app may have written the profile after the host read it and before
+    // this line was up, when no notice could reach it.
+    if (this.ready) this.send({ t: 'profile-changed' })
     return this.ready
   }
 
@@ -290,6 +306,28 @@ export class TurnHostLink {
         resolve(result)
       })
       this.send({ t: 'process', id, op, processId, ...owner })
+    })
+  }
+
+  /**
+   * The commands the host's turns started, for the Process Manager. Empty when
+   * no host is up (this never starts one) or it does not answer in time.
+   */
+  processes(timeoutMs = 1_500): Promise<HostProcessRoot[]> {
+    if (!this.ready) return Promise.resolve([])
+    const id = (this.deps.createId ?? randomUUID)()
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        finish([])
+      }, timeoutMs)
+      timer.unref()
+      const finish = (processes: HostProcessRoot[]): void => {
+        clearTimeout(timer)
+        this.processListWaiters.delete(id)
+        resolve(processes)
+      }
+      this.processListWaiters.set(id, finish)
+      this.send({ t: 'processes', id })
     })
   }
 
@@ -397,6 +435,7 @@ export class TurnHostLink {
       case 'ssh-prompt':
       case 'thread-prompt':
       case 'task-call':
+      case 'ask-user':
         this.ask(message)
         return
       case 'taken':
@@ -406,11 +445,17 @@ export class TurnHostLink {
       case 'process-result':
         this.processWaiters.get(message.id)?.(message)
         return
+      case 'processes-result':
+        this.processListWaiters.get(message.id)?.(message.processes)
+        return
       case 'stopped-all':
         for (const waiter of this.stoppedAllWaiters.splice(0)) waiter()
         return
       case 'shell-output':
         this.deps.onShellOutput?.(message.chunk, message.taskId)
+        return
+      case 'instruction-activation':
+        this.deps.onInstructionActivation?.(message.projectKey, message.threadId, message.names)
         return
       case 'store-write':
         try {
@@ -448,6 +493,12 @@ export class TurnHostLink {
         return refusal(prompt)
       })
       .then((reply) => {
+        if (reply === null) {
+          // Nobody here could answer: leave it to the host, which asks again on
+          // the next attach.
+          if (this.prompts.get(prompt.id) === controller) this.prompts.delete(prompt.id)
+          return
+        }
         if (this.prompts.get(prompt.id) !== controller) {
           // Taken down: the line dropped, or the host withdrew it. A task call
           // or thread prompt has been carried out all the same, so the host's
@@ -475,7 +526,7 @@ export class TurnHostLink {
   private answer(
     prompt: Extract<HostToApp, PromptKinds>,
     signal: AbortSignal,
-  ): Promise<AppToHost> | null {
+  ): Promise<AppToHost | null> | null {
     const { id } = prompt
     switch (prompt.t) {
       case 'approval': {
@@ -502,6 +553,14 @@ export class TurnHostLink {
           ? call(prompt.call).then((result) => ({ t: 'task-call-answer', id, result }))
           : null
       }
+      case 'ask-user': {
+        const ask = this.deps.askQuestions
+        return ask
+          ? ask(prompt, signal).then((result): AppToHost | null =>
+              result === null ? null : { t: 'ask-user-answer', id, result },
+            )
+          : null
+      }
       case 'thread-prompt': {
         const send = this.deps.sendThreadPrompt
         return send
@@ -526,6 +585,7 @@ export class TurnHostLink {
     for (const waiter of [...this.statusWaiters.values()]) waiter('unknown')
     for (const waiter of [...this.scenarioWaiters.values()]) waiter(null)
     for (const waiter of [...this.processWaiters.values()]) waiter(null)
+    for (const waiter of [...this.processListWaiters.values()]) waiter([])
     // The host still waits on them, and asks again once a line is back.
     for (const controller of this.prompts.values()) controller.abort()
     this.prompts.clear()
@@ -623,6 +683,12 @@ function refusal(prompt: Extract<HostToApp, PromptKinds>): AppToHost {
         t: 'task-call-answer',
         id: prompt.id,
         result: { error: 'The app could not record the task.' },
+      }
+    case 'ask-user':
+      return {
+        t: 'ask-user-answer',
+        id: prompt.id,
+        result: { answers: prompt.request.questions.map(() => ''), cancelled: true },
       }
     case 'thread-prompt':
       return {

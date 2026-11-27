@@ -435,6 +435,58 @@ describe('TurnHostLink', () => {
     assert.equal(await line.testScenario({ kind: 'clear' }), null, 'no host, no answer')
   })
 
+  it("lists the host's commands for the Process Manager, without starting a host", async () => {
+    const host = new FakeHost()
+    const command = {
+      pid: 777,
+      label: 'sleep 45',
+      type: 'Command' as const,
+      threadId: 't1',
+      projectId: 'p1',
+    }
+    let answers = true
+    host.respond = (message, reply): void => {
+      if (message.t === 'processes' && answers)
+        reply({ t: 'processes-result', id: message.id, processes: [command] })
+    }
+    const { link: line } = link(host)
+    assert.deepEqual(await line.processes(), [])
+    assert.equal(host.connections, 0, 'asking started no host')
+    assert.ok(await line.ensureConnected())
+    assert.deepEqual(await line.processes(), [command])
+    answers = false
+    assert.deepEqual(await line.processes(5), [], 'a host that does not answer lists nothing')
+  })
+
+  it("leaves a host turn's question with the host when no window can answer it", async () => {
+    const host = new FakeHost()
+    let asked = 0
+    const { link: line } = link(host, {
+      askQuestions: () => {
+        asked += 1
+        return Promise.resolve(null)
+      },
+    })
+    assert.ok(await line.ensureConnected())
+    const question = {
+      t: 'ask-user' as const,
+      id: 'q-1',
+      projectId: 'p1',
+      threadId: 't1',
+      request: { questions: [{ question: 'Which branch?' }] },
+    }
+    host.say(question)
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(
+      host.sent.filter((m) => m.t === 'ask-user-answer').length,
+      0,
+      'no blank answer sent',
+    )
+    host.say(question)
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(asked, 2, 'asked again when the host asks again')
+  })
+
   it("has this window submit a host turn's prompt to another thread", async () => {
     const host = new FakeHost()
     const answered = Promise.withResolvers<AppToHost>()

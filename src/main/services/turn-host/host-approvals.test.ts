@@ -113,6 +113,22 @@ describe('HostApprovals', () => {
     assert.deepEqual(await stopped, { ok: false, error: 'Sending was cancelled.' })
   })
 
+  it("puts a host turn's own questions to the window, and withdraws them on Stop", async () => {
+    const { approvals: prompts, sent } = approvals()
+    const request = { questions: [{ question: 'Which branch?', options: ['main', 'dev'] }] }
+    const answered = prompts.askQuestions('p1', 't1', request)
+    assert.deepEqual(sent, [{ t: 'ask-user', id: 'a1', projectId: 'p1', threadId: 't1', request }])
+    prompts.answerThreadPrompt('a1', { ok: true, queued: false })
+    prompts.answerQuestions('a1', { answers: ['dev'] })
+    assert.deepEqual(await answered, { answers: ['dev'] })
+
+    const controller = new AbortController()
+    const stopped = prompts.askQuestions('p1', 't1', request, controller.signal)
+    controller.abort()
+    assert.deepEqual(await stopped, { answers: [''], cancelled: true })
+    assert.deepEqual(sent.at(-1), { t: 'approval-cancel', id: 'a2' })
+  })
+
   it('rejects a staged edit whose turn was stopped', async () => {
     const { approvals: prompts } = approvals()
     const controller = new AbortController()

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { askUserParamsSchema } from '@copse/agent/ask-user-format.ts'
 import {
   connectLocalLine,
   localSocketPath,
@@ -9,6 +10,7 @@ import {
 } from '../local-socket.ts'
 import type { StreamChunk, TranscriptSnapshot, TranscriptStamp } from '@shared/types'
 import type { ThreadPromptCommand, ThreadPromptResult } from '@shared/thread-prompt.ts'
+import type { AskUserRequest, AskUserResult } from '../ask-user.ts'
 import {
   supervisedTaskMetaSchema,
   type SupervisedTaskMeta,
@@ -40,14 +42,17 @@ import type { SshPromptRequest, SshPromptResponse } from '../ssh-workspace/ssh-p
  * - `status` asks what became of a dispatch by its operation id, for an app
  *   that lost the answer. A repeated `dispatch` of an id it has seen gets the
  *   same answer and never runs the turn twice.
- * - `approval`, `review-diff` and `ssh-prompt` ask the window to answer a
- *   prompt a host turn raised: an approval, a staged edit for the diff panel,
- *   or an SSH password or host-key question. Each has its own `-answer` back.
+ * - `approval`, `review-diff`, `ssh-prompt` and `ask-user` ask the window to
+ *   answer a prompt a host turn raised: an approval, a staged edit for the diff
+ *   panel, an SSH password or host-key question, or the agent's own questions
+ *   (`ask_user`). Each has its own `-answer` back.
  *   A prompt waits however long no app is attached, and is asked again of every
  *   app that attaches; `approval-cancel` takes any of them down once it no
  *   longer needs an answer.
  * - `shell-output` mirrors a host turn's live command output to the window's
  *   terminal pane, as the app's own shell output sink does for its turns.
+ * - `instruction-activation` tells the app which nested instruction files a
+ *   host turn activated, for Settings → Sources.
  * - `store-write` carries a change a host turn made to a shared profile store
  *   (settings, config) to the app, which owns those files and applies it.
  *   `profile-changed` tells the host the app wrote the profile, so it reads it
@@ -77,6 +82,7 @@ export type AppToHost =
   | { t: 'profile-changed' }
   | { t: 'test-scenario'; id: string; op: TestScenarioOp }
   | { t: 'thread-prompt-answer'; id: string; result: ThreadPromptResult }
+  | { t: 'ask-user-answer'; id: string; result: AskUserResult }
   | { t: 'task-call-answer'; id: string; result: HostTaskCallResult }
   | { t: 'task-changed'; task: SupervisedTaskMeta }
   | {
@@ -87,6 +93,7 @@ export type AppToHost =
       projectId: string
       threadId: string
     }
+  | { t: 'processes'; id: string }
 
 /** A scripted model scenario operation, for e2e builds (`mock-script.ts`). */
 export type TestScenarioOp =
@@ -130,6 +137,18 @@ export type HostThreadPromptCommand = Omit<ThreadPromptCommand, 'id' | 'expiresA
  */
 export type HostProcessOp = 'stop' | 'alive' | 'logs'
 
+/**
+ * A command a host turn started, for the Process Manager: the app's own
+ * `ps` sample finds its descendants, but only the host knows its thread.
+ */
+export interface HostProcessRoot {
+  pid: number
+  label: string
+  type: 'Background task' | 'Command'
+  threadId: string
+  projectId: string
+}
+
 export interface HostProcessLogs {
   logs: string
   running: boolean
@@ -163,13 +182,16 @@ export type HostToApp =
       command: HostThreadPromptCommand
     }
   | { t: 'task-call'; id: string; projectId: string; threadId: string; call: HostTaskCall }
+  | { t: 'ask-user'; id: string; projectId: string; threadId: string; request: AskUserRequest }
   | { t: 'taken'; projectId: string; threadId: string }
   | { t: 'process-result'; id: string; ok: boolean; logs?: HostProcessLogs | null | undefined }
+  | { t: 'processes-result'; id: string; processes: HostProcessRoot[] }
   /** Every turn running when `stop-all` came has ended. */
   | { t: 'stopped-all' }
   | { t: 'approval-cancel'; id: string }
   | { t: 'store-write'; store: string; changes: ProfileStoreChange[] }
   | { t: 'shell-output'; chunk: string; taskId: string | null }
+  | { t: 'instruction-activation'; projectKey: string; threadId: string; names: string[] }
   | ({ t: 'test-scenario-result'; id: string } & TestScenarioResult)
 
 const id = z.string().min(1).max(256)
@@ -225,6 +247,24 @@ const appToHostSchema = z.discriminatedUnion('t', [
     projectId: id,
     threadId: id,
   }),
+  z.object({ t: z.literal('processes'), id }),
+  z.object({
+    t: z.literal('ask-user-answer'),
+    id,
+    result: z
+      .object({
+        answers: z.array(z.string().max(1_000_000)).max(1_000),
+        cancelled: z.literal(true).optional(),
+        timedOut: z.literal(true).optional(),
+        deferred: z.literal(true).optional(),
+      })
+      .transform(({ answers, cancelled, timedOut, deferred }): AskUserResult => ({
+        answers,
+        ...(cancelled ? { cancelled } : {}),
+        ...(timedOut ? { timedOut } : {}),
+        ...(deferred ? { deferred } : {}),
+      })),
+  }),
   z.object({
     t: z.literal('thread-prompt-answer'),
     id,
@@ -269,6 +309,16 @@ const hostTaskCallShape = z.discriminatedUnion('op', [
   z.looseObject({ op: z.literal('fail'), projectId: id, taskId: id, reason: z.string() }),
   z.looseObject({ op: z.literal('cancel'), projectId: id, taskId: id }),
 ])
+
+/** A host turn's `ask_user` request, checked as the tool checks its own arguments. */
+const askUserRequestSchema = askUserParamsSchema
+  .extend({
+    presentation: z.object({ kind: z.literal('actions'), title: z.string().max(1_000) }).optional(),
+  })
+  .transform(({ questions, presentation }): AskUserRequest => ({
+    questions,
+    ...(presentation === undefined ? {} : { presentation }),
+  }))
 
 /** The fields of a host turn's thread prompt the app reads before the window does. */
 const threadPromptCommandShape = z.looseObject({
@@ -353,6 +403,15 @@ const hostToAppSchema = z.discriminatedUnion('t', [
       ),
   }),
   z.object({
+    t: z.literal('ask-user'),
+    id,
+    projectId: id,
+    threadId: id,
+    // Built by the same ask_user tool as an in-process question; the window
+    // renders it as it would one of its own.
+    request: askUserRequestSchema,
+  }),
+  z.object({
     t: z.literal('thread-prompt'),
     id,
     projectId: id,
@@ -381,6 +440,21 @@ const hostToAppSchema = z.discriminatedUnion('t', [
       .nullable()
       .optional(),
   }),
+  z.object({
+    t: z.literal('processes-result'),
+    id,
+    processes: z
+      .array(
+        z.object({
+          pid: z.number().int().positive(),
+          label: z.string().max(100_000),
+          type: z.enum(['Background task', 'Command']),
+          threadId: id,
+          projectId: id,
+        }),
+      )
+      .max(10_000),
+  }),
   z.object({ t: z.literal('stopped-all') }),
   z.object({ t: z.literal('taken'), projectId: id, threadId: id }),
   z.object({ t: z.literal('approval-cancel'), id }),
@@ -388,6 +462,12 @@ const hostToAppSchema = z.discriminatedUnion('t', [
     t: z.literal('shell-output'),
     chunk: z.string().max(4_000_000),
     taskId: id.nullable(),
+  }),
+  z.object({
+    t: z.literal('instruction-activation'),
+    projectKey: z.string().min(1).max(4096),
+    threadId: z.string().max(256),
+    names: z.array(z.string().max(4096)).max(10_000),
   }),
   z
     .object({

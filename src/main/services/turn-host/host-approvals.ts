@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { ApprovalRequest, ApprovalResponse } from '../approval.ts'
+import type { AskUserRequest, AskUserResult } from '../ask-user.ts'
 import type { QueueEntry } from '../diff-queue.ts'
 import type { SshPromptRequest, SshPromptResponse } from '../ssh-workspace/ssh-prompt.ts'
 import type { ThreadPromptResult } from '@shared/thread-prompt.ts'
@@ -26,7 +27,7 @@ import type {
 
 type PromptMessage = Extract<
   HostToApp,
-  { t: 'approval' | 'review-diff' | 'ssh-prompt' | 'thread-prompt' | 'task-call' }
+  { t: 'approval' | 'review-diff' | 'ssh-prompt' | 'thread-prompt' | 'task-call' | 'ask-user' }
 >
 
 const DENIED: ApprovalResponse = { approved: false, remember: false }
@@ -44,6 +45,7 @@ export class HostApprovals {
   private readonly ssh = new Map<string, OpenPrompt<SshPromptResponse>>()
   private readonly threadPrompts = new Map<string, OpenPrompt<ThreadPromptResult>>()
   private readonly taskCalls = new Map<string, OpenPrompt<HostTaskCallResult>>()
+  private readonly questions = new Map<string, OpenPrompt<AskUserResult>>()
   /** Every waiting prompt in the order it was raised, for an app that attaches. */
   private readonly raised = new Map<string, PromptMessage>()
   private readonly send: (message: HostToApp) => void
@@ -129,6 +131,25 @@ export class HostApprovals {
       { t: 'task-call', id: this.createId(), projectId, threadId, call },
       { error: 'unanswered' },
     )
+  }
+
+  /** Put the agent's own questions (`ask_user`) to the window. A Stop withdraws them. */
+  askQuestions(
+    projectId: string,
+    threadId: string,
+    request: AskUserRequest,
+    signal?: AbortSignal,
+  ): Promise<AskUserResult> {
+    return this.prompt(
+      this.questions,
+      { t: 'ask-user', id: this.createId(), projectId, threadId, request },
+      { answers: request.questions.map(() => ''), cancelled: true },
+      signal,
+    )
+  }
+
+  answerQuestions(id: string, result: AskUserResult): void {
+    this.settle(this.questions, id, result)
   }
 
   answerTaskCall(id: string, result: HostTaskCallResult): void {

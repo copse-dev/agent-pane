@@ -82,6 +82,31 @@ async function main(): Promise<number> {
   // turn asks here, and the turn's handler puts the question to the window.
   initSshAskpassServer(join(userDataPath, 'turn-host'))
   const runtime = await bootWorkerRuntime(log)
+  const [
+    { getWorkspaceRoot, rereadPersistedWorkspaceRoot },
+    { initSkillsRegistry },
+    { initAgentsRegistry },
+    { registerSkillTools },
+    { reloadMcpServers },
+    { getPluginService },
+  ] = await Promise.all([
+    import('../workspace.ts'),
+    import('../skills/skills-registry.ts'),
+    import('../agents/agents-registry.ts'),
+    import('../registry-bootstrap.ts'),
+    import('../mcp/mcp-registry.ts'),
+    import('../plugins/plugin-service.ts'),
+  ])
+  // As the app does when its window selects a project or toggles a plugin
+  // (workspace-handlers.ts, plugin-handlers.ts).
+  const workspaceChanged = async (): Promise<void> => {
+    await initSkillsRegistry()
+    await initAgentsRegistry()
+    registerSkillTools(runtime.registry)
+    await reloadMcpServers(runtime.registry).catch((error: unknown) => {
+      log(`could not reload MCP servers for the project: ${String(error)}`)
+    })
+  }
   runtime.teardownOnSignals()
 
   const done = Promise.withResolvers<undefined>()
@@ -92,7 +117,13 @@ async function main(): Promise<number> {
     onIdle: (): void => {
       done.resolve(undefined)
     },
-    reloadProfile: profile.reload,
+    reloadProfile: async (): Promise<void> => {
+      const before = getWorkspaceRoot()
+      await profile.reload()
+      // The app switched projects: what the turns see comes from the new root.
+      const pluginsChanged = await getPluginService().applyPersistedEnablement()
+      if (rereadPersistedWorkspaceRoot() !== before || pluginsChanged) await workspaceChanged()
+    },
     ...(await testScenarioDependency()),
   })
   forward = (store, changes): void => {
@@ -116,6 +147,11 @@ async function main(): Promise<number> {
   // Prompts to other threads (a subthread start), which the app's window submits.
   const { setThreadPromptSender } = await import('../thread-prompts.ts')
   setThreadPromptSender((command, signal) => host.threadPrompt(command, signal))
+  // Nested instruction activations, which the app's Settings → Sources shows.
+  const { setNestedActivationSink } = await import('../project-instructions.ts')
+  setNestedActivationSink((projectKey, threadId, names) => {
+    host.instructionActivation(projectKey, threadId, names)
+  })
   // Live command output, which the app paints into its terminal pane.
   const { setShellOutputSink } = await import('../exec/shell-output-context.ts')
   setShellOutputSink((chunk, taskId) => {

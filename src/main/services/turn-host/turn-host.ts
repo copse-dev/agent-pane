@@ -10,6 +10,7 @@ import {
 } from '../agent-dispatcher.ts'
 import { abortAgent } from '../agent-service.ts'
 import { runWithApprovalHandler } from '../approval.ts'
+import { runWithAskUserHandler } from '../ask-user.ts'
 import { runWithStagedDiffResolver } from '../diff-queue.ts'
 import { runWithSshPromptHandler } from '../ssh-workspace/ssh-prompt.ts'
 import { getSetting } from '../storage/settings.ts'
@@ -30,6 +31,7 @@ import {
   peekBackgroundProcessLogs,
   stopBackgroundProcess,
 } from '../exec/background-process.ts'
+import { listForegroundShellProcesses } from '../exec/foreground-shell-process.ts'
 import type { MachineDispatchResult } from '@shared/types/machine-dispatch.ts'
 import type { CommandPhase } from '@copse/agent/wire-types.ts'
 import {
@@ -42,6 +44,7 @@ import {
   TURN_HOST_PROTOCOL,
   type AppToHost,
   type DispatchState,
+  type HostProcessRoot,
   type HostThreadPromptCommand,
   type HostToApp,
   type TestScenarioOp,
@@ -274,6 +277,9 @@ export class TurnHost {
       case 'thread-prompt-answer':
         this.approvals.answerThreadPrompt(message.id, message.result)
         return
+      case 'ask-user-answer':
+        this.approvals.answerQuestions(message.id, message.result)
+        return
       case 'task-call-answer':
         this.approvals.answerTaskCall(message.id, message.result)
         return
@@ -282,6 +288,9 @@ export class TurnHost {
         return
       case 'process':
         client.send(this.processResult(message))
+        return
+      case 'processes':
+        client.send({ t: 'processes-result', id: message.id, processes: hostProcessRoots() })
         return
       case 'profile-changed':
         this.profileStale = true
@@ -380,7 +389,12 @@ export class TurnHost {
                   ...request,
                   canRememberOnDevice: false,
                 }),
-              run,
+              () =>
+                runWithAskUserHandler(
+                  (request, signal) =>
+                    this.approvals.askQuestions(projectId, threadId, request, signal),
+                  run,
+                ),
             ),
         ),
     )
@@ -426,6 +440,11 @@ export class TurnHost {
         return { t: 'process-result', id: message.id, ok: logs !== null, logs }
       }
     }
+  }
+
+  /** A host turn activated nested instruction files: every attached app's Sources shows it. */
+  instructionActivation(projectKey: string, threadId: string, names: string[]): void {
+    this.broadcastTo({ t: 'instruction-activation', projectKey, threadId, names })
   }
 
   /** A host turn's command printed: every attached app's terminal pane shows it. */
@@ -572,6 +591,9 @@ export class TurnHost {
       client.send({ t: 'accepted', id, threadId })
     }
     this.claimed.set(turnKey, { operationId: id, accept })
+    // The app may have run this thread's turns since the host's last one: read
+    // its history from disk rather than from this process's cache.
+    this.dispatcher.forgetHistory(projectId, threadId)
     const settled = Promise.withResolvers<undefined>()
     try {
       await this.withPrompts(projectId, threadId, stopped.signal, () =>
@@ -623,7 +645,6 @@ export class TurnHost {
     })
   }
 
-  /** (Re)start the idle countdown when nothing holds the host up, else stop it. */
   /** Resolves once no turn runs here (at once if none does). */
   private whenNothingRuns(): Promise<void> {
     if (this.running.size === 0) return Promise.resolve()
@@ -632,6 +653,7 @@ export class TurnHost {
     })
   }
 
+  /** (Re)start the idle countdown when nothing holds the host up, else stop it. */
   private armIdle(): void {
     if (this.running.size === 0) for (const waiter of this.idleWaiters.splice(0)) waiter()
     if (this.idleTimer !== null) clearTimeout(this.idleTimer)
@@ -661,4 +683,28 @@ export class TurnHost {
 
 function key(projectId: string, threadId: string): string {
   return `${projectId}\0${threadId}`
+}
+
+/** The commands this host's turns started, for the app's Process Manager. */
+function hostProcessRoots(): HostProcessRoot[] {
+  return [
+    ...listBackgroundProcessPids().map(
+      ({ pid, command, threadId, projectId }): HostProcessRoot => ({
+        pid,
+        label: command,
+        type: 'Background task',
+        threadId,
+        projectId,
+      }),
+    ),
+    ...listForegroundShellProcesses().map(
+      ({ pid, command, threadId, projectId }): HostProcessRoot => ({
+        pid,
+        label: command,
+        type: 'Command',
+        threadId,
+        projectId,
+      }),
+    ),
+  ]
 }
