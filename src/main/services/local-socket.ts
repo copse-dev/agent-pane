@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, rmSync } from 'node:fs'
+import { lstatSync, mkdirSync, rmSync } from 'node:fs'
 import { createConnection, createServer, type Server, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -31,7 +31,24 @@ export function localSocketPath(
   const inProfile = join(userDataPath, 'run', `${kind}-${hash}.sock`)
   return inProfile.length <= MAX_SOCKET_PATH
     ? inProfile
-    : join(tmpdir(), `copse-${kind}-${hash}.sock`)
+    : join(privateTmpRunDir(), `${kind}-${hash}.sock`)
+}
+
+/**
+ * Where a socket goes when the profile's own path is too long. The temp
+ * directory can be shared between users (`/tmp` on Linux), where a bare,
+ * guessable socket name could be taken first by another user. So it is a
+ * directory only this user can enter, and one that is not refuses to be used.
+ */
+function privateTmpRunDir(): string {
+  const uid = process.getuid?.() ?? 0
+  const dir = join(tmpdir(), `copse-run-${String(uid)}`)
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
+  const stat = lstatSync(dir)
+  if (!stat.isDirectory() || stat.uid !== uid || (stat.mode & 0o077) !== 0) {
+    throw new Error(`${dir} is not a directory only this user can reach`)
+  }
+  return dir
 }
 
 function readLines(socket: Socket, onLine: (line: string) => void): void {
