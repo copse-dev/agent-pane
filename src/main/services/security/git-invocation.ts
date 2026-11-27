@@ -73,8 +73,11 @@ const INTERNAL_GIT_CONFIG = [
   'core.fsmonitor=false',
   'core.hooksPath=/dev/null',
   // fetch and push run this program to list an alternate object store's refs
-  // when the checkout has `objects/info/alternates`. Empty means unset: Git
-  // lists those refs itself, which only feeds negotiation.
+  // when the checkout has `objects/info/alternates`. Empty does not restore
+  // Git's built-in listing: Git tries to run an empty command, fails, and
+  // offers none of the alternate's refs to the negotiation. A caller that
+  // borrows objects through alternates must seed its own refs (see
+  // default-branch-fetch.ts), or the fetch downloads the full history (#4407).
   'core.alternateRefsCommand=',
   'core.pager=cat',
   'color.ui=false',
