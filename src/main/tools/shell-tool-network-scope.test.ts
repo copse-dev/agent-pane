@@ -1,4 +1,4 @@
-import { afterEach, describe, it, mock } from 'node:test'
+import { after, afterEach, before, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   chmodSync,
@@ -17,7 +17,8 @@ import { AUTO_APPROVAL_LEVEL_SETTING } from '@shared/auto-approval.ts'
 import { setProjectSandboxEnabled } from '../project-sandbox/enabled.ts'
 import { baseSandboxConfig } from '../project-sandbox/config.ts'
 import { activeSandboxNetworkScopeLabels } from '../project-sandbox/network-scope.ts'
-import { portBindingWorkerPath, setPortBindingWorkerPathForTest } from '../project-sandbox/spawn.ts'
+import { portBindingWorkerPath } from '../project-sandbox/spawn.ts'
+import { acquireWorkerBundleLock } from '../project-sandbox/worker-bundle-lock.test-support.ts'
 import { setApprovalHandler, type ApprovalRequest } from '../services/approval.ts'
 import { clearGitRemotesCache } from '../services/security/git-remotes.ts'
 import { ensureShellCommandPermitted } from '../services/security/permission-gate.ts'
@@ -57,6 +58,7 @@ export const SandboxManager = {
   async reset() { config = null },
 }
 export function getApplySeccompBinaryPath() { return null }
+export function getJavaProxyAgentJarPath() { return null }
 `
 
 function bundleWorker(stub: string): void {
@@ -70,6 +72,7 @@ function bundleWorker(stub: string): void {
     alias: {
       '@shared': join(REPO_ROOT, 'src/shared'),
       '@anthropic-ai/sandbox-runtime/dist/sandbox/generate-seccomp-filter.js': stub,
+      '@anthropic-ai/sandbox-runtime/dist/sandbox/java-proxy-agent.js': stub,
       '@anthropic-ai/sandbox-runtime': stub,
     },
     external: [
@@ -93,6 +96,14 @@ const OUTPUT_UNDER_TMP = ((): boolean => {
 })()
 
 describe('run_shell network scope', () => {
+  // port-binding-worker.test.ts bundles the same worker path with other stubs.
+  let releaseBundle: (() => void) | null = null
+  before(async () => {
+    releaseBundle = await acquireWorkerBundleLock()
+  })
+  after(() => {
+    releaseBundle?.()
+  })
   const cleanups: Array<() => void | Promise<void>> = []
   afterEach(async () => {
     for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
@@ -111,11 +122,9 @@ describe('run_shell network scope', () => {
     const fixture = realpathSync.native(
       mkdtempSync(join(TEST_OUTPUT_DIR, 'network-scope-fixtures', 'run-')),
     )
-    // Its own bundle: port-binding-worker.test.ts builds the default path with
-    // other stubs, and the runner runs test files in parallel.
-    cleanups.push(setPortBindingWorkerPathForTest(join(fixture, 'port-binding-worker.js')))
     cleanups.push(() => {
       rmSync(fixture, { recursive: true, force: true })
+      rmSync(portBindingWorkerPath(), { force: true })
     })
     const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-scoped-shell-')))
     cleanups.push(() => {

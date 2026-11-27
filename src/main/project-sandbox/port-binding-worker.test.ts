@@ -24,7 +24,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { afterEach, describe, it, mock } from 'node:test'
+import { after, afterEach, before, describe, it, mock } from 'node:test'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import * as esbuild from 'esbuild'
 import { baseSandboxConfig, ensureWorkspaceTmpDir } from './config.ts'
@@ -46,6 +46,7 @@ import {
   spawnBackgroundProcess,
   spawnShellInProjectSandbox,
 } from './spawn.ts'
+import { acquireWorkerBundleLock } from './worker-bundle-lock.test-support.ts'
 import { terminateProcessTree } from '../services/exec/subprocess-kill.ts'
 import {
   clearThreadReadRoots,
@@ -140,6 +141,15 @@ async function outputContaining(
     })
   })
 }
+
+// shell-tool-network-scope.test.ts bundles the same worker path with its own stub.
+let releaseBundle: (() => void) | null = null
+before(async () => {
+  releaseBundle = await acquireWorkerBundleLock()
+})
+after(() => {
+  releaseBundle?.()
+})
 
 describe('port-binding background host', () => {
   let fixture = ''
