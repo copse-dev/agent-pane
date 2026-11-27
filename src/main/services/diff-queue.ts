@@ -357,6 +357,71 @@ function recordOwnershipAfterApply(state: DiffQueueState, entry: QueueEntry): vo
   }
 }
 
+/**
+ * Staged edits a turn in another process made (the turn host), shown in this
+ * window's diff panel. Deciding one answers that process, which applies it
+ * itself; nothing is written from here.
+ */
+const remoteDecisions = new WeakMap<QueueEntry, (approved: boolean) => void>()
+
+/**
+ * Show another process's staged edit in the thread's diff panel. Resolves
+ * whether the user approved it; false when the signal aborts first.
+ */
+export function reviewRemoteStagedDiff(
+  owner: ThreadExecutionOwner,
+  entry: QueueEntry,
+  signal: AbortSignal,
+): Promise<boolean> {
+  if (signal.aborted) return Promise.resolve(false)
+  const state = stateFor(owner)
+  const shown = cloneEntry(entry)
+  return new Promise((resolve) => {
+    const settle = (approved: boolean): void => {
+      signal.removeEventListener('abort', onAbort)
+      remoteDecisions.delete(shown)
+      const index = state.queue.indexOf(shown)
+      if (index !== -1) state.queue.splice(index, 1)
+      broadcastQueue(state, owner)
+      resolve(approved)
+    }
+    const onAbort = (): void => {
+      settle(false)
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    // The other process holds one row per path; an older row it asked about is over.
+    const prior = state.queue.find((e) => e.path === shown.path)
+    if (prior) remoteDecisions.get(prior)?.(false)
+    removeEntryQuietly(state, shown.path)
+    state.queue.push(shown)
+    remoteDecisions.set(shown, settle)
+    broadcastToAppWindows(
+      'agent:show-diff',
+      owner.projectId,
+      owner.threadId,
+      shown.path,
+      shown.before,
+      shown.after,
+      shown.language,
+    )
+    broadcastQueue(state, owner)
+  })
+}
+
+/** Answer the process that staged a remote entry; false when the entry is local. */
+function decideRemote(entry: QueueEntry, approved: boolean): boolean {
+  const decide = remoteDecisions.get(entry)
+  if (!decide) return false
+  decide(approved)
+  return true
+}
+
+function removeEntryQuietly(state: DiffQueueState, path: string): void {
+  for (let i = state.queue.length - 1; i >= 0; i--) {
+    if (state.queue[i]?.path === path) state.queue.splice(i, 1)
+  }
+}
+
 function cloneEntry(entry: QueueEntry): QueueEntry {
   return { ...entry }
 }
@@ -1163,8 +1228,10 @@ export function initDiffQueue(
       assertMainFrameSender(event, win)
       const owner = parseOwner(event, projectIdArg, threadIdArg)
       const state = stateFor(owner)
-      if (state.queue.some((e) => e.path === path)) {
+      const entry = state.queue.find((e) => e.path === path)
+      if (entry) {
         recordDecision(state, owner, { path, status: 'rejected' })
+        decideRemote(entry, false)
       }
       removeEntry(state, owner, path)
     },
@@ -1212,8 +1279,9 @@ export function initDiffQueue(
     assertMainFrameSender(event, win)
     const owner = parseOwner(event, projectIdArg, threadIdArg)
     const state = stateFor(owner)
-    for (const entry of state.queue) {
+    for (const entry of [...state.queue]) {
       recordDecision(state, owner, { path: entry.path, status: 'rejected' })
+      decideRemote(entry, false)
     }
     state.queue.length = 0
     broadcastQueue(state, owner)
@@ -1230,6 +1298,11 @@ export async function approveStagedDiff(path: string, owner: ThreadExecutionOwne
   const state = stateFor(owner)
   const entry = state.queue.find((e) => e.path === path)
   if (!entry) return
+  if (remoteDecisions.has(entry)) {
+    recordDecision(state, owner, { path: entry.path, status: 'approved' })
+    decideRemote(entry, true)
+    return
+  }
   const turnTreeId = acceptanceEpoch(state, entry)
   const result = await applyDiffEntry(entry, executionRootFor(state), projectRootFor(state))
   if (result.status === 'conflict') {
@@ -1272,6 +1345,11 @@ export async function approveAllStagedDiffs(owner?: ThreadExecutionOwner): Promi
   const appliedEntries = new Set<QueueEntry>()
   const accepted = new Map<string, string[]>()
   for (const entry of toApply) {
+    if (remoteDecisions.has(entry)) {
+      recordDecision(state, resolvedOwner, { path: entry.path, status: 'approved' })
+      decideRemote(entry, true)
+      continue
+    }
     const turnTreeId = acceptanceEpoch(state, entry)
     const result = await applyDiffEntry(entry, executionRootFor(state), projectRootFor(state))
     if (result.status === 'conflict') {

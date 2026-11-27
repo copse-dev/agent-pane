@@ -4,7 +4,13 @@ import { sha256Hex } from '@copse/std/sha256.ts'
 import { chmodSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { classifySshPrompt, requestSshPrompt } from './ssh-prompt.ts'
+import {
+  classifySshPrompt,
+  currentScopedSshPromptHandler,
+  requestSshPrompt,
+  runWithSshPromptHandler,
+  type SshPromptHandler,
+} from './ssh-prompt.ts'
 import {
   currentRendererPromptTarget,
   runWithRendererPromptTarget,
@@ -46,6 +52,12 @@ interface AskpassSession {
    * agent run — which correctly falls back to the main window.
    */
   promptTarget?: RendererPromptTarget
+  /**
+   * The run's own prompt handler, captured with the lease for the same reason:
+   * a turn in the turn host asks its window over the host's line, and OpenSSH's
+   * connection arrives with no scope to find that handler in.
+   */
+  promptHandler?: SshPromptHandler
 }
 
 let server: Server | null = null
@@ -166,8 +178,11 @@ async function respondToAskpass(socket: Socket, line: string): Promise<void> {
 
   // Put the asking window back in scope for the whole answer, so both the
   // prompt itself and anything it raises land where the connection was started.
-  const onAskingRenderer = <T>(fn: () => Promise<T>): Promise<T> =>
-    session.promptTarget ? runWithRendererPromptTarget(session.promptTarget, fn) : fn()
+  const onAskingRenderer = <T>(fn: () => Promise<T>): Promise<T> => {
+    const { promptHandler, promptTarget } = session
+    const scoped = promptHandler ? (): Promise<T> => runWithSshPromptHandler(promptHandler, fn) : fn
+    return promptTarget ? runWithRendererPromptTarget(promptTarget, scoped) : scoped()
+  }
 
   const kind = classifySshPrompt(message.prompt)
   if (kind === 'confirm') {
@@ -262,6 +277,7 @@ export function leaseSshAskpassEnv(
   // Captured here, while still inside the caller's scope; by the time OpenSSH
   // asks, that scope is gone (see AskpassSession.promptTarget).
   const promptTarget = currentRendererPromptTarget()
+  const promptHandler = currentScopedSshPromptHandler()
   sessionsByNonce.set(nonce, {
     nonce,
     mode,
@@ -269,6 +285,7 @@ export function leaseSshAskpassEnv(
     timer,
     release,
     ...(promptTarget === null ? {} : { promptTarget }),
+    ...(promptHandler === null ? {} : { promptHandler }),
   })
 
   const askpass = ensureAskpassWrapper()

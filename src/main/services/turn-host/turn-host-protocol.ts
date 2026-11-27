@@ -9,6 +9,8 @@ import {
 } from '../local-socket.ts'
 import type { StreamChunk, TranscriptSnapshot, TranscriptStamp } from '@shared/types'
 import type { ApprovalRequest, ApprovalResponse } from '../approval.ts'
+import type { QueueEntry } from '../diff-queue.ts'
+import type { SshPromptRequest, SshPromptResponse } from '../ssh-workspace/ssh-prompt.ts'
 
 /**
  * The line between the app and the resident turn host
@@ -31,10 +33,12 @@ import type { ApprovalRequest, ApprovalResponse } from '../approval.ts'
  * - `status` asks what became of a dispatch by its operation id, for an app
  *   that lost the answer. A repeated `dispatch` of an id it has seen gets the
  *   same answer and never runs the turn twice.
- * - `approval` asks the window to answer a prompt a host turn raised, and
- *   `approval-answer` carries the user's answer back. A prompt waits for an
- *   answer however long no app is attached, and is asked again of every app
- *   that attaches; `approval-cancel` takes it down once it no longer needs one.
+ * - `approval`, `review-diff` and `ssh-prompt` ask the window to answer a
+ *   prompt a host turn raised: an approval, a staged edit for the diff panel,
+ *   or an SSH password or host-key question. Each has its own `-answer` back.
+ *   A prompt waits however long no app is attached, and is asked again of every
+ *   app that attaches; `approval-cancel` takes any of them down once it no
+ *   longer needs an answer.
  *
  * Written for any transport: nothing here assumes the two ends share a machine
  * beyond the profile path (`harness-worker-roadmap.md` R2).
@@ -49,6 +53,8 @@ export type AppToHost =
   | { t: 'stop'; threadId: string }
   | { t: 'status'; id: string }
   | { t: 'approval-answer'; id: string; response: HostApprovalAnswer }
+  | { t: 'review-diff-answer'; id: string; approved: boolean }
+  | { t: 'ssh-prompt-answer'; id: string; response: SshPromptResponse }
 
 /** The part of an approval answer that crosses the line. */
 export interface HostApprovalAnswer {
@@ -69,6 +75,14 @@ export type HostToApp =
   | { t: 'chunk'; threadId: string; chunk: StreamChunk; stamp?: TranscriptStamp | undefined }
   | { t: 'snapshot'; snapshot: TranscriptSnapshot }
   | { t: 'approval'; id: string; projectId: string; threadId: string; request: ApprovalRequest }
+  | { t: 'review-diff'; id: string; projectId: string; threadId: string; entry: QueueEntry }
+  | {
+      t: 'ssh-prompt'
+      id: string
+      projectId: string
+      threadId: string
+      request: SshPromptRequest
+    }
   | { t: 'approval-cancel'; id: string }
 
 const id = z.string().min(1).max(256)
@@ -94,6 +108,16 @@ const appToHostSchema = z.discriminatedUnion('t', [
       remember: z.boolean(),
       grantScope: z.enum(['once', 'turn-tree']).optional(),
     }),
+  }),
+  z.object({ t: z.literal('review-diff-answer'), id, approved: z.boolean() }),
+  z.object({
+    t: z.literal('ssh-prompt-answer'),
+    id,
+    response: z
+      .object({ value: z.string().max(64_000), remember: z.boolean().optional() })
+      .transform(({ value, remember }): SshPromptResponse =>
+        remember === undefined ? { value } : { value, remember },
+      ),
   }),
 ])
 
@@ -138,6 +162,41 @@ const hostToAppSchema = z.discriminatedUnion('t', [
         type: z.enum(['shell', 'mcp', 'web', 'pii', 'review-spend']),
       })
       .transform((request) => request as ApprovalRequest),
+  }),
+  z.object({
+    t: z.literal('review-diff'),
+    id,
+    projectId: id,
+    threadId: id,
+    entry: z
+      .object({
+        path: z.string().min(1).max(4_096),
+        before: z.string(),
+        after: z.string(),
+        language: z.string().max(128),
+        op: z.enum(['write', 'delete', 'rename', 'mkdir']).optional(),
+        renameTo: z.string().max(4_096).optional(),
+      })
+      .transform(({ op, renameTo, ...entry }): QueueEntry => ({
+        ...entry,
+        ...(op === undefined ? {} : { op }),
+        ...(renameTo === undefined ? {} : { renameTo }),
+      })),
+  }),
+  z.object({
+    t: z.literal('ssh-prompt'),
+    id,
+    projectId: id,
+    threadId: id,
+    request: z
+      .object({
+        prompt: z.string().max(4_000),
+        kind: z.enum(['confirm', 'secret']),
+        canRememberOnDevice: z.boolean().optional(),
+      })
+      .transform(({ canRememberOnDevice, ...request }): SshPromptRequest =>
+        canRememberOnDevice === undefined ? request : { ...request, canRememberOnDevice },
+      ),
   }),
   z.object({ t: z.literal('approval-cancel'), id }),
 ])

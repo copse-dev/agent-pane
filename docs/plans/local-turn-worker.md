@@ -296,9 +296,12 @@ in it, and folding container runs into it are separate steps, not part of this o
   app is attached, and is asked again of an app that attaches. _Exit gate:_ e2e of an
   approval answered in the window for a host turn; it needs the mock scenarios in the
   host, so it lands with H5's harness, and unit tests cover the line until then.
-- **H3b, staged diffs and SSH prompts** for host turns. A staged edit needs the window's
-  diff panel to show the host's queue and the answer applied once, in the host; SSH
-  prompts need the host's own askpass socket, apart from the app's.
+- **H3b, staged diffs and SSH prompts** for host turns, on the same prompt line. A staged
+  edit shows in the thread's diff panel; deciding it there answers the host, which applies
+  it, so it is written once, where the turn runs. Unlike an in-process turn, the host turn
+  waits for that decision before it goes on. SSH questions reach the window through the
+  host's own askpass socket, apart from the app's, and the askpass lease carries the turn's
+  prompt handler to them. Remembering an SSH secret is not offered for host turns until H4.
 - **H4, shared stores and profile changes** (decision 5). Starts with an audit of which
   shared-store writes a turn makes; each one either moves to the app or becomes per-thread.
 - **H5, crash proof.** e2e that kills the app's main process mid-turn, relaunches and sees

@@ -3,6 +3,8 @@ import { mkdirSync, openSync } from 'node:fs'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { requestApproval, runWithApprovalOwner } from '../approval.ts'
+import { reviewRemoteStagedDiff } from '../diff-queue.ts'
+import { requestSshPrompt } from '../ssh-workspace/ssh-prompt.ts'
 import { isPidAlive } from '../exec/subprocess-kill.ts'
 import { readHostDispatchRecord } from './host-dispatch-record.ts'
 import { TurnHostLink } from './turn-host-link.ts'
@@ -105,6 +107,12 @@ export function createTurnHostLink(deps: TurnHostLaunchDependencies): TurnHostLi
         grantScope: response.grantScope,
       }
     },
+    // The thread's diff panel shows it; deciding there answers the host.
+    reviewDiff: ({ projectId, threadId, entry }, signal) =>
+      reviewRemoteStagedDiff({ projectId, threadId }, entry, signal),
+    // The window's own SSH dialog. It has no cancel, so a host that stops
+    // waiting leaves it to be dismissed; the answer is then dropped.
+    askSsh: ({ request }) => requestSshPrompt(request),
     onThreadTaken: deps.onThreadTaken,
     log: deps.log,
   })

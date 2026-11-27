@@ -58,4 +58,32 @@ describe('HostApprovals', () => {
       ['t2'],
     )
   })
+
+  it('asks the diff panel and the SSH dialog, each answered in kind', async () => {
+    const { approvals: prompts, sent } = approvals()
+    const entry = { path: 'a.txt', before: 'a', after: 'b', language: 'plaintext' }
+    const reviewed = prompts.reviewDiff('p1', 't1', entry)
+    const asked = prompts.askSsh('p1', 't1', { prompt: 'Password:', kind: 'secret' })
+    assert.deepEqual(
+      sent.map((m) => m.t),
+      ['review-diff', 'ssh-prompt'],
+    )
+    // An answer of the wrong kind settles nothing.
+    prompts.answer('a1', { approved: true, remember: false })
+    prompts.answerSsh('a1', { value: 'nope' })
+    assert.equal(prompts.pendingCount(), 2)
+    prompts.answerDiff('a1', true)
+    prompts.answerSsh('a2', { value: 'hunter2' })
+    assert.equal(await reviewed, true)
+    assert.deepEqual(await asked, { value: 'hunter2' })
+  })
+
+  it('rejects a staged edit whose turn was stopped', async () => {
+    const { approvals: prompts } = approvals()
+    const controller = new AbortController()
+    const entry = { path: 'a.txt', before: 'a', after: 'b', language: 'plaintext' }
+    const reviewed = prompts.reviewDiff('p1', 't1', entry, controller.signal)
+    controller.abort()
+    assert.equal(await reviewed, false)
+  })
 })

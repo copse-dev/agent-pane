@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { TurnWorkerConnection, WorkerToApp } from '../turn-worker/turn-worker-socket.ts'
+import type { SshPromptResponse } from '../ssh-workspace/ssh-prompt.ts'
 import type { HostDispatchRecord } from './host-dispatch-record.ts'
 import {
   TURN_HOST_PROTOCOL,
@@ -54,6 +55,16 @@ export interface TurnHostLinkDependencies {
     prompt: Extract<HostToApp, { t: 'approval' }>,
     signal: AbortSignal,
   ) => Promise<HostApprovalAnswer>
+  /** Show a host turn's staged edit in the diff panel; resolves whether it was approved. */
+  reviewDiff?: (
+    prompt: Extract<HostToApp, { t: 'review-diff' }>,
+    signal: AbortSignal,
+  ) => Promise<boolean>
+  /** Ask a host turn's SSH question. */
+  askSsh?: (
+    prompt: Extract<HostToApp, { t: 'ssh-prompt' }>,
+    signal: AbortSignal,
+  ) => Promise<SshPromptResponse>
   /** A host thread's lease is held: the follower should follow it now. */
   onThreadTaken?: (projectId: string, threadId: string) => void
   log?: (line: string) => void
@@ -244,6 +255,8 @@ export class TurnHostLink {
         }
         return
       case 'approval':
+      case 'review-diff':
+      case 'ssh-prompt':
         this.ask(message)
         return
       case 'approval-cancel':
@@ -256,22 +269,52 @@ export class TurnHostLink {
   /**
    * Show a host prompt. The host asks again on every attach, so a prompt already
    * showing is left as it is; one answered after it was taken down is dropped.
+   * With nothing here to show it, it stays with the host for another app.
    */
-  private ask(prompt: Extract<HostToApp, { t: 'approval' }>): void {
-    const askUser = this.deps.askUser
-    if (!askUser || this.prompts.has(prompt.id)) return
+  private ask(prompt: Extract<HostToApp, { t: 'approval' | 'review-diff' | 'ssh-prompt' }>): void {
+    if (this.prompts.has(prompt.id)) return
     const controller = new AbortController()
+    const answer = this.answer(prompt, controller.signal)
+    if (!answer) return
     this.prompts.set(prompt.id, controller)
-    void askUser(prompt, controller.signal)
-      .catch((error: unknown): HostApprovalAnswer => {
+    void answer
+      .catch((error: unknown): AppToHost => {
         this.deps.log?.(`[turn-host] could not ask about ${prompt.threadId}: ${String(error)}`)
-        return { approved: false, remember: false }
+        return refusal(prompt)
       })
-      .then((response) => {
+      .then((reply) => {
         if (this.prompts.get(prompt.id) !== controller) return
         this.prompts.delete(prompt.id)
-        this.send({ t: 'approval-answer', id: prompt.id, response })
+        this.send(reply)
       })
+  }
+
+  /** The user's answer to a prompt, as the host's reply; null with nothing to ask. */
+  private answer(
+    prompt: Extract<HostToApp, { t: 'approval' | 'review-diff' | 'ssh-prompt' }>,
+    signal: AbortSignal,
+  ): Promise<AppToHost> | null {
+    const { id } = prompt
+    switch (prompt.t) {
+      case 'approval': {
+        const ask = this.deps.askUser
+        return ask
+          ? ask(prompt, signal).then((response) => ({ t: 'approval-answer', id, response }))
+          : null
+      }
+      case 'review-diff': {
+        const review = this.deps.reviewDiff
+        return review
+          ? review(prompt, signal).then((approved) => ({ t: 'review-diff-answer', id, approved }))
+          : null
+      }
+      case 'ssh-prompt': {
+        const ask = this.deps.askSsh
+        return ask
+          ? ask(prompt, signal).then((response) => ({ t: 'ssh-prompt-answer', id, response }))
+          : null
+      }
+    }
   }
 
   /** The line dropped: settle every turn still waiting on it (decision 2). */
@@ -362,5 +405,19 @@ export class TurnHostLink {
       })
       this.send({ t: 'status', id })
     })
+  }
+}
+
+/** The answer that grants nothing, for a prompt the app could not put to the user. */
+function refusal(
+  prompt: Extract<HostToApp, { t: 'approval' | 'review-diff' | 'ssh-prompt' }>,
+): AppToHost {
+  switch (prompt.t) {
+    case 'approval':
+      return { t: 'approval-answer', id: prompt.id, response: { approved: false, remember: false } }
+    case 'review-diff':
+      return { t: 'review-diff-answer', id: prompt.id, approved: false }
+    case 'ssh-prompt':
+      return { t: 'ssh-prompt-answer', id: prompt.id, response: { value: '' } }
   }
 }

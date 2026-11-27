@@ -259,4 +259,43 @@ describe('TurnHostLink', () => {
     assert.equal(aborted, true)
     assert.equal(host.sent.filter((m) => m.t === 'approval-answer').length, 0)
   })
+
+  it('sends a staged edit to the diff panel and an SSH question to its dialog', async () => {
+    const host = new FakeHost()
+    const { link: line } = link(host, {
+      reviewDiff: () => Promise.resolve(true),
+      askSsh: () => Promise.resolve({ value: 'yes' }),
+    })
+    assert.ok(await line.ensureConnected())
+    host.say({
+      t: 'review-diff',
+      id: 'd1',
+      projectId: 'p1',
+      threadId: 't1',
+      entry: { path: 'a.txt', before: 'a', after: 'b', language: 'plaintext' },
+    })
+    host.say({
+      t: 'ssh-prompt',
+      id: 's1',
+      projectId: 'p1',
+      threadId: 't1',
+      request: { prompt: 'Continue connecting?', kind: 'confirm' },
+    })
+    // An approval with nothing to show it stays with the host.
+    host.say({
+      t: 'approval',
+      id: 'a1',
+      projectId: 'p1',
+      threadId: 't1',
+      request: { title: 'Run ls?', body: 'ls', type: 'shell' },
+    })
+    for (let i = 0; i < 4; i++) await Promise.resolve()
+    assert.deepEqual(
+      host.sent.filter((m) => m.t.endsWith('-answer')),
+      [
+        { t: 'review-diff-answer', id: 'd1', approved: true },
+        { t: 'ssh-prompt-answer', id: 's1', response: { value: 'yes' } },
+      ],
+    )
+  })
 })

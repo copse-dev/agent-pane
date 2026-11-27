@@ -10,6 +10,7 @@ import {
 import { abortAgent } from '../agent-service.ts'
 import { runWithApprovalHandler } from '../approval.ts'
 import { runWithStagedDiffResolver } from '../diff-queue.ts'
+import { runWithSshPromptHandler } from '../ssh-workspace/ssh-prompt.ts'
 import { getSetting } from '../storage/settings.ts'
 import {
   appendMessage,
@@ -44,8 +45,9 @@ import {
  *
  * A prompt a turn raises goes to the window over the line (`host-approvals.ts`)
  * and waits there as it would in-process, asked again of a window that opens
- * later. A staged edit is still refused: the diff panel cannot show a host
- * turn's queue yet.
+ * later: approvals, SSH questions, and staged edits, which the window shows in
+ * its diff panel. A staged edit waits for the user's decision before the turn
+ * goes on, and the host applies it, so it is written once, where the turn runs.
  */
 
 /** How long the host stays up with no turn running and no app attached. */
@@ -74,7 +76,10 @@ export class TurnHost {
   private readonly clients = new WeakMap<TurnHostClient, ClientState>()
   private readonly attachedClients = new WeakSet<TurnHostClient>()
   /** Threads with a turn running here, by key, with their project. */
-  private readonly running = new Map<string, { projectId: string; threadId: string }>()
+  private readonly running = new Map<
+    string,
+    { projectId: string; threadId: string; stopped: AbortController }
+  >()
   /** Turns waiting to hear that the dispatcher has claimed their thread, with their id. */
   private readonly claimed = new Map<string, { operationId: string; accept: () => void }>()
   /** Every operation id this host has seen, and what became of it. */
@@ -214,6 +219,12 @@ export class TurnHost {
       case 'approval-answer':
         this.approvals.answer(message.id, message.response)
         return
+      case 'review-diff-answer':
+        this.approvals.answerDiff(message.id, message.approved)
+        return
+      case 'ssh-prompt-answer':
+        this.approvals.answerSsh(message.id, message.response)
+        return
     }
   }
 
@@ -260,6 +271,8 @@ export class TurnHost {
       if (turn.threadId !== threadId) continue
       this.deps.log(`stop requested for thread ${threadId}`)
       this.transcripts.noteUserAbort(threadId, 'stop')
+      // A staged edit waiting on the diff panel has no signal of its own.
+      turn.stopped.abort()
       abortAgent(threadId)
     }
   }
@@ -315,7 +328,8 @@ export class TurnHost {
     }
 
     const turnKey = key(projectId, threadId)
-    this.running.set(turnKey, { projectId, threadId })
+    const stopped = new AbortController()
+    this.running.set(turnKey, { projectId, threadId, stopped })
     this.armIdle()
     this.deps.log(`thread ${threadId}: turn starting`)
     const turn = { accepted: false }
@@ -329,11 +343,19 @@ export class TurnHost {
       await runWithApprovalHandler(
         (request, signal) => this.approvals.ask(projectId, threadId, request, signal),
         () =>
-          // A staged edit would wait for a diff panel no window shows here.
-          // Refuse it, so the model is told nothing was written.
           runWithStagedDiffResolver(
-            () => Promise.resolve(false),
-            () => this.dispatcher.dispatch({ projectId, threadId, payload }),
+            (entry) => this.approvals.reviewDiff(projectId, threadId, entry, stopped.signal),
+            () =>
+              runWithSshPromptHandler(
+                // Remembering a secret writes the profile's keyring, which a
+                // host does not own (H4): the window does not offer it.
+                (request) =>
+                  this.approvals.askSsh(projectId, threadId, {
+                    ...request,
+                    canRememberOnDevice: false,
+                  }),
+                () => this.dispatcher.dispatch({ projectId, threadId, payload }),
+              ),
           ),
       )
       accept()

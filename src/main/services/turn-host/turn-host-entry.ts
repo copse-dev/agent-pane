@@ -14,6 +14,7 @@
  * Exit codes: 0 it went idle or retired; 2 another host already serves the
  * profile; 1 it could not start.
  */
+import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { installReadOnlyProfile } from '../turn-worker/worker-profile.ts'
 import { quietWorkerEnvironment } from '../turn-worker/worker-environment.ts'
@@ -56,11 +57,16 @@ async function main(): Promise<number> {
   // The profile has to be in place before any module that opens a store loads,
   // so everything past this point is imported dynamically.
   await installReadOnlyProfile({ userDataPath, version, packaged: values.packaged, log })
-  const [{ bootWorkerRuntime }, { TurnHost }, { serveTurnHost }] = await Promise.all([
-    import('../turn-worker/worker-runtime.ts'),
-    import('./turn-host.ts'),
-    import('./turn-host-protocol.ts'),
-  ])
+  const [{ bootWorkerRuntime }, { TurnHost }, { serveTurnHost }, { initSshAskpassServer }] =
+    await Promise.all([
+      import('../turn-worker/worker-runtime.ts'),
+      import('./turn-host.ts'),
+      import('./turn-host-protocol.ts'),
+      import('../ssh-workspace/askpass.ts'),
+    ])
+  // The host's own askpass socket, apart from the app's: OpenSSH run by a host
+  // turn asks here, and the turn's handler puts the question to the window.
+  initSshAskpassServer(join(userDataPath, 'turn-host'))
   const runtime = await bootWorkerRuntime(log)
   runtime.teardownOnSignals()
 
