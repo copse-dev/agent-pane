@@ -635,7 +635,8 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   `acp-agent-config/claude-acp/mcp-needs-auth-cache.json` and skips it for 15
   minutes. Copse leaves that entry alone: the server would fail the same way on
   the next start, so clearing it buys nothing. Instead the sandbox note says
-  these servers can't connect and points at the same GitHub route as above, and
+  that if such a server fails to connect, the sandbox is the cause, and points at
+  the same GitHub route as above (or, with no route, tells the agent to say so), and
   the post-turn network audit counts `api.githubcopilot.com` as GitHub, so it names
   the bridged GitHub tools. Reproduced on Linux with `srt` and Claude Code 2.1.332
   through a `--plugin-dir` plugin named `github-connector`: the stdio server

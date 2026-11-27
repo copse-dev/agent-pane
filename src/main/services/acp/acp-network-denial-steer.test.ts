@@ -116,7 +116,17 @@ describe('acpSandboxGithubSteer (issue #4145)', () => {
       assert.match(steer, /Do not call github\.com or api\.github\.com from this process/)
       // #4148: the agent's own GitHub MCP plugin is sandboxed too.
       assert.match(steer, /plugin:github-connector:github\) also runs inside this sandbox/)
-      assert.match(steer, /CONNECTION_CLOSED\. Do not wait for it to retry/)
+      // Conditional: some of these servers do connect (Copilot preset, widened allowlist).
+      assert.match(steer, /If it fails to connect here, often as CONNECTION_CLOSED/)
+      assert.doesNotMatch(steer, /so it fails to connect/)
+      const hasRoute = names.includes('run_shell') || names.includes('gh_api_read')
+      assert.match(
+        steer,
+        hasRoute
+          ? /Do not wait for it to retry; use the route above/
+          : /Do not wait for it to retry; tell the user, as above/,
+        String(names),
+      )
     }
   })
 

@@ -151,10 +151,19 @@ const GH_OWN_SHELL_DENIAL =
  * server by name for 15 minutes. Copse deliberately leaves that cache entry
  * alone: the next start would fail the same way.
  */
-const GITHUB_OWN_MCP_SERVER_DENIAL =
-  'A GitHub MCP server or plugin of your own (for example plugin:github-connector:github) ' +
-  'also runs inside this sandbox, so it fails to connect, often as CONNECTION_CLOSED. ' +
-  'Do not wait for it to retry; use the route above.'
+/**
+ * Worded as a condition: some of these servers do connect, for example a
+ * hosted one under the Copilot CLI preset's allowlist or a widened
+ * `sandbox.allowedDomains`, or a stdio one that never reads gh's config.
+ */
+function githubOwnMcpServerDenial(hasRoute: boolean): string {
+  return (
+    'A GitHub MCP server or plugin of your own (for example plugin:github-connector:github) ' +
+    'also runs inside this sandbox. If it fails to connect here, often as CONNECTION_CLOSED, ' +
+    'this sandbox is the cause, not a login. Do not wait for it to retry; ' +
+    (hasRoute ? 'use the route above.' : 'tell the user, as above.')
+  )
+}
 
 const GITHUB_NO_DIRECT_EGRESS =
   'Do not call github.com or api.github.com from this process, for example with curl, ' +
@@ -183,7 +192,8 @@ export function acpSandboxGithubSteer(
 ): string {
   if (opts.contained) return GITHUB_UNREACHABLE_IN_CONTAINER
   const route = githubRoute(bridgeToolNames)
-  return `${route} ${GH_OWN_SHELL_DENIAL} ${GITHUB_OWN_MCP_SERVER_DENIAL} ${GITHUB_NO_DIRECT_EGRESS}`
+  const hasRoute = bridgeToolNames.some(isGithubBridgeTool) || bridgeToolNames.includes('run_shell')
+  return `${route} ${GH_OWN_SHELL_DENIAL} ${githubOwnMcpServerDenial(hasRoute)} ${GITHUB_NO_DIRECT_EGRESS}`
 }
 
 /**
