@@ -160,6 +160,39 @@ h1 {
 .group-count {
   font-variant-numeric: tabular-nums;
 }
+.older {
+  margin-top: 7px;
+}
+.older-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 44px;
+  padding: 0 15px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  list-style: none;
+}
+.older-summary::-webkit-details-marker {
+  display: none;
+}
+/* The caret is decoration: `/ ''` keeps screen readers from announcing it, and
+   <summary> already reports whether the fold is open. The plain value before it
+   is the fallback for a browser without alt text. */
+.older-summary > span:first-child::before {
+  content: '▸';
+  content: '▸' / '';
+  display: inline-block;
+  width: 1.2em;
+}
+.older[open] > .older-summary > span:first-child::before {
+  content: '▾';
+  content: '▾' / '';
+}
 .row {
   display: block;
   width: 100%;

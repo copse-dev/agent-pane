@@ -45,7 +45,7 @@ import {
 armPerfTrace()
 installIpcPerfTracing()
 
-import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeImage, safeStorage } from 'electron'
 import { ThreadDeepLinks } from './services/thread-deep-links.ts'
 import { findThreadOwners } from './services/thread-store.ts'
 import { z } from 'zod'
@@ -386,6 +386,7 @@ setBrowserSessionPlatform({
     if (!win || win.isDestroyed()) return
     win.webContents.send(CANVAS_ARTEFACT_SHOW_CHANNEL, identity)
   },
+  decodeImage: (dataUrl) => nativeImage.createFromDataURL(dataUrl),
 })
 
 setSimulatorDesktopPanelPresenter((udid, options) => {

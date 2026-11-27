@@ -129,6 +129,9 @@ async function bundleTests(testFiles: string[], outputDir: string): Promise<void
       // ESLint loads eslint.config.mjs and its plugins from disk at runtime; the
       // oxlint config parity test needs that real loader, not a bundled copy.
       'eslint',
+      // Its napi loader (@electron-internal/extract-zip) finds the prebuilt .node
+      // next to its own JS; bundled, it looks beside the test chunk (demo-chrome).
+      'extract-zip',
     ],
     alias: {
       '@shared': resolve('./src/shared'),
