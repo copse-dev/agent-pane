@@ -807,6 +807,110 @@ describe('first-message checkout transaction', () => {
     assert.deepEqual(allocations, ['main'])
   })
 
+  it('never bases on a dangling default, even when a stale local branch still has its name', async () => {
+    // origin renamed its default and a pruning fetch dropped the tracking ref,
+    // so `origin/HEAD` still names `master` while the local `master` is
+    // months stale. The reported branch is no help either: the checkout is
+    // detached, or reports a name (the e2e mock) that is not a ref.
+    for (const currentBranch of [null, 'work']) {
+      for (const baseFallback of ['default-branch', 'project-branch'] as const) {
+        const allocations: string[] = []
+        const { prepare, patches } = fixture({
+          inspect: async () => ({
+            isGitRepository: true,
+            currentBranch,
+            defaultBranch: 'master',
+            isDirty: false,
+          }),
+          branchExists: async (_root, branch) => branch === 'master',
+          defaultBranchResolves: async () => false,
+          allocate: async ({ baseBranch }) => {
+            allocations.push(baseBranch)
+            throw new Error('must not allocate from a refused default')
+          },
+        })
+        const preparing = prepare({
+          projectId: 'project-1',
+          threadId: 'thread-1',
+          prompt: 'Scheduled review',
+          choice: 'worktree',
+          baseFallback,
+        })
+        if (currentBranch === null) {
+          // A detached checkout cannot cut a worktree at all.
+          await assert.rejects(preparing, /detached head/)
+        } else {
+          await assert.rejects(preparing, /default branch "master" no longer exists on origin/)
+        }
+        assert.deepEqual(allocations, [], `${currentBranch ?? 'detached'} / ${baseFallback}`)
+        assert.deepEqual(patches, [])
+      }
+    }
+
+    // Parked on the stale `master` itself: a thread that asked for the default
+    // must not get it back as the checkout's branch, while the composer's
+    // fallback keeps the branch its picker showed.
+    for (const baseFallback of ['default-branch', 'project-branch'] as const) {
+      const allocations: string[] = []
+      const { prepare } = fixture({
+        inspect: async () => ({
+          isGitRepository: true,
+          currentBranch: 'master',
+          defaultBranch: 'master',
+          isDirty: false,
+        }),
+        branchExists: async (_root, branch) => branch === 'master',
+        defaultBranchResolves: async () => false,
+        allocate: async ({ baseBranch }) => {
+          allocations.push(baseBranch)
+          return {
+            path: '/worktrees/thread-1',
+            branch: 'copse/task-thread1',
+            baseBranch,
+            baseCommit: 'b'.repeat(40),
+            createdAt: 8,
+            seededFromDirtyProject: false,
+          }
+        },
+      })
+      const preparing = prepare({
+        projectId: 'project-1',
+        threadId: 'thread-1',
+        prompt: 'Scheduled review',
+        choice: 'worktree',
+        baseFallback,
+      })
+      if (baseFallback === 'default-branch') {
+        await assert.rejects(preparing, /default branch "master" no longer exists on origin/)
+        assert.deepEqual(allocations, [])
+      } else {
+        await preparing
+        assert.deepEqual(allocations, ['master'])
+      }
+    }
+
+    // An automatic choice on the detached checkout shares it instead, so no
+    // base is chosen at all.
+    const automatic = fixture({
+      inspect: async () => ({
+        isGitRepository: true,
+        currentBranch: null,
+        defaultBranch: 'master',
+        isDirty: false,
+      }),
+      branchExists: async (_root, branch) => branch === 'master',
+      defaultBranchResolves: async () => false,
+    })
+    const shared = await automatic.prepare({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      prompt: 'Scheduled review',
+      choice: 'automatic',
+    })
+    assert.equal(shared.checkoutMode, 'shared')
+    assert.deepEqual(automatic.checkouts, [])
+  })
+
   it('allocates exactly once under concurrent isolated preparation and reuses metadata', async () => {
     const worktree: ThreadWorktree = {
       path: '/worktrees/thread-1',
