@@ -15,6 +15,8 @@ export interface CloseGate {
   isApproved(): boolean
   /** Let closes through unasked — after a confirmation, or for a signal quit. */
   approve(): void
+  /** Undo `approve` for a quit that did not happen. */
+  revoke(): void
   /**
    * Gate one close attempt. Returns `true` when the caller must abandon this
    * attempt (the event was prevented and the question is being asked); `false`
@@ -42,6 +44,9 @@ export function createCloseGate(deps: CloseGateDeps): CloseGate {
     isApproved: (): boolean => approved,
     approve: (): void => {
       approved = true
+    },
+    revoke: (): void => {
+      approved = false
     },
     defer: (event, reissue): boolean => {
       if (approved) return false

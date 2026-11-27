@@ -1,10 +1,10 @@
 """Fine-tune on the adversarial must-ask set and test on what training never saw.
 
-  python -I adversarial_finetune.py --repo /repo --private <labelled.jsonl> --adversarial <rows.jsonl> \
-      [--models tfidf,encoder-mlx] [--with-files]
+  python -I adversarial_finetune.py --repo /repo --private <labelled.jsonl> --adversarial <joined.jsonl> \
+      --test-machine <name> [--train-machine studio] [--models tfidf,encoder-mlx] [--with-files]
 
-Rows come from the adversarial generator (one Claude source, two external models), scored against
-this branch's harm gate. Two held-out designs, pairs always on the same side because a pair shares
+Rows come from the adversarial generator (`adversarial/`: one Claude source, two external models),
+passed through `join_verdicts.mjs`, which adds this branch's `harm` and `scope`. Two held-out designs, pairs always on the same side because a pair shares
 its family and source:
 
 - **family**: train on every other family (all sources), test on one;
@@ -13,7 +13,7 @@ its family and source:
 Training adds the public test set and the Studio's real commands (its `ask` rows as positives, the
 rest as negatives). For each test set it reports, at several thresholds, the must-ask rows the gate
 let through that the model would stop (`caught`), the hard negatives it would flag, and the prompts
-a veto would add on the MacBook's real history, which nothing trains on. `--with-files` appends the
+a veto would add on the test machine's real history, which nothing trains on. `--with-files` appends the
 contents of any script a row ships, to show what a model loses by seeing only the command line.
 """
 from __future__ import annotations
@@ -82,6 +82,8 @@ def main() -> int:
     ap.add_argument("--repo", type=Path, required=True)
     ap.add_argument("--private", type=Path, required=True)
     ap.add_argument("--adversarial", type=Path, required=True)
+    ap.add_argument("--train-machine", default="studio", help="extract.py --machine name whose real commands train")
+    ap.add_argument("--test-machine", required=True, help="extract.py --machine name scored, never trained on")
     ap.add_argument("--models", default="tfidf")
     ap.add_argument("--designs", default="source,family")
     ap.add_argument("--with-files", action="store_true")
@@ -91,8 +93,8 @@ def main() -> int:
 
     public = [r for r in load_public_testset(args.repo) if r["split"] == "train"]
     private = load_private(args.private)
-    studio = [r for r in private if r["machine"] == "studio"]
-    mac = [r for r in private if r["machine"] == "KingstonSlicedMax"]
+    studio = [r for r in private if r["machine"] == args.train_machine]
+    mac = [r for r in private if r["machine"] == args.test_machine]
     mac_prompts = sum(r["weight"] for r in mac)
     # A veto only acts where the gate allowed; occurrences stand in for unprompted auto-runs.
     mac_allowed = [dict(r, weight=max(1, r["weight"])) for r in mac if r["harm"] == "allow" and r["tier"] != "ask"]

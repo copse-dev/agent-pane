@@ -1,6 +1,10 @@
 """Does more data teach a model the must-ask families the gate misses? Leave one family out.
 
-  python -I family_holdout.py --repo /repo --private <labelled.jsonl> --redteam <redteam.jsonl>
+  python -I family_holdout.py --repo /repo --private <labelled.jsonl> --redteam <joined.jsonl> \
+      --test-machine <name> [--train-machine studio]
+
+`<joined.jsonl>` is `redteam_gen.py`'s output passed through `join_verdicts.mjs`, which adds
+`harm_main` and `scope`.
 
 For each must-ask family in the red-team set (`redteam_gen.py`: disguised variants of every family
 real history produced), train on the public test set, the red-team variants of every *other*
@@ -33,6 +37,8 @@ def main() -> int:
     ap.add_argument("--repo", type=Path, required=True)
     ap.add_argument("--private", type=Path, required=True)
     ap.add_argument("--redteam", type=Path, required=True)
+    ap.add_argument("--train-machine", default="studio", help="extract.py --machine name whose real commands train")
+    ap.add_argument("--test-machine", required=True, help="extract.py --machine name scored, never trained on")
     ap.add_argument("--miss-weight", type=int, default=5)
     args = ap.parse_args()
 
@@ -53,8 +59,8 @@ def main() -> int:
                 "tier": "ask", "risky": True, "harm": row["harm_main"], "harm_main": row["harm_main"], "scope": row["scope"],
             }
         )
-    studio_negatives = [r for r in private if r["machine"] == "studio" and r["tier"] != "ask"]
-    macbook = [r for r in private if r["machine"] == "KingstonSlicedMax"]
+    studio_negatives = [r for r in private if r["machine"] == args.train_machine and r["tier"] != "ask"]
+    macbook = [r for r in private if r["machine"] == args.test_machine]
     macbook_allowed = [r for r in macbook if r["harm_main"] == "allow" and r["tier"] != "ask"]
     macbook_prompts = sum(r["weight"] for r in macbook)
 
@@ -94,7 +100,7 @@ def main() -> int:
     for r in plain:
         weighted += [r] * (args.miss_weight if r["harm_main"] == "allow" else 1)
     mac_negatives = [r for r in macbook if r["tier"] != "ask"]
-    studio = [r for r in private if r["machine"] == "studio"]
+    studio = [r for r in private if r["machine"] == args.train_machine]
     misses = [r for r in studio if r["tier"] == "ask" and r["harm_main"] == "allow"]
     studio_allowed = [r for r in studio if r["harm_main"] == "allow" and r["tier"] != "ask"]
     studio_prompts = sum(r["weight"] for r in studio)

@@ -6,8 +6,12 @@
 #   benchmarks/risk-classifier/host-train.sh <run-name> [train.py args...]
 #   benchmarks/risk-classifier/host-train.sh --probe      # prove the sandbox holds and the GPU works
 #   benchmarks/risk-classifier/host-train.sh --export-veto [--split dev]   # export_veto.py, sandboxed
-#   benchmarks/risk-classifier/host-train.sh --family-holdout              # family_holdout.py, sandboxed
-#   benchmarks/risk-classifier/host-train.sh --adversarial [--models …]    # adversarial_finetune.py
+#   benchmarks/risk-classifier/host-train.sh --family-holdout --test-machine <name>  # family_holdout.py
+#   benchmarks/risk-classifier/host-train.sh --adversarial --test-machine <name> [--models …]
+#
+# Machine names are the --machine names given to extract.py. --family-holdout and --adversarial read
+# data/redteam.jsonl and data/adversarial.jsonl, each written by join_verdicts.mjs from its generator's
+# rows (redteam_gen.py; adversarial/), which adds the gates' verdicts.
 #
 # Set up the venv once, outside the sandbox (it needs the network):
 #   uv venv --python 3.12 bench-results/risk-classifier/host-venv
