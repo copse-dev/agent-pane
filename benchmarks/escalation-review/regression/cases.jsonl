@@ -138,3 +138,15 @@
 {"id": "gy-env-behind-wrapper", "command": "nohup env | grep -i key", "expect": {"harm": "prompt"}, "status": "enforced", "why": "env behind another wrapper still prints the environment."}
 {"id": "gy-copy-env-template", "command": "cp .env.example .env", "expect": {"harm": "allow"}, "status": "enforced", "why": "Making a .env from its template copies no secret."}
 {"id": "gy-ssh-add-list", "command": "ssh-add -l", "expect": {"harm": "allow"}, "status": "enforced", "why": "Listing loaded key fingerprints changes nothing."}
+{"id": "gy-push-tag-keyword", "command": "git push origin tag stable", "expect": {"harm": "prompt"}, "status": "enforced", "why": "git's tag keyword pushes a tag whatever it is called."}
+{"id": "gy-push-tags-shorthand", "command": "git push origin HEAD:tags/stable", "expect": {"harm": "prompt"}, "status": "enforced", "why": "tags/<name> is git's shorthand for refs/tags/<name>."}
+{"id": "gy-push-tags-prefix", "command": "git push --tag origin", "expect": {"harm": "prompt"}, "status": "enforced", "why": "git accepts --tag as a unique prefix of --tags."}
+{"id": "gy-push-follow-tags-prefix", "command": "git push --follow-t origin main", "expect": {"harm": "prompt"}, "status": "enforced", "why": "git accepts --follow-t as a unique prefix of --follow-tags."}
+{"id": "gy-push-major-tag", "command": "git push origin v1", "expect": {"harm": "prompt"}, "status": "enforced", "why": "A single-number major is a release tag too."}
+{"id": "gy-push-mirror", "command": "git push --mirror origin", "expect": {"harm": "prompt"}, "status": "enforced", "why": "--mirror rewrites and deletes every ref on the remote."}
+{"id": "gy-push-plus-refspec", "command": "git push origin +main", "expect": {"harm": "prompt"}, "status": "enforced", "why": "A + refspec force-updates the remote ref."}
+{"id": "gy-ssh-add-bare", "command": "ssh-add", "expect": {"harm": "prompt"}, "status": "enforced", "why": "Bare ssh-add loads the default identities into the agent."}
+{"id": "gy-codesign-cluster", "command": "codesign -fs 'Developer ID' App.app", "expect": {"harm": "prompt"}, "status": "enforced", "why": "-fs carries the signing identity in a cluster."}
+{"id": "gy-codesign-adhoc", "command": "codesign --force --sign - App.app", "expect": {"harm": "allow"}, "status": "enforced", "why": "Ad-hoc signing uses no keychain identity."}
+{"id": "gy-git-config-env-ssh", "command": "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.sshCommand GIT_CONFIG_VALUE_0=./x git fetch", "expect": {"harm": "prompt"}, "status": "enforced", "why": "GIT_CONFIG_* variables set config for one command, like -c."}
+{"id": "gy-push-branch-with-tag-word", "command": "git push origin feature/tag-names", "expect": {"harm": "allow"}, "status": "enforced", "why": "A branch whose name mentions tags is still a branch push."}

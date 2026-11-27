@@ -476,8 +476,10 @@ write shims or package managers outside the workspace and stay hard-external. `f
 is read as `<cmd>` with that Node first on `PATH`: its `exec` is fnm's subcommand, not the shell
 builtin, so the command it runs decides the verdict and the harm gate inspects it. The sandbox
 re-allows fnm's `node-versions` and `aliases` read-only, which `fnm exec` lists before it starts.
-`eval "$(fnm env)"` and `fnm use` still ask: they write multishell links under `~/.local/state`,
-and a contained command must not write a directory that later sits on an unsandboxed `PATH`. Explicit package
+`eval "$(fnm env)"` still asks, as dynamic execution. `fnm env` and `fnm use` on their own start
+contained, but they write multishell links under `~/.local/state`, which the sandbox does not grant:
+a contained command must not write a directory that later sits on an unsandboxed `PATH`, so the
+blocked write escalates like any other sandbox block. Explicit package
 installs remain hard-external. The
 shell `exec` builtin in command position, `find -exec`, and container `exec` remain hard-external as
 dynamic execution.
@@ -1479,16 +1481,22 @@ While active:
   - filtering shell history for a secret-named word (`history | grep -i token`);
   - release work (`release-actions.ts`): loading a secret file into the shell (`. ./.env.release`,
     `source .env`, including inside `bash -c` or after `if`), release signers (`sign_update`,
-    `generate_keys`, `minisign`, `signify`, `codesign --sign`, `gpg --sign`/`--detach-sign`,
-    `xcrun notarytool submit`; `--help` alone runs), a task-runner or package-script target that
-    starts with `ship`, `release`, `publish`, `deploy`, `notarize` or `upload`
-    (`make ship-release`, `npm run release:mac`; `make -n`/`--dry-run` runs), pushing a tag
-    (`refs/tags/…`, a version-shaped ref such as `v1.7.0`, `--tags`, `--follow-tags`), moving one
-    (`git tag --force`), a `git -c credential.*`, `core.sshCommand` or `core.askPass` override, a
-    `GIT_ASKPASS`/`SSH_ASKPASS`/`GIT_SSH`/`GIT_SSH_COMMAND` assignment, a secret file fed through `<` or
-    copied (`cp .env /tmp/e`; making `.env` from `.env.example` runs), `ssh-add` other than `-l`/`-L`,
-    and `env` behind another wrapper (`nohup env`). Replays of real history and a red-team set found
-    each of these allowed unsandboxed;
+    `generate_keys`, `minisign`, `signify`, `codesign --sign`/`-fs`, `gpg --sign`/`-ab`,
+    `xcrun notarytool submit`; `--help` alone and ad-hoc `codesign --sign -` run), a task-runner or
+    package-script target that starts with `ship`, `release`, `publish`, `deploy`, `notarize` or
+    `upload` (`make ship-release`, `npm run release:mac`; `make -n`/`--dry-run` runs), pushing a tag
+    (`refs/tags/…`, `tags/…`, `tag <name>`, a version-shaped ref such as `v1` or `v1.7.0`, `--tags`,
+    `--follow-tags` and the prefixes git accepts for them), a push that rewrites or deletes remote
+    refs (`--mirror`, `--prune`, `--delete`, a `+` refspec), moving a tag (`git tag --force`), a
+    `git -c` or `--config-env` override of `credential.*`, `core.sshCommand`, `core.askPass`,
+    `core.fsmonitor`, `core.hooksPath` or an `include` (also as a lasting `git config` write), a
+    `GIT_ASKPASS`/`SSH_ASKPASS`/`GIT_SSH`/`GIT_SSH_COMMAND` or `GIT_CONFIG_*` assignment, a secret
+    file fed through `<` or copied (`cp .env /tmp/e`, `cp -t /tmp .env`; making `.env` from
+    `.env.example` runs), `ssh-add` other than `-l`/`-L`, and `env` behind another wrapper
+    (`nohup env`). Replays of real history and a red-team set found each of these allowed
+    unsandboxed. The command line is all the gate sees: a tag push that `push.followTags` or a
+    `remote.<name>.push` refspec in git config adds is not caught, and the remote-write
+    auto-approval tier refuses each git spelling above;
   - `find` deletions rooted outside the workspace (`find /x -exec rm {} +`,
     `find /x | xargs rm`), and `git filter-repo`.
 - Credential reads stay hard-denied when a redirect such as `2>&1` follows them and when the gate
@@ -1699,7 +1707,9 @@ ASRT themselves (the port-binding, ACP session-host and ACP probe workers) start
 and get the same `PATH`. On Linux every ASRT config, and worktree preparation's direct bubblewrap
 wrap, also names `bwrap` and `socat` by absolute path (`sandbox-binaries.ts`): the first executable
 copy in `/usr/bin`, `/bin`, then the absolute entries of Copse's own `PATH`. When none exists the
-sandbox does not start, as when bubblewrap is not installed. macOS ASRT has no option for the path
+sandbox does not start, as when bubblewrap is not installed. The configs also name ASRT's
+`apply-seccomp` helper and its JVM proxy-agent jar explicitly; in a package both resolve to
+`app.asar.unpacked`, because bubblewrap cannot exec or bind a path inside `app.asar`. macOS ASRT has no option for the path
 of the `env` it starts with, so there that lookup searches the absolute `PATH` entries in order.
 
 On macOS the project seatbelt also allows writes to direct children of the per-user Darwin temp

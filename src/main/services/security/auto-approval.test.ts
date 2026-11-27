@@ -143,6 +143,14 @@ describe('assessAutoApproval — network commands need a configured remote', () 
     prompts('git push origin refs/tags/v1.7.0')
     prompts('git push --tags')
     prompts('git push --follow-tags origin main')
+    // Git's own spellings of a tag push: the `tag` keyword, the `tags/` shorthand,
+    // option prefixes, and a single-number version.
+    prompts('git push origin tag stable')
+    prompts('git push origin tags/stable')
+    prompts('git push origin HEAD:tags/stable')
+    prompts('git push --tag origin')
+    prompts('git push --follow-t origin main')
+    prompts('git push origin v1')
     assert.equal(approved('git push origin main', 'remote-write', ['origin']), 'remote-write')
   })
 

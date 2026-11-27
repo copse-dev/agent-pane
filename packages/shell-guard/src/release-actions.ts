@@ -52,8 +52,17 @@ const GIT_VALUE_OPTIONS = new Set([
   '--exec-path',
 ])
 
-/** A version-shaped ref (`v1.7.0`, `1.2`, `v2.0.0-rc.1`): pushing one usually publishes a release. */
-const VERSION_REF = /^(?:refs\/tags\/.+|v?\d+\.\d+(?:\.\d+)?(?:[-+.][\w.]+)?)$/
+/**
+ * A ref git reads as a tag, or a version-shaped name (`v1`, `v1.7.0`, `1.2`, `v2.0.0-rc.1`):
+ * pushing one usually publishes a release. `tags/x` is git's shorthand for `refs/tags/x`.
+ */
+const VERSION_REF =
+  /^(?:refs\/tags\/.+|tags\/.+|v\d+(?:\.\d+){0,2}(?:[-+.][\w.]+)?|\d+\.\d+(?:\.\d+)?(?:[-+.][\w.]+)?)$/
+
+/** Whether `arg` is an option git would expand to `long`: git accepts any unique prefix. */
+function abbreviates(arg: string, long: string, shortest: number): boolean {
+  return arg.length >= shortest && long.startsWith(arg)
+}
 
 function onlyHelp(argv: readonly string[]): boolean {
   return argv.length > 1 && argv.slice(1).every((arg) => /^(?:--help|-h|--version)$/.test(arg))
@@ -103,12 +112,22 @@ function signingReason(head: string, argv: readonly string[]): string | null {
   if (RELEASE_SIGNERS.has(head)) {
     return onlyHelp(argv) ? null : `signs a release with a private key (${head})`
   }
-  if (head === 'codesign' && argv.some((arg) => arg === '-s' || arg === '--sign')) {
-    return 'signs code with a keychain identity (codesign --sign)'
+  if (head === 'codesign') {
+    // `-s` may sit in a cluster (`-fs ID`); its value is the identity, and `-` is ad-hoc
+    // signing, which uses no key.
+    const index = argv.findIndex((arg) => arg === '--sign' || /^-[a-zA-Z]*s$/.test(arg))
+    if (index !== -1 && argv[index + 1] !== '-') {
+      return 'signs code with a keychain identity (codesign --sign)'
+    }
+    return null
   }
   if (
     (head === 'gpg' || head === 'gpg2') &&
-    argv.some((arg) => /^(?:-s|--sign|-b|--detach-sign|--clearsign|--clear-sign)$/.test(arg))
+    argv.some(
+      (arg) =>
+        /^(?:--sign|--detach-sign|--clearsign|--clear-sign)$/.test(arg) ||
+        /^-[a-zA-Z]*[sb][a-zA-Z]*$/.test(arg),
+    )
   ) {
     return `signs with a private key (${head})`
   }
@@ -124,13 +143,14 @@ function gitWords(argv: readonly string[]): { config: string[]; words: string[] 
   let i = 1
   for (; i < argv.length; i += 1) {
     const arg = argv[i] ?? ''
-    if (GIT_VALUE_OPTIONS.has(arg)) {
-      if (arg === '-c') config.push(argv[i + 1] ?? '')
+    if (GIT_VALUE_OPTIONS.has(arg) || arg === '--config-env') {
+      if (arg === '-c' || arg === '--config-env') config.push(argv[i + 1] ?? '')
       i += 1
       continue
     }
     if (arg.startsWith('-')) {
       if (arg.startsWith('-c') && arg.length > 2) config.push(arg.slice(2))
+      if (arg.startsWith('--config-env=')) config.push(arg.slice('--config-env='.length))
       continue
     }
     break
@@ -138,25 +158,64 @@ function gitWords(argv: readonly string[]): { config: string[]; words: string[] 
   return { config, words: argv.slice(i) }
 }
 
+/** Config keys that make git run a program, or read another file that could. */
+const PROGRAM_CONFIG_KEY =
+  /^(?:credential\.|core\.(?:sshCommand|askPass|fsmonitor|hooksPath|pager|editor)\b|include\.|includeIf\.)/i
+
+/** Push options that rewrite or delete refs on the remote (git accepts any unique prefix). */
+function rewritesRemoteRefs(arg: string): boolean {
+  return (
+    abbreviates(arg, '--mirror', 4) ||
+    abbreviates(arg, '--prune', 5) ||
+    abbreviates(arg, '--delete', 4) ||
+    arg === '-d'
+  )
+}
+
 function gitReleaseReasons(argv: readonly string[]): string[] {
   const { config, words } = gitWords(argv)
   const reasons: string[] = []
-  if (config.some((setting) => /^(?:credential\.|core\.(?:sshCommand|askPass)=)/i.test(setting))) {
+  if (config.some((setting) => PROGRAM_CONFIG_KEY.test(setting))) {
     reasons.push("overrides git's credentials or SSH command for this command")
   }
   const [subcommand = '', ...rest] = words
   if (subcommand === 'push') {
-    const tags = rest.some((arg) => arg === '--tags' || arg === '--follow-tags')
-    const versionRef = rest
-      .filter((arg) => !arg.startsWith('-'))
-      .slice(1) // the first operand is the remote
-      .map((arg) => arg.replace(/^\+/, '').split(':').pop() ?? '')
-      .find((ref) => VERSION_REF.test(ref))
+    const tags = rest.some(
+      (arg) => abbreviates(arg, '--tags', 4) || abbreviates(arg, '--follow-tags', 5),
+    )
+    const operands = rest.filter((arg) => !arg.startsWith('-')).slice(1) // after the remote
+    // `git push origin tag v1` names a tag whatever it is called.
+    const keyword = operands.indexOf('tag')
+    const versionRef =
+      keyword !== -1 && operands[keyword + 1] !== undefined
+        ? `tag ${operands[keyword + 1] ?? ''}`
+        : operands
+            .map((arg) => arg.replace(/^\+/, '').split(':').pop() ?? '')
+            .find((ref) => VERSION_REF.test(ref))
     if (tags || versionRef)
       reasons.push(`publishes a release tag (git push ${versionRef ?? '--tags'})`)
+    if (rest.some(rewritesRemoteRefs) || operands.some((arg) => arg.startsWith('+'))) {
+      reasons.push('rewrites or deletes refs on the remote (git push)')
+    }
   }
   if (subcommand === 'tag' && rest.some((arg) => arg === '-f' || arg === '--force')) {
     reasons.push('moves an existing tag (git tag --force)')
+  }
+  // A lasting `git config core.sshCommand …` makes every later git call run it, as a
+  // credential helper does (which `tokenPrinterReason` already asks about).
+  if (subcommand === 'config') {
+    const reads = rest.some((arg) =>
+      /^(?:--get(?:-all|-regexp|-urlmatch)?|--list|-l|--show-origin|--name-only)$/.test(arg),
+    )
+    const key = rest.find((arg) => !arg.startsWith('-'))
+    if (
+      !reads &&
+      key !== undefined &&
+      PROGRAM_CONFIG_KEY.test(key) &&
+      !/^credential\./i.test(key)
+    ) {
+      reasons.push(`sets a git config key that runs a program (${key})`)
+    }
   }
   return reasons
 }
@@ -185,7 +244,7 @@ const ARCHIVERS = new Set(['tar', 'zip', '7z'])
 
 /** Variables that hand git or ssh a program to fetch credentials or open the connection. */
 const CREDENTIAL_PROGRAM_VARIABLES =
-  /(?:^|[\s;&|(])(?:GIT_ASKPASS|SSH_ASKPASS|GIT_SSH|GIT_SSH_COMMAND)=/
+  /(?:^|[\s;&|(])(?:GIT_ASKPASS|SSH_ASKPASS|GIT_SSH|GIT_SSH_COMMAND|GIT_CONFIG_PARAMETERS|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_GLOBAL|GIT_CONFIG_SYSTEM)=/
 
 /**
  * Command-line reasons no single argv shows: a secret file fed in through `<`
@@ -219,12 +278,20 @@ export function releaseActionReasons(segment: readonly string[]): string[] {
     if (names.length > 0) reasons.push(`loads a secret file into the shell (${names.join(', ')})`)
   }
   if (COPIERS.has(head) || ARCHIVERS.has(head)) {
-    const operands = argv.slice(1).filter((arg) => !arg.startsWith('-'))
-    const sources = COPIERS.has(head) ? operands.slice(0, -1) : operands
+    // `cp -t DIR src…` names the destination by option, so every operand is a source.
+    const target = argv.findIndex((arg) => arg === '-t' || arg === '--target-directory')
+    const operands = argv.filter(
+      (arg, index) => index > 0 && !arg.startsWith('-') && (target === -1 || index !== target + 1),
+    )
+    const byOption = target !== -1 || argv.some((arg) => arg.startsWith('--target-directory='))
+    const sources = COPIERS.has(head) && !byOption ? operands.slice(0, -1) : operands
     const names = secretFilesIn(['', ...sources])
     if (names.length > 0) reasons.push(`copies a secret file (${names.join(', ')})`)
   }
-  if (head === 'ssh-add' && !argv.slice(1).every((arg) => /^-[lL]+$/.test(arg))) {
+  if (
+    head === 'ssh-add' &&
+    (argv.length === 1 || !argv.slice(1).every((arg) => /^-[lL]+$/.test(arg)))
+  ) {
     reasons.push("changes the SSH agent's identities (ssh-add)")
   }
   const entryPoint = releaseEntryPoint(head, argv)

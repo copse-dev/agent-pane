@@ -61,6 +61,8 @@ const REPO_ROOT = process.cwd()
 const TEST_OUTPUT_DIR = process.env['COPSE_TEST_OUTPUT_DIR'] ?? join(REPO_ROOT, 'dist-test')
 const SANDBOX_RUNTIME_HELPER_MODULE =
   '@anthropic-ai/sandbox-runtime/dist/sandbox/generate-seccomp-filter.js'
+const SANDBOX_RUNTIME_JAVA_AGENT_MODULE =
+  '@anthropic-ai/sandbox-runtime/dist/sandbox/java-proxy-agent.js'
 
 const SANDBOX_RUNTIME_STUB = `
 const fs = require('node:fs')
@@ -85,6 +87,7 @@ export const SandboxManager = {
   async reset() { config = null },
 }
 export function getApplySeccompBinaryPath() { return null }
+export function getJavaProxyAgentJarPath() { return null }
 `
 
 function bundleWorker(stub: string): void {
@@ -98,6 +101,7 @@ function bundleWorker(stub: string): void {
     alias: {
       '@shared': join(REPO_ROOT, 'src/shared'),
       [SANDBOX_RUNTIME_HELPER_MODULE]: stub,
+      [SANDBOX_RUNTIME_JAVA_AGENT_MODULE]: stub,
       '@anthropic-ai/sandbox-runtime': stub,
     },
     external: [

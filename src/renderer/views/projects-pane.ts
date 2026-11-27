@@ -4,7 +4,8 @@ import { createArchivedThreads } from './archived-threads.ts'
 import { showThreadArchiveToast } from './thread-archive-toast.ts'
 import { withoutSideChats } from '@shared/threads/side-chat.ts'
 import type { ThreadLiveResources } from '@shared/threads/archive-thread.ts'
-import { el, clear } from '../dom/helpers.ts'
+import { el } from '../dom/helpers.ts'
+import { keyed, keyedContainer, liveNode, reconcileChildren } from '../dom/keyed-reconcile.ts'
 import {
   contextMenuClosedByPressOn,
   dismissContextMenu,
@@ -569,7 +570,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       const next = await api.threads.actionState()
       if (actionsDisposed() || JSON.stringify(next) === JSON.stringify(actionState)) return
       actionState = next
-      render(true)
+      render()
     } catch {
       /* Assessment availability never blocks browsing threads. */
     } finally {
@@ -581,13 +582,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     threadFilter = filterText(searchInput.value.trim())
     filteredProjectId = store.getState().activeProjectId
     if (!archivedOnly) contentFilter.search(threadFilter)
-    render()
+    renderFromTop()
   })
   searchInput.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       e.stopPropagation()
       closeThreadFilter()
-      render()
+      renderFromTop()
     }
   })
 
@@ -687,7 +688,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         onSelect: (): void => {
           needsCleanupOnly = !needsCleanupOnly
           archivedOnly = false
-          render()
+          renderFromTop()
         },
       },
       {
@@ -699,7 +700,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           needsCleanupOnly = false
           closeThreadFilter()
           archivedThreads.invalidate()
-          render()
+          renderFromTop()
         },
       },
     ])
@@ -716,7 +717,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         onSelect: (): void => {
           store.setState({ sidebarThreadGroup: mode })
           saveSort('sidebarThreadGroup', mode)
-          render()
+          renderFromTop()
         },
       })),
       { heading: 'Sort by' },
@@ -726,7 +727,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         onSelect: (): void => {
           store.setState({ sidebarThreadSort: mode })
           saveSort('sidebarThreadSort', mode)
-          render()
+          renderFromTop()
         },
       })),
       { separator: true },
@@ -737,7 +738,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         onSelect: (): void => {
           store.setState({ sidebarThreadSortReverse: !sidebarThreadSortReverse })
           saveSort('sidebarThreadSortReverse', !sidebarThreadSortReverse)
-          render()
+          renderFromTop()
         },
       },
       {
@@ -849,7 +850,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       }
       // Only an unmounted pane must not redraw from a late answer.
       if (generation !== threadChangeGeneration) return
-      if (changed) render(true)
+      if (changed) render()
       // An unchanged batch redraws nothing, so nothing else would re-request the
       // rest of an oversized request; read whatever of it is still stale.
       const now = Date.now()
@@ -894,6 +895,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
    * inside itself) before any drop happens.
    */
   let activeDrag: SidebarDragPayload | null = null
+  // The row the drag started on. A render keeps it unless that row changed.
+  let activeDragSource: HTMLElement | null = null
 
   // Session cache of GitHub PR lifecycle for sidebar chips. Keys are
   // `owner/repo#number`. Fetches are coalesced; stale state stays visible while
@@ -1261,18 +1264,24 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   function renderOrphansSection(): HTMLElement {
-    const section = el('div', { class: 'orphans-section' })
+    const section = keyedContainer(el('div', { class: 'orphans-section' }), 'orphans')
     section.append(
-      el(
-        'div',
-        { class: 'orphans-heading' },
-        warningIcon('ui-icon ui-icon-sm'),
-        el('span', {}, 'Recoverable threads'),
+      keyed(
+        el(
+          'div',
+          { class: 'orphans-heading' },
+          warningIcon('ui-icon ui-icon-sm'),
+          el('span', {}, 'Recoverable threads'),
+        ),
+        'heading',
       ),
-      el(
-        'p',
-        { class: 'orphans-hint' },
-        'Saved chats with no project in the sidebar. Recover attaches them to a folder; Dismiss hides the row (threads stay on disk).',
+      keyed(
+        el(
+          'p',
+          { class: 'orphans-hint' },
+          'Saved chats with no project in the sidebar. Recover attaches them to a folder; Dismiss hides the row (threads stay on disk).',
+        ),
+        'hint',
       ),
     )
     for (const orphan of orphans) {
@@ -1302,7 +1311,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         void dismissOrphanProject(api, orphan.id)
           .then(() => {
             orphans = orphans.filter((entry) => entry.id !== orphan.id)
-            render(true)
+            render()
             showToast('Recoverable threads hidden. They remain on disk.')
           })
           .catch((err: unknown) => {
@@ -1330,7 +1339,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       })
       actions.append(dismissBtn, recoverBtn)
       row.append(actions)
-      section.append(row)
+      section.append(keyed(row, `orphan:${orphan.id}`, [orphan]))
     }
     return section
   }
@@ -1388,6 +1397,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
   function endDrag(): void {
     activeDrag = null
+    activeDragSource = null
     clearDropIndicators()
     list.classList.remove(...DROP_CLASSES)
     for (const dragging of list.querySelectorAll('.is-dragging')) {
@@ -1406,7 +1416,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       e.dataTransfer?.setData(SIDEBAR_DRAG_MIME, serializeSidebarDrag(payload))
       if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
       activeDrag = payload
-      block.classList.add('is-dragging')
+      activeDragSource = row
+      // A render may have kept an older block in place of this one.
+      liveNode(block).classList.add('is-dragging')
     })
     row.addEventListener('dragend', endDrag)
   }
@@ -1457,10 +1469,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       e.stopPropagation()
       if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
       clearDropIndicators()
-      block.classList.add(`drop-${intent}`)
+      liveNode(block).classList.add(`drop-${intent}`)
     })
     row.addEventListener('dragleave', () => {
-      block.classList.remove(...DROP_CLASSES)
+      liveNode(block).classList.remove(...DROP_CLASSES)
     })
     row.addEventListener('drop', (e) => {
       const intent = intentAt(e)
@@ -1656,23 +1668,38 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     return entries
   }
 
-  function render(preserveScroll = false): void {
+  /**
+   * Rebuild the sidebar from state, then reconcile it into `list` by key
+   * (`../dom/keyed-reconcile.ts`). Rows that did not change keep their DOM
+   * nodes, so a background update leaves hover, focus, scroll position and a
+   * drag in progress alone, and a reference to an unchanged row stays valid.
+   */
+  /**
+   * Render after the reader changed what the list shows (a search, filter,
+   * grouping or sort), and start them at the top of the new list. Background
+   * updates call `render()` and keep the reader's position.
+   */
+  function renderFromTop(): void {
+    render()
+    list.scrollTop = 0
+  }
+
+  function render(): void {
     // A filter naming a removed project lists everything. Clear it before any
     // DOM work: the write re-renders through the filter selection.
     const { projects: known, sidebarProjectFilterId } = store.getState()
     if (sidebarProjectFilterId !== null && !known.some((p) => p.id === sidebarProjectFilterId)) {
       store.setState({ sidebarProjectFilterId: null })
     }
-    // A redraw removes the source row, so Chromium may have nowhere to send
-    // its eventual dragend. Clear the gesture before replacing its DOM.
-    endDrag()
-    // Rebuilding the list removes its children synchronously. In Chromium that
-    // clamps the scroll container to the top while the content is empty, so the
-    // dismiss action opts into keeping the reader's position.
-    const scrollTop = preserveScroll ? list.scrollTop : 0
     prBackfillObserver?.disconnect()
     prBackfillObserver = null
-    clear(list)
+    const fresh: Element[] = []
+    const commit = (): void => {
+      reconcileChildren(list, fresh, { transientClasses: ['is-dragging', ...DROP_CLASSES] })
+      // The drag source changed and was replaced, so Chromium has nowhere to
+      // send its dragend. Clear the gesture rather than leave it stuck.
+      if (activeDragSource && !activeDragSource.isConnected) endDrag()
+    }
     const prBackfillRows: Array<{ row: HTMLElement; projectId: string; threadId: string }> = []
     const threadChangeWanted: Array<{ projectId: string; threadId: string }> = []
     const threadChangeSeen: Array<{ projectId: string; threadId: string }> = []
@@ -1714,14 +1741,15 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
     if (archivedOnly) {
       archivedThreads.show(visibleProjects, searchInput.value.trim())
-      list.append(archivedThreads.element)
+      fresh.push(archivedThreads.element)
+      commit()
       return
     }
     archivedThreads.hide()
 
     if (projects.length === 0 && projectGroups.length === 0 && orphans.length === 0) {
-      list.append(el('div', { class: 'sidebar-empty' }, 'No projects yet. Click "+".'))
-      if (preserveScroll) list.scrollTop = scrollTop
+      fresh.push(el('div', { class: 'sidebar-empty' }, 'No projects yet. Click "+".'))
+      commit()
       return
     }
 
@@ -2060,7 +2088,16 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         // row icons".
         chatRow.append(el('span', { class: 'chat-menu-btn-space', 'aria-hidden': 'true' }))
       }
-      return chatRow
+      // The handlers above read the project and thread objects and these
+      // options without always showing them, so a change to any of them
+      // replaces the row.
+      return keyed(chatRow, `thread:${project.id}:${thread.id}`, [
+        project,
+        thread,
+        options.displayTitle,
+        options.allowRename,
+        options.statusDetails,
+      ])
     }
 
     /**
@@ -2127,7 +2164,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       const sectionExpanded =
         automationsSectionExpanded || hasActiveAutomation || attentionRuns.length > 0
 
-      const section = el('div', { class: 'automation-threads-group' })
+      const section = keyedContainer(
+        el('div', { class: 'automation-threads-group' }),
+        'automations',
+      )
       const toggle = el(
         'button',
         {
@@ -2169,25 +2209,28 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         ])
       })
       section.append(
-        el(
-          'div',
-          { class: 'automation-threads-header' },
-          toggle,
-          // Creates against the active project, same default the plugin editor
-          // itself falls back to when no project is named — there is no single
-          // project this workspace-level heading could otherwise imply.
-          automationSetupBtn(
-            'New automation…',
-            () => {
-              openAutomationDialog(store, api, { createNew: true })
-            },
-            plusIcon,
+        keyed(
+          el(
+            'div',
+            { class: 'automation-threads-header' },
+            toggle,
+            // Creates against the active project, same default the plugin editor
+            // itself falls back to when no project is named — there is no single
+            // project this workspace-level heading could otherwise imply.
+            automationSetupBtn(
+              'New automation…',
+              () => {
+                openAutomationDialog(store, api, { createNew: true })
+              },
+              plusIcon,
+            ),
           ),
+          'header',
         ),
       )
 
       if (sectionExpanded) {
-        const rows = el('div', { class: 'automation-thread-rows' })
+        const rows = keyedContainer(el('div', { class: 'automation-thread-rows' }), 'rows')
         for (const { project, scheduleId, scheduleName, runs } of scheduleOwners.values()) {
           const projectSuffix = el(
             'span',
@@ -2224,7 +2267,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                 }),
               )
             })
-            rows.append(row)
+            rows.append(
+              keyed(row, `unrun:${project.id}:${scheduleId}`, [project, scheduleName, scheduleId]),
+            )
             continue
           }
 
@@ -2242,7 +2287,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             const menuButton = row.querySelector('.chat-menu-btn')
             if (menuButton) menuButton.before(setupBtn)
             else row.append(setupBtn)
-            rows.append(row)
+            rows.append(
+              keyed(row, `run:${project.id}:${firstRun.id}`, [project, firstRun, scheduleId]),
+            )
             continue
           }
 
@@ -2253,10 +2300,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           // the finished ones into its heading's run count (see `foldAutomationRuns`).
           const foldEntries = foldAutomationRuns(runs, isThreadAwaitingAttention)
           const scheduleRevealed = showingAllRuns || foldEntries.length > 0
-          const scheduleGroup = el('div', {
-            class: 'automation-schedule-group',
-            'data-schedule-id': scheduleId,
-          })
+          const scheduleGroup = keyedContainer(
+            el('div', {
+              class: 'automation-schedule-group',
+              'data-schedule-id': scheduleId,
+            }),
+            `schedule:${scheduleKey}`,
+          )
           const scheduleToggle = el(
             'button',
             {
@@ -2306,13 +2356,17 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             render()
           })
           scheduleGroup.append(
-            el(
-              'div',
-              { class: 'automation-schedule-header' },
-              scheduleToggle,
-              automationSetupBtn(`${scheduleName} setup`, () => {
-                openAutomationDialog(store, api, { projectId: project.id, scheduleId })
-              }),
+            keyed(
+              el(
+                'div',
+                { class: 'automation-schedule-header' },
+                scheduleToggle,
+                automationSetupBtn(`${scheduleName} setup`, () => {
+                  openAutomationDialog(store, api, { projectId: project.id, scheduleId })
+                }),
+              ),
+              'header',
+              [project, scheduleName, heldRuns.length > 0],
             ),
           )
           scheduleToggle.addEventListener('contextmenu', (e) => {
@@ -2340,7 +2394,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             )
           })
           if (scheduleRevealed) {
-            const runRows = el('div', { class: 'automation-schedule-runs' })
+            const runRows = keyedContainer(el('div', { class: 'automation-schedule-runs' }), 'runs')
             const runRow = (thread: SidebarThread): HTMLElement => {
               const index = runs.indexOf(thread)
               const timestamp = thread.automation?.triggeredAt
@@ -2377,7 +2431,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                   row.addEventListener('click', () => {
                     openActivityPanel()
                   })
-                  runRows.append(row)
+                  runRows.append(keyed(row, 'fold-pending'))
                 } else {
                   const open = expandedFailedSchedules.has(scheduleKey)
                   const row = el(
@@ -2398,7 +2452,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                     else expandedFailedSchedules.add(scheduleKey)
                     render()
                   })
-                  runRows.append(row)
+                  runRows.append(keyed(row, 'fold-failed', [scheduleKey]))
                   if (open) for (const thread of entry.runs) runRows.append(runRow(thread))
                 }
               }
@@ -2428,7 +2482,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         e.stopPropagation()
         openNewProjectThread(store, api, project.id)
       })
-      return newThreadBtn
+      return keyed(newThreadBtn, 'new-thread', [project.id])
     }
 
     /**
@@ -2438,7 +2492,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
      * threads, and it gives a group somewhere to put its members.
      */
     function renderProjectEntry(project: Project): HTMLElement {
-      const entry = el('div', { class: 'project-entry', 'data-project-id': project.id })
+      const entry = keyedContainer(
+        el('div', { class: 'project-entry', 'data-project-id': project.id }),
+        `project:${project.id}`,
+      )
       const isExpanded = project.id === expandedId
       const hasRunningThread = store
         .getState()
@@ -2606,11 +2663,17 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             menuButton.disabled = false
           })
       })
-      const projectLine = el('div', { class: 'project-line' }, projectRow, menuButton)
+      // Both handlers read the project and, for the group entries in the menu,
+      // the group list. The "+" added below is keyed apart.
+      const projectLine = keyedContainer(el('div', { class: 'project-line' }), 'line')
+      projectLine.append(
+        keyed(projectRow, 'row', [project, projectGroups]),
+        keyed(menuButton, 'menu', [project, projectGroups]),
+      )
       entry.append(projectLine)
 
       if (isExpanded && project.missing) {
-        entry.append(renderMissingNotice(project))
+        entry.append(keyed(renderMissingNotice(project), 'missing', [project]))
         return entry
       }
 
@@ -2682,7 +2745,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         }
       }
 
-      const chats = el('div', { class: 'chats-list' })
+      const chats = keyedContainer(el('div', { class: 'chats-list' }), 'chats')
       if (sidebarThreads.length === 0 && isProjectSwitchInFlight(store, project.id)) {
         chats.append(el('div', { class: 'sidebar-empty chats-loading' }, 'Loading…'))
       } else if (isFiltering && contentFilter.pending) {
@@ -2725,7 +2788,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           visibleThreadCounts.set(project.id, visibleCount + SIDEBAR_THREADS_PAGE_SIZE)
           render()
         })
-        chats.append(showMoreBtn)
+        chats.append(keyed(showMoreBtn, 'show-more', [visibleCount]))
       }
 
       entry.append(chats)
@@ -2734,14 +2797,17 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
     /** A group header plus its member entries, folded away when collapsed. */
     function renderGroupEntry(group: ProjectGroup, members: readonly Project[]): HTMLElement {
-      const block = el('div', { class: 'project-group', 'data-group-id': group.id })
-      const row = renderGroupRow(group, members.length)
+      const block = keyedContainer(
+        el('div', { class: 'project-group', 'data-group-id': group.id }),
+        `group:${group.id}`,
+      )
+      const row = keyed(renderGroupRow(group, members.length), 'row', [group])
       const node: SidebarNodeRef = { kind: 'group', id: group.id }
       bindDragSource(row, node, block)
       bindDropTarget(row, block, node)
       block.append(row)
       if (group.collapsed === true) return block
-      const children = el('div', { class: 'project-group-children' })
+      const children = keyedContainer(el('div', { class: 'project-group-children' }), 'children')
       for (const member of members) children.append(renderProjectEntry(member))
       if (members.length === 0) {
         children.append(el('div', { class: 'sidebar-empty' }, 'Drag a project here'))
@@ -2754,7 +2820,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     // `renderAutomationsSection` for why this collates across projects rather
     // than living inside each one (#2511).
     const automationsSection = renderAutomationsSection()
-    if (automationsSection) list.append(automationsSection)
+    if (automationsSection) fresh.push(automationsSection)
 
     /**
      * Threads from every project with loaded data, laid out without the project tree:
@@ -2808,10 +2874,14 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
               nameRow.addEventListener('click', () => {
                 switchProject(store, api, project.id)
               })
-              return el(
-                'div',
-                { class: 'project-entry', 'data-project-id': project.id },
-                el('div', { class: 'project-line' }, nameRow, renderNewThreadButton(project)),
+              return keyed(
+                el(
+                  'div',
+                  { class: 'project-entry', 'data-project-id': project.id },
+                  el('div', { class: 'project-line' }, nameRow, renderNewThreadButton(project)),
+                ),
+                `empty-project:${project.id}`,
+                [project],
               )
             })
       if (ordered.length === 0) {
@@ -2826,9 +2896,14 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       }
       return sections
         .map((section) => {
-          const block = el('div', { class: 'thread-section', 'data-section-id': section.id })
+          const block = keyedContainer(
+            el('div', { class: 'thread-section', 'data-section-id': section.id }),
+            `section:${mode}:${section.id}`,
+          )
           if (section.label) {
-            block.append(el('div', { class: 'thread-section-heading' }, section.label))
+            block.append(
+              keyed(el('div', { class: 'thread-section-heading' }, section.label), 'heading'),
+            )
           }
           const byThread = new Map(section.rows.map((row) => [row.thread, row]))
           const countKey = `section:${mode}:${section.id}`
@@ -2842,7 +2917,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             activeRow?.thread.id,
           )
           if (paged.visibleCount > limit) visibleThreadCounts.set(countKey, paged.visibleCount)
-          const chats = el('div', { class: 'chats-list' })
+          const chats = keyedContainer(el('div', { class: 'chats-list' }), 'chats')
           for (const thread of paged.visibleThreads) {
             const project = owners.get(byThread.get(thread)?.projectId ?? '')
             if (!project) continue
@@ -2866,7 +2941,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
               visibleThreadCounts.set(countKey, paged.visibleCount + SIDEBAR_THREADS_PAGE_SIZE)
               render()
             })
-            chats.append(showMoreBtn)
+            chats.append(keyed(showMoreBtn, 'show-more', [countKey, paged.visibleCount]))
           }
           block.append(chats)
           return block
@@ -2876,7 +2951,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
     const groupMode = store.getState().sidebarThreadGroup
     if (groupMode !== 'project' && threadFilter.length === 0) {
-      list.append(...renderThreadSections(groupMode))
+      fresh.push(...renderThreadSections(groupMode))
     } else {
       for (const node of buildProjectTree(visibleProjects, projectGroups)) {
         // A group with nothing of the chosen project in it has nothing to show.
@@ -2886,19 +2961,27 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           node.projects.length === 0
         )
           continue
-        if (node.kind === 'group') list.append(renderGroupEntry(node.group, node.projects))
-        else list.append(renderProjectEntry(node.project))
+        if (node.kind === 'group') fresh.push(renderGroupEntry(node.group, node.projects))
+        else fresh.push(renderProjectEntry(node.project))
       }
     }
 
-    if (orphans.length > 0) list.append(renderOrphansSection())
+    if (orphans.length > 0) fresh.push(renderOrphansSection())
 
+    commit()
+
+    // A row the reconcile kept stands in for the fresh one built above.
+    const liveBackfillRows = prBackfillRows.map(({ row, projectId, threadId }) => ({
+      row: liveNode(row),
+      projectId,
+      threadId,
+    }))
     prBackfillRowsByKey = new Map(
-      prBackfillRows.map(({ row, projectId, threadId }) => [`${projectId}\0${threadId}`, row]),
+      liveBackfillRows.map(({ row, projectId, threadId }) => [`${projectId}\0${threadId}`, row]),
     )
-    if (prBackfillRows.length > 0 && typeof IntersectionObserver !== 'undefined') {
+    if (liveBackfillRows.length > 0 && typeof IntersectionObserver !== 'undefined') {
       const rowThreads = new Map<Element, { projectId: string; threadId: string }>(
-        prBackfillRows.map(({ row, projectId, threadId }) => [row, { projectId, threadId }]),
+        liveBackfillRows.map(({ row, projectId, threadId }) => [row, { projectId, threadId }]),
       )
       const observer = new IntersectionObserver((entries) => {
         if (prBackfillObserver !== observer) return
@@ -2954,7 +3037,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         }
       })
       prBackfillObserver = observer
-      for (const { row } of prBackfillRows) observer.observe(row)
+      for (const { row } of liveBackfillRows) observer.observe(row)
     }
     threadChangeRendered = threadChangeSeen
     const pruneBefore = Date.now() - 2 * THREAD_CHANGE_TTL_MS
@@ -2962,7 +3045,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       if (entry.at < pruneBefore && !threadChangeSeenKeys.has(key)) threadChangeCache.delete(key)
     }
     refreshThreadChanges(threadChangeWanted)
-    if (preserveScroll) list.scrollTop = scrollTop
   }
 
   const unsubWorkingTree = api.git.onWorkingTreeChanged(() => {
@@ -3012,7 +3094,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     store.select(
       (s) => s.sidebarProjectFilterId,
       () => {
-        render()
+        renderFromTop()
       },
     ),
     store.select(
