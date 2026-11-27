@@ -1369,6 +1369,10 @@
       "sha256": "720247345ff968b249f4a729ca891ed1c718694a8d31dc1e75bc39bf60bf598d",
       "bytes": 276070
     },
+    "checkup-window-crashes.png": {
+      "sha256": "9e91ed6ee922c209353e6ef20092824bf26fccfeec47bc16a5225e1c2bcfe8e3",
+      "bytes": 367901
+    },
     "ci-investigator-display-collapsed.png": {
       "sha256": "c69fce3807a7783f13e58837adf9d44fabfa02702984fa2dde8da97c74bb21c7",
       "bytes": 290490
