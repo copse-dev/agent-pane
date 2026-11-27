@@ -57,7 +57,7 @@ describe('turns in the background host', function () {
   this.timeout(180_000)
 
   beforeEach(async () => {
-    // resetUserData stops the host a previous app left running.
+    // The new fixture makes the launcher stop the host a previous app left running.
     resetUserData()
     seedEmptyProject(seedStableWorkspace(), PROJECT_ID, {
       model: 'claude-sonnet-4-6',
@@ -70,8 +70,6 @@ describe('turns in the background host', function () {
     await $('.prompt-input').waitForExist({ timeout: 60_000 })
   })
 
-  // The suite's own after-test check reads each scenario's status, which the
-  // host holds after a relaunch, so the host is stopped only once that is done.
   after(() => {
     resetUserData()
   })
