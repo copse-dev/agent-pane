@@ -12,6 +12,13 @@ import {
   ForeignTurnFollower,
   defaultForeignTurnDependencies,
 } from './services/turn-worker/foreign-turns.ts'
+import {
+  connectOrStartTurnHost,
+  createTurnHostLink,
+  turnHostPath,
+} from './services/turn-host/turn-host-launch.ts'
+import type { TurnHostLink } from './services/turn-host/turn-host-link.ts'
+import type { TurnWorkerConnection } from './services/turn-worker/turn-worker-socket.ts'
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
 import { initRemoteInterface } from './services/mobile/remote-interface.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
@@ -854,16 +861,46 @@ app
     // Turns a worker took over when Copse last quit, still going now: shown as
     // running, streamed from the worker (or repainted from disk) until it lets
     // go of them, and stopped through it.
-    const foreignTurns = new ForeignTurnFollower(
-      defaultForeignTurnDependencies(app.getPath('userData'), {
-        snapshot: (snapshot) => {
-          if (!win.isDestroyed()) win.webContents.send('agent:transcript-snapshot', snapshot)
+    const foreignTurnDependencies = defaultForeignTurnDependencies(app.getPath('userData'), {
+      snapshot: (snapshot) => {
+        if (!win.isDestroyed()) win.webContents.send('agent:transcript-snapshot', snapshot)
+      },
+      chunk: ({ threadId, chunk, stamp }) => {
+        if (!win.isDestroyed()) win.webContents.send('agent:chunk', threadId, chunk, stamp)
+      },
+    })
+    const connectWorker = foreignTurnDependencies.connect
+    // A thread the resident turn host runs streams from the host's line; a turn
+    // a per-turn worker took at the last quit, from that worker's.
+    foreignTurnDependencies.connect = async (
+      turn,
+      onMessage,
+      onClose,
+    ): Promise<TurnWorkerConnection | null> =>
+      (await connectWorker?.(turn, onMessage, onClose)) ??
+      turnHostLink?.subscribe(turn.threadId, onMessage, onClose) ??
+      null
+    const foreignTurns = new ForeignTurnFollower(foreignTurnDependencies)
+    if (getSetting<unknown>('turnsRunInHost', false) === true) {
+      const launch = {
+        execPath: process.execPath,
+        hostPath: turnHostPath(),
+        userDataPath: app.getPath('userData'),
+        appVersion: app.getVersion(),
+        packaged: app.isPackaged,
+        env: process.env,
+        log: (line: string): void => {
+          console.log(line)
         },
-        chunk: ({ threadId, chunk, stamp }) => {
-          if (!win.isDestroyed()) win.webContents.send('agent:chunk', threadId, chunk, stamp)
+        onThreadTaken: (): void => {
+          void foreignTurns.discover()
         },
-      }),
-    )
+      }
+      const link = createTurnHostLink(launch)
+      turnHostLink = link
+      // Never awaited: turns run in main until the host answers.
+      void connectOrStartTurnHost(link, launch)
+    }
     stopFollowingForeignTurns = (): void => {
       foreignTurns.stop()
     }
@@ -1260,11 +1297,20 @@ app
         const request = { projectId, threadId, payload: parseAgentRunPayload(rawPrompt) }
         // A delegated prompt's authority is decided here, not by the renderer's
         // pre-check: a revoke can land between that check and this invoke.
-        await (delegation
-          ? dispatchSubthreadPrompt(projectId, delegation.parentThreadId, threadId, () =>
-              agentDispatcher.dispatch(request),
-            )
-          : agentDispatcher.dispatch(request))
+        // With the turn host on, a turn runs there unless the host provably
+        // never ran it (`turn-host-link.ts`). Delegated prompts stay in main,
+        // where their grant is checked.
+        const ranInHost =
+          !delegation && turnHostLink?.ready === true
+            ? (await turnHostLink.run(projectId, threadId, rawPrompt)) === 'host'
+            : false
+        if (!ranInHost) {
+          await (delegation
+            ? dispatchSubthreadPrompt(projectId, delegation.parentThreadId, threadId, () =>
+                agentDispatcher.dispatch(request),
+              )
+            : agentDispatcher.dispatch(request))
+        }
         await parkCompletedPullRequestWorktree(projectId, threadId).catch((error: unknown) => {
           console.warn('[worktree] Could not park PR-backed checkout:', error)
         })
@@ -1401,8 +1447,12 @@ app
       const reason = z.literal('send_now').optional().parse(reasonArg)
       transcriptWriter.noteUserAbort(threadId, reason ?? 'stop')
       abortAgent(threadId, reason)
-      // A turn a worker runs stops there.
-      foreignTurns.requestStop(threadId)
+      // A turn a worker or the turn host runs stops there.
+      if (
+        !foreignTurns.requestStop(threadId) &&
+        turnHostLink?.runningThreadIds().includes(threadId)
+      )
+        turnHostLink.stop(threadId)
     })
 
     // Thread ids with a live in-process run, so a renderer that's just loaded a
@@ -1688,6 +1738,8 @@ let disposeTaskSupervisorEvents: (() => void) | undefined
 let interruptTurnTranscripts: (() => Promise<void>) | undefined
 let listActiveTurns: (() => HandOffTarget[]) | undefined
 let stopFollowingForeignTurns: (() => void) | undefined
+/** The line to the resident turn host, when `turnsRunInHost` is on. */
+let turnHostLink: TurnHostLink | undefined
 
 /**
  * Start a turn worker for each turn this quit cut off, so it continues now
@@ -1717,6 +1769,15 @@ function handOffInterruptedTurns(targets: readonly HandOffTarget[]): void {
 async function cleanupBeforeQuit(): Promise<void> {
   // Read before anything below stops them.
   const handOff = listActiveTurns?.() ?? []
+  // Turns in the resident host carry on through a quit that hands off, as a
+  // detach. Any other quit (the setting off, a signal or fault, an unanswered
+  // close, an update install) stops them as it stops in-process turns.
+  if (turnHostLink) {
+    if (!quitHandsOff || quitInstallsUpdate()) {
+      for (const threadId of turnHostLink.runningThreadIds()) turnHostLink.stop(threadId)
+    }
+    turnHostLink.close()
+  }
   stopFollowingForeignTurns?.()
   const transcriptDrain = interruptTurnTranscripts?.()
   // Host-side default-branch fetches run in their own process group and would

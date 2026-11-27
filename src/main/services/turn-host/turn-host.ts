@@ -71,6 +71,7 @@ export class TurnHost {
   private readonly dispatcher: AgentDispatcher
   private readonly transcripts: TurnTranscriptWriter
   private readonly clients = new WeakMap<TurnHostClient, ClientState>()
+  private readonly attachedClients = new WeakSet<TurnHostClient>()
   /** Threads with a turn running here, by key, with their project. */
   private readonly running = new Map<string, { projectId: string; threadId: string }>()
   /** Turns waiting to hear that the dispatcher has claimed their thread, with their id. */
@@ -218,8 +219,12 @@ export class TurnHost {
   private attach(client: TurnHostClient): void {
     // Join before the snapshots, so they and the chunks after them arrive in order.
     client.join()
-    this.joined += 1
-    this.armIdle()
+    // A repeat `attach` asks for the snapshots again; the app is counted once.
+    if (!this.attachedClients.has(client)) {
+      this.attachedClients.add(client)
+      this.joined += 1
+      this.armIdle()
+    }
     const byProject = new Map<string, string[]>()
     for (const turn of this.running.values()) {
       const threads = byProject.get(turn.projectId) ?? []
