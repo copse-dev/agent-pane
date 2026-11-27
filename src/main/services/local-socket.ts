@@ -64,6 +64,30 @@ function ensurePrivateDirectory(dir: string): void {
   if ((stat.mode & 0o077) !== 0) chmodSync(dir, 0o700)
 }
 
+/**
+ * Whether `path` is a socket this user owns, in a directory only this user can
+ * enter: what {@link serveLocalLine} leaves behind. A client checks before it
+ * connects, so another user who got to a predictable fallback directory first
+ * cannot stand in for the worker and feed the app forged messages.
+ */
+function isPrivateEndpoint(path: string): boolean {
+  const uid = process.getuid?.()
+  if (uid === undefined) return true
+  try {
+    const dir = lstatSync(dirname(path))
+    const socket = lstatSync(path)
+    return (
+      dir.isDirectory() &&
+      dir.uid === uid &&
+      (dir.mode & 0o077) === 0 &&
+      socket.isSocket() &&
+      socket.uid === uid
+    )
+  } catch {
+    return false
+  }
+}
+
 function readLines(socket: Socket, onLine: (line: string) => void): void {
   let buffered = ''
   socket.setEncoding('utf8')
@@ -169,7 +193,8 @@ export interface LocalLineConnection<Out> {
 }
 
 /**
- * Connect to a serving process. Resolves `null` when nothing is listening;
+ * Connect to a serving process. Resolves `null` when nothing is listening, or
+ * when the endpoint is not this user's own private socket;
  * `onClose` runs once when a live connection ends.
  */
 export function connectLocalLine<In, Out>(
@@ -178,6 +203,7 @@ export function connectLocalLine<In, Out>(
   onMessage: (message: In) => void,
   onClose: () => void,
 ): Promise<LocalLineConnection<Out> | null> {
+  if (process.platform !== 'win32' && !isPrivateEndpoint(path)) return Promise.resolve(null)
   return new Promise((resolve) => {
     const socket = createConnection(path)
     let open = false

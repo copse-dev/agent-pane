@@ -96,6 +96,33 @@ describe('local socket long-profile fallback', { skip: process.platform === 'win
     }
   })
 
+  it('will not connect to a socket in a directory others can enter', async () => {
+    const path = localSocketPath(longProfile(), 'turn', 'loosened')
+    const server = await serveLocalLine<Ping, Ping>(path, ping, () => undefined)
+    try {
+      // Someone else could have placed this socket: the client must not trust it.
+      chmodSync(dirname(path), 0o777)
+      const refused = await connectLocalLine<Ping, Ping>(
+        path,
+        ping,
+        () => undefined,
+        () => undefined,
+      )
+      assert.equal(refused, null)
+      chmodSync(dirname(path), 0o700)
+      const connection = await connectLocalLine<Ping, Ping>(
+        path,
+        ping,
+        () => undefined,
+        () => undefined,
+      )
+      assert.ok(connection)
+      connection.close()
+    } finally {
+      await server.close()
+    }
+  })
+
   it('refuses a symlink in place of the directory', async () => {
     const path = localSocketPath(longProfile(), 'turn', 'linked')
     const elsewhere = join(temp, 'elsewhere')
