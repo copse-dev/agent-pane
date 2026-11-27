@@ -380,6 +380,12 @@ export function sandboxViolationCountForBackgroundProcess(
  */
 const INCIDENTAL_SEATBELT_DENIAL = /\bdeny\(\d+\) (?!file-write-|network-)\S/
 
+/**
+ * A refused network connection: a seatbelt `deny(1) network-outbound …` from
+ * the log monitor, or the network proxy's own `deny network-outbound host:port`.
+ */
+const NETWORK_DENIAL = /\bdeny(?:\(\d+\))? network-\S/
+
 function blockingViolations<T extends { line: string }>(violations: readonly T[]): T[] {
   return violations.filter((violation) => !INCIDENTAL_SEATBELT_DENIAL.test(violation.line))
 }
@@ -387,6 +393,36 @@ function blockingViolations<T extends { line: string }>(violations: readonly T[]
 /** Violations that can be what made a sandboxed command fail. */
 export function countBlockingViolations(violations: readonly { line: string }[]): number {
   return blockingViolations(violations).length
+}
+
+/** A seatbelt denial of neither a file nor a network operation (`sysctl-read`, `mach-lookup`). */
+const NON_FILE_SEATBELT_DENIAL = /\bdeny\(\d+\) (?!file-|network-)\S/
+
+/**
+ * Whether the denials of a blocked command were only refused network
+ * connections. False when there were none, or when any was a file denial of
+ * any kind or a line in another shape. A refused read does not block a command
+ * on its own, but it spoils this: a read-tier shape that tried a protected
+ * credential and the network is not one whose reach its shape describes.
+ */
+export function blockingViolationsAreNetworkOnly(violations: readonly { line: string }[]): boolean {
+  const relevant = violations.filter((violation) => !NON_FILE_SEATBELT_DENIAL.test(violation.line))
+  return relevant.length > 0 && relevant.every((violation) => NETWORK_DENIAL.test(violation.line))
+}
+
+/**
+ * {@link blockingViolationsAreNetworkOnly} for the violations the runner
+ * recorded against `attribution` (see {@link sandboxViolationCountForCommand}).
+ * False when the sandbox is inactive or no violation log is available.
+ */
+export function sandboxViolationsAreNetworkOnlyForCommand(attribution: string): boolean {
+  if (!isProjectSandboxEnabled()) return false
+  try {
+    const store = SandboxManager.getSandboxViolationStore()
+    return blockingViolationsAreNetworkOnly(store.getViolationsForCommand(attribution))
+  } catch {
+    return false
+  }
 }
 
 /**

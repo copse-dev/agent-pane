@@ -6,6 +6,7 @@ import {
   afterSandboxedCommand,
   isProjectSandboxEnabled,
   sandboxViolationCountForCommand,
+  sandboxViolationsAreNetworkOnlyForCommand,
   settledSandboxViolationCount,
   spawnShellInProjectSandbox,
 } from '../../project-sandbox/index.ts'
@@ -52,6 +53,11 @@ export interface ShellRunResult {
   output: string
   exitCode: number
   sandboxViolationCount?: number
+  /**
+   * Every violation counted in `sandboxViolationCount` was a network denial.
+   * False when there were none or any was a file denial.
+   */
+  sandboxViolationsNetworkOnly?: boolean
   backgroundId?: string
   /** The sandbox wrapper process itself failed to start (child 'error' event). */
   spawnFailed?: boolean
@@ -325,6 +331,8 @@ export async function runShellOnce(
 
       const sandboxViolationCount = (): number =>
         violationId ? sandboxViolationCountForCommand(violationId) : 0
+      const sandboxViolationsNetworkOnly = (): boolean =>
+        violationId ? sandboxViolationsAreNetworkOnlyForCommand(violationId) : false
 
       const finish = (): void => {
         if (!unsandboxed) afterSandboxedCommand()
@@ -340,6 +348,7 @@ export async function runShellOnce(
       proc.on('error', (err) => {
         cleanup()
         const violationCount = sandboxViolationCount()
+        const networkOnly = sandboxViolationsNetworkOnly()
         finish()
         if (settled) return
         settled = true
@@ -354,6 +363,7 @@ export async function runShellOnce(
             output: message,
             exitCode: -1,
             sandboxViolationCount: violationCount,
+            sandboxViolationsNetworkOnly: networkOnly,
             spawnFailed: true,
           })
           return
@@ -384,6 +394,9 @@ export async function runShellOnce(
             output: outputAcc.toString(),
             exitCode,
             sandboxViolationCount: violationCount,
+            // Read after the settle above, so a late denial counted there is
+            // also judged here.
+            sandboxViolationsNetworkOnly: sandboxViolationsNetworkOnly(),
           })
         })
       })

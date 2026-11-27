@@ -15,6 +15,7 @@ export {
   afterSandboxedCommand,
   isProjectSandboxEnabled,
   sandboxViolationCountForCommand,
+  sandboxViolationsAreNetworkOnlyForCommand,
   settledSandboxViolationCount,
   sandboxViolationCountForBackgroundProcess,
 } from './spawn.ts'

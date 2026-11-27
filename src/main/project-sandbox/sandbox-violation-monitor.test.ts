@@ -5,7 +5,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
 import { initProjectSandbox, isProjectSandboxEnabled, shutdownProjectSandbox } from './index.ts'
-import { countBlockingViolations } from './spawn.ts'
+import { blockingViolationsAreNetworkOnly, countBlockingViolations } from './spawn.ts'
 import { runShellOnce, type ShellRunResult } from '../services/exec/foreground-shell-process.ts'
 import { detectSandboxFailure } from '../services/security/sandbox-failure.ts'
 import { setGitAvailableForTest } from '../services/tool-availability.ts'
@@ -35,6 +35,48 @@ describe('countBlockingViolations', () => {
     )
     // A line in any other shape (a proxy or seccomp report) still counts.
     assert.equal(countBlockingViolations([line('network denied: example.com:443')]), 1)
+  })
+})
+
+describe('blockingViolationsAreNetworkOnly', () => {
+  const line = (text: string): { line: string } => ({ line: text })
+
+  it('holds when every denial is a refused connection, from the seatbelt or the proxy', () => {
+    assert.equal(
+      blockingViolationsAreNetworkOnly([
+        line('ssh(4) deny(1) network-outbound 140.82.121.4:22'),
+        line('deny network-outbound github.com:443 (not in allowlist)'),
+        // Incidental denials do not spoil it.
+        line('git(2) deny(1) sysctl-read kern.iossupportversion'),
+      ]),
+      true,
+    )
+  })
+
+  it('fails closed for any file denial, an unknown shape or no denial', () => {
+    // A refused read is not a block on its own, but it still spoils this.
+    assert.equal(
+      blockingViolationsAreNetworkOnly([
+        line('deny network-outbound github.com:443 (not in allowlist)'),
+        line('grep(3) deny(1) file-read-data /Users/someone/.ssh/id_ed25519'),
+      ]),
+      false,
+    )
+    assert.equal(
+      blockingViolationsAreNetworkOnly([
+        line('curl(4) deny(1) network-outbound 1.1.1.1:443'),
+        line('git(2) deny(1) file-write-create /tmp/project/.git/hooks/x'),
+      ]),
+      false,
+    )
+    assert.equal(blockingViolationsAreNetworkOnly([line('network denied: example.com:443')]), false)
+    assert.equal(
+      blockingViolationsAreNetworkOnly([
+        line('bash(1) deny(1) sysctl-read kern.iossupportversion'),
+      ]),
+      false,
+    )
+    assert.equal(blockingViolationsAreNetworkOnly([]), false)
   })
 })
 

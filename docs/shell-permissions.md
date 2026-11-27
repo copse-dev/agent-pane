@@ -377,11 +377,11 @@ still prompt when the OS sandbox is unavailable.
 This matrix describes standard shell policy. Explicit trusted-command grants, per-tool overrides,
 Guarded YOLO and attested unattended containers have the separate rules above.
 
-| Situation                                | Sandbox-contained command                                                    | Hard-external command (network download, `git push`, install, `~/...`)                                                               | Ambiguous “may reach” command (`gh`, `nc`, cloud CLIs, `open <url>`)                                                                                                                                                                                      |
-| ---------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **macOS ASRT / Linux bubblewrap active** | Auto-runs inside the project sandbox. The model classifier is not consulted. | Prompts first, then runs outside the sandbox. Recognised low-risk shapes (`git push origin`) may skip that prompt via auto-approval. | Auto-runs inside the sandbox. A verified block offers retry outside, which always asks first. This includes opaque interpreter heredocs, whose effects the sandbox contains. `expects_sandbox_block: true` can move that prompt before the first attempt. |
-| **Windows / sandbox init failure**       | Prompts because no OS sandbox can contain it. Auto-approval does not fire.   | Prompts, unless strict-mode hard-deny applies. Auto-approval does not fire.                                                          | Prompts and is treated as external. Auto-approval does not fire.                                                                                                                                                                                          |
-| **Auto-run disabled**                    | Prompts.                                                                     | Prompts.                                                                                                                             | Prompts.                                                                                                                                                                                                                                                  |
+| Situation                                | Sandbox-contained command                                                    | Hard-external command (network download, `git push`, install, `~/...`)                                                               | Ambiguous “may reach” command (`gh`, `nc`, cloud CLIs, `open <url>`)                                                                                                                                                             |
+| ---------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **macOS ASRT / Linux bubblewrap active** | Auto-runs inside the project sandbox. The model classifier is not consulted. | Prompts first, then runs outside the sandbox. Recognised low-risk shapes (`git push origin`) may skip that prompt via auto-approval. | Auto-runs inside the sandbox. A verified block offers retry outside. This includes opaque interpreter heredocs, whose effects the sandbox contains. `expects_sandbox_block: true` can move that prompt before the first attempt. |
+| **Windows / sandbox init failure**       | Prompts because no OS sandbox can contain it. Auto-approval does not fire.   | Prompts, unless strict-mode hard-deny applies. Auto-approval does not fire.                                                          | Prompts and is treated as external. Auto-approval does not fire.                                                                                                                                                                 |
+| **Auto-run disabled**                    | Prompts.                                                                     | Prompts.                                                                                                                             | Prompts.                                                                                                                                                                                                                         |
 
 The ambiguous tier exists because short command names also appear harmlessly as paths or arguments.
 Where a sandbox is active, the sandbox—not a fuzzy match—decides whether they escape. Without a
@@ -831,14 +831,18 @@ that is not yet a repository, because the sandbox protects `.git`. Linux does no
 runtime's seccomp observer yet, so there a file block can only be verified by the denial signatures
 below.
 
-Every verified block asks a person before the retry outside, whatever answers prompts otherwise.
-The denial shows what the command tried to reach, and outside the sandbox nothing contains the rest
-of what it does: `git fetch origin` runs repository hooks and config-defined helpers, and a
-read-tier shape is no promise about where those reach. Neither Guarded YOLO nor deterministic shell
-auto-approval may answer it, even at a level that would allow the command's shape. Guarded YOLO,
-or a matching auto-approval tier, answers the retry itself only when the sandbox wrapper failed to
-start the command at all, because then the sandbox refused nothing and the command is judged as if
-it had never been sandboxed.
+A verified block's retry outside asks a person, with one exception. Guarded YOLO never answers it:
+the denial shows what the command tried to reach, and outside the sandbox nothing contains the rest
+of what it does. Deterministic shell auto-approval judges the command's shape, not what the sandbox
+refused, so it may answer a verified block only when every denial was a refused network connection
+(from the seatbelt or the proxy) and the command is a read-tier shape: a `git fetch origin` blocked
+from the network is the reach its shape is rated for. A local-write or remote-write shape asks even
+when its configured level allows it, because outside the sandbox the repository hooks it runs
+(`git commit`'s, say) are no longer contained. Any file denial, a refused read included, or a
+denial in another shape always asks, because a read-tier `grep` can reach a protected credential
+through a workspace symlink. Guarded YOLO, or a matching auto-approval tier, answers the retry
+without these limits only when the sandbox wrapper failed to start the command at all, because then
+the sandbox refused nothing and the command is judged as if it had never been sandboxed.
 
 Some sandboxed failures come from a broker or helper that does not increment the OS sandbox's
 violation counter. After a non-zero attempt, `run_shell` may recognise the bounded denial signatures

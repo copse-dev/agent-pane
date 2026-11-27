@@ -3,6 +3,7 @@ import {
   type ShellRunResult,
   type ShellYieldOptions,
 } from '../services/exec/foreground-shell-process.ts'
+import type { AutoApprovalTier } from '@shared/auto-approval.ts'
 import { homedir } from 'node:os'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
@@ -15,6 +16,7 @@ import { REQUEST_WRITE_ACCESS_TOOL } from '@shared/tools/readonly-tools.ts'
 import {
   isProjectSandboxEnabled,
   sandboxViolationCountForCommand,
+  sandboxViolationsAreNetworkOnlyForCommand,
 } from '../project-sandbox/index.ts'
 import {
   shellReadGrantTargets,
@@ -250,16 +252,24 @@ async function maybeRetryUnsandboxed(
     likely: runnerDetection.likely,
     spawnFailed: result.spawnFailed ?? false,
   })
-  // Only a wrapper that failed to start the command may be answered without a
-  // person (Guarded YOLO, or the command-shape auto-approval tiers). A denial
-  // the OS sandbox or its proxy reported always asks: the command chose what to
-  // touch, so its shape says nothing about why it was refused, and a file
-  // denial can be the sandbox refusing a protected credential read.
+  const READ_TIER: AutoApprovalTier = 'read'
+  // Command-shape auto-approval judges what the command looks like, not what
+  // the sandbox refused it. A network denial of a read-tier shape (`git fetch
+  // origin`) is the reach that shape is rated for, so only the read tier may
+  // answer it: a local-write shape (`git commit`) runs repository hooks the
+  // sandbox was containing. A refused write always asks, at any tier: outside
+  // the sandbox nothing would contain it.
+  const networkOnlyViolation =
+    evidence === 'violation' &&
+    (result.sandboxViolationsNetworkOnly ??
+      sandboxViolationsAreNetworkOnlyForCommand(executedCommand))
   const approved =
     sandboxRetryMaySkipApproval(evidence, options.guardedYolo, options.unattendedContainer) ||
     (await promptUnsandboxedShell(rawCommand, detection.reasons, signal, {
       readGrantApplied: options.readGrantApplied,
-      requireInteractiveApproval: evidence !== 'runner',
+      requireInteractiveApproval:
+        evidence === 'signature' || (evidence === 'violation' && !networkOnlyViolation),
+      ...(evidence === 'violation' ? { autoApproveUpToTier: READ_TIER } : {}),
     }))
   if (signatureMatch) {
     // The output signature is forgeable. It becomes useful cache evidence only
