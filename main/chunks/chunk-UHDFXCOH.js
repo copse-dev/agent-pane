@@ -70597,6 +70597,19 @@ var init_agent_markup = __esm({
               </p>
             </fieldset>
 
+            <fieldset data-testid="continue-after-quit-settings">
+              <legend>When Copse closes</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="continueTurnsAfterQuit" />
+                Keep running turns and container runs going after Copse closes
+              </label>
+              <p class="field-hint">
+                A thread that is mid-turn, or a container run, carries on in the background and is
+                here when you open Copse again. On by default. Turn off to stop them when Copse
+                closes.
+              </p>
+            </fieldset>
+
             <div id="settings-agent-profiles-host" class="settings-mount"></div>
 
             <fieldset>
@@ -70719,6 +70732,7 @@ var init_agent_markup = __esm({
         save: true
       },
       { name: "localTodoItemsEnabled", kind: "checkbox", default: true, save: true },
+      { name: "continueTurnsAfterQuit", kind: "checkbox", default: true, save: true },
       { name: "postTurnReviewMinChangedLines", kind: "number", default: 1, save: true },
       { name: "bundledCursorSkillsEnabled", kind: "checkbox", default: true, save: true },
       { name: "skillExternalLinkWarnings", kind: "checkbox", default: true, save: true },
