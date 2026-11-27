@@ -50,6 +50,7 @@ export const workerCapabilitiesSchema = z.object({
   roles: z
     .array(z.string().max(64))
     .max(16)
+    .meta({ description: `Known roles: ${WORKER_ROLES.join(', ')}. A reader ignores others.` })
     .transform((roles) => roles.filter(knownRole))
     .pipe(z.array(z.enum(WORKER_ROLES))),
   models: z.object({
