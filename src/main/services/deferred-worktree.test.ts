@@ -94,6 +94,7 @@ function fixture(
     },
     recoverUnpersisted: async () => null,
     branchExists: async () => true,
+    defaultBranchResolves: async () => true,
     checkoutBranch: async (branch) => {
       checkouts.push(branch)
     },

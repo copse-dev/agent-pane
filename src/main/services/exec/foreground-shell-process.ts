@@ -1,10 +1,13 @@
 import { errorMessage } from '@shared/errors.ts'
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { randomUUID } from 'node:crypto'
 import { constants } from 'node:os'
 import {
   afterSandboxedCommand,
   isProjectSandboxEnabled,
   sandboxViolationCountForCommand,
+  sandboxViolationsAreNetworkOnlyForCommand,
+  settledSandboxViolationCount,
   spawnShellInProjectSandbox,
 } from '../../project-sandbox/index.ts'
 import {
@@ -50,6 +53,11 @@ export interface ShellRunResult {
   output: string
   exitCode: number
   sandboxViolationCount?: number
+  /**
+   * Every violation counted in `sandboxViolationCount` was a network denial.
+   * False when there were none or any was a file denial.
+   */
+  sandboxViolationsNetworkOnly?: boolean
   backgroundId?: string
   /** The sandbox wrapper process itself failed to start (child 'error' event). */
   spawnFailed?: boolean
@@ -128,6 +136,9 @@ export async function runShellOnce(
       }
       signal.addEventListener('abort', cancelSpawn, { once: true })
       reportPhase('starting')
+      // Each sandboxed attempt gets its own attribution, so violations from an
+      // earlier run of the same command text never count toward this one.
+      const violationId = unsandboxed ? undefined : randomUUID()
       let proc
       try {
         proc = await spawnShellInProjectSandbox(command, {
@@ -140,6 +151,7 @@ export async function runShellOnce(
           unsandboxed,
           readGrantTargets,
           ...(readonlyCheckout ? { readonlyCheckout } : {}),
+          ...(violationId ? { violationId } : {}),
           signal: spawnController.signal,
         })
       } catch (err) {
@@ -318,7 +330,9 @@ export async function runShellOnce(
       if (yieldOptions) yieldTimer = setTimeout(detach, yieldOptions.yieldAfterMs)
 
       const sandboxViolationCount = (): number =>
-        unsandboxed ? 0 : sandboxViolationCountForCommand(command)
+        violationId ? sandboxViolationCountForCommand(violationId) : 0
+      const sandboxViolationsNetworkOnly = (): boolean =>
+        violationId ? sandboxViolationsAreNetworkOnlyForCommand(violationId) : false
 
       const finish = (): void => {
         if (!unsandboxed) afterSandboxedCommand()
@@ -334,6 +348,7 @@ export async function runShellOnce(
       proc.on('error', (err) => {
         cleanup()
         const violationCount = sandboxViolationCount()
+        const networkOnly = sandboxViolationsNetworkOnly()
         finish()
         if (settled) return
         settled = true
@@ -348,6 +363,7 @@ export async function runShellOnce(
             output: message,
             exitCode: -1,
             sandboxViolationCount: violationCount,
+            sandboxViolationsNetworkOnly: networkOnly,
             spawnFailed: true,
           })
           return
@@ -360,17 +376,28 @@ export async function runShellOnce(
         // terminal is still waiting for the process to actually exit.
         if (!detached) observer?.exit({ exitCode: code, signal: closeSignal })
         cleanup()
-        const violationCount = sandboxViolationCount()
         finish()
         if (settled) return
-        settled = true
         const exitCode = exitCodeFor(code, closeSignal)
-        if (stopped) reportPhase('cancelled')
-        else reportPhase('exited', { exitCode })
-        resolve({
-          output: outputAcc.toString(),
-          exitCode,
-          sandboxViolationCount: violationCount,
+        // A denial can reach the store a few ms after the close: give a failed
+        // attempt that long before judging whether the sandbox blocked it.
+        void (
+          violationId && exitCode !== 0
+            ? settledSandboxViolationCount(violationId)
+            : Promise.resolve(sandboxViolationCount())
+        ).then((violationCount) => {
+          if (settled) return
+          settled = true
+          if (stopped) reportPhase('cancelled')
+          else reportPhase('exited', { exitCode })
+          resolve({
+            output: outputAcc.toString(),
+            exitCode,
+            sandboxViolationCount: violationCount,
+            // Read after the settle above, so a late denial counted there is
+            // also judged here.
+            sandboxViolationsNetworkOnly: sandboxViolationsNetworkOnly(),
+          })
         })
       })
 

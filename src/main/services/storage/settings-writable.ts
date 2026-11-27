@@ -288,6 +288,9 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   openRouterFreeMode: z.boolean(),
   localSubagentsEnabled: z.boolean(),
   localTodoItemsEnabled: z.boolean(),
+  // On by default: a quit hands running turns and container runs to background
+  // processes (docs/plans/local-turn-worker.md). False stops them at quit.
+  continueTurnsAfterQuit: z.boolean(),
   // P5: the former top-level `postTurnReviewEnabled` boolean is retired —
   // the `copse.post-turn-review` first-party plugin toggle in Settings > Plugins
   // is the atomic master switch consulted by the trigger site in
@@ -411,6 +414,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // Defer eligible new threads across projects until their first write. Off by default.
   deferredWorktreesEnabled: z.boolean(),
   containerRunsEnabled: z.boolean(),
+  // Run each turn in the resident turn host, outside the app's main process, so
+  // a crash of the app does not interrupt it (docs/plans/local-turn-worker.md,
+  // "Every turn in a turn host"). Off by default while it is experimental.
+  turnsRunInHost: z.boolean(),
   // Experimental living-plan workflow: the composer's "Start planning" button
   // and dialog. Off by default — container, ACP, remote, and plugin-hosted
   // executors still fail closed while a plan is active, and completion is

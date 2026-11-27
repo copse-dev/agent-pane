@@ -81,7 +81,7 @@ import { resolveAgentModelIdentity } from '@copse/llm/agent-model-identity.ts'
 import { displayModelLabel } from '@shared/model-display.ts'
 import { isNonNull } from '@shared/nullish.ts'
 import { blockedModelMaker, parseBlockedModelMakers } from '@copse/llm/model-maker-block.ts'
-import { supersedingModel } from '@copse/llm/model-version-suppression.ts'
+import { releaseSpelling, supersedingModel } from '@copse/llm/model-version-suppression.ts'
 import { modelCoverage, type ModelCoverage } from './model-coverage.ts'
 
 const ACP_GROUP = 'Agents on this device'
@@ -115,11 +115,13 @@ export interface ModelOption {
   /** Route-level privacy evidence; ACP does not report account retention controls. */
   retention?: Readonly<AcpRetentionNotice>
   /**
-   * The tracked cloud model id (`model-catalog.ts`) this route resolves to, when
-   * known — an ACP/remote-agent row's own spelling, canonicalised the same way
-   * its intellect hint is. Used only to find a same-`lineageScope` successor;
-   * absent means `value` is already a bare cloud id, or resolves to nothing
-   * tracked.
+   * The model id an ACP/remote-agent row's release version is read from: the
+   * cloud id a managed route runs, or for an agent's own catalog the scored
+   * model its spelling resolves to (canonicalised the same way its intellect
+   * hint is), else the raw id it advertised, so a release newer than the
+   * intellect catalog still compares. Used only to find a same-`lineageScope`
+   * successor; absent means `value` itself is compared, and of those only a
+   * bare cloud id parses as a release.
    */
   lineageId?: string
   /**
@@ -133,6 +135,17 @@ export interface ModelOption {
 
 export function modelDisplayLabel(model: string): string {
   return displayModelLabel(model)
+}
+
+/**
+ * The release a "superseded by" note names. A scored GPT successor's lineage is
+ * the intellect catalog's dashed key (`gpt-6-1-sol`), which the label helpers
+ * deliberately leave as an id (the intellect chart plots measurement ids
+ * verbatim), so its minor is re-dotted the way OpenAI ships it first: the note
+ * reads "GPT-6.1 Sol" whether or not the successor has a score yet.
+ */
+function successorDisplayLabel(lineageId: string): string {
+  return cloudModelDisplayLabel(releaseSpelling(lineageId))
 }
 
 async function pluginModelOptions(
@@ -190,8 +203,15 @@ function acpAgentOptions(agents: readonly AcpAgentConfig[]): ModelOption[] {
       for (const model of models) {
         const label = acpModelChoiceLabel(model, ': ')
         const versioned = acpModelVersionName(model.description)
-        const lineageId = resolveAgentModelIdentity(model.value, versioned, model.label, label)
-        const hint = lineageId === null ? null : modelIntellectHint(lineageId)
+        // New agent releases can arrive before we have an intellect score for
+        // them. Their raw id still carries enough version information for the
+        // picker to suppress an older sibling (for example `gpt-6` once the
+        // same agent advertises `gpt-6.2`). Keep the scored identity where we
+        // have one so aliases such as Claude's bare `sonnet` retain their
+        // version from the agent description.
+        const lineageId =
+          resolveAgentModelIdentity(model.value, versioned, model.label, label) ?? model.value
+        const hint = modelIntellectHint(lineageId)
         options.push({
           retention: ACP_RETENTION_NOTICE,
           value: acpModelValue(agent.id, model.value),
@@ -446,12 +466,14 @@ async function remoteAgentOptions(
       const vendorLabel = model.label || model.id
       const label = canonicalModelLabel(vendorLabel)
       // Intellect-only hint (remote agents are subscription-billed, no token price).
-      const lineageId = resolveAgentModelIdentity(model.id, vendorLabel, label)
-      const hint = lineageId === null ? null : modelIntellectHint(lineageId)
+      // See the ACP equivalent above: a raw, newly released id is sufficient
+      // for same-catalog version suppression even before it has a score.
+      const lineageId = resolveAgentModelIdentity(model.id, vendorLabel, label) ?? model.id
+      const hint = modelIntellectHint(lineageId)
       add(
         remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR, model.id),
         hint ? `${label}: ${hint}` : label,
-        lineageId ?? undefined,
+        lineageId,
       )
     }
     const currentSelection = parseRemoteAgentModelSelection(current)
@@ -814,7 +836,7 @@ export async function fetchModelOptions(
     return [
       {
         ...option,
-        label: `${option.label} (superseded by ${cloudModelDisplayLabel(successor)})`,
+        label: `${option.label} (superseded by ${successorDisplayLabel(successor)})`,
         disabled: true,
         // A row already disabled for another reason cannot run, so it keeps
         // the unavailable treatment rather than reading as the running model.

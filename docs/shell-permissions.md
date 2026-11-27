@@ -857,6 +857,37 @@ expectation, not a confirmed sandbox failure. A cached denial instead retains �
 sandbox?” and states that a previous denial was recorded, without attributing a new request
 to the agent. Approval authorizes one outside execution; rejection keeps the contained attempt.
 
+A verified block is a non-zero exit plus at least one denial the sandbox itself reported for that
+attempt. Two producers fill that store. On macOS, ASRT's log monitor (started with the project
+sandbox) reads each seatbelt denial from the unified log and attributes it to the attempt by a
+per-attempt id baked into the profile, so an earlier run of the same command never counts. The
+monitor pairs each denial with the tag line that follows it only when that tag ends in the launch's
+random suffix, which no sandboxed process can read, so a denied path holding a forged `Sandbox:` or
+tag line never becomes a violation of its own. On every platform, ASRT's network proxy also records
+each refused connection (`deny network-outbound host:port`) for the attempt, so a network block
+verifies on Linux too. A denial can reach that store a few milliseconds after the process closes, so
+a failed `run_shell` attempt with none yet waits up to 200 ms for one, ending as soon as one arrives.
+Only refused writes and refused network connections count. Every sandboxed process also trips
+incidental denials such as `sysctl-read kern.iossupportversion`, and a refused read (a credential,
+say) is the policy working, not a block that running outside should fix, so neither offers a retry:
+the contained attempt's failure is the answer. A typical verified block is `git init` in a folder
+that is not yet a repository, because the sandbox protects `.git`. Linux does not start the
+runtime's seccomp observer yet, so there a file block can only be verified by the denial signatures
+below.
+
+A verified block's retry outside asks a person, with one exception. Guarded YOLO never answers it:
+the denial shows what the command tried to reach, and outside the sandbox nothing contains the rest
+of what it does. Deterministic shell auto-approval judges the command's shape, not what the sandbox
+refused, so it may answer a verified block only when every denial was a refused network connection
+(from the seatbelt or the proxy) and the command is a read-tier shape: a `git fetch origin` blocked
+from the network is the reach its shape is rated for. A local-write or remote-write shape asks even
+when its configured level allows it, because outside the sandbox the repository hooks it runs
+(`git commit`'s, say) are no longer contained. Any file denial, a refused read included, or a
+denial in another shape always asks, because a read-tier `grep` can reach a protected credential
+through a workspace symlink. Guarded YOLO, or a matching auto-approval tier, answers the retry
+without these limits only when the sandbox wrapper failed to start the command at all, because then
+the sandbox refused nothing and the command is judged as if it had never been sandboxed.
+
 Some sandboxed failures come from a broker or helper that does not increment the OS sandbox's
 violation counter. After a non-zero attempt, `run_shell` may recognise the bounded denial signatures
 for a Git network read, GitHub CLI config access, or a package install unable to download from inside the sandbox and offer the
@@ -1174,6 +1205,33 @@ Prompts that offer a sandbox escape name no platform: they appear only while a p
 active, which is seatbelt on macOS and bubblewrap on Linux. `permission-policy.ts` owns the
 up-front prompts and `sandbox-failure.ts` the after-a-block retry; the `expects_sandbox_block`
 wording stays an expectation, per the section above.
+
+### When missing workspace trust is the reason
+
+Workspace trust is off for every project until the user turns it on, and while it is off the
+auto-approval tiers and trusted-command routing never apply. A shell prompt says so when trust is
+the only closed gate: `workspaceTrustWouldAutoApprove` (`auto-approval-config.ts`) runs the same
+classifier with the trust gate removed and offers the run's project root only when auto-run is on,
+the project sandbox is active, the configured level covers the command, the run is not under an
+explicit host trust profile, and the policy is not Always ask. The in-sandbox prompt, the up-front
+escalation and the after-a-block retry carry that root as `workspaceTrustOffer`; the package-install,
+dangerous-command, Guarded YOLO and expected-block prompts never do. Trusted-command routing is not
+counted, so a prompt that only a trusted-command grant would remove does not make the claim.
+
+The desktop prompt states that Copse is asking because the project isn't trusted and shows
+**Trust project…**, only when every batched request carries the same root. The button opens the same
+consent as Sources (instructions, MCP servers, hooks including `sandbox: false` ones, and the shell
+tiers), naming the project. `workspace:trust-offer-details` reads that name and those hooks from the
+prompt's own root, not the process-global workspace, so with several windows the consent describes
+the project that will be trusted. On yes the renderer sends only the prompt's id; `workspace:trust-from-approval` trusts the root
+main attached to that still-open request, so no renderer-chosen path can be trusted, and an answered
+or withdrawn prompt trusts nothing. Trusting does not answer the prompt: the user still runs or
+rejects that command. Interactive remote clients see the prompt without the offer.
+
+Adding a local project with Open folder or New project offers trust once, with **Not now** as the
+other answer and the keyboard default, since the user did not ask for this dialog. Declining leaves the project untrusted and is not asked again when the same folder is
+reopened; SSH projects and recovered or relocated projects are not offered. Copse has no clone flow,
+so it never trusts a cloned repository on its own.
 
 ## Worktree preparation capability
 
@@ -1624,7 +1682,9 @@ ASRT themselves (the port-binding, ACP session-host and ACP probe workers) start
 and get the same `PATH`. On Linux every ASRT config, and worktree preparation's direct bubblewrap
 wrap, also names `bwrap` and `socat` by absolute path (`sandbox-binaries.ts`): the first executable
 copy in `/usr/bin`, `/bin`, then the absolute entries of Copse's own `PATH`. When none exists the
-sandbox does not start, as when bubblewrap is not installed. macOS ASRT has no option for the path
+sandbox does not start, as when bubblewrap is not installed. The configs also name ASRT's
+`apply-seccomp` helper and its JVM proxy-agent jar explicitly; in a package both resolve to
+`app.asar.unpacked`, because bubblewrap cannot exec or bind a path inside `app.asar`. macOS ASRT has no option for the path
 of the `env` it starts with, so there that lookup searches the absolute `PATH` entries in order.
 
 On macOS the project seatbelt also allows writes to direct children of the per-user Darwin temp

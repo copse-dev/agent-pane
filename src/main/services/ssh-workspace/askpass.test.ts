@@ -13,7 +13,7 @@ import {
   setSshAskpassUserDataDirForTests,
   type SshAskpassLease,
 } from './askpass.ts'
-import { setSshPromptHandler } from './ssh-prompt.ts'
+import { runWithSshPromptHandler, setSshPromptHandler } from './ssh-prompt.ts'
 import { getSetting, setSetting } from '../storage/settings.ts'
 import { hasSessionSshCredentials } from './ssh-credential-cache.ts'
 import {
@@ -170,6 +170,21 @@ describe('ssh askpass bridge', () => {
     })
     assert.deepEqual(JSON.parse(response), { response: 's3cret' })
     lease.release()
+  })
+
+  it("asks the leasing run's own handler, not the window's", async () => {
+    setSshPromptHandler(() => Promise.resolve({ value: 'from-the-window' }))
+    // A turn-host turn scopes its handler, which puts the question to its window.
+    const lease = runWithSshPromptHandler(
+      () => Promise.resolve({ value: 'from-the-turn' }),
+      () => leaseSshAskpassEnv({}),
+    )
+    try {
+      const response = await askOverSocket(lease, 'Enter passphrase for key')
+      assert.deepEqual(JSON.parse(response), { response: 'from-the-turn' })
+    } finally {
+      lease.release()
+    }
   })
 
   it('marks configured-host prompts as eligible for device persistence', async () => {

@@ -64,6 +64,11 @@ export interface TurnTranscript {
   emit(chunk: StreamChunk): void
   /** The turn released its slot. Writes anything still unwritten, then detaches. */
   end(): void
+  /**
+   * Another process took the thread's writer lease over: write nothing more for
+   * this turn, not even its closing status. Chunks after this are dropped.
+   */
+  fence(): void
 }
 
 interface Session {
@@ -84,6 +89,8 @@ interface Session {
   writes: Set<Promise<void>>
   done: boolean
   ended: boolean
+  /** The writer lease was lost; this session no longer writes the thread. */
+  fenced: boolean
   unsubscribe: () => void
   /** Resolves once the session has ended and every write it issued settled. */
   drained: Promise<void>
@@ -95,6 +102,8 @@ interface Session {
 
 export class TurnTranscriptWriter {
   private shuttingDown = false
+  /** Threads stopped for a quit (\`interruptThreadForShutdown\`). */
+  private readonly quitInterrupted = new Set<string>()
   private readonly deps: TurnTranscriptWriterDependencies
   private readonly sessions = new Map<string, Session>()
   private revision = 0
@@ -133,6 +142,15 @@ export class TurnTranscriptWriter {
    */
   noteUserAbort(threadId: string, reason: 'send_now' | 'stop'): void {
     this.userAborts.set(threadId, reason)
+  }
+
+  /**
+   * Stop one thread's turn for a quit rather than a user Stop: it ends like a
+   * turn the app's own quit interrupted, still \`running\` on disk, so the next
+   * launch offers Retry. The turn host does this for a quit that keeps no turns.
+   */
+  interruptThreadForShutdown(threadId: string): void {
+    this.quitInterrupted.add(threadId)
   }
 
   /** Keep quit-interrupted turns recoverable while their accepted writes drain. */
@@ -228,6 +246,7 @@ export class TurnTranscriptWriter {
       writes: new Set(),
       done: false,
       ended: false,
+      fenced: false,
       unsubscribe: () => undefined,
       drained: drained.promise,
       markDrained: drained.resolve,
@@ -244,6 +263,7 @@ export class TurnTranscriptWriter {
     void previous
       .then(() => this.deps.loadThread(projectId, threadId))
       .then((thread) => {
+        if (session.fenced) return
         if (thread) {
           // This is an admitted turn, including ordinary human retries. Clear
           // recovery metadata before its authoritative runtime snapshot so an
@@ -262,6 +282,9 @@ export class TurnTranscriptWriter {
             this.deps
               .updateMeta(projectId, threadId, {
                 status: 'running',
+                // The next launch continues only turns from the run before it
+                // (`interrupted-turn-resume.ts`), told apart by this time.
+                updatedAt: Date.now(),
                 ...transcriptMetaPatch(session.initialMeta, transcriptMeta(runningThread)),
               })
               .catch((error: unknown) => {
@@ -285,13 +308,18 @@ export class TurnTranscriptWriter {
 
     return {
       emit: (chunk): void => {
-        if (this.shuttingDown) return
+        // A quit drops what the stopped turn says next, its idle status among it.
+        if (this.shuttingDown || this.quitInterrupted.has(session.threadId)) return
         if (session.pending) session.pending.push(chunk)
         else this.process(session, chunk)
       },
       end: (): void => {
         session.ended = true
         if (!session.pending) this.finish(session)
+      },
+      fence: (): void => {
+        session.fenced = true
+        session.unsubscribe()
       },
     }
   }
@@ -380,6 +408,7 @@ export class TurnTranscriptWriter {
   }
 
   private process(session: Session, chunk: StreamChunk): void {
+    if (session.fenced) return
     if (session.passthrough || session.done) {
       this.deps.forward(session.threadId, chunk)
       return
@@ -527,14 +556,16 @@ export class TurnTranscriptWriter {
   private finish(session: Session): void {
     this.revision += 1
     // A turn that failed before `done` still keeps what it produced.
-    if (!session.done && !session.passthrough) {
+    if (!session.done && !session.passthrough && !session.fenced) {
       this.flushTouched(session)
-      if (!this.shuttingDown) setThreadStatus(session.store, session.threadId, 'idle')
+      if (!this.shuttingDown && !this.quitInterrupted.has(session.threadId))
+        setThreadStatus(session.store, session.threadId, 'idle')
       this.persistMeta(session)
     }
     session.unsubscribe()
     if (this.sessions.get(session.threadId) === session) this.sessions.delete(session.threadId)
     this.userAborts.delete(session.threadId)
+    this.quitInterrupted.delete(session.threadId)
     void Promise.allSettled([...session.writes]).then(() => {
       session.markDrained()
       if (this.drains.get(session.threadId) === session.drained) {

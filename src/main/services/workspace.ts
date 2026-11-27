@@ -28,6 +28,15 @@ function processWorkspaceRoot(): string | null {
   return workspaceRoot
 }
 
+/**
+ * Read the persisted root again, for a process that did not set it itself: the
+ * turn host, after the app wrote the profile. Returns the root now in force.
+ */
+export function rereadPersistedWorkspaceRoot(): string | null {
+  workspaceRoot = undefined
+  return processWorkspaceRoot()
+}
+
 const explicitWorkspace = new AsyncLocalStorage<{ readonly root: string }>()
 
 /** Scope workspace-dependent product services to an explicit headless run root. */

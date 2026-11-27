@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { TRACKED_MODELS } from './model-catalog.ts'
-import { supersedingModel } from './model-version-suppression.ts'
+import { releaseSpelling, supersedingModel } from './model-version-suppression.ts'
 
 /** Every tracked id paired with the tracked successor that hides it, if any. */
 function trackedSuccessors(): Record<string, string | null> {
@@ -35,6 +35,16 @@ describe('supersedingModel', () => {
     assert.equal(supersedingModel('gpt-6.1-sol', TRACKED_MODELS), null)
   })
 
+  it('reads the dashed minor the intellect catalog uses like the dotted one', () => {
+    // An agent's scored release is keyed `gpt-6-1-sol`, while an unscored
+    // successor it advertises arrives as the raw `gpt-6.2-sol`.
+    assert.equal(supersedingModel('gpt-6-1-sol', ['gpt-6.2-sol']), 'gpt-6.2-sol')
+    assert.equal(supersedingModel('gpt-6.1-sol', ['gpt-6-2-sol']), 'gpt-6-2-sol')
+    assert.equal(supersedingModel('gpt-6-sol', ['gpt-6-1-sol']), 'gpt-6-1-sol')
+    assert.equal(supersedingModel('gpt-6-1-sol', ['gpt-6.1-sol']), null)
+    assert.equal(supersedingModel('gpt-6-1-sol', ['gpt-6.2-astra']), null)
+  })
+
   it('does not let a different OpenAI tier stand in for an older one', () => {
     // GPT-6.1 Sol is newer than GPT-6 Astra, but Astra is its own tier.
     assert.equal(supersedingModel('gpt-6-astra', TRACKED_MODELS), null)
@@ -60,6 +70,9 @@ describe('supersedingModel', () => {
     assert.equal(supersedingModel('claude-haiku-4-5-20251001', ['claude-haiku-5']), null)
     assert.equal(supersedingModel('claude-haiku-4-5', ['claude-haiku-5-20270101']), null)
     assert.equal(supersedingModel('gpt-5-2025-08-07', ['gpt-5.5']), null)
+    assert.equal(supersedingModel('gpt-4-0613', ['gpt-5']), null)
+    assert.equal(supersedingModel('gpt-4-1106-preview', ['gpt-5']), null)
+    assert.equal(supersedingModel('gpt-6-1-sol-high', ['gpt-6.2-sol']), null)
     assert.equal(supersedingModel('gpt-5', ['gpt-5.5-2026-01-01', 'gpt-5-chat-latest']), null)
     assert.equal(supersedingModel('claude-mythos-preview', ['claude-mythos-5']), null)
   })
@@ -109,5 +122,24 @@ describe('supersedingModel', () => {
       'gpt-4o': null,
       'gpt-4o-mini': null,
     })
+  })
+})
+
+describe('releaseSpelling', () => {
+  it('re-dots a dashed GPT minor and leaves every other id alone', () => {
+    assert.equal(releaseSpelling('gpt-6-1-sol'), 'gpt-6.1-sol')
+    assert.equal(releaseSpelling('gpt-6-2'), 'gpt-6.2')
+    for (const id of [
+      'gpt-6.1-sol',
+      'gpt-6',
+      'gpt-5-mini',
+      'gpt-4-32k',
+      'gpt-4-0613',
+      'gpt-4-1106-preview',
+      'gpt-6-1-sol-high',
+      'claude-opus-5-5',
+    ]) {
+      assert.equal(releaseSpelling(id), id, id)
+    }
   })
 })

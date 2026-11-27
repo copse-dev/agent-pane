@@ -13,6 +13,8 @@
  * Every binding is a thunk so a module cycle through the sandbox or storage
  * layers cannot observe an uninitialised import at startup.
  */
+import type { ChildProcess } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { configureHooksDialects } from '@copse/hooks-dialects/environment.ts'
 import {
   afterSandboxedCommand,
@@ -24,18 +26,30 @@ import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { getAgentExecutionRoot } from '../execution-root.ts'
 import { copseDataRoot } from '../storage/copse-paths.ts'
 
+// A hook runs the same command text every time, so its violations are keyed by
+// a per-spawn id: keyed by the text, every earlier run's denials would count.
+const hookViolationIds = new WeakMap<ChildProcess, string>()
+
 configureHooksDialects({
   sandbox: {
     enabled: () => isProjectSandboxEnabled(),
-    spawnShell: (command, opts) =>
-      spawnShellInProjectSandbox(command, {
+    spawnShell: async (command, opts) => {
+      const violationId = randomUUID()
+      const child = await spawnShellInProjectSandbox(command, {
         cwd: opts.cwd,
         env: opts.env,
         stdio: ['pipe', 'pipe', 'pipe'],
+        violationId,
         ...(opts.localOnly ? { executionTarget: { kind: 'local' as const } } : {}),
         ...(opts.signal ? { signal: opts.signal } : {}),
-      }),
-    violationCount: (command) => sandboxViolationCountForCommand(command),
+      })
+      hookViolationIds.set(child, violationId)
+      return child
+    },
+    violationCount: (_command, child) => {
+      const violationId = hookViolationIds.get(child)
+      return violationId ? sandboxViolationCountForCommand(violationId) : 0
+    },
     afterCommand: () => {
       afterSandboxedCommand()
     },

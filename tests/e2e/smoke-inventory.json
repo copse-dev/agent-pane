@@ -216,6 +216,14 @@
       "smoke": null
     },
     {
+      "prefix": "src/main/services/turn-host/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/turn-worker/",
+      "smoke": null
+    },
+    {
       "prefix": "src/main/services/video/",
       "smoke": null
     },
@@ -229,6 +237,10 @@
     },
     {
       "prefix": "src/main/services/web-search/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/worker-protocol/",
       "smoke": null
     },
     {

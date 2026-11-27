@@ -366,10 +366,12 @@ describe('PluginService', () => {
     assert.ok(plugin?.source)
     assert.equal(registry.isEnabled(plugin.id), true)
     assert.equal(parseStringList(storageGet(PLUGIN_DISABLED_KEY)).includes(plugin.id), false)
+    assert.deepEqual(service.toolRuntimePluginIds(), [plugin.id])
 
     await service.setEnabled(plugin.id, false)
     assert.equal(registry.isEnabled(plugin.id), false)
     assert.deepEqual(calls, [`enable:${plugin.id}`, `disable:${plugin.id}`])
+    assert.deepEqual(service.toolRuntimePluginIds(), [])
   })
 
   it('getPluginService() installs a singleton registry with the first-party plugins', () => {

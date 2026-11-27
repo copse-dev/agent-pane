@@ -31,7 +31,7 @@ overrides:
 
 patchedDependencies:
   '@anthropic-ai/sandbox-runtime@0.0.74':
-    hash: a5816a871319563faaa812e0295c6d6f066d2dc54feefd46090d73a1f441de35
+    hash: bcaf160f671ace46ec9b5e6993a5b4599b58dce55805c615e0af2d671dcce674
     path: patches/@anthropic-ai__sandbox-runtime@0.0.74.patch
   xcodebuildmcp@2.7.0:
     hash: ff48d03ac621c630f0d0540b305f089e63578b78ec28b4a75ccb49793dfe4b31
@@ -43,7 +43,7 @@ importers:
     dependencies:
       '@anthropic-ai/sandbox-runtime':
         specifier: ^0.0.74
-        version: 0.0.74(patch_hash=a5816a871319563faaa812e0295c6d6f066d2dc54feefd46090d73a1f441de35)
+        version: 0.0.74(patch_hash=bcaf160f671ace46ec9b5e6993a5b4599b58dce55805c615e0af2d671dcce674)
       '@mozilla/readability':
         specifier: ^0.6.0
         version: 0.6.0
@@ -5587,7 +5587,7 @@ snapshots:
       tinyexec: 1.3.1
     optional: true
 
-  '@anthropic-ai/sandbox-runtime@0.0.74(patch_hash=a5816a871319563faaa812e0295c6d6f066d2dc54feefd46090d73a1f441de35)':
+  '@anthropic-ai/sandbox-runtime@0.0.74(patch_hash=bcaf160f671ace46ec9b5e6993a5b4599b58dce55805c615e0af2d671dcce674)':
     dependencies:
       '@pondwader/socks5-server': 1.0.10
       commander: 12.1.0

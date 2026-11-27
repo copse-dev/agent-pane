@@ -1,7 +1,7 @@
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { baseSandboxConfig, refreshGitConfigIncludeReadPaths } from './config.ts'
 import { recordNetworkDenial } from './network-scope.ts'
-import { setProjectSandboxEnabled } from './spawn.ts'
+import { SANDBOX_VIOLATION_MONITOR, setProjectSandboxEnabled } from './spawn.ts'
 import { shutdownSandboxFsServer } from './sandbox-fs-server.ts'
 import { reapOrphanedSandboxBridges } from './orphaned-bridges.ts'
 import { isProjectSandboxPlatform, setProjectSandboxInitFailure } from './state.ts'
@@ -15,6 +15,8 @@ export {
   afterSandboxedCommand,
   isProjectSandboxEnabled,
   sandboxViolationCountForCommand,
+  sandboxViolationsAreNetworkOnlyForCommand,
+  settledSandboxViolationCount,
   sandboxViolationCountForBackgroundProcess,
 } from './spawn.ts'
 export {
@@ -53,7 +55,9 @@ export async function initProjectSandbox(): Promise<void> {
   // runs back to back (a CI runner, a dev box) otherwise only ever accumulates.
   const reaped = reapOrphanedSandboxBridges()
   if (reaped.length > 0) {
-    console.log(`[project-sandbox] reaped ${String(reaped.length)} orphaned ASRT network bridge(s)`)
+    console.log(
+      `[project-sandbox] reaped ${String(reaped.length)} orphaned ASRT helper process(es)`,
+    )
   }
 
   try {
@@ -68,7 +72,13 @@ export async function initProjectSandbox(): Promise<void> {
         console.warn(`[project-sandbox] network denied: ${host}:${String(port ?? '?')}`)
         return Promise.resolve(false)
       },
-      false,
+      // The macOS log monitor records seatbelt file denials in the violation
+      // store a verified sandbox block is judged from
+      // (`sandboxViolationCountForCommand`); the network proxy records refused
+      // connections there on every platform. With the monitor off, no file
+      // block on macOS ever offered the outside retry
+      // `docs/shell-permissions.md` describes.
+      SANDBOX_VIOLATION_MONITOR,
     )
     if (!SandboxManager.isSandboxingEnabled()) {
       throw new Error('Workspace protection did not start for project commands')

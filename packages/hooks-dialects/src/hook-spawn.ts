@@ -143,8 +143,12 @@ export interface HookSandboxRuntime {
     command: string,
     opts: { cwd: string; env: NodeJS.ProcessEnv; signal?: AbortSignal; localOnly?: boolean },
   ): Promise<ChildProcess>
-  /** Runner-recorded sandbox policy violations for this command (never stdout-derived). */
-  violationCount(command: string): number
+  /**
+   * Runner-recorded sandbox policy violations for this spawn of `command`
+   * (never stdout-derived). `child` is the process `spawnShell` returned, so a
+   * host that attributes each spawn by its own id counts only this run's.
+   */
+  violationCount(command: string, child: ChildProcess): number
   /** Per-command sandbox cleanup, mirroring the shell tool's `afterSandboxedCommand`. */
   afterCommand(): void
 }
@@ -298,7 +302,7 @@ export async function spawnHookProcess(
       clearTimeout(timer)
       // Query the runner-recorded violation count BEFORE per-command cleanup,
       // matching the shell tool's ordering. Only meaningful for a sandboxed run.
-      const sandboxViolationCount = sandboxed ? sandboxRuntime().violationCount(command) : 0
+      const sandboxViolationCount = sandboxed ? sandboxRuntime().violationCount(command, child) : 0
       if (sandboxed) sandboxRuntime().afterCommand()
       resolve({
         stdin,

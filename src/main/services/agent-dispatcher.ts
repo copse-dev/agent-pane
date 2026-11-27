@@ -17,12 +17,13 @@ import {
   type SpineMachineContinuationLine,
 } from '@shared/threads/spine-schema.ts'
 import { randomUUID } from 'node:crypto'
-import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
+import { isReasoningLevel, type ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
 import type { TurnOutcome } from '@shared/types/turn-outcome.ts'
 import { AgentTurnBusyError } from '@shared/agent-turn-busy.ts'
 import type { AgentInitiatedTurnClaim } from './acp/agent-initiated-turn.ts'
-import { runAgent, type RunAgentOptions } from './agent-service.ts'
+import { abortAgent, runAgent, type RunAgentOptions } from './agent-service.ts'
+import { claimThreadWriter, type ThreadWriterClaimResult } from './thread-writer-lease.ts'
 import type { TurnTranscript } from './turn-transcript-writer.ts'
 import { contextLossNotice, contextWasLost } from './context-loss-notice.ts'
 import { recoverAgentHistory } from './history-recovery.ts'
@@ -38,6 +39,7 @@ import {
   appendMachineContinuation,
   getLatestThreadPlan,
   getProjectThread,
+  getThreadMeta,
   loadAgentHistory,
   loadAgentTurnEpoch,
   saveAgentHistory,
@@ -92,12 +94,44 @@ export interface MachineAgentDispatchRequest extends AgentDispatchRequest {
    * this wake would report, so it is recorded without a turn or budget charge.
    */
   alreadyObserved?: () => boolean
+  /**
+   * Set when the payload already carries the chat's live selection: the
+   * renderer's own machine run reads model, reasoning and execution mode from
+   * the chat, so a field it leaves out means the chat has none. Main sends such
+   * a payload as it is. A wake main starts on its own fills what it leaves out
+   * from the thread's saved metadata instead.
+   */
+  payloadCarriesSelection?: true
 }
 
 type MachineOperationRef = Pick<
   MachineAgentDispatchRequest,
   'projectId' | 'threadId' | 'operationId' | 'turnTreeId'
 >
+
+/**
+ * The per-thread choices a renderer dispatch reads from the chat and puts in
+ * its payload. A turn main starts on its own has no renderer to ask, so it
+ * reads them from the thread's saved metadata instead.
+ */
+export interface ThreadTurnSelection {
+  model?: string
+  reasoning?: ReasoningLevel
+  executionMode?: 'agent'
+}
+
+/** Set once another process takes a running turn's writer lease over. */
+interface WriterFence {
+  lost: boolean
+}
+
+/** A turn stopped because another process took its thread's writer lease over. */
+export class WriterLeaseLostError extends Error {
+  constructor(threadId: string) {
+    super(`Another Copse process took thread "${threadId}" over; this turn stopped writing to it`)
+    this.name = 'WriterLeaseLostError'
+  }
+}
 
 export interface AgentDispatcherDependencies {
   loadPlan: (projectId: string, threadId: string) => Promise<StoredThreadPlan | null>
@@ -129,6 +163,12 @@ export interface AgentDispatcherDependencies {
    * can see but the model cannot — see {@link contextWasLost}.
    */
   transcriptLength: (projectId: string, threadId: string) => Promise<number>
+  /**
+   * The thread's own model, reasoning dial and execution mode, for a machine
+   * turn whose payload does not name them. Null when there is no saved thread
+   * to read, which leaves the payload as it is.
+   */
+  loadThreadSelection: (projectId: string, threadId: string) => Promise<ThreadTurnSelection | null>
   run: (
     threadId: string,
     userContent: UserContent,
@@ -138,6 +178,16 @@ export interface AgentDispatcherDependencies {
     options: RunAgentOptions,
   ) => ReturnType<typeof runAgent>
   isScheduledAutomationRun: (context: ThreadExecutionContext) => boolean
+  /**
+   * Take the thread's cross-process writer lease for one turn
+   * (`thread-writer-lease.ts`). Absent, only this process's own per-thread slot
+   * excludes other writers, which is enough for a host that owns its store.
+   */
+  claimWriter?: (
+    projectId: string,
+    threadId: string,
+    onLost: () => void,
+  ) => Promise<ThreadWriterClaimResult>
 }
 
 async function threadTranscriptLength(projectId: string, threadId: string): Promise<number> {
@@ -159,7 +209,49 @@ async function recoverHistoryFromTranscript(
   return recoverAgentHistory(thread.messages)
 }
 
-const defaultDependencies: AgentDispatcherDependencies = {
+export async function loadThreadSelection(
+  projectId: string,
+  threadId: string,
+): Promise<ThreadTurnSelection | null> {
+  const meta = await getThreadMeta(projectId, threadId)
+  if (!meta) return null
+  // `meta.json` passes these two through unchecked; read them as the values
+  // the renderer would have sent, or not at all.
+  const model: unknown = meta.model
+  const reasoning: unknown = meta.reasoning
+  return {
+    ...(typeof model === 'string' && model.length > 0 ? { model } : {}),
+    ...(isReasoningLevel(reasoning) ? { reasoning } : {}),
+    ...(meta.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
+  }
+}
+
+/**
+ * Fill what a machine payload leaves out from the thread's own selection. A
+ * payload that names a model, reasoning level or execution mode keeps it; only
+ * the gaps are filled, so a turn main starts runs on the same model the user
+ * picked for the chat rather than falling through to the global default.
+ */
+function withThreadSelection(
+  payload: AgentDispatchPayload,
+  selection: ThreadTurnSelection | null,
+): AgentDispatchPayload {
+  if (!selection) return payload
+  return {
+    ...payload,
+    ...(payload.model === undefined && selection.model !== undefined
+      ? { model: selection.model }
+      : {}),
+    ...(payload.reasoning === undefined && selection.reasoning !== undefined
+      ? { reasoning: selection.reasoning }
+      : {}),
+    ...(payload.executionMode === undefined && selection.executionMode === 'agent'
+      ? { executionMode: 'agent' as const }
+      : {}),
+  }
+}
+
+export const defaultAgentDispatcherDependencies: AgentDispatcherDependencies = {
   loadPlan: getLatestThreadPlan,
   loadHistory: loadAgentHistory,
   saveHistory: saveAgentHistory,
@@ -174,7 +266,9 @@ const defaultDependencies: AgentDispatcherDependencies = {
     context.automation !== undefined &&
     getAutomationService().ownsRunThread(context.projectId, context.threadId, context.automation),
   transcriptLength: threadTranscriptLength,
+  loadThreadSelection,
   run: runAgent,
+  claimWriter: (projectId, threadId, onLost) => claimThreadWriter(projectId, threadId, { onLost }),
 }
 
 function dispatchKey(projectId: string, threadId: string): string {
@@ -265,6 +359,8 @@ export class AgentDispatcher {
   private readonly editingHistory = new Set<string>()
   private readonly epochs = new Map<string, { turnTreeId: string; continuationUsed: number }>()
   private readonly epochWrites = new Map<string, Promise<void>>()
+  /** Per running turn: whether its writer lease was lost (see {@link WriterFence}). */
+  private readonly fences = new Map<string, WriterFence>()
   private readonly machineOperations = new Map<string, Promise<MachineDispatchResult>>()
   private readonly host: AgentHost<StreamChunk>
   private readonly registry: ToolRegistry
@@ -279,7 +375,7 @@ export class AgentDispatcher {
   constructor(
     host: AgentHost<StreamChunk>,
     registry: ToolRegistry,
-    dependencies: AgentDispatcherDependencies = defaultDependencies,
+    dependencies: AgentDispatcherDependencies = defaultAgentDispatcherDependencies,
     transcripts?: TurnTranscriptSink,
   ) {
     this.host = host
@@ -297,25 +393,41 @@ export class AgentDispatcher {
     // Claim the thread before the renderer epoch sidecar is written. That
     // write can await disk, but an accepted local dispatch already owns the
     // conversation and must block an imported cloud snapshot from committing.
-    await this.dispatchExclusively(
-      request,
-      key,
-      (deferringHost) => this.dispatchAccepted(request, key, deferringHost),
-      host,
-    )
+    //
+    // A self-start claim must wait for this turn's epoch from the moment the
+    // thread is taken, not only once the writer lease has been granted, so the
+    // pending write is registered in the same tick as the claim.
+    const epochWritten = Promise.withResolvers<undefined>()
+    const settleEpochWrite = (): void => {
+      epochWritten.resolve(undefined)
+      if (this.epochWrites.get(key) === epochWritten.promise) this.epochWrites.delete(key)
+    }
+    try {
+      await this.dispatchExclusively(
+        request,
+        key,
+        (deferringHost) => this.dispatchAccepted(request, key, deferringHost, settleEpochWrite),
+        host,
+        'at-dispatch',
+        () => {
+          this.epochWrites.set(key, epochWritten.promise)
+        },
+      )
+    } finally {
+      settleEpochWrite()
+    }
   }
 
   private async dispatchAccepted(
     request: AgentDispatchRequest,
     key: string,
     host: AgentHost<StreamChunk>,
+    settleEpochWrite: () => void,
   ): Promise<void> {
-    const epochWrite = this.observeRendererEpoch(key, request)
-    this.epochWrites.set(key, epochWrite)
     try {
-      await epochWrite
+      await this.observeRendererEpoch(key, request)
     } finally {
-      if (this.epochWrites.get(key) === epochWrite) this.epochWrites.delete(key)
+      settleEpochWrite()
     }
     await this.execute(request, key, host)
   }
@@ -388,6 +500,14 @@ export class AgentDispatcher {
 
   isActive(projectId: string, threadId: string): boolean {
     return this.active.has(dispatchKey(projectId, threadId))
+  }
+
+  /** Every thread with a turn in this process's slots. */
+  activeTurns(): { projectId: string; threadId: string }[] {
+    return [...this.active.keys()].map((key) => {
+      const [projectId = '', threadId = ''] = key.split('\0')
+      return { projectId, threadId }
+    })
   }
 
   /** Retained dedupe records do not prove whether a completion wake has settled. */
@@ -575,6 +695,12 @@ export class AgentDispatcher {
     try {
       await this.dependencies.saveEpoch(request.projectId, request.threadId, nextEpoch)
       this.epochs.set(key, nextEpoch)
+      // Read at dispatch time, like a renderer send: a model the user picked
+      // while this wake waited applies to it. A renderer-built payload is the
+      // fresher source, so saved metadata never overrides what it left out.
+      const selection = request.payloadCarriesSelection
+        ? null
+        : await this.dependencies.loadThreadSelection(request.projectId, request.threadId)
       const hidden = request.display === 'hidden'
       const display = request.display === 'hidden' ? undefined : request.display
       host.emit(request.threadId, {
@@ -592,7 +718,7 @@ export class AgentDispatcher {
         {
           ...request,
           payload: {
-            ...request.payload,
+            ...withThreadSelection(request.payload, selection),
             turnTreeId: request.turnTreeId,
             continuationBudgetUsed: nextEpoch.continuationUsed,
           },
@@ -655,6 +781,7 @@ export class AgentDispatcher {
     run: (host: AgentHost<StreamChunk>) => Promise<T>,
     targetHost: AgentHost<StreamChunk>,
     openTranscript: 'at-dispatch' | 'on-first-chunk' = 'at-dispatch',
+    onAdmitted?: () => void,
   ): Promise<T> {
     this.assertDispatchable(request.projectId, request.threadId)
     const existing = this.active.get(key)
@@ -668,12 +795,15 @@ export class AgentDispatcher {
     // messages, so it bypasses the window transcript.
     const transcripts = targetHost === this.host ? this.transcripts : undefined
     let transcript: TurnTranscript | undefined
+    const fence: WriterFence = { lost: false }
     const open = (): TurnTranscript | undefined => {
       transcript ??= transcripts?.begin(request.projectId, request.threadId)
       return transcript
     }
-    if (openTranscript === 'at-dispatch') open()
+    if (openTranscript === 'at-dispatch' && !this.dependencies.claimWriter) open()
     const deliver = (threadId: string, chunk: StreamChunk): void => {
+      // A fenced turn's own chunks reach nobody: the thread is another process's.
+      if (fence.lost && threadId === request.threadId) return
       const own = threadId === request.threadId ? open() : undefined
       if (own) own.emit(chunk)
       else targetHost.emit(threadId, chunk)
@@ -693,10 +823,41 @@ export class AgentDispatcher {
         deliver(threadId, chunk)
       },
     }
-    const running = withAutomationBudget(request.projectId, request.threadId, () =>
-      run(terminalDeferringHost),
-    )
+    const claimWriter = this.dependencies.claimWriter
+    const running = claimWriter
+      ? (async (): Promise<T> => {
+          // Another Copse process may own this thread. Nothing below, including
+          // opening the transcript, may write to it before the lease is ours.
+          const claimed = await claimWriter(request.projectId, request.threadId, () => {
+            console.error(
+              `[dispatch] lost the writer lease for thread ${request.threadId}; stopping its turn`,
+            )
+            // The new holder owns the thread from here: this turn writes nothing
+            // more to it, neither history nor transcript nor its closing status.
+            fence.lost = true
+            transcript?.fence()
+            abortAgent(request.threadId)
+          })
+          if (claimed.status === 'held') {
+            throw new AgentTurnBusyError(
+              request.threadId,
+              `${claimed.holder.host}, pid ${String(claimed.holder.pid)}`,
+            )
+          }
+          this.fences.set(key, fence)
+          try {
+            if (openTranscript === 'at-dispatch') open()
+            return await withAutomationBudget(request.projectId, request.threadId, () =>
+              run(terminalDeferringHost),
+            )
+          } finally {
+            if (this.fences.get(key) === fence) this.fences.delete(key)
+            await claimed.claim.release()
+          }
+        })()
+      : withAutomationBudget(request.projectId, request.threadId, () => run(terminalDeferringHost))
     this.active.set(key, running)
+    onAdmitted?.()
     let committed = false
     try {
       const result = await running
@@ -786,7 +947,10 @@ export class AgentDispatcher {
     // that throws outright never reaches the commit below, and leaving the cache
     // on the pre-turn history while the sidecar has moved on would hand the next
     // turn a context that disagrees with disk.
+    const fence = this.fences.get(key)
+    const fenced = (): boolean => fence?.lost === true
     const checkpoints = createHistoryCheckpointWriter(async (messages) => {
+      if (fenced()) return
       await this.dependencies.saveHistory(projectId, threadId, messages)
       this.histories.set(key, messages)
     })
@@ -835,15 +999,20 @@ export class AgentDispatcher {
                 run: (owner, execute) =>
                   this.withExclusiveHistory(owner.projectId, owner.threadId, execute),
               },
-              () =>
-                this.dependencies.run(
+              () => {
+                // A loss during the preflight found no run to abort. `runAgent`
+                // registers its abort controller synchronously, so from this
+                // check on a loss reaches it.
+                if (fenced()) throw new WriterLeaseLostError(threadId)
+                return this.dependencies.run(
                   threadId,
                   payload.userContent,
                   priorMessages,
                   host,
                   this.registry,
                   options,
-                ),
+                )
+              },
             ),
           ),
         ),
@@ -855,6 +1024,11 @@ export class AgentDispatcher {
       // Drain before the commit below so no checkpoint can land on top of the
       // turn's authoritative history.
       await checkpoints.close()
+    }
+    if (fenced()) {
+      // The new holder's history is the thread's now; this cache is not.
+      this.histories.delete(key)
+      throw new WriterLeaseLostError(threadId)
     }
     try {
       await this.dependencies.saveHistory(projectId, threadId, result.messages)

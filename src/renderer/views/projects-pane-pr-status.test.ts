@@ -621,9 +621,10 @@ describe('projects pane thread PR status (component)', () => {
       assert.equal(attempts, 1)
       assert.equal(observed.has(row), false)
 
-      // A normal sidebar update replaces both the row and observer while the
+      // An update to this thread replaces both the row and observer while the
       // first IPC request remains in flight. The replacement observer sees the
       // row but skips its leased id, then unobserves it.
+      store.setState({ threads: [{ ...thread('legacy', 'Legacy thread'), updatedAt: 2 }] })
       store.emit('threads_changed')
       const currentRow = rowByTitle('Legacy thread')
       assert.ok(currentRow)
@@ -655,6 +656,7 @@ describe('projects pane thread PR status (component)', () => {
       // A render during the backoff must not make the still-visible row
       // immediately eligible again. The replacement observer may report it,
       // but the failed request keeps its lease until the retry timer expires.
+      store.setState({ threads: [{ ...thread('legacy', 'Legacy thread'), updatedAt: 3 }] })
       store.emit('threads_changed')
       const retryRow = rowByTitle('Legacy thread')
       assert.ok(retryRow)

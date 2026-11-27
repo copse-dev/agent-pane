@@ -6,6 +6,7 @@ import type { RemoteArtifactDownloadRequest } from '@shared/remote-artifact-down
 import type { ApiClient, FilePathBridge } from './api.d.ts'
 import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
 import type { GitLineSelection, PrComposerCreateRequest } from '@shared/types/git.ts'
+import type { ThreadBaseFallback } from '@shared/types/worktree.ts'
 import type { AppleSuggestionAnswer } from '@shared/types/apple-development.ts'
 import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
 import { createWorkspaceNavigation } from './workspace-navigation.ts'
@@ -158,12 +159,18 @@ const api: ApiClient = {
     get: () => ipcRenderer.invoke('workspace:get'),
     set: (root: string, sshHost?: string) => ipcRenderer.invoke('workspace:set', root, sshHost),
     isTrusted: () => ipcRenderer.invoke('workspace:is-trusted'),
-    setTrusted: (trusted: boolean) => ipcRenderer.invoke('workspace:set-trusted', trusted),
+    setTrusted: (trusted: boolean, expectedRoot?: string) =>
+      ipcRenderer.invoke('workspace:set-trusted', trusted, expectedRoot),
+    trustFromApproval: (approvalId: string) =>
+      ipcRenderer.invoke('workspace:trust-from-approval', approvalId),
+    trustOfferDetails: (approvalId: string) =>
+      ipcRenderer.invoke('workspace:trust-offer-details', approvalId),
     createNewProject: (name: string, parentDir: string) =>
       ipcRenderer.invoke('workspace:create-project', name, parentDir),
     pickParentDirectory: () => ipcRenderer.invoke('workspace:pick-parent-directory'),
     getHomeDirectory: () => ipcRenderer.invoke('workspace:get-home-directory'),
-    unsandboxedProjectHooks: () => ipcRenderer.invoke('hooks:unsandboxed-project-hooks'),
+    unsandboxedProjectHooks: (root?: string) =>
+      ipcRenderer.invoke('hooks:unsandboxed-project-hooks', root),
     onOpened: (handler: (root: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, root: string): void => {
         handler(root)
@@ -426,6 +433,7 @@ const api: ApiClient = {
       choice: 'automatic' | 'shared' | 'worktree',
       model?: string,
       baseBranch?: string,
+      baseFallback?: ThreadBaseFallback,
     ) =>
       ipcRenderer.invoke(
         'agent:prepare-checkout',
@@ -435,6 +443,7 @@ const api: ApiClient = {
         choice,
         model,
         baseBranch,
+        baseFallback,
       ),
     renameCheckoutBranch: (projectId: string, threadId: string, title: string) =>
       ipcRenderer.invoke('agent:rename-checkout-branch', projectId, threadId, title),
@@ -848,8 +857,17 @@ const api: ApiClient = {
   closeConfirm: {
     respond: (id: string, confirmed: boolean) =>
       ipcRenderer.invoke('close-confirm:respond', id, confirmed),
-    onRequest: (handler: (req: { id: string }) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, req: { id: string }): void => {
+    onRequest: (
+      handler: (req: {
+        id: string
+        continuesAfterQuit?: boolean
+        containerRunThreads?: string[]
+      }) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        req: { id: string; continuesAfterQuit?: boolean; containerRunThreads?: string[] },
+      ): void => {
         handler(req)
       }
       ipcRenderer.on('app:close-confirm-request', listener)
@@ -2043,6 +2061,12 @@ if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') {
     },
     requestCloseConfirm() {
       return ipcRenderer.invoke('test:requestCloseConfirm')
+    },
+    setCloseConfirmContainerRuns(threadIds: string[]) {
+      return ipcRenderer.invoke('test:setCloseConfirmContainerRuns', threadIds)
+    },
+    emitContainerRun(progress: unknown) {
+      return ipcRenderer.invoke('test:emitContainerRun', progress)
     },
     createMainWindow() {
       return ipcRenderer.invoke('test:createMainWindow')
