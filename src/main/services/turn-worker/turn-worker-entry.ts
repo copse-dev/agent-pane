@@ -86,88 +86,13 @@ async function bootAndContinue(
   takenOver: TakenOverThread,
   control: TurnControl,
 ): Promise<number> {
-  const [
-    { setExecutionAuditSink },
-    { recordExecutionObservation },
-    { initProjectSandbox, shutdownProjectSandbox },
-    { checkToolAvailability },
-    registryBootstrap,
-    { getPluginService },
-    { initSkillsRegistry },
-    { initAgentsRegistry },
-    { loadCustomTools },
-    { loadMcpServers, shutdownMcpServers },
-    { stopAllForegroundShellProcesses },
-    { cancelAllSupervisedBackgroundProcesses },
-    { getTaskSupervisor },
-    { disposeAllAcpSessions },
-    { stopAllBackgroundProcesses },
-    { runTurnWorker },
-  ] = await Promise.all([
-    import('../execution-runtime/audit.ts'),
-    import('../execution-runtime/audit-recorder.ts'),
-    import('../../project-sandbox/index.ts'),
-    import('../tool-availability.ts'),
-    import('../registry-bootstrap.ts'),
-    import('../plugins/plugin-service.ts'),
-    import('../skills/skills-registry.ts'),
-    import('../agents/agents-registry.ts'),
-    import('../mcp/custom-tools-registry.ts'),
-    import('../mcp/mcp-registry.ts'),
-    import('../exec/foreground-shell-process.ts'),
-    import('../exec/supervised-background-process.ts'),
-    import('../supervisor/task-supervisor.ts'),
-    import('../acp/acp-session-pool.ts'),
-    import('../exec/background-process.ts'),
+  const [{ bootWorkerRuntime }, { runTurnWorker }] = await Promise.all([
+    import('./worker-runtime.ts'),
     import('./turn-worker.ts'),
   ])
-
-  setExecutionAuditSink(recordExecutionObservation)
-  await initProjectSandbox()
-  await checkToolAvailability()
-  const registry = registryBootstrap.createRegistry()
-  registryBootstrap.syncGhTools(registry)
-  registryBootstrap.syncCiInvestigatorTools(registry)
-  await getPluginService().refreshInstalledPlugins().then(initSkillsRegistry)
-  await initAgentsRegistry()
-  registryBootstrap.registerSkillTools(registry)
-  await loadCustomTools(registry)
-  await loadMcpServers(registry)
-
-  // The same teardown as the app's quit: nothing the turn started may outlive
-  // the worker, since no window lists it and nothing else would stop it.
-  const stop = async (what: string, step: () => Promise<void> | void): Promise<void> => {
-    try {
-      await step()
-    } catch (error) {
-      log(`could not stop ${what}: ${String(error)}`)
-    }
-  }
-  let tornDown: Promise<void> | null = null
-  const teardown = (): Promise<void> =>
-    (tornDown ??= (async (): Promise<void> => {
-      await stop('foreground commands', stopAllForegroundShellProcesses)
-      await stop('supervised background commands', cancelAllSupervisedBackgroundProcesses)
-      await stop('supervised tasks', () => getTaskSupervisor().shutdown())
-      await stop('agent sessions', disposeAllAcpSessions)
-      await stop('background commands', stopAllBackgroundProcesses)
-      await stop('MCP servers', shutdownMcpServers)
-      await stop('the sandbox', shutdownProjectSandbox)
-    })())
-  // A logout, a shutdown or a `kill` ends the worker mid-turn: tear down first,
-  // so its commands do not outlive it. The thread's lease is left unreleased,
-  // and the next app settles the thread as interrupted (`foreign-turns.ts`).
-  // SIGKILL can't be caught; what it leaves runs on in its own process group,
-  // as after a SIGKILL of the app.
-  const endings: readonly NodeJS.Signals[] = ['SIGTERM', 'SIGHUP', 'SIGINT']
-  for (const signal of endings) {
-    process.once(signal, () => {
-      log(`${signal}: stopping what the turn started`)
-      void teardown().finally(() => {
-        process.exit(1)
-      })
-    })
-  }
+  const runtime = await bootWorkerRuntime(log)
+  runtime.teardownOnSignals()
+  const { registry, teardown } = runtime
 
   try {
     const outcome = await runTurnWorker(

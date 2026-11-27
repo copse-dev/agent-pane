@@ -94,6 +94,14 @@ export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
     entry: 'src/main/services/turn-worker/turn-worker-entry.ts',
     outfile: 'dist/main/turn-worker.js',
   },
+  // The resident turn host: runs every turn the app sends it, for any thread, so
+  // the app going away does not interrupt them (docs/plans/local-turn-worker.md,
+  // "Every turn in a turn host"). Started like the turn worker, and bundled free
+  // of electron for the same reason.
+  {
+    entry: 'src/main/services/turn-host/turn-host-entry.ts',
+    outfile: 'dist/main/turn-host.js',
+  },
   // The host side of one container run, in its own process so the run does not
   // depend on the app staying open (docs/plans/local-turn-worker.md, "Container
   // runs"). Started like the turn worker, and bundled free of electron for the

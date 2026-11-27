@@ -102,6 +102,8 @@ interface Session {
 
 export class TurnTranscriptWriter {
   private shuttingDown = false
+  /** Threads stopped for a quit (\`interruptThreadForShutdown\`). */
+  private readonly quitInterrupted = new Set<string>()
   private readonly deps: TurnTranscriptWriterDependencies
   private readonly sessions = new Map<string, Session>()
   private revision = 0
@@ -140,6 +142,15 @@ export class TurnTranscriptWriter {
    */
   noteUserAbort(threadId: string, reason: 'send_now' | 'stop'): void {
     this.userAborts.set(threadId, reason)
+  }
+
+  /**
+   * Stop one thread's turn for a quit rather than a user Stop: it ends like a
+   * turn the app's own quit interrupted, still \`running\` on disk, so the next
+   * launch offers Retry. The turn host does this for a quit that keeps no turns.
+   */
+  interruptThreadForShutdown(threadId: string): void {
+    this.quitInterrupted.add(threadId)
   }
 
   /** Keep quit-interrupted turns recoverable while their accepted writes drain. */
@@ -297,7 +308,8 @@ export class TurnTranscriptWriter {
 
     return {
       emit: (chunk): void => {
-        if (this.shuttingDown) return
+        // A quit drops what the stopped turn says next, its idle status among it.
+        if (this.shuttingDown || this.quitInterrupted.has(session.threadId)) return
         if (session.pending) session.pending.push(chunk)
         else this.process(session, chunk)
       },
@@ -546,12 +558,14 @@ export class TurnTranscriptWriter {
     // A turn that failed before `done` still keeps what it produced.
     if (!session.done && !session.passthrough && !session.fenced) {
       this.flushTouched(session)
-      if (!this.shuttingDown) setThreadStatus(session.store, session.threadId, 'idle')
+      if (!this.shuttingDown && !this.quitInterrupted.has(session.threadId))
+        setThreadStatus(session.store, session.threadId, 'idle')
       this.persistMeta(session)
     }
     session.unsubscribe()
     if (this.sessions.get(session.threadId) === session) this.sessions.delete(session.threadId)
     this.userAborts.delete(session.threadId)
+    this.quitInterrupted.delete(session.threadId)
     void Promise.allSettled([...session.writes]).then(() => {
       session.markDrained()
       if (this.drains.get(session.threadId) === session.drained) {

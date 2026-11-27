@@ -62,6 +62,23 @@ describe('ForeignTurnFollower', () => {
     }
   })
 
+  it('follows a thread it is told was taken before its status says running', async () => {
+    const leases = new Map([['t', lease('t', 'host')]])
+    const { follower: f, repaints } = follower(leases, { p: [] })
+    try {
+      assert.deepEqual(await f.discover(), [], 'discover goes by the persisted status')
+      await f.follow({ projectId: 'p', threadId: 't' })
+      assert.equal(f.isFollowing('t'), true)
+      assert.equal(repaints.length, 1, 'painted at once')
+      leases.delete('t')
+      await f.tick()
+      assert.equal(f.isFollowing('t'), false, 'let go once the host released it')
+      assert.equal(repaints.length, 2)
+    } finally {
+      f.stop()
+    }
+  })
+
   it('repaints while held, and once more after the release before letting go', async () => {
     const leases = new Map([['t', lease('t', 'worker')]])
     const { follower: f, repaints } = follower(leases, { p: ['t'] })

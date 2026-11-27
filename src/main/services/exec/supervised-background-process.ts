@@ -4,7 +4,11 @@ import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { resolveSshExecutionTargetForCwd } from '../ssh-workspace/execution-target.ts'
 import { getSetting } from '../storage/settings.ts'
 import type { ThreadExecutionOwner } from '../thread-execution-context.ts'
-import type { TaskSupervisor } from '../supervisor/task-supervisor.ts'
+import type {
+  SupervisedExternalTaskLifetime,
+  TaskSupervisor,
+} from '../supervisor/task-supervisor.ts'
+import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
 import {
   startBackgroundProcess,
   adoptBackgroundProcess,
@@ -19,10 +23,61 @@ import {
 
 export const BACKGROUND_PROCESS_HANDLER = 'shell_process'
 
-let supervisor: TaskSupervisor | null = null
+/**
+ * What a background command needs of the task supervisor. The app's own
+ * supervisor, or in the turn host one that keeps its records in the app's
+ * (\`host-task-supervisor.ts\`).
+ */
+export type BackgroundProcessSupervisor = Pick<
+  TaskSupervisor,
+  | 'registerExternalCanceller'
+  | 'adoptRunning'
+  | 'completeExternal'
+  | 'failExternal'
+  | 'cancel'
+  | 'get'
+  | 'list'
+>
+
+/**
+ * Stops a task's process that is not this process's own: one a turn host
+ * runs, whose task record is the app's. Resolves whether it was stopped.
+ */
+type ForeignProcessStopper = (task: SupervisedTaskMeta) => Promise<boolean>
+let foreignStopper: ForeignProcessStopper | null = null
+
+export function setForeignBackgroundProcessStopper(next: ForeignProcessStopper | null): void {
+  foreignStopper = next
+}
+
+/** Reads a background command's output where it runs: a turn host's (H7). */
+type ForeignProcessLogsReader = (
+  processId: string,
+  owner: ThreadExecutionOwner,
+) => Promise<{ logs: string; running: boolean } | null>
+let foreignLogsReader: ForeignProcessLogsReader | null = null
+
+export function setForeignBackgroundProcessLogsReader(next: ForeignProcessLogsReader | null): void {
+  foreignLogsReader = next
+}
+
+/** A background command's retained output, here or in the turn host that runs it. */
+export async function peekAnyBackgroundProcessLogs(
+  processId: string,
+  owner: ThreadExecutionOwner,
+): Promise<{ logs: string; running: boolean } | null> {
+  return (
+    peekBackgroundProcessLogs(processId, owner) ??
+    (await foreignLogsReader?.(processId, owner)) ??
+    null
+  )
+}
+
+let supervisor: BackgroundProcessSupervisor | null = null
+let lifetime: SupervisedExternalTaskLifetime = {}
 let disposeCanceller: (() => void) | null = null
 let installationReferences = 0
-const scopedSupervisor = new AsyncLocalStorage<TaskSupervisor>()
+const scopedSupervisor = new AsyncLocalStorage<BackgroundProcessSupervisor>()
 const taskIdsByProcess = new Map<
   string,
   { taskId: string; owner: ThreadExecutionOwner; completionWakeArmed: boolean }
@@ -38,7 +93,7 @@ export function hasBackgroundCompletionWake(owner: ThreadExecutionOwner): boolea
   )
 }
 
-function activeSupervisor(): TaskSupervisor | null {
+function activeSupervisor(): BackgroundProcessSupervisor | null {
   return scopedSupervisor.getStore() ?? supervisor
 }
 
@@ -47,7 +102,10 @@ export function hasBackgroundProcessSupervisor(): boolean {
   return activeSupervisor() !== null
 }
 
-export function runWithBackgroundProcessSupervisor<T>(next: TaskSupervisor, fn: () => T): T {
+export function runWithBackgroundProcessSupervisor<T>(
+  next: BackgroundProcessSupervisor,
+  fn: () => T,
+): T {
   return scopedSupervisor.run(next, fn)
 }
 
@@ -55,22 +113,31 @@ function processKey(owner: ThreadExecutionOwner, processId: string): string {
   return `${owner.projectId}:${owner.threadId}:${processId}`
 }
 
-export function installBackgroundProcessSupervisor(next: TaskSupervisor): () => void {
+/**
+ * Install the process-wide supervisor. \`taskLifetime\` says which running
+ * commands outlive this process (a turn host's), for its shutdown and restart.
+ */
+export function installBackgroundProcessSupervisor(
+  next: BackgroundProcessSupervisor,
+  taskLifetime: SupervisedExternalTaskLifetime = {},
+): () => void {
   if (supervisor && supervisor !== next) {
     throw new Error('A different background process supervisor is already installed')
   }
   if (!supervisor) {
     supervisor = next
-    disposeCanceller = next.registerExternalCanceller(BACKGROUND_PROCESS_HANDLER, (task) => {
-      if (!task.processHandleId) return
-      stopBackgroundProcess(task.processHandleId, {
-        projectId: task.projectId,
-        threadId: task.threadId,
-      })
-      taskIdsByProcess.delete(
-        processKey({ projectId: task.projectId, threadId: task.threadId }, task.processHandleId),
-      )
-    })
+    lifetime = taskLifetime
+    disposeCanceller = next.registerExternalCanceller(
+      BACKGROUND_PROCESS_HANDLER,
+      async (task) => {
+        if (!task.processHandleId) return
+        const owner = { projectId: task.projectId, threadId: task.threadId }
+        // Not this process's: a turn host runs it.
+        if (!stopBackgroundProcess(task.processHandleId, owner)) await foreignStopper?.(task)
+        taskIdsByProcess.delete(processKey(owner, task.processHandleId))
+      },
+      taskLifetime,
+    )
   }
   installationReferences += 1
   let released = false
@@ -82,6 +149,7 @@ export function installBackgroundProcessSupervisor(next: TaskSupervisor): () => 
     disposeCanceller?.()
     disposeCanceller = null
     supervisor = null
+    lifetime = {}
     taskIdsByProcess.clear()
   }
 }
@@ -243,14 +311,14 @@ export async function stopSupervisedBackgroundProcess(
 export async function cancelAllSupervisedBackgroundProcesses(): Promise<void> {
   const installedSupervisor = activeSupervisor()
   if (!installedSupervisor) return
-  const tasks = installedSupervisor
-    .list()
-    .filter(
-      (task) =>
-        task.handler === BACKGROUND_PROCESS_HANDLER &&
-        task.state === 'running' &&
-        task.processHandleId !== undefined,
-    )
+  const tasks = installedSupervisor.list().filter(
+    (task) =>
+      task.handler === BACKGROUND_PROCESS_HANDLER &&
+      task.state === 'running' &&
+      task.processHandleId !== undefined &&
+      // A turn host's command carries on through a quit that keeps its turns.
+      lifetime.survivesShutdown?.(task) !== true,
+  )
   await Promise.all(tasks.map((task) => installedSupervisor.cancel(task.projectId, task.taskId)))
 }
 
