@@ -514,6 +514,27 @@
           1
         ]
       },
+      "browser:design-cancel": {
+        "api": "browser.designCancel",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "browser:design-markers": {
+        "api": "browser.designMarkers",
+        "args": [
+          3,
+          3
+        ]
+      },
+      "browser:design-pick": {
+        "api": "browser.designPick",
+        "args": [
+          2,
+          2
+        ]
+      },
       "browser:export-artefact": {
         "api": "browser.exportArtefact",
         "args": [

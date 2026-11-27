@@ -1,0 +1,169 @@
+/* Browser-pane design mode: the tray of pinned elements under the page
+   (src/renderer/views/browser-design-mode.ts). The on-page outlines live in
+   the guest's isolated world and carry their own styles. */
+.browser-design-tray {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  max-height: min(45%, 360px);
+  border-top: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+.browser-design-tray[hidden] {
+  display: none;
+}
+.browser-design-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-height: 36px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  flex-shrink: 0;
+}
+.browser-design-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.browser-design-tray.is-picking .browser-design-title::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: var(--spacing-xs);
+  border-radius: 50%;
+  vertical-align: middle;
+  background: var(--accent);
+}
+.browser-design-hint {
+  margin: 0;
+  padding: 0 var(--spacing-sm) var(--spacing-xs);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+.browser-design-theme-probe {
+  display: none;
+}
+.browser-design-size {
+  flex: none;
+}
+.browser-design-spacer {
+  flex: 1;
+}
+.browser-design-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  min-height: 0;
+  margin: 0;
+  padding: 0 var(--spacing-sm) var(--spacing-sm);
+  overflow-y: auto;
+  list-style: none;
+}
+.browser-design-list[hidden] {
+  display: none;
+}
+.browser-design-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+}
+.browser-design-item-head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 0;
+}
+.browser-design-badge {
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  background: var(--accent-fill);
+  color: var(--text-on-accent);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+.browser-design-thumb {
+  flex: none;
+  width: 56px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  object-fit: contain;
+  background: var(--browser-page-background);
+}
+.browser-design-thumb.is-empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+}
+.browser-design-meta {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.browser-design-selector {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--text-primary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.browser-design-facts {
+  display: flex;
+  gap: var(--spacing-sm);
+  min-width: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+.browser-design-source {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.browser-design-source.is-missing {
+  font-family: inherit;
+  color: var(--text-muted);
+}
+.browser-design-remove {
+  width: 24px;
+  height: 24px;
+}
+.browser-design-note {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 8px;
+  resize: vertical;
+  field-sizing: content;
+  max-height: 120px;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.browser-design-note:focus {
+  outline: none;
+  border-color: var(--accent);
+}

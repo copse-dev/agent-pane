@@ -5,6 +5,7 @@ import {
   arrowRightIcon,
   closeIcon,
   downloadIcon,
+  elementPickIcon,
   externalLinkIcon,
   fileTextIcon,
   imageIcon,
@@ -49,6 +50,7 @@ import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-
 import { setTooltip } from '../dom/tooltip.ts'
 import { createSurfaceRecorder, type SurfaceRecorder } from '../recording/surface-recorder.ts'
 import { openScreencastCapture } from '../recording/screencast-capture.ts'
+import { createBrowserDesignMode, type BrowserDesignMode } from './browser-design-mode.ts'
 
 /** Minimal typing for Electron's guest `<webview>` element. */
 interface BrowserWebviewElement extends HTMLElement {
@@ -110,6 +112,8 @@ interface BrowserTab {
    * overlay, and running only while {@link syncAnnotationScroll} says so.
    */
   annotationScroll: GuestScrollTracker | null
+  /** Element picker and its tray of pinned elements (browser-design-mode.ts). */
+  design: BrowserDesignMode
   /** Shared select/close/active wiring for `tabBtn` + `panel` (ui/pane-tabs.ts). */
   tabSwitch: UiPaneTab
 }
@@ -798,6 +802,7 @@ export function mountBrowserPane(
       tab.annotation?.deactivate()
       tab.annotation?.clear()
       syncAnnotationScroll(tab)
+      tab.design.onNavigated()
     })
     webview.addEventListener('did-navigate-in-page', onNavigateSuccess)
     webview.addEventListener('page-title-updated', onNavigate)
@@ -812,6 +817,7 @@ export function mountBrowserPane(
       // The new document's scroll position differs from the old one's.
       tab.annotationScroll?.kick()
       applyCanvasGuestText(tab, webview)
+      tab.design.onDocumentReady()
       if (tab.pendingUrl) {
         const url = tab.pendingUrl
         tab.pendingUrl = null
@@ -1334,6 +1340,31 @@ export function mountBrowserPane(
       penLineIcon('ui-icon ui-icon-sm'),
     )
 
+    const designBtn = el(
+      'button',
+      {
+        type: 'button',
+        class: 'browser-nav-btn browser-design-btn',
+        'aria-label': 'Design mode: pick elements for the agent',
+        'data-tooltip': 'Design mode: pick elements for the agent',
+        'aria-pressed': 'false',
+      },
+      elementPickIcon('ui-icon ui-icon-sm'),
+    )
+    const browserApi = api?.browser
+    const design = createBrowserDesignMode({
+      button: designBtn,
+      contentsId: () => (tabRef ? shareableWebContentsId(tabRef) : null),
+      api:
+        browserApi?.designPick && browserApi.designCancel && browserApi.designMarkers
+          ? {
+              designPick: browserApi.designPick,
+              designCancel: browserApi.designCancel,
+              designMarkers: browserApi.designMarkers,
+            }
+          : null,
+    })
+
     const recordBtn = el(
       'button',
       {
@@ -1402,6 +1433,7 @@ export function mountBrowserPane(
       goBtn,
       recorder.indicator,
       recordBtn,
+      designBtn,
       annotateBtn,
       menuWrap,
     )
@@ -1413,6 +1445,7 @@ export function mountBrowserPane(
       toolbar,
       statusLine,
       webviewHost,
+      design.tray,
     )
 
     const tab: BrowserTab = {
@@ -1445,6 +1478,7 @@ export function mountBrowserPane(
       annotation: null,
       recorder,
       annotationScroll: null,
+      design,
       closeMenu: () => {
         setMenuOpen(false)
       },
@@ -1522,8 +1556,16 @@ export function mountBrowserPane(
       }
       return tab.annotation
     }
+    designBtn.addEventListener('click', () => {
+      setMenuOpen(false)
+      // One overlay owns the pointer at a time: drawing would swallow the picks.
+      if (design.toggle() && tab.annotation?.active) {
+        tab.annotation.deactivate()
+      }
+    })
     annotateBtn.addEventListener('click', () => {
       setMenuOpen(false)
+      if (design.isActive()) design.stop()
       const on = annotationLayer().toggle()
       annotateBtn.setAttribute('aria-pressed', String(on))
       // Enabling re-reads the guest's offsets at once, so the first stroke
@@ -1678,6 +1720,7 @@ export function mountBrowserPane(
     tab.webview?.remove()
     tab.annotationScroll?.dispose()
     tab.annotation?.dispose()
+    tab.design.dispose()
     tab.recorder.dispose()
     tab.tabSwitch.remove()
     tabs.delete(tabId)
@@ -1750,6 +1793,7 @@ export function mountBrowserPane(
       tab.webview?.remove()
       tab.annotationScroll?.dispose()
       tab.annotation?.dispose()
+      tab.design.dispose()
       tab.recorder.dispose()
       tab.tabSwitch.remove()
     }
@@ -2075,6 +2119,7 @@ export function mountBrowserPane(
       tab.webview?.remove()
       tab.annotationScroll?.dispose()
       tab.annotation?.dispose()
+      tab.design.dispose()
       tab.recorder.dispose()
       tab.tabSwitch.remove()
     }
