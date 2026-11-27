@@ -3361,6 +3361,14 @@
       "sha256": "f8bf696b5897870068d5b172367586628d535356b815c242c732e4005b9b2445",
       "bytes": 13732
     },
+    "picker-attachment-outside-project-binary.png": {
+      "sha256": "92ada03a94dc815666cca115c0f1e06974ce2d418e301474642e1090386d8633",
+      "bytes": 336439
+    },
+    "picker-attachment-outside-project-too-large.png": {
+      "sha256": "ad883c613a91977290ba7591afeda5b2684cee02d6e6e77b6fc0e5801a9a75ed",
+      "bytes": 339857
+    },
     "plain-language-agent-error-banner.png": {
       "sha256": "4b60e015522eaf3d0d95c8c2a58e8909c7d97fa32bcd77013b82382301ca8e40",
       "bytes": 228401
