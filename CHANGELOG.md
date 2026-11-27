@@ -14,6 +14,9 @@ released — rather than copying every published entry.
   on the strip, and in a tight pane the four shapes share a single button.
 - One oversized request from a window no longer crashes that window and reloads
   it. The request fails on its own, and Copse's log names it.
+- When Electron hits a fatal error in Copse's main process, such as running out
+  of memory, Copse now quits and a crash report is written. Before this, the app
+  froze at full CPU until it was force-quit.
 
 ## 0.1.0-beta.16
 

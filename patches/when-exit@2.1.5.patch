@@ -1,0 +1,18 @@
+diff --git a/dist/node/signals.js b/dist/node/signals.js
+index f9ded07e4595bd8986b9e178d4496ef3db943969..58b94e5ddc88106ed9615c4655aafd7aa1c19ee4 100644
+--- a/dist/node/signals.js
++++ b/dist/node/signals.js
+@@ -4,7 +4,12 @@ import { IS_LINUX, IS_WINDOWS } from './constants.js';
+ //URL: https://github.com/tapjs/signal-exit/blob/458776d9cf8be89712aa1f7b45bb2163ce15ef4a/src/signals.ts
+ const Signals = ['SIGHUP', 'SIGINT', 'SIGTERM'];
+ if (!IS_WINDOWS) {
+-    Signals.push('SIGALRM', 'SIGABRT', 'SIGVTALRM', 'SIGXCPU', 'SIGXFSZ', 'SIGUSR2', 'SIGTRAP', 'SIGSYS', 'SIGQUIT', 'SIGIOT');
++    // Copse patch: SIGABRT, SIGIOT (the same signal), SIGTRAP and SIGSYS are left out. The kernel
++    // raises them in the faulting thread. A JS listener makes libuv install a handler that only
++    // queues the signal and returns, so the listener cannot run before the fault resolves. After
++    // an arm64 `brk` trap, that return re-runs the trap forever and the process livelocks instead
++    // of crashing. See pnpm-workspace.yaml.
++    Signals.push('SIGALRM', 'SIGVTALRM', 'SIGXCPU', 'SIGXFSZ', 'SIGUSR2', 'SIGQUIT');
+ }
+ if (IS_LINUX) {
+     Signals.push('SIGIO', 'SIGPOLL', 'SIGPWR', 'SIGSTKFLT');
