@@ -11,6 +11,7 @@ import {
 } from './services/plugins/plugin-client-service.ts'
 import { dispatchSubthreadPrompt, initThreadPrompts } from './services/thread-prompts.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
+import { removeOrphanedPlanWindowHistory } from './services/storage/plan-window-history-cleanup.ts'
 import { startDefaultBranchRefresh } from './services/default-branch-refresh.ts'
 import { startMachineService, stopMachineService } from './services/machines/machine-service.ts'
 import {
@@ -755,6 +756,7 @@ app
     // Packaged macOS build only: background update check + prompts (no-op elsewhere).
     initAutoUpdate(win)
     startStorageMaintenance()
+    removeOrphanedPlanWindowHistory()
     startDefaultBranchRefresh()
     // P5: boot the plugin service before `createRegistry()` so persisted
     // `pluginDisabled` state is applied to the shared registry before
