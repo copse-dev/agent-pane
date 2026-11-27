@@ -82,7 +82,9 @@ describe('turns in the background host', function () {
     await $('.prompt-input').waitForExist({ timeout: 60_000 })
   })
 
-  afterEach(() => {
+  // The suite's own after-test check reads each scenario's status, which the
+  // host holds after a relaunch, so the host is stopped only once that is done.
+  after(() => {
     stopHosts()
     resetUserData()
   })
@@ -140,7 +142,7 @@ describe('turns in the background host', function () {
   })
 
   it("answers a host turn's approval in the window", async () => {
-    await selectedThreadId()
+    const threadId = await selectedThreadId()
     const scenario = await installMockScenario({
       title: 'Host turn asks to run a command',
       turns: [
@@ -160,11 +162,20 @@ describe('turns in the background host', function () {
     await submitComposer()
     const dialog = await $('#approval-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 30_000 })
-    await expect(dialog.$('.approval-heading')).toHaveText('Run shell command?')
+    // Where no OS sandbox runs (a bare container), the same prompt asks to run unsandboxed.
+    await expect(dialog.$('.approval-heading')).toHaveText(
+      /^Run (shell command|without sandbox)\?$/,
+    )
     assert.ok(hostPids().length > 0, 'the turn runs in a host')
     await dialog.$('.approval-approve').click()
     await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
     await scenario.waitForComplete(30_000)
     await expectAssistantReply(APPROVAL_REPLY)
+    // The window follows the host's turn to its end, not just to its reply.
+    await browser.waitUntil(() => threadStatus(threadId) === 'idle', {
+      timeout: 30_000,
+      timeoutMsg: 'the host turn did not finish',
+    })
+    await $('.stop-btn').waitForDisplayed({ reverse: true, timeout: 15_000 })
   })
 })

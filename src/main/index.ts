@@ -894,8 +894,8 @@ app
         log: (line: string): void => {
           console.log(line)
         },
-        onThreadTaken: (): void => {
-          void foreignTurns.discover()
+        onThreadTaken: (projectId: string, threadId: string): void => {
+          void foreignTurns.follow({ projectId, threadId })
         },
       }
       const link = createTurnHostLink(launch)
