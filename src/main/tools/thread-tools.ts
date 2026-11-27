@@ -18,6 +18,7 @@ import {
 import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { storageGet } from '../services/storage/storage.ts'
 import { sendThreadPrompt } from '../services/thread-prompts.ts'
+import { rejectAutomationBudgetDelegation } from '../services/automations/automation-budget.ts'
 import type { ThreadPromptCommand } from '@shared/thread-prompt.ts'
 
 function configuredProject(id: string): Record<string, unknown> | undefined {
@@ -270,6 +271,7 @@ export const sendThreadPromptTool = defineTool({
     const sender = peerPromptSender()
     if (!sender || sender.sourceThreadId === thread_id)
       return 'Choose a different destination thread.'
+    await rejectAutomationBudgetDelegation()
     const initial = await getThreadMeta(project_id, thread_id)
     if (!initial || initial.archivedAt !== undefined)
       return 'The destination thread is unavailable.'

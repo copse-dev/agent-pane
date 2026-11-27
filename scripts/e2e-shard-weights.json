@@ -63,6 +63,7 @@
     "tests/e2e/automation-event-states.e2e.ts": 9.5,
     "tests/e2e/automation-held-runs.e2e.ts": 5.4,
     "tests/e2e/automation-interrupted-run.e2e.ts": 9.7,
+    "tests/e2e/automation-model-allowance.e2e.ts": 13.9,
     "tests/e2e/automation-pending-start.e2e.ts": 5,
     "tests/e2e/automation-preparation-setup.e2e.ts": 9.6,
     "tests/e2e/automation-questions.e2e.ts": 13.8,
