@@ -30,7 +30,7 @@ index 185a9bd6a092041c24190a9216d2aa88ef910dd4..8c7ab87dac4a78c26b44a95e6ed8efcc
          // Duplicate deny entries must be collapsed: a duplicate
          // --ro-bind /dev/null <dest> hits a char device on the second pass and
 diff --git a/dist/sandbox/macos-sandbox-utils.js b/dist/sandbox/macos-sandbox-utils.js
-index e6d9fb687115a70c6d1dd538e01945c68e324810..d4ffc48ec0c0eb6f4236e7d5dcd3422ff3206cd6 100644
+index e6d9fb687115a70c6d1dd538e01945c68e324810..8ec8fde91f22026611b98a8414690bacb6b36ba9 100644
 --- a/dist/sandbox/macos-sandbox-utils.js
 +++ b/dist/sandbox/macos-sandbox-utils.js
 @@ -433,7 +433,7 @@ function generateWriteRules(config, logTag, allowGitConfig = false) {
@@ -42,6 +42,53 @@ index e6d9fb687115a70c6d1dd538e01945c68e324810..d4ffc48ec0c0eb6f4236e7d5dcd3422f
      ];
      const denyFilters = new Set();
      for (const pathPattern of denyPaths) {
+@@ -904,13 +904,31 @@ resolveCommandText = id => id) {
+         '--style',
+         'compact',
+     ]);
++    // Copse patch: `log stream` writes whatever has accumulated, so under load
++    // one chunk holds several events and a line can straddle two chunks.
++    // Reading only the first violation in each chunk dropped the rest. Read
++    // every line. An event is the kernel's `Sandbox: ... deny ...` line and
++    // then its tag line, `CMD64_..._END_<sessionSuffix>`. A denied path can
++    // hold newlines, and with them a forged `Sandbox:` or `CMD64_` line, so
++    // only a tag ending in this launch's suffix (which a sandboxed process
++    // cannot read) closes an event, paired with that event's first line.
++    let partialLine = '';
++    let pendingViolation = null;
+     logProcess.stdout?.on('data', (data) => {
+-        const lines = data.toString().split('\n');
+-        // Get violation and command lines
+-        const violationLine = lines.find(line => line.includes('Sandbox:') && line.includes('deny'));
+-        const commandLine = lines.find(line => line.startsWith('CMD64_'));
+-        if (!violationLine)
+-            return;
++        const lines = (partialLine + data.toString()).split('\n');
++        partialLine = lines.pop() ?? '';
++        for (const line of lines) {
++            if (line.startsWith('CMD64_') && line.trimEnd().endsWith(sessionSuffix)) {
++                if (pendingViolation !== null)
++                    reportViolation(pendingViolation, line);
++                pendingViolation = null;
++            }
++            else if (pendingViolation === null && line.includes('Sandbox:') && line.includes('deny')) {
++                pendingViolation = line;
++            }
++        }
++    });
++    function reportViolation(violationLine, commandLine) {
+         // Extract violation details
+         const sandboxMatch = violationLine.match(sandboxExtractRegex);
+         if (!sandboxMatch?.[1])
+@@ -948,7 +966,7 @@ resolveCommandText = id => id) {
+             encodedCommand,
+             timestamp: new Date(), // We could parse the timestamp from the log but this feels more reliable
+         });
+-    });
++    }
+     logProcess.stderr?.on('data', (data) => {
+         logForDebugging(`[Sandbox Monitor] Log stream stderr: ${data.toString()}`);
+     });
 diff --git a/dist/sandbox/sandbox-manager.js b/dist/sandbox/sandbox-manager.js
 index 3a2d9c8abd01fefff36edea0cd76e9c31a3ed411..69b955ff4e149367c807d5f3aafb7fb0665943da 100644
 --- a/dist/sandbox/sandbox-manager.js
