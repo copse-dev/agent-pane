@@ -20384,6 +20384,9 @@ h3 {
   min-width: 0;
 }
 .browser-design-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: none;
   min-width: 18px;
   height: 18px;
@@ -20394,8 +20397,6 @@ h3 {
   color: var(--text-on-accent);
   font-size: var(--font-size-xs);
   font-weight: 600;
-  line-height: 18px;
-  text-align: center;
 }
 .browser-design-thumb {
   flex: none;
