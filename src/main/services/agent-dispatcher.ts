@@ -250,7 +250,7 @@ function withThreadSelection(
   }
 }
 
-const defaultDependencies: AgentDispatcherDependencies = {
+export const defaultAgentDispatcherDependencies: AgentDispatcherDependencies = {
   loadPlan: getLatestThreadPlan,
   loadHistory: loadAgentHistory,
   saveHistory: saveAgentHistory,
@@ -374,7 +374,7 @@ export class AgentDispatcher {
   constructor(
     host: AgentHost<StreamChunk>,
     registry: ToolRegistry,
-    dependencies: AgentDispatcherDependencies = defaultDependencies,
+    dependencies: AgentDispatcherDependencies = defaultAgentDispatcherDependencies,
     transcripts?: TurnTranscriptSink,
   ) {
     this.host = host
