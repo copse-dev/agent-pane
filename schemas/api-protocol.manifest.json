@@ -1260,7 +1260,7 @@
         "api": "workspace.unsandboxedProjectHooks",
         "args": [
           0,
-          0
+          1
         ]
       },
       "index:query": {
@@ -2903,6 +2903,20 @@
       },
       "workspace:set-trusted": {
         "api": "workspace.setTrusted",
+        "args": [
+          1,
+          2
+        ]
+      },
+      "workspace:trust-from-approval": {
+        "api": "workspace.trustFromApproval",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "workspace:trust-offer-details": {
+        "api": "workspace.trustOfferDetails",
         "args": [
           1,
           1

@@ -6,6 +6,8 @@ import { z } from 'zod'
 import { revalidateStaleAcpModels, runAcpAutoSetup } from '../services/acp/acp-auto-setup.ts'
 import { initAgentsRegistry } from '../services/agents/agents-registry.ts'
 import { perfSpan, perfSyncSpan } from '../services/diagnostics/perf-trace.ts'
+import { pendingWorkspaceTrustOffer } from '../services/approval.ts'
+import { listUnsandboxedProjectHooks } from '../services/hooks/copse-adapter.ts'
 import { setWorkspaceTrustAndReload } from '../services/mcp/mcp-registry.ts'
 import { scaffoldProject } from '../services/project-scaffold.ts'
 import { registerSkillTools } from '../services/registry-bootstrap.ts'
@@ -211,15 +213,49 @@ export function registerWorkspaceHandlers(
   })
 
   ipcMain.handle('workspace:is-trusted', () => isWorkspaceTrusted(getWorkspaceRoot()))
-  ipcMain.handle('workspace:set-trusted', async (event, trusted: unknown) => {
+  ipcMain.handle(
+    'workspace:set-trusted',
+    async (event, trusted: unknown, rawExpected?: unknown) => {
+      assertMainFrameSender(event, win)
+      const root = getWorkspaceRoot()
+      if (!root) throw new IpcValidationError('No workspace open')
+      if (typeof trusted !== 'boolean') throw new IpcValidationError('trusted must be a boolean')
+      // A caller that asked about one project names it, so a workspace switch from
+      // another window between its check and this call cannot redirect the trust.
+      const expected =
+        rawExpected === undefined ? undefined : parseIpcArgs(zPathString.min(1), [rawExpected])
+      if (expected !== undefined && expected !== root) {
+        throw new IpcValidationError('The workspace changed; trust was not changed')
+      }
+      // Spawning project MCP servers is the code-execution sink, so trusting a workspace
+      // is a privileged action — only the main frame may request it (issue #100).
+      const statuses = await setWorkspaceTrustAndReload(registry, root, trusted)
+      broadcastToAppWindows('mcp:status-changed', statuses)
+      return statuses
+    },
+  )
+  // Trust the project a shell prompt said was the only reason it asked. The
+  // renderer names the prompt, not a path: the root is the one main attached to
+  // that still-open request, so this can only ever trust what a prompt offered.
+  // It does not answer the prompt; the user still approves or rejects it.
+  // What the consent for a prompt's trust offer must show, read from the root
+  // that prompt would trust rather than the process-global workspace: with two
+  // windows those differ, and the `sandbox: false` hooks listed at consent
+  // (hooks plan decision 7) must be the ones trusting would let run.
+  ipcMain.handle('workspace:trust-offer-details', async (event, rawId: unknown) => {
     assertMainFrameSender(event, win)
-    const root = getWorkspaceRoot()
-    if (!root) throw new IpcValidationError('No workspace open')
-    if (typeof trusted !== 'boolean') throw new IpcValidationError('trusted must be a boolean')
-    // Spawning project MCP servers is the code-execution sink, so trusting a workspace
-    // is a privileged action — only the main frame may request it (issue #100).
-    const statuses = await setWorkspaceTrustAndReload(registry, root, trusted)
+    const id = parseIpcArgs(z.string().min(1).max(200), [rawId])
+    const root = pendingWorkspaceTrustOffer(id)
+    if (root === null) return null
+    return { name: basename(root), unsandboxedHooks: await listUnsandboxedProjectHooks(root) }
+  })
+  ipcMain.handle('workspace:trust-from-approval', async (event, rawId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(z.string().min(1).max(200), [rawId])
+    const root = pendingWorkspaceTrustOffer(id)
+    if (root === null) throw new IpcValidationError('That prompt no longer offers trust')
+    const statuses = await setWorkspaceTrustAndReload(registry, root, true)
     broadcastToAppWindows('mcp:status-changed', statuses)
-    return statuses
+    return true
   })
 }

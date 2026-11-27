@@ -7,6 +7,11 @@ export interface ConfirmDialogRequest {
   detail?: string | Node
   confirmLabel?: string
   cancelLabel?: string
+  /**
+   * Start keyboard focus on Cancel. For a sensitive offer the user did not ask
+   * for, so Enter declines rather than accepts.
+   */
+  focusCancel?: boolean
   /** Style the confirm button as destructive (delete, restore, etc.). */
   danger?: boolean
   /**
@@ -141,7 +146,8 @@ export function mountConfirmDialog(): void {
     buttonsEl.replaceChildren(cancelBtn, confirmBtn)
 
     dialog.showModal()
-    confirmBtn.focus()
+    if (active.focusCancel) cancelBtn.focus()
+    else confirmBtn.focus()
   }
 
   dialog.addEventListener('cancel', (event) => {
