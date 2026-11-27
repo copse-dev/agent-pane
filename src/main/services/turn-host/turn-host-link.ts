@@ -65,6 +65,8 @@ export interface TurnHostLinkDependencies {
     prompt: Extract<HostToApp, { t: 'ssh-prompt' }>,
     signal: AbortSignal,
   ) => Promise<SshPromptResponse>
+  /** Apply a host turn's change to a shared profile store, which the app owns. */
+  applyStoreWrite?: (message: Extract<HostToApp, { t: 'store-write' }>) => void
   /** A host thread's lease is held: the follower should follow it now. */
   onThreadTaken?: (projectId: string, threadId: string) => void
   log?: (line: string) => void
@@ -168,6 +170,11 @@ export class TurnHostLink {
     return [...this.pending.values()].map((turn) => turn.threadId)
   }
 
+  /** The app wrote the profile: the host reads it again before its next turn. */
+  profileChanged(): void {
+    if (this.ready) this.send({ t: 'profile-changed' })
+  }
+
   /** Stop a thread's turn in the host. */
   stop(threadId: string): void {
     this.send({ t: 'stop', threadId })
@@ -258,6 +265,13 @@ export class TurnHostLink {
       case 'review-diff':
       case 'ssh-prompt':
         this.ask(message)
+        return
+      case 'store-write':
+        try {
+          this.deps.applyStoreWrite?.(message)
+        } catch (error) {
+          this.deps.log?.(`[turn-host] could not save a ${message.store} write: ${String(error)}`)
+        }
         return
       case 'approval-cancel':
         this.prompts.get(message.id)?.abort()

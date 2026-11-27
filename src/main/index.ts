@@ -146,6 +146,7 @@ import {
 import { setTerminalCommandLauncher } from './services/exec/terminal-launch.ts'
 import { initSshPrompt } from './services/ssh-workspace/ssh-prompt.ts'
 import { initSshAskpassServer } from './services/ssh-workspace/askpass.ts'
+import { onPersistentStoreWrite } from '@copse/store-kit/persistent-store.ts'
 import { initSshWorkspaceIpc } from './services/ssh-workspace/ssh-workspace-ipc.ts'
 import { clearSshWorkspaceFsCache } from './services/workspace-fs/ssh-workspace-fs.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
@@ -898,6 +899,17 @@ app
       }
       const link = createTurnHostLink(launch)
       turnHostLink = link
+      // The host re-reads the profile before its next turn once the app wrote
+      // it; one notice for every write made in the same tick.
+      let profileNoticePending = false
+      onPersistentStoreWrite(() => {
+        if (profileNoticePending) return
+        profileNoticePending = true
+        queueMicrotask(() => {
+          profileNoticePending = false
+          link.profileChanged()
+        })
+      })
       // Never awaited: turns run in main until the host answers.
       void connectOrStartTurnHost(link, launch)
     }

@@ -302,8 +302,25 @@ in it, and folding container runs into it are separate steps, not part of this o
   waits for that decision before it goes on. SSH questions reach the window through the
   host's own askpass socket, apart from the app's, and the askpass lease carries the turn's
   prompt handler to them. Remembering an SSH secret is not offered for host turns until H4.
-- **H4, shared stores and profile changes** (decision 5). Starts with an audit of which
-  shared-store writes a turn makes; each one either moves to the app or becomes per-thread.
+- **H4, shared stores and profile changes** (decision 5). Built. The audit found three
+  shared stores a process opens (`openPersistentStore`): `config` (projects, workspace and
+  other app state), `settings` (which also holds the grants a remembered approval saves,
+  through `updateSetting`) and `ssh-credentials`. A turn's own records (transcript, meta,
+  dispatch record) are per-thread files already, its todos live in memory for the run, and
+  project memory is files in the project. So:
+  - A host turn's write to `config` or `settings` reaches the app as `store-write`, and the
+    app saves it through `storageSet` or `setSetting` (with the setting's schema). With no
+    app attached it stays in the host's memory and is logged.
+  - A write to a key (`apiKey`) or to `ssh-credentials` is refused: keys stay with the app,
+    and remembering an SSH secret is still not offered for host turns.
+  - Every write the app makes sends `profile-changed` (once per tick). The host reads the
+    profile again before its next turn starts, under every store already open, and drops
+    their cached values.
+  - A read-modify-write a host turn makes (`updateSetting`) starts from the profile as the
+    host last read it, so it can overwrite an app change made since. The window is one turn
+    wide, because the host rereads before each turn.
+  - Settings that change the registry (plugins, MCP servers, custom tools) are reread, but
+    the registry is not rebuilt yet.
 - **H5, crash proof.** e2e that kills the app's main process mid-turn, relaunches and sees
   the turn finish once with no Retry card. Then `turnsRunInHost` defaults on.
 - **C3** (container runs, below) lands alongside, so a run that ends with no app is

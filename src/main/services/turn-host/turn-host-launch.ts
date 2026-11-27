@@ -5,6 +5,9 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { requestApproval, runWithApprovalOwner } from '../approval.ts'
 import { reviewRemoteStagedDiff } from '../diff-queue.ts'
 import { requestSshPrompt } from '../ssh-workspace/ssh-prompt.ts'
+import { deleteSetting, setSetting } from '../storage/settings.ts'
+import { storageDelete, storageSet } from '../storage/storage.ts'
+import type { ProfileStoreChange } from '../turn-worker/read-only-profile-store.ts'
 import { isPidAlive } from '../exec/subprocess-kill.ts'
 import { readHostDispatchRecord } from './host-dispatch-record.ts'
 import { TurnHostLink } from './turn-host-link.ts'
@@ -113,6 +116,9 @@ export function createTurnHostLink(deps: TurnHostLaunchDependencies): TurnHostLi
     // The window's own SSH dialog. It has no cancel, so a host that stops
     // waiting leaves it to be dismissed; the answer is then dropped.
     askSsh: ({ request }) => requestSshPrompt(request),
+    applyStoreWrite: ({ store, changes }): void => {
+      applyHostStoreWrite(store, changes, deps.log)
+    },
     onThreadTaken: deps.onThreadTaken,
     log: deps.log,
   })
@@ -137,4 +143,35 @@ export async function connectOrStartTurnHost(
   }
   deps.log('[turn-host] the host did not answer; turns run in the app')
   return false
+}
+
+/**
+ * Save a host turn's change to a shared store as the app's own write would be
+ * (decision 5). Settings go through their schemas. Keys are never written from
+ * here: a host only ever reads them, so a key change from one is refused, as is
+ * any store the app does not keep for it.
+ */
+export function applyHostStoreWrite(
+  store: string,
+  changes: readonly ProfileStoreChange[],
+  log: (line: string) => void,
+): void {
+  for (const change of changes) {
+    if (change.key === 'apiKey' || change.key.startsWith('apiKey.')) {
+      log(`[turn-host] refused a host write to ${store}.json "${change.key}"`)
+      continue
+    }
+    const deleted = 'deleted' in change
+    if (store === 'config') {
+      if (deleted) storageDelete(change.key)
+      else storageSet(change.key, change.value)
+    } else if (store === 'settings') {
+      const saved = deleted ? deleteSetting(change.key) : setSetting(change.key, change.value)
+      saved.catch((error: unknown) => {
+        log(`[turn-host] could not save setting "${change.key}": ${String(error)}`)
+      })
+    } else {
+      log(`[turn-host] kept no host write to ${store}.json "${change.key}"`)
+    }
+  }
 }

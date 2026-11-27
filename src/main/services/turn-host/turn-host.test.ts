@@ -225,6 +225,42 @@ describe('TurnHost', { timeout: 30_000 }, () => {
     turnHost.dispose()
   })
 
+  it("sends a turn's store writes to an attached app, and rereads the profile the app changed", async () => {
+    await saveProjectThread('p1', idleThread('w'))
+    let reloads = 0
+    const { host: turnHost, broadcast } = host({
+      reloadProfile: () => {
+        reloads += 1
+        return Promise.resolve()
+      },
+    })
+    // Nobody to save it: kept in memory only.
+    turnHost.storeWrite('settings', [{ key: 'model', value: 'mock' }])
+    const peer = app()
+    turnHost.handle({ t: 'hello', version: VERSION, protocol: 1 }, peer.client)
+    turnHost.handle({ t: 'attach' }, peer.client)
+    turnHost.storeWrite('settings', [{ key: 'model', value: 'mock' }])
+    assert.deepEqual(
+      broadcast.filter((m) => m.t === 'store-write'),
+      [{ t: 'store-write', store: 'settings', changes: [{ key: 'model', value: 'mock' }] }],
+    )
+
+    turnHost.handle({ t: 'profile-changed' }, peer.client)
+    turnHost.handle(
+      { t: 'dispatch', id: 'd11', projectId: 'p1', threadId: 'w', payload: 'Hello' },
+      peer.client,
+    )
+    await until(() => ended(broadcast, 'd11'), 'the turn')
+    assert.equal(reloads, 1)
+    turnHost.handle(
+      { t: 'dispatch', id: 'd12', projectId: 'p1', threadId: 'w', payload: 'Again' },
+      peer.client,
+    )
+    await until(() => ended(broadcast, 'd12'), 'the second turn')
+    assert.equal(reloads, 1, 'nothing changed since')
+    turnHost.dispose()
+  })
+
   it('runs a repeated operation id once, and reports it by id', async () => {
     await saveProjectThread('p1', idleThread('g'))
     const { host: turnHost } = host()

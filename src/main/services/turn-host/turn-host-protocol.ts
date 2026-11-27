@@ -10,6 +10,7 @@ import {
 import type { StreamChunk, TranscriptSnapshot, TranscriptStamp } from '@shared/types'
 import type { ApprovalRequest, ApprovalResponse } from '../approval.ts'
 import type { QueueEntry } from '../diff-queue.ts'
+import type { ProfileStoreChange } from '../turn-worker/read-only-profile-store.ts'
 import type { SshPromptRequest, SshPromptResponse } from '../ssh-workspace/ssh-prompt.ts'
 
 /**
@@ -39,6 +40,10 @@ import type { SshPromptRequest, SshPromptResponse } from '../ssh-workspace/ssh-p
  *   A prompt waits however long no app is attached, and is asked again of every
  *   app that attaches; `approval-cancel` takes any of them down once it no
  *   longer needs an answer.
+ * - `store-write` carries a change a host turn made to a shared profile store
+ *   (settings, config) to the app, which owns those files and applies it.
+ *   `profile-changed` tells the host the app wrote the profile, so it reads it
+ *   again before its next turn starts.
  *
  * Written for any transport: nothing here assumes the two ends share a machine
  * beyond the profile path (`harness-worker-roadmap.md` R2).
@@ -55,6 +60,7 @@ export type AppToHost =
   | { t: 'approval-answer'; id: string; response: HostApprovalAnswer }
   | { t: 'review-diff-answer'; id: string; approved: boolean }
   | { t: 'ssh-prompt-answer'; id: string; response: SshPromptResponse }
+  | { t: 'profile-changed' }
 
 /** The part of an approval answer that crosses the line. */
 export interface HostApprovalAnswer {
@@ -84,6 +90,7 @@ export type HostToApp =
       request: SshPromptRequest
     }
   | { t: 'approval-cancel'; id: string }
+  | { t: 'store-write'; store: string; changes: ProfileStoreChange[] }
 
 const id = z.string().min(1).max(256)
 
@@ -119,6 +126,7 @@ const appToHostSchema = z.discriminatedUnion('t', [
         remember === undefined ? { value } : { value, remember },
       ),
   }),
+  z.object({ t: z.literal('profile-changed') }),
 ])
 
 const objectLike = <T>(): z.ZodType<T> =>
@@ -199,6 +207,20 @@ const hostToAppSchema = z.discriminatedUnion('t', [
       ),
   }),
   z.object({ t: z.literal('approval-cancel'), id }),
+  z.object({
+    t: z.literal('store-write'),
+    store: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+    changes: z
+      .array(
+        z.union([
+          z.object({ key: z.string().min(1).max(256), deleted: z.literal(true) }),
+          z
+            .object({ key: z.string().min(1).max(256), value: z.unknown() })
+            .transform(({ key, value }): ProfileStoreChange => ({ key, value })),
+        ]),
+      )
+      .max(1_000),
+  }),
 ])
 
 /** The host's socket in this profile. One host serves the whole profile. */

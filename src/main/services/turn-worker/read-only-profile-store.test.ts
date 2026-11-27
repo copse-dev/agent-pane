@@ -64,4 +64,38 @@ describe('readOnlyProfileStoreFactory', () => {
     assert.deepEqual(factory({ name: 'broken' }).listKeys(), [])
     assert.deepEqual(factory({ name: 'absent' }).listKeys(), [])
   })
+
+  it('reports every change with its value, and reloads open stores in place', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ro-profile-change-'))
+    dirs.push(dir)
+    writeFileSync(join(dir, 'settings.json'), JSON.stringify({ theme: 'dark', model: 'a' }))
+    const changes: unknown[] = []
+    const factory = readOnlyProfileStoreFactory(
+      await readProfileStores(dir),
+      undefined,
+      (store, change) => changes.push([store, change]),
+    )
+    const settings = factory({ name: 'settings' })
+    settings.set('model', 'b')
+    settings.setMany?.({ a: 1, b: 2 })
+    settings.delete('theme')
+    settings.deleteKeys(['a'])
+    assert.deepEqual(changes, [
+      ['settings', [{ key: 'model', value: 'b' }]],
+      [
+        'settings',
+        [
+          { key: 'a', value: 1 },
+          { key: 'b', value: 2 },
+        ],
+      ],
+      ['settings', [{ key: 'theme', deleted: true }]],
+      ['settings', [{ key: 'a', deleted: true }]],
+    ])
+
+    writeFileSync(join(dir, 'settings.json'), JSON.stringify({ theme: 'light' }))
+    factory.reload(await readProfileStores(dir))
+    assert.deepEqual(settings.listKeys(), ['theme'])
+    assert.equal(settings.get('theme'), 'light')
+  })
 })

@@ -16,6 +16,7 @@
  */
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
+import type { ProfileStoreChange } from '../turn-worker/read-only-profile-store.ts'
 import { installReadOnlyProfile } from '../turn-worker/worker-profile.ts'
 import { quietWorkerEnvironment } from '../turn-worker/worker-environment.ts'
 import { connectTurnHost, turnHostSocketPath } from './turn-host-protocol.ts'
@@ -56,7 +57,19 @@ async function main(): Promise<number> {
 
   // The profile has to be in place before any module that opens a store loads,
   // so everything past this point is imported dynamically.
-  await installReadOnlyProfile({ userDataPath, version, packaged: values.packaged, log })
+  // A turn's writes to shared stores go to the app once the host is up (decision 5).
+  let forward: (store: string, changes: ProfileStoreChange[]) => void = (store) => {
+    log(`kept a boot-time write to ${store}.json in memory only`)
+  }
+  const profile = await installReadOnlyProfile({
+    userDataPath,
+    version,
+    packaged: values.packaged,
+    log,
+    onChange: (store, changes) => {
+      forward(store, changes)
+    },
+  })
   const [{ bootWorkerRuntime }, { TurnHost }, { serveTurnHost }, { initSshAskpassServer }] =
     await Promise.all([
       import('../turn-worker/worker-runtime.ts'),
@@ -78,7 +91,11 @@ async function main(): Promise<number> {
     onIdle: (): void => {
       done.resolve(undefined)
     },
+    reloadProfile: profile.reload,
   })
+  forward = (store, changes): void => {
+    host.storeWrite(store, changes)
+  }
   const server = await serveTurnHost(
     socketPath,
     (message, client) => {

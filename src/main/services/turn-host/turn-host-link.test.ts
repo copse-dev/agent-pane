@@ -298,4 +298,19 @@ describe('TurnHostLink', () => {
       ],
     )
   })
+
+  it("saves a host turn's store write and tells the host the profile changed", async () => {
+    const host = new FakeHost()
+    const saved: unknown[] = []
+    const { link: line } = link(host, {
+      applyStoreWrite: (message) => saved.push([message.store, message.changes]),
+    })
+    line.profileChanged()
+    assert.equal(host.sent.length, 0, 'no host on the line yet')
+    assert.ok(await line.ensureConnected())
+    host.say({ t: 'store-write', store: 'config', changes: [{ key: 'k', deleted: true }] })
+    line.profileChanged()
+    assert.deepEqual(saved, [['config', [{ key: 'k', deleted: true }]]])
+    assert.ok(host.sent.some((m) => m.t === 'profile-changed'))
+  })
 })

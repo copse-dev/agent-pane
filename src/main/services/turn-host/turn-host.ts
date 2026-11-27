@@ -24,6 +24,7 @@ import { TurnTranscriptWriter } from '../turn-transcript-writer.ts'
 import { modelCannotRunInWorker } from '../turn-worker/turn-worker.ts'
 import { HostApprovals } from './host-approvals.ts'
 import { writeHostDispatchRecord } from './host-dispatch-record.ts'
+import type { ProfileStoreChange } from '../turn-worker/read-only-profile-store.ts'
 import {
   TURN_HOST_PROTOCOL,
   type AppToHost,
@@ -61,6 +62,8 @@ export interface TurnHostDependencies {
   /** Called once the host has had no turn and no attached app for `idleMs`. */
   onIdle: () => void
   idleMs?: number
+  /** Read the profile again; the app wrote it (decision 5). */
+  reloadProfile?: () => Promise<void>
   /** The dispatcher's dependencies; the in-process defaults when absent. */
   dispatcher?: AgentDispatcherDependencies
 }
@@ -87,6 +90,8 @@ export class TurnHost {
   private joined = 0
   private idleTimer: ReturnType<typeof setTimeout> | null = null
   private retiring = false
+  /** The app wrote the profile since this host last read it. */
+  private profileStale = false
   private broadcastTo: (message: HostToApp) => void = () => undefined
   private readonly approvals = new HostApprovals((message) => {
     this.broadcastTo(message)
@@ -225,6 +230,9 @@ export class TurnHost {
       case 'ssh-prompt-answer':
         this.approvals.answerSsh(message.id, message.response)
         return
+      case 'profile-changed':
+        this.profileStale = true
+        return
     }
   }
 
@@ -235,6 +243,18 @@ export class TurnHost {
   private tell(client: TurnHostClient, message: HostToApp): void {
     if (!this.attachedClients.has(client)) client.send(message)
     this.broadcastTo(message)
+  }
+
+  /**
+   * A turn wrote a shared profile store. The app owns those files: an attached
+   * app applies the change. With none, it stays in this process's memory only.
+   */
+  storeWrite(store: string, changes: ProfileStoreChange[]): void {
+    if (this.joined === 0) {
+      this.deps.log(`no app attached: kept a write to ${store}.json in memory only`)
+      return
+    }
+    this.broadcastTo({ t: 'store-write', store, changes })
   }
 
   /** An attached app's line closed. */
@@ -320,6 +340,13 @@ export class TurnHost {
     if (payload.automationRun === true) {
       refuse('automation runs stay in the app')
       return
+    }
+    // Before the turn reads its settings: the app's writes since the last turn.
+    if (this.profileStale && this.deps.reloadProfile) {
+      this.profileStale = false
+      await this.deps.reloadProfile().catch((error: unknown) => {
+        this.deps.log(`could not read the profile again: ${String(error)}`)
+      })
     }
     const reason = await this.refusal(message, client, payload.model)
     if (reason !== null) {
