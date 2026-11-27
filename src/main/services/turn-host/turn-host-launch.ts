@@ -3,6 +3,7 @@ import { mkdirSync, openSync } from 'node:fs'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { requestApproval, runWithApprovalOwner } from '../approval.ts'
+import { requestUserAnswers } from '../ask-user.ts'
 import { reviewRemoteStagedDiff } from '../diff-queue.ts'
 import { requestSshPrompt } from '../ssh-workspace/ssh-prompt.ts'
 import { deleteSetting, setSetting } from '../storage/settings.ts'
@@ -116,6 +117,9 @@ export function createTurnHostLink(deps: TurnHostLaunchDependencies): TurnHostLi
         grantScope: response.grantScope,
       }
     },
+    // The window's question dialog, filed under the host turn's thread.
+    askQuestions: ({ projectId, threadId, request }, signal) =>
+      requestUserAnswers({ ...request, projectId, threadId }, signal),
     // The thread's diff panel shows it; deciding there answers the host.
     reviewDiff: ({ projectId, threadId, entry }, signal) =>
       reviewRemoteStagedDiff({ projectId, threadId }, entry, signal),

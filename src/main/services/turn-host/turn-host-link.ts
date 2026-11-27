@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { TurnWorkerConnection, WorkerToApp } from '../turn-worker/turn-worker-socket.ts'
 import type { SshPromptResponse } from '../ssh-workspace/ssh-prompt.ts'
 import type { ThreadPromptResult } from '@shared/thread-prompt.ts'
+import type { AskUserResult } from '../ask-user.ts'
 import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
 import type { HostTaskCall, HostTaskCallResult } from './host-task-supervisor.ts'
 import type { HostDispatchRecord } from './host-dispatch-record.ts'
@@ -73,6 +74,11 @@ export interface TurnHostLinkDependencies {
     signal: AbortSignal,
   ) => Promise<SshPromptResponse>
   /** Have the window submit a host turn's prompt to another thread. */
+  /** Put a host turn's own questions (`ask_user`) to the user. */
+  askQuestions?: (
+    prompt: Extract<HostToApp, { t: 'ask-user' }>,
+    signal: AbortSignal,
+  ) => Promise<AskUserResult>
   sendThreadPrompt?: (
     command: HostThreadPromptCommand,
     signal: AbortSignal,
@@ -94,7 +100,7 @@ export interface TurnHostLinkDependencies {
 }
 
 type PromptKinds = {
-  t: 'approval' | 'review-diff' | 'ssh-prompt' | 'thread-prompt' | 'task-call'
+  t: 'approval' | 'review-diff' | 'ssh-prompt' | 'thread-prompt' | 'task-call' | 'ask-user'
 }
 
 /** How many answered prompts the link remembers, to answer a replay the same way. */
@@ -376,6 +382,7 @@ export class TurnHostLink {
       case 'ssh-prompt':
       case 'thread-prompt':
       case 'task-call':
+      case 'ask-user':
         this.ask(message)
         return
       case 'taken':
@@ -467,6 +474,12 @@ export class TurnHostLink {
         const call = this.deps.callTaskSupervisor
         return call
           ? call(prompt.call).then((result) => ({ t: 'task-call-answer', id, result }))
+          : null
+      }
+      case 'ask-user': {
+        const ask = this.deps.askQuestions
+        return ask
+          ? ask(prompt, signal).then((result) => ({ t: 'ask-user-answer', id, result }))
           : null
       }
       case 'thread-prompt': {
@@ -589,6 +602,12 @@ function refusal(prompt: Extract<HostToApp, PromptKinds>): AppToHost {
         t: 'task-call-answer',
         id: prompt.id,
         result: { error: 'The app could not record the task.' },
+      }
+    case 'ask-user':
+      return {
+        t: 'ask-user-answer',
+        id: prompt.id,
+        result: { answers: prompt.request.questions.map(() => ''), cancelled: true },
       }
     case 'thread-prompt':
       return {

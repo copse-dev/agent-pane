@@ -10,6 +10,7 @@ import {
 } from '../agent-dispatcher.ts'
 import { abortAgent } from '../agent-service.ts'
 import { runWithApprovalHandler } from '../approval.ts'
+import { runWithAskUserHandler } from '../ask-user.ts'
 import { runWithStagedDiffResolver } from '../diff-queue.ts'
 import { runWithSshPromptHandler } from '../ssh-workspace/ssh-prompt.ts'
 import { getSetting } from '../storage/settings.ts'
@@ -259,6 +260,9 @@ export class TurnHost {
       case 'thread-prompt-answer':
         this.approvals.answerThreadPrompt(message.id, message.result)
         return
+      case 'ask-user-answer':
+        this.approvals.answerQuestions(message.id, message.result)
+        return
       case 'task-call-answer':
         this.approvals.answerTaskCall(message.id, message.result)
         return
@@ -365,7 +369,12 @@ export class TurnHost {
                   ...request,
                   canRememberOnDevice: false,
                 }),
-              run,
+              () =>
+                runWithAskUserHandler(
+                  (request, signal) =>
+                    this.approvals.askQuestions(projectId, threadId, request, signal),
+                  run,
+                ),
             ),
         ),
     )

@@ -9,6 +9,7 @@ import {
 } from '../local-socket.ts'
 import type { StreamChunk, TranscriptSnapshot, TranscriptStamp } from '@shared/types'
 import type { ThreadPromptCommand, ThreadPromptResult } from '@shared/thread-prompt.ts'
+import type { AskUserRequest, AskUserResult } from '../ask-user.ts'
 import {
   supervisedTaskMetaSchema,
   type SupervisedTaskMeta,
@@ -40,9 +41,10 @@ import type { SshPromptRequest, SshPromptResponse } from '../ssh-workspace/ssh-p
  * - `status` asks what became of a dispatch by its operation id, for an app
  *   that lost the answer. A repeated `dispatch` of an id it has seen gets the
  *   same answer and never runs the turn twice.
- * - `approval`, `review-diff` and `ssh-prompt` ask the window to answer a
- *   prompt a host turn raised: an approval, a staged edit for the diff panel,
- *   or an SSH password or host-key question. Each has its own `-answer` back.
+ * - `approval`, `review-diff`, `ssh-prompt` and `ask-user` ask the window to
+ *   answer a prompt a host turn raised: an approval, a staged edit for the diff
+ *   panel, an SSH password or host-key question, or the agent's own questions
+ *   (`ask_user`). Each has its own `-answer` back.
  *   A prompt waits however long no app is attached, and is asked again of every
  *   app that attaches; `approval-cancel` takes any of them down once it no
  *   longer needs an answer.
@@ -77,6 +79,7 @@ export type AppToHost =
   | { t: 'profile-changed' }
   | { t: 'test-scenario'; id: string; op: TestScenarioOp }
   | { t: 'thread-prompt-answer'; id: string; result: ThreadPromptResult }
+  | { t: 'ask-user-answer'; id: string; result: AskUserResult }
   | { t: 'task-call-answer'; id: string; result: HostTaskCallResult }
   | { t: 'task-changed'; task: SupervisedTaskMeta }
   | {
@@ -163,6 +166,7 @@ export type HostToApp =
       command: HostThreadPromptCommand
     }
   | { t: 'task-call'; id: string; projectId: string; threadId: string; call: HostTaskCall }
+  | { t: 'ask-user'; id: string; projectId: string; threadId: string; request: AskUserRequest }
   | { t: 'taken'; projectId: string; threadId: string }
   | { t: 'process-result'; id: string; ok: boolean; logs?: HostProcessLogs | null | undefined }
   | { t: 'approval-cancel'; id: string }
@@ -224,6 +228,23 @@ const appToHostSchema = z.discriminatedUnion('t', [
     threadId: id,
   }),
   z.object({
+    t: z.literal('ask-user-answer'),
+    id,
+    result: z
+      .object({
+        answers: z.array(z.string().max(1_000_000)).max(1_000),
+        cancelled: z.literal(true).optional(),
+        timedOut: z.literal(true).optional(),
+        deferred: z.literal(true).optional(),
+      })
+      .transform(({ answers, cancelled, timedOut, deferred }): AskUserResult => ({
+        answers,
+        ...(cancelled ? { cancelled } : {}),
+        ...(timedOut ? { timedOut } : {}),
+        ...(deferred ? { deferred } : {}),
+      })),
+  }),
+  z.object({
     t: z.literal('thread-prompt-answer'),
     id,
     result: z.discriminatedUnion('ok', [
@@ -269,6 +290,10 @@ const hostTaskCallShape = z.discriminatedUnion('op', [
 ])
 
 /** The fields of a host turn's thread prompt the app reads before the window does. */
+const askUserRequestShape = z.looseObject({
+  questions: z.array(z.looseObject({ question: z.string().max(100_000) })).max(1_000),
+})
+
 const threadPromptCommandShape = z.looseObject({
   sourceThreadId: id,
   projectId: id,
@@ -349,6 +374,15 @@ const hostToAppSchema = z.discriminatedUnion('t', [
       .transform(({ canRememberOnDevice, ...request }): SshPromptRequest =>
         canRememberOnDevice === undefined ? request : { ...request, canRememberOnDevice },
       ),
+  }),
+  z.object({
+    t: z.literal('ask-user'),
+    id,
+    projectId: id,
+    threadId: id,
+    // Built by the same ask_user tool as an in-process question; the window
+    // renders it as it would one of its own.
+    request: z.custom<AskUserRequest>((value) => askUserRequestShape.safeParse(value).success),
   }),
   z.object({
     t: z.literal('thread-prompt'),
