@@ -3129,6 +3129,10 @@
       "sha256": "0c97d667b4459264be29b62a319bc72638cfef3c56fc6709d7d95c1ea3aa808e",
       "bytes": 95587
     },
+    "new-project-trust-offer.png": {
+      "sha256": "d1a6800d3421c41b94ccb62d12239becbc4bd62a5e4635b9d61b4522a2ad1b4f",
+      "bytes": 283130
+    },
     "new-thread-activity-home.png": {
       "sha256": "efa88bf3060deb186752229797b7adf1b26fa6129d15612d8650232cf33b2148",
       "bytes": 295697
@@ -5174,8 +5178,8 @@
       "bytes": 18660
     },
     "settings-sources-trust-confirm.png": {
-      "sha256": "134f7936da1029c1036db8f4a416e88fd9973310770b256af1845229961074d7",
-      "bytes": 37628
+      "sha256": "ed1b0f52cb27bc6c92435b820ad3e56287b42c315cb74dd829a0fb5802318741",
+      "bytes": 54659
     },
     "settings-sources-trust-trusted.png": {
       "sha256": "2b8308b1e4f8839c3045371be59968a6e6f57fb1e8e445565144208113b95970",
@@ -6764,6 +6768,18 @@
     "workspace-preview-protected.png": {
       "sha256": "7c93cebe61bca473b884671ccd4016ed58f681754efce10babbeccc7f678efd9",
       "bytes": 246614
+    },
+    "workspace-trust-offer-confirm.png": {
+      "sha256": "32c1d26b4e9d353b214886661db143d23c5e02732135f4fda0cedbdf53cfc29b",
+      "bytes": 244406
+    },
+    "workspace-trust-offer-prompt.png": {
+      "sha256": "f98f49761ed183861698a5f0ee548fc0602f3cbc432a819a4d23ce373508a9fb",
+      "bytes": 296731
+    },
+    "workspace-trust-offer-trusted.png": {
+      "sha256": "adb75d3a9180aa40bc1025f48f3e83449978e6015221406962e8dc61cbf5470c",
+      "bytes": 290151
     },
     "worktree-preparation-approval.png": {
       "sha256": "18d27e0560f675fc64507810b52e376cecaa8d07734c9f48c878aafe5a8a02e5",
