@@ -192,15 +192,13 @@ with zipfile.ZipFile(sys.argv[1], 'w') as wheel:
     )
     assert.equal(lock.status, 0, lock.stderr)
     const originalLock = readFileSync(join(root, 'uv.lock'), 'utf8')
-    // The fixture never leaves the machine, so the host's TLS trust overrides
-    // are not under test. uv loads them at startup and fails when one names a
-    // bundle the sandbox cannot read.
+    // uv loads TLS trust at startup even offline. Name a CA bundle the sandbox
+    // cannot read, as a corporate CA under the denied home directory would be:
+    // offline preparation must not pass it through (#4417).
     const env = {
-      ...Object.fromEntries(
-        Object.entries(process.env).filter(
-          ([key]) => !['SSL_CERT_FILE', 'SSL_CERT_DIR', 'UV_NATIVE_TLS'].includes(key),
-        ),
-      ),
+      ...process.env,
+      SSL_CERT_FILE: join(parent, 'unreadable-ca.pem'),
+      UV_NATIVE_TLS: 'true',
       COPSE_DIR: join(parent, 'profile'),
     }
     await SandboxManager.initialize(baseSandboxConfig(), undefined, false)

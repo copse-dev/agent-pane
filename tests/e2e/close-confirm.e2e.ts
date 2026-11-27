@@ -5,8 +5,6 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
-/** Long enough that the thread stays `running` across all three cases. */
-
 /**
  * Waiting for the confirm dialog to come back from main.
  *
@@ -80,9 +78,19 @@ describe('close confirmation while a thread is working', function () {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
       windowBounds: { width: 1280, height: 800 },
+      // The warning that a close loses the turn. With the hand-off on the dialog
+      // says the turn keeps going instead (unit-tested in close-confirm.test.ts).
+      continueTurnsAfterQuit: false,
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+  })
+
+  // Each case counts only its own answers, so any one of them can run alone.
+  beforeEach(async () => {
+    await browser.execute(() => {
+      window.__closeConfirmAnswers = []
+    })
   })
 
   afterEach(async () => {
@@ -121,8 +129,8 @@ describe('close confirmation while a thread is working', function () {
     await saveElementScreenshot('#confirm-dialog', 'close-confirm-working-thread.png')
 
     await dialog.$('.confirm-dialog-cancel').click()
-    await waitForAnswers(2)
-    expect(await closeAnswers()).toEqual([true, false])
+    await waitForAnswers(1)
+    expect(await closeAnswers()).toEqual([false])
     // Backing out leaves the run untouched.
     expect(await isRunning()).toBe(true)
   })
@@ -135,7 +143,7 @@ describe('close confirmation while a thread is working', function () {
     await dialog.waitForDisplayed({ timeout: CONFIRM_DIALOG_WAIT_MS })
     await dialog.$('.confirm-dialog-confirm').click()
 
-    await waitForAnswers(3)
-    expect(await closeAnswers()).toEqual([true, false, true])
+    await waitForAnswers(1)
+    expect(await closeAnswers()).toEqual([true])
   })
 })

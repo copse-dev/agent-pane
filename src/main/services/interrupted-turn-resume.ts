@@ -202,15 +202,18 @@ export async function resumeInterruptedTurns(
 
 const projectIdsSchema = z.array(z.object({ id: z.string().regex(/^[\w-]{1,128}$/) }))
 
+/** Ids of the profile's projects, from the shared `projects` store. */
+export function listProfileProjectIds(): string[] {
+  const projects = projectIdsSchema.safeParse(storageGet('projects'))
+  return projects.success ? projects.data.map((project) => project.id) : []
+}
+
 /** The app's own stores and dispatcher, for the boot-time call. */
 export function defaultInterruptedTurnResumeDependencies(dispatcher: {
   dispatchMachine: InterruptedTurnResumeDependencies['dispatchMachine']
 }): InterruptedTurnResumeDependencies {
   return {
-    listProjectIds: (): string[] => {
-      const projects = projectIdsSchema.safeParse(storageGet('projects'))
-      return projects.success ? projects.data.map((project) => project.id) : []
-    },
+    listProjectIds: listProfileProjectIds,
     loadThreadMetas: (projectId) => loadProjectThreadMetas(projectId),
     loadMessages: loadThreadMessages,
     loadTurnTreeId: async (projectId, threadId) =>

@@ -122,7 +122,7 @@ revisiting this document, not silently diverging in an implementation PR.
    foreground yields), change-acceptance wakes, durable CI status-change wakes,
    long-horizon task wakes (`long-task-wake.ts`, dispatched through `dispatchMachine` on the
    originating turn tree), ACP agent self-resumes (below), ACP unfinished-turn recovery, restart resumes
-   of turns an update relaunch or crash cut off (below), post-turn remediation cycles,
+   of turns an update relaunch or crash cut off and local turn worker continuations (below), post-turn remediation cycles,
    pre-review todo attempts, and todo-closeout turns. Agent-managed external-agent
    turns leave unfinished-turn recovery to the agent, so they spend no recovery
    continuation. **In-loop nudges do not count**
@@ -207,6 +207,11 @@ revisiting this document, not silently diverging in an implementation PR.
    no ending and is continued like a crash; on Linux the same shutdown arrives as SIGTERM and
    counts as a quit. "Restart now" for an update marks its own quit as an update relaunch, and
    the mark is cleared again if the updater fails, so a later quit is still the user's.
+   With "Continue turns after Copse closes" on, a quit the user confirmed hands each running
+   turn to a local turn worker instead (`local-turn-worker.md`), whose dialog says so, and is
+   recorded as `hand-off`; the next launch continues whatever no worker took. Signal and fault
+   quits, and a close the dialog let through with nobody's answer, never hand off and stay
+   `quit`.
    `last-run.ts` records how each run ended, and only threads the previous run started are
    continued, so a thread cut off further back is never picked up. On the next launch, once tools and MCP servers are
    back, `interrupted-turn-resume.ts` dispatches one `dispatchMachine` continuation per such
