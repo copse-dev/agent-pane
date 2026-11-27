@@ -240,6 +240,10 @@
       "smoke": null
     },
     {
+      "prefix": "src/main/services/worker-protocol/",
+      "smoke": null
+    },
+    {
       "prefix": "src/main/services/workspace-fs/",
       "smoke": null
     },

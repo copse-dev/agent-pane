@@ -17,15 +17,6 @@ export type WorkerProtocolModule =
 const ROOT = resolve(import.meta.dirname, '..', '..')
 const ENTRY = 'src/main/services/worker-protocol/worker-protocol-document.ts'
 
-function isWorkerProtocolModule(value: unknown): value is WorkerProtocolModule {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'workerProtocolDocument' in value &&
-    typeof value.workerProtocolDocument === 'function'
-  )
-}
-
 export async function loadWorkerProtocol(): Promise<WorkerProtocolModule> {
   // Inside the repo (ignored `.tmp/`), so the bundle's externals resolve from
   // its node_modules.
@@ -46,9 +37,9 @@ export async function loadWorkerProtocol(): Promise<WorkerProtocolModule> {
       define: { __COPSE_TEST_SCENARIOS__: 'false' },
       logLevel: 'error',
     })
-    const loaded: unknown = await import(pathToFileURL(outfile).href)
-    if (!isWorkerProtocolModule(loaded)) throw new Error(`${ENTRY} did not bundle as expected`)
-    return loaded
+    // The bundle of the module the type names, built just above.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- dynamic import of our own bundle
+    return (await import(pathToFileURL(outfile).href)) as WorkerProtocolModule
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

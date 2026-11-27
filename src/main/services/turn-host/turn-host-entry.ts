@@ -97,7 +97,7 @@ async function main(): Promise<number> {
     import('../registry-bootstrap.ts'),
     import('../mcp/mcp-registry.ts'),
     import('../plugins/plugin-service.ts'),
-    import('./host-capabilities.ts'),
+    import('./host-can-run.ts'),
   ])
   // As the app does when its window selects a project or toggles a plugin
   // (workspace-handlers.ts, plugin-handlers.ts).

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { memberOf } from '@shared/member-of.ts'
 import { isChatGptPlanModel } from '@copse/llm/chatgpt-plan.ts'
 import { isAcpModel } from '@shared/acp.ts'
 import { isRemoteAgentModel } from '@shared/remote-agent.ts'
@@ -42,7 +43,7 @@ export interface WorkerCapabilities {
   sandbox: boolean
 }
 
-const knownRole = (role: string): role is WorkerRole => WORKER_ROLES.some((known) => known === role)
+const knownRole = memberOf(WORKER_ROLES)
 
 export const workerCapabilitiesSchema = z.object({
   // A role this end does not know yet (a newer worker's) counts as nothing, so
