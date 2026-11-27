@@ -945,6 +945,9 @@ app
           console.log(line)
         },
         onThreadTaken: (projectId: string, threadId: string): void => {
+          // The host writes this thread's history now: this process's cached
+          // copy goes stale, and the next turn run here reads it from disk.
+          agentDispatcher.forgetHistory(projectId, threadId)
           void foreignTurns.follow({ projectId, threadId })
         },
         onShellOutput: (chunk: string, taskId: string | null): void => {
@@ -1420,6 +1423,7 @@ app
         // write lands, so the follower's repaint at the release can still read
         // the turn as running. `ended` comes after that write: paint it again.
         if (ranInHost) {
+          agentDispatcher.forgetHistory(projectId, threadId)
           await foreignTurnDependencies.repaint({ projectId, threadId }).catch((error: unknown) => {
             console.warn('[turn-host] could not repaint a finished host turn:', error)
           })

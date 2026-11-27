@@ -573,6 +573,9 @@ export class TurnHost {
       client.send({ t: 'accepted', id, threadId })
     }
     this.claimed.set(turnKey, { operationId: id, accept })
+    // The app may have run this thread's turns since the host's last one: read
+    // its history from disk rather than from this process's cache.
+    this.dispatcher.forgetHistory(projectId, threadId)
     try {
       await this.withPrompts(projectId, threadId, stopped.signal, () =>
         this.dispatcher.dispatch({ projectId, threadId, payload }),
