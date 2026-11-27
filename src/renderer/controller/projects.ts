@@ -1335,9 +1335,10 @@ export async function createNewProject(store: AppStore, api: ApiClient): Promise
 async function offerProjectTrust(api: ApiClient, root: string): Promise<void> {
   try {
     if (await api.workspace.isTrusted()) return
-    // Hooks come from the window's workspace, the same root `setTrusted` below
-    // trusts; the re-check after the dialog keeps the two the same project.
-    const unsandboxedHooks = await api.workspace.unsandboxedProjectHooks().catch(() => [])
+    // Hooks are read from `root` itself, so a workspace switch while they load
+    // cannot put another project's hooks in this consent. The re-check after the
+    // dialog makes sure `setTrusted` (window workspace) still means `root`.
+    const unsandboxedHooks = await api.workspace.unsandboxedProjectHooks(root).catch(() => [])
     const { confirmProjectTrust } = await import('../views/workspace-trust-consent.ts')
     const confirmed = await confirmProjectTrust({
       projectName: basename(root),

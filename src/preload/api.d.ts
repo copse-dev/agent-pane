@@ -286,7 +286,8 @@ export interface ApiClient {
       name: string
       unsandboxedHooks: { event: string; command: string }[]
     } | null>
-    unsandboxedProjectHooks: () => Promise<{ event: string; command: string }[]>
+    /** Hooks of `root` (default: the window's workspace) that declare `sandbox: false`. */
+    unsandboxedProjectHooks: (root?: string) => Promise<{ event: string; command: string }[]>
     createNewProject: (name: string, parentDir: string) => Promise<string>
     pickParentDirectory: () => Promise<string | null>
     getHomeDirectory: () => Promise<string>

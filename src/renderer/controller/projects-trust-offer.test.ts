@@ -22,10 +22,11 @@ interface TrustState {
   trusted: boolean
   root: string
   trustCalls: boolean[]
+  hookRoots: (string | undefined)[]
 }
 
 function untrustedAt(root: string): TrustState {
-  return { trusted: false, root, trustCalls: [] }
+  return { trusted: false, root, trustCalls: [], hookRoots: [] }
 }
 
 function makeApi(state: TrustState): ApiClient {
@@ -43,7 +44,10 @@ function makeApi(state: TrustState): ApiClient {
         state.trusted = trusted
         return []
       },
-      unsandboxedProjectHooks: async () => [],
+      unsandboxedProjectHooks: async (hookRoot): Promise<never[]> => {
+        state.hookRoots.push(hookRoot)
+        return []
+      },
     },
   }
 }
@@ -64,6 +68,8 @@ test('offers trust for a newly added project and trusts only on yes', async () =
   assert.equal(await addProject(store, makeApi(state)), true)
   await flush()
   assert.equal(confirmMessage(), 'Trust “new”?')
+  // The consent lists the offered project's hooks, not the window's current one.
+  assert.deepEqual(state.hookRoots, ['/new'])
   // Nobody asked for this dialog, so the keyboard default declines.
   assert.equal(
     document.activeElement,
