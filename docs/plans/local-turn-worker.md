@@ -223,12 +223,30 @@ in it, and folding container runs into it are separate steps, not part of this o
    launch, in the background, and routes turns to it once it answers. It serves every thread
    on one socket (`<profile>/run/turn-host.sock`) and keeps the per-thread writer lease, so
    W3 and W4 (follow, attach, stop) work unchanged against it.
-2. **The app never waits on the host.** A turn sent before the host answers, a thread the
-   host cannot run (`workerCannotRun`: ChatGPT-plan models, external and remote agents), or a
-   host that failed to start, runs in main as today. Routing is per turn, and a turn never
-   moves between processes mid-stream, so falling back is always safe.
+2. **The app never waits on the host, and a turn runs at most once.** A turn sent before the
+   host answers, a thread the host cannot run (`workerCannotRun`: ChatGPT-plan models,
+   external and remote agents), or a host that failed to start, runs in main as today.
+   Routing is per turn, and a turn never moves between processes mid-stream. Once a turn has
+   been sent, though, falling back is only safe if the host provably never ran it, so
+   ownership follows these rules:
+   - Every `dispatch` carries an operation id the app chooses. The host remembers each id it
+     has seen, and a repeat of one gets that operation's state, never a second run.
+   - When the host holds the thread's lease, and before the turn starts, it writes a dispatch
+     record (`host-dispatch.json`: operation id, `claimed` or `ended`) into the thread
+     directory, under that lease. It marks the record `ended` after the turn's last write.
+   - The app runs the turn in main only on an explicit `refused` for that id.
+   - Any other silence (the line drops, the host dies) before an answer is resolved by
+     asking, never by assuming. The app reconnects and sends `status` for the id. If no host
+     answers, it reads the thread's dispatch record:
+     - A record with the id means the host took the turn. If the host is gone, the thread is
+       settled interrupted through the existing follower path, which offers Continue.
+     - No record, with the host process gone, means the host never claimed the thread, so
+       the app runs the turn.
+     - If the host is neither reachable nor provably gone, nothing runs. The thread settles
+       interrupted, and Continue is the user's call.
 3. **Same protocol, more verbs.** The W4 socket gains `dispatch` (an `agent:run` request:
-   project, thread, payload), `approval` and `approval-answer`, `askpass` and
+   project, thread, payload, operation id), `status` (an operation's state by id),
+   `approval` and `approval-answer`, `askpass` and
    `askpass-answer`, and `staged-diff` and its answer. `attach`, `chunk`, `snapshot` and
    `stop` are as in W4. The renderer is unchanged: the app's follower turns host chunks into
    `agent:chunk` and `agent:transcript-snapshot` as it already does for a handed-off turn.
@@ -263,13 +281,16 @@ in it, and folding container runs into it are separate steps, not part of this o
 
 - **H1, the turn host.** `turn-host-entry.ts`, bundled to `dist/main/turn-host.js`: boots
   once, serves `dispatch`, `attach` and `stop` for many threads, and exits when idle with no
-  app attached. The app starts it at launch when the setting is on, and the follower attaches
-  to it. Approvals defer for now. _Exit gate:_ a unit test that bundles the host, dispatches
-  two turns on two threads against the mock provider, and sees both on their spines with the
-  leases released.
-- **H2, route turns.** `agent:run` sends eligible turns to the host, falling back to main.
-  _Exit gate:_ e2e. With the setting on, a turn streams into the window from the host, and
-  Stop ends it.
+  app attached. It keeps the dispatch records and answers `status` (decision 2). Approvals
+  defer for now. _Exit gate:_ the bundled host, started against a temporary profile with the
+  mock provider, runs two turns on two threads to completion with the leases released, and
+  a repeated `dispatch` of an operation id runs nothing.
+- **H2, route turns.** The app starts the host at launch when the setting is on, the
+  follower attaches to it, and `agent:run` sends eligible turns to it, falling back to main
+  under decision 2's rules. _Exit gates:_ e2e: with the setting on, a turn streams into the
+  window from the host, and Stop ends it. Unit: a line dropped after `accepted`, both with
+  the host finishing the turn and with the host killed mid-turn, never runs the turn in
+  main.
 - **H3, interactive approvals, staged diffs and SSH prompts** over the socket, with replay
   on attach. _Exit gate:_ e2e of an approval answered in the window for a host turn.
 - **H4, shared stores and profile changes** (decision 5). Starts with an audit of which
