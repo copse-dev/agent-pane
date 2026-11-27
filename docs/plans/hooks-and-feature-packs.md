@@ -145,7 +145,8 @@ revisiting this document, not silently diverging in an implementation PR.
    follow-ups, bounded background-task completion wakes (including explicit `run_shell`
    foreground yields), change-acceptance wakes, durable CI status-change wakes,
    long-horizon task wakes (`long-task-wake.ts`, dispatched through `dispatchMachine` on the
-   originating turn tree), ACP agent self-resumes (below), ACP unfinished-turn recovery, post-turn remediation cycles,
+   originating turn tree), ACP agent self-resumes (below), ACP unfinished-turn recovery, restart resumes
+   of turns an update relaunch or crash cut off and local turn worker continuations (below), post-turn remediation cycles,
    pre-review todo attempts, and todo-closeout turns. Agent-managed external-agent
    turns leave unfinished-turn recovery to the agent, so they spend no recovery
    continuation. **In-loop nudges do not count**
@@ -161,7 +162,10 @@ revisiting this document, not silently diverging in an implementation PR.
    `min(loop_limit, global remaining)`; `loop_limit: null` (unlimited) is clamped to the
    global cap with a warning — human-in-the-loop is the floor. Continuations are granted
    first-come in completion order. Each granted turn is a fresh run with its own
-   step/LLM-call caps and deadline, as today. **The budget is enforced at dispatch
+   step/LLM-call caps and deadline, as today. A turn main starts runs on the thread's own
+   model, reasoning dial and execution mode, read from its metadata at dispatch the way a
+   renderer send reads them from the chat; it never falls through to the global default
+   while the chat names a model. **The budget is enforced at dispatch
    time**: plain queued messages auto-drain once the thread idles (`drainMessageQueue`),
    so a hook-originated message consumes budget when it _drains_, not when it enqueues.
    A drain that the main process turns away because another turn still owns the thread
@@ -225,6 +229,34 @@ revisiting this document, not silently diverging in an implementation PR.
    (decision 4), so the agent's own exact retry can use them. Saved
    results remain inspectable when delivery is stale or budget-exhausted.
    This does not introduce automatic recovery after app restart.
+   Turns themselves are the one thing that does resume after a restart (amended 25 November
+   2026). A quit, update relaunch or crash ends the process that runs a turn and leaves its
+   thread `running` on disk with no outcome. Only an update relaunch or a crash is continued: a
+   quit the user chose (the menu, a confirmed close, a signal) stops the run, as the close dialog
+   says, so it is a refusal under this decision and its threads keep the manual Continue card.
+   Two edge cases follow the same record on purpose. A quit after an uncaught exception or lost
+   stdio goes through the orderly quit path and counts as a quit, so a turn that may have caused
+   the fault is not rerun unattended. A Windows shutdown or logoff skips `before-quit`, leaves
+   no ending and is continued like a crash; on Linux the same shutdown arrives as SIGTERM and
+   counts as a quit. "Restart now" for an update marks its own quit as an update relaunch, and
+   the mark is cleared again if the updater fails, so a later quit is still the user's.
+   With "Continue turns after Copse closes" on, a quit the user confirmed hands each running
+   turn to a local turn worker instead (`local-turn-worker.md`), whose dialog says so, and is
+   recorded as `hand-off`; the next launch continues whatever no worker took. Signal and fault
+   quits, and a close the dialog let through with nobody's answer, never hand off and stay
+   `quit`.
+   `last-run.ts` records how each run ended, and only threads the previous run started are
+   continued, so a thread cut off further back is never picked up. On the next launch, once tools and MCP servers are
+   back, `interrupted-turn-resume.ts` dispatches one `dispatchMachine` continuation per such
+   thread with the fixed `INTERRUPTED_TURN_CONTINUATION` prompt the manual Continue button
+   sends, on the thread's persisted turn tree, so the stale-epoch and budget checks above apply
+   and a resume costs one unit. It resumes once per interruption: a thread whose newest prompt is
+   already a restart continuation (`restart-resume:` operation id on its machine origin) is left
+   for the human, so a turn that crashes the app cannot relaunch itself in a loop. Each continuation
+   carries the thread's own model, reasoning level and execution mode. Archived
+   threads, side chats, scheduled automations (their own run recovery), threads with queued
+   follow-ups (the window's drain continues them) and `/name` invocations are never resumed.
+   No tool call is replayed; the prompt tells the agent to inspect state first.
    Each in-run grant carries its bounded mechanism reason
    (`todo-closeout`, `pre-review-todo`, or `post-review-remediation`) for reporting;
    the reason does not change first-come ordering or the shared count. When the limit

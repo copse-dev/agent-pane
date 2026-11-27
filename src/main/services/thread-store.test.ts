@@ -1402,6 +1402,35 @@ describe('thread-store', () => {
       })
     })
 
+    it('does not duplicate a message another process appended to the same thread', async () => {
+      await createThread('proj-1', thread('t1'))
+      await appendMessage('proj-1', 't1', userMsg('u1', 'hello'))
+      // Another process (the app beside its turn host) appends u2 to t1. Build
+      // its line in a scratch thread and copy it over, as that process would write it.
+      await createThread('proj-1', thread('scratch'))
+      await appendMessage('proj-1', 'scratch', userMsg('u2', 'second'))
+      const scratch = join(root, 'proj-1', 'scratch')
+      const line = readFileSync(join(scratch, 'events.jsonl'), 'utf8').trimEnd().split('\n').at(-1)
+      assert.ok(line)
+      const t1 = join(root, 'proj-1', 't1')
+      fs.mkdirSync(join(t1, 'messages'), { recursive: true })
+      for (const file of fs.readdirSync(join(scratch, 'messages'))) {
+        fs.copyFileSync(join(scratch, 'messages', file), join(t1, 'messages', file))
+      }
+      fs.appendFileSync(join(t1, 'events.jsonl'), `${line}\n`)
+
+      // This process writes u2 again (a later revision): it replaces the line.
+      await appendMessage('proj-1', 't1', userMsg('u2', 'second, revised'))
+      const loaded = (await loadProjectThreads('proj-1')).find((entry) => entry.id === 't1')
+      assert.deepEqual(
+        loaded?.messages.map((message) => [message.id, message.content]),
+        [
+          ['u1', 'hello'],
+          ['u2', 'second, revised'],
+        ],
+      )
+    })
+
     it('appends machine continuation audits and preserves them across a full thread save', async () => {
       const storedThread = thread('t1', { messages: [userMsg('u1', 'hello')] })
       await createThread('proj-1', storedThread)

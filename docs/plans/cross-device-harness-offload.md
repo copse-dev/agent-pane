@@ -4,6 +4,7 @@
 landed the loop-in-guest half of this while it was open: O0, O3 and O4 below are delivered for
 a disposable local container. What remains unbuilt, and is what this plan now exists for, is
 ownership — the lease in O1 and the attach/detach in O2, which that plan parks as its T2.
+The order of the remaining work is in [`harness-worker-roadmap.md`](harness-worker-roadmap.md).
 This plan answers one question the
 package extraction made worth asking: now that the agent runtime no longer needs Electron,
 what stops it running on a different machine from the window that started it?
@@ -122,10 +123,15 @@ turn. A desktop that must be reachable for the run to proceed has not offloaded 
 7. **YOLO requires proven containment.** The worker advertises its sandbox state and the
    desktop refuses to arm unattended mode without an enforcing backend. An unsandboxed remote
    in YOLO is total trust of that machine, and must be an explicit, per-host decision.
-8. **Credentials are leased, not brokered.** The worker holds a short-lived provider key for
-   the duration of its lease. A broker that needs the desktop online defeats the point. This
-   knowingly departs from the "keys never leave the desktop" line held by
-   `ssh-remote-repo.md` and `unattended-runs.md`; the alternative is not offloading.
+8. **Keys stay on the desktop unless the user leases one out.** By default a remote worker
+   sends its model calls through the desktop, as container runs do through their host, so
+   keys never leave it and a run pauses while the desktop is away. The user can opt a worker
+   host in, per host and per provider, to holding a short-lived key for the duration of its
+   lease: revoked or expired when the lease ends, named in the run record, and narrower than
+   the user's main key where the provider supports that. Only an opted-in host keeps running
+   with the desktop closed. This departs from the "keys never leave the desktop" line held by
+   `ssh-remote-repo.md` and `unattended-runs.md` only for hosts the user chose (decided 27
+   November 2026, `harness-worker-roadmap.md`).
 9. **The worker runs under a non-human principal.** It must not inherit the ambient
    credentials or remembered approvals of whoever last opened the project
    (`execution-runtime-security.md` Decision 11). Takeover is an explicit lease transition.
@@ -173,12 +179,32 @@ This is the half nothing has built. `thread-in-container.md` parks it as T2 and 
 mechanism — "the per-thread writer lease from `acp-session-continuity.md` so desktop and guest
 never both advance a turn" — so O1 and T2 should be one piece of work, not two.
 
-Not started. The local writer from `mobile-web-experience.md` L1 relies on the
-dispatcher's per-thread slot for exclusion, which only holds inside one process; O1 is
-what lets any second process write.
+Landed for turns (25 November 2026). `packages/thread-store/src/writer-lease.ts` keeps a
+`writer.lease.<epoch>` record in the thread directory: owner (host, pid, per-process id), an
+epoch that rises on every acquisition and is never reused, and a heartbeat with a 30 s
+time-to-live. A takeover creates the next epoch's record with an exclusive hard link, so of
+several contenders exactly one wins and there is no lock to leave behind; a release marks the
+record released instead of deleting it. A holder whose pid
+is gone on the same host frees the lease at once, so a relaunch after a crash does not wait
+out the expiry; a holder on another host is only taken over after it. The dispatcher
+(`agent-dispatcher.ts`, through `thread-writer-lease.ts`) takes the lease inside its
+per-thread slot before it opens the transcript, renews it every 10 s while the turn runs,
+stops the turn if a renewal finds the lease taken over, and refuses a thread another process
+holds with `AgentTurnBusyError`. Headless runs that keep their history in memory do not take
+it.
+
+A turn that loses its lease is fenced: the dispatcher stops the run, skips its history
+checkpoints and final commit, and its transcript writes nothing more, not even a closing
+status, so the new holder's writes are the only ones after the takeover. A loss found before
+the run starts means it never starts. Still open: the epoch is not yet checked at the store's
+write sites, so a write already issued when the loss is noticed can still land; and writes
+outside a turn (renderer saves, history edits) do not take the lease. The worker needs both before it
+writes a thread the desktop can also see. The multi-process race and kill-takeover tests are
+in `writer-lease.test.ts`.
 
 _Exit gate:_ two processes race for one thread and exactly one advances it. Killing the owner
-lets the other take over only after expiry. No duplicate provider turn, commit, or spine
+lets another process on the same host take over at once (its pid is gone), and one on another
+host only after expiry. No duplicate provider turn, commit, or spine
 append under a partition.
 
 ### O2 — attach, detach, reattach
@@ -246,8 +272,8 @@ Move a live thread between desktop and worker, and between two workers, as a lea
 
 - **Split-brain is the plan's central risk.** Everything else is recoverable; two loops
   advancing one thread is not.
-- **Cross-process thread-store locking does not exist.** O1 must add it or the store is
-  corrupt the first time both machines are awake.
+- **Cross-process thread-store locking covers turns only.** O1's lease excludes a second
+  turn; writes outside a turn and epoch checks at write sites are still to come.
 - **A deferral queue nobody reads** is the failure mode of O3 — the same risk
   `deferred-approvals.md` names for itself.
 - **Prompt injection over a long horizon** is materially worse with no human in the loop and a

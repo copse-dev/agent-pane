@@ -41,7 +41,9 @@ tier authorizes them; skipping a prompt does not imply confinement.
 
 The dropdown cannot skip a prompt when:
 
-- the workspace is not trusted;
+- the workspace is not trusted. Copse offers to trust a project once when you add it, and a shell
+  prompt that only appears because the project is untrusted says so and offers **Trust project…**.
+  You can also trust it from Settings → Sources;
 - auto-run (the checkbox above the dropdown) is off;
 - there is no project sandbox — Windows, or a sandbox that failed to start.
   Every recognised shape asks without containment, reads included: these

@@ -625,6 +625,22 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   and its `run_shell` has no network and refuses every approval prompt. Serving `gh` reads to the agent
   process through the host (#3873's per-thread `GH_CONFIG_DIR` and socket) waits
   on that draft.
+- **The agent's own GitHub MCP servers are sandboxed too.** A server from the
+  agent's own config, such as Claude Code's `plugin:github-connector:github`,
+  runs as a child of the agent, inside the same sandbox (#4148). A stdio server
+  that reads gh's login dies on the `~/.config/gh` denial before it answers, and
+  Claude Code reports `CONNECTION_CLOSED: Connection closed`. A hosted one, such
+  as `api.githubcopilot.com/mcp/`, is refused by the network allowlist. Claude
+  Code then records the server by name in the thread's
+  `acp-agent-config/claude-acp/mcp-needs-auth-cache.json` and skips it for 15
+  minutes. Copse leaves that entry alone: the server would fail the same way on
+  the next start, so clearing it buys nothing. Instead the sandbox note says
+  that if such a server fails to connect, the sandbox is the cause, and points at
+  the same GitHub route as above (or, with no route, tells the agent to say so), and
+  the post-turn network audit counts `api.githubcopilot.com` as GitHub, so it names
+  the bridged GitHub tools. Reproduced on Linux with `srt` and Claude Code 2.1.332
+  through a `--plugin-dir` plugin named `github-connector`: the stdio server
+  connects outside the sandbox and fails with `CONNECTION_CLOSED` inside it.
 - **SSH workspaces are opt-in.** Off by default, ACP agents stay hidden from the
   chat model picker and are rejected at session open on an SSH remote. Turn on
   **Settings → Experimental → ACP agents → Run ACP agents over SSH** to spawn the

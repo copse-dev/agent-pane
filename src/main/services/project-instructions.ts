@@ -191,10 +191,40 @@ function latestNestedActivation(projectKey: string): ReadonlySet<string> {
 }
 
 function recordNestedActivation(projectKey: string, names: ReadonlySet<string>): void {
+  const threadKey = activationThreadKey()
+  storeNestedActivation(projectKey, threadKey, names)
+  nestedActivationSink?.(projectKey, threadKey, [...names])
+}
+
+function storeNestedActivation(
+  projectKey: string,
+  threadKey: string,
+  names: ReadonlySet<string>,
+): void {
   const byThread =
     lastNestedActivationByProjectRoot.get(projectKey) ?? new Map<string, NestedActivationRecord>()
-  byThread.set(activationThreadKey(), { names, sequence: ++nestedActivationSequence })
+  byThread.set(threadKey, { names, sequence: ++nestedActivationSequence })
   lastNestedActivationByProjectRoot.set(projectKey, byThread)
+}
+
+type NestedActivationSink = (projectKey: string, threadId: string, names: string[]) => void
+let nestedActivationSink: NestedActivationSink | null = null
+
+/**
+ * Hear each turn's nested-instruction activation. The turn host sends its own
+ * to the app, whose Settings reads them (see {@link recordForeignNestedActivation}).
+ */
+export function setNestedActivationSink(sink: NestedActivationSink | null): void {
+  nestedActivationSink = sink
+}
+
+/** Record a nested-instruction activation another process's turn made (the turn host's). */
+export function recordForeignNestedActivation(
+  projectKey: string,
+  threadId: string,
+  names: readonly string[],
+): void {
+  storeNestedActivation(projectKey, threadId, new Set(names))
 }
 
 async function readTrimmed(path: string): Promise<string | null> {

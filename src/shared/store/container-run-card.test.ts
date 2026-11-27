@@ -171,6 +171,15 @@ describe('containerRunToolCall', () => {
     assert.equal(containerRunSummary(failed), 'Failed: The guest wrote no result')
     assert.match(tc.result ?? '', /^\*\*Failed: The guest wrote no result\*\*/)
   })
+
+  it('says a run the user stopped was stopped, not that it failed', () => {
+    const stopped = progress({
+      phase: 'failed',
+      error: 'Stopped by you before the guest finished',
+      stoppedByUser: true,
+    })
+    assert.equal(containerRunSummary(stopped), 'Stopped by you')
+  })
 })
 
 describe('syncContainerRunCard', () => {

@@ -40,7 +40,15 @@ describe('formatSandboxNetworkDenialAudit', () => {
   })
 
   it('names the bridged GitHub tools when GitHub was blocked, including content subdomains', () => {
-    for (const host of ['github.com', 'api.github.com', 'raw.githubusercontent.com', 'GitHub.com'])
+    // api.githubcopilot.com is GitHub's hosted MCP server, which a GitHub plugin
+    // of the agent's own calls from inside the sandbox (#4148).
+    for (const host of [
+      'github.com',
+      'api.github.com',
+      'raw.githubusercontent.com',
+      'GitHub.com',
+      'api.githubcopilot.com',
+    ])
       assert.match(
         formatSandboxNetworkDenialAudit([{ host }]),
         /gh_pr_\*/,
@@ -56,6 +64,10 @@ describe('formatSandboxNetworkDenialAudit', () => {
       'registry.npmjs.org',
       'evilgithub.com',
       'github.attacker.com',
+      'githubcopilot.com.attacker.com',
+      // The Copilot agent's own model endpoints: gh_* tools can't replace them.
+      'api.individual.githubcopilot.com',
+      'api.business.githubcopilot.com',
     ])
       assert.doesNotMatch(
         formatSandboxNetworkDenialAudit([{ host }]),
@@ -102,6 +114,19 @@ describe('acpSandboxGithubSteer (issue #4145)', () => {
       assert.match(steer, /do not ask for access to ~\/\.config\/gh/)
       assert.match(steer, /sandbox\.allowedDomains does not fix it/)
       assert.match(steer, /Do not call github\.com or api\.github\.com from this process/)
+      // #4148: the agent's own GitHub MCP plugin is sandboxed too.
+      assert.match(steer, /plugin:github-connector:github\) also runs inside this sandbox/)
+      // Conditional: some of these servers do connect (Copilot preset, widened allowlist).
+      assert.match(steer, /If it fails to connect here, often as CONNECTION_CLOSED/)
+      assert.doesNotMatch(steer, /so it fails to connect/)
+      const hasRoute = names.includes('run_shell') || names.includes('gh_api_read')
+      assert.match(
+        steer,
+        hasRoute
+          ? /Do not wait for it to retry; use the route above/
+          : /Do not wait for it to retry; tell the user, as above/,
+        String(names),
+      )
     }
   })
 

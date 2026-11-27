@@ -15,8 +15,13 @@ export function registerInstructionHandlers(win: BrowserWindow): void {
   // Decision 7 / F3: the workspace-trust prompt surfaces project hooks that
   // declare `sandbox: false` at the consent moment. Read-only display parsing —
   // trust-independent by design (the whole point is showing this BEFORE trust).
-  ipcMain.handle('hooks:unsandboxed-project-hooks', async () => {
-    const root = getWorkspaceRoot()
+  // An offer about a specific project names its root, so the list cannot come
+  // from whatever project the window switched to while it loaded.
+  ipcMain.handle('hooks:unsandboxed-project-hooks', async (event, rawRoot?: unknown) => {
+    assertMainFrameSender(event, win)
+    const requested =
+      rawRoot === undefined ? undefined : parseIpcArgs(zPathString.min(1), [rawRoot])
+    const root = requested ?? getWorkspaceRoot()
     if (!root) return []
     return listUnsandboxedProjectHooks(root)
   })

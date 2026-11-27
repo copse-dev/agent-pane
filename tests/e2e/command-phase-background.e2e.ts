@@ -43,8 +43,10 @@ async function findCommandCard(): Promise<string> {
 async function openCommandCard(): Promise<void> {
   await browser.execute((selector) => {
     const card = document.querySelector<HTMLDetailsElement>(selector)
+    // A click, as a reader opens it: the view keeps that choice across a repaint.
     for (let node = card?.parentElement; node; node = node.parentElement) {
-      if (node instanceof HTMLDetailsElement) node.open = true
+      if (node instanceof HTMLDetailsElement && !node.open)
+        node.querySelector<HTMLElement>(':scope > summary')?.click()
     }
     if (card && !card.open) card.querySelector<HTMLElement>(':scope > summary')?.click()
   }, CARD)

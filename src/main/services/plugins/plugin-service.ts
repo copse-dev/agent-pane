@@ -530,6 +530,18 @@ export interface PluginService {
    * flips the flag on the shared registry — atomic, per the P1 contract.
    */
   setEnabled(pluginId: string, enabled: boolean): Promise<void>
+  /**
+   * Match the registry to the persisted enablement, for a process that does not
+   * toggle plugins itself: the turn host, after the app wrote the profile. A
+   * plugin with its own tool runtime has that runtime started or stopped too.
+   * Nothing is saved. Resolves whether anything changed.
+   */
+  applyPersistedEnablement(): Promise<boolean>
+  /**
+   * Enabled plugins with a tool runtime of their own: what a worker must be
+   * able to run before it takes a turn that may call them.
+   */
+  toolRuntimePluginIds(): string[]
   /** Read one plugin-scoped setting value (raw persisted value; renderer coerces). */
   getSetting(pluginId: string, key: string): unknown
   /** Persist one plugin-scoped setting value under the plugin's namespaced bag. */
@@ -869,6 +881,37 @@ export function createPluginService(registry: PluginRegistry): PluginService {
         else set.add(pluginId)
         return [...set].sort()
       })
+    },
+    async applyPersistedEnablement(): Promise<boolean> {
+      const persisted = readDisabledIds()
+      let changed = false
+      for (const plugin of registry.all()) {
+        const enabled = !persisted.has(plugin.id)
+        if (registry.isEnabled(plugin.id) === enabled) continue
+        // A tool-runtime plugin starts and stops its runtime, as `setEnabled`
+        // does; the saved state is the app's and is only read here.
+        const selected = selectedCandidates.get(plugin.id)
+        const controller = selected ? getPluginToolRuntimeController() : null
+        if (selected && enabled) {
+          if (!controller) continue
+          // One runtime that fails to start must not keep the rest unapplied.
+          try {
+            await controller.enable(selected)
+          } catch (error) {
+            console.error(`[plugins] could not start "${plugin.id}":`, error)
+            continue
+          }
+        }
+        if (enabled) registry.enable(plugin.id)
+        else registry.disable(plugin.id)
+        if (selected && !enabled && controller?.isRunning(plugin.id))
+          await controller.disable(plugin.id)
+        changed = true
+      }
+      return changed
+    },
+    toolRuntimePluginIds(): string[] {
+      return [...selectedCandidates.keys()].filter((id) => registry.isEnabled(id))
     },
     getSetting(pluginId: string, key: string): unknown {
       return readPluginSettings(pluginId)[key]

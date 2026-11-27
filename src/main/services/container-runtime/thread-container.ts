@@ -1181,6 +1181,19 @@ export async function teardownRuntime(
   return engine === 'apple' ? teardownAppleRuntime(runtimeId) : teardownDockerRuntime(runtimeId)
 }
 
+/**
+ * Clean up after a run whose host process is gone (`run-host.ts`): what the
+ * runner's own `finally` would have removed, the staged copy of the user's
+ * sign-in, and the container, which the sweep leaves alone while it runs.
+ */
+export async function teardownLostRuntime(
+  runtimeId: string,
+  engine?: ThreadContainerEngine,
+): Promise<'removed' | 'already-gone' | 'failed'> {
+  removeStagedLogin(join(copseDataRoot(), 'runtimes', runtimeId))
+  return teardownRuntime(runtimeId, engine)
+}
+
 async function teardownDockerRuntime(
   runtimeId: string,
 ): Promise<'removed' | 'already-gone' | 'failed'> {
@@ -1341,7 +1354,7 @@ export async function listManagedVolumes(
 export interface OrphanSweep {
   /** Runtimes whose container and volume are gone now. */
   removed: string[]
-  /** Runtimes still running — another app instance's, or one this host lost and that is winding itself down. */
+  /** Runtimes still running — another app instance's or run host's, or one whose host is gone and that is winding itself down. */
   skipped: string[]
   /** Runtimes Docker would not let go of. */
   failed: string[]

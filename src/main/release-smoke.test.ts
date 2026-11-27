@@ -47,6 +47,16 @@ describe('decidePtySmokeAfterExit', () => {
     })
   })
 
+  it('reports what the shell printed before a non-zero exit', () => {
+    assert.deepEqual(
+      decidePtySmokeAfterExit({ output: 'bwrap: setting up uid map\r\n', marker, exitCode: 126 }),
+      {
+        action: 'reject',
+        message: 'Packaged PTY smoke test exited 126: bwrap: setting up uid map',
+      },
+    )
+  })
+
   it('waits on clean exit without a marker (late onData race)', () => {
     assert.deepEqual(decidePtySmokeAfterExit({ output: '', marker, exitCode: 0 }), {
       action: 'wait',

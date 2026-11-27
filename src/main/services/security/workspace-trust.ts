@@ -57,8 +57,13 @@ export function isWorkspaceTrusted(root: string | null | undefined): boolean {
   return loadTrusted().has(canonicalWorkspaceTrustRoot(root))
 }
 
+/** False inside an explicit host profile, where {@link setWorkspaceTrusted} throws. */
+export function canChangeWorkspaceTrust(): boolean {
+  return explicitWorkspaceTrust.getStore() === undefined
+}
+
 export function setWorkspaceTrusted(root: string, trusted: boolean): void {
-  if (explicitWorkspaceTrust.getStore()) {
+  if (!canChangeWorkspaceTrust()) {
     throw new Error('Cannot mutate workspace trust inside an explicit host profile.')
   }
   const key = canonicalWorkspaceTrustRoot(root)

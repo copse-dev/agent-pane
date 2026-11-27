@@ -374,16 +374,24 @@ to raise it). The committed baseline may not grow against the base ref; a git re
 count. It is an AST scan of `*.test.ts` and `tests/e2e/**/*.ts`, not an ESLint rule, because
 `eslint-suppressions.json` stays empty. Rules (tracking [#2719](https://github.com/copse-dev/agent-pane/issues/2719)):
 
-| Rule                    | Counts                                                                                                                                                                                                                                       | Prefer                                                                     |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `e2e-fixed-pause`       | `browser.pause(...)` (import aliases, local aliases, destructured `pause`) and any wall-clock sleep counted by the rule below, when not inside a loop in the same function that compares `Date.now()`/`performance.now()` against a deadline | `browser.waitUntil`, element `waitFor*`, or a poll interval in such a loop |
-| `unit-wall-clock-sleep` | awaited `new Promise((r) => setTimeout(r, ms))`, `node:timers/promises` `setTimeout` (any alias), and each call of a local helper that returns or (as its last step) awaits one; a missing or literal `0` delay is a yield, not counted      | `node:test` `mock.timers`, or await the event itself                       |
-| `e2e-checkout-seed`     | a `seed*` helper from `helpers/seed-config.ts` called with `process.cwd()` (or a `const` holding it)                                                                                                                                         | `seedStableWorkspace()` or a temp repo                                     |
-| `e2e-fixed-port`        | `listen(<port>)`, `{ port: <n> }` passed to a `listen`/`serve`/`start*`/`create*` call, and `*_PORT`/`*Port` constants with a non-zero literal                                                                                               | `listen(0)` and read `server.address().port`                               |
+| Rule                         | Counts                                                                                                                                                                                                                                                                           | Prefer                                                                                                                                            |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `e2e-fixed-pause`            | `browser.pause(...)` (import aliases, local aliases, destructured `pause`) and any wall-clock sleep counted by the rule below, when not inside a loop in the same function that compares `Date.now()`/`performance.now()` against a deadline                                     | `browser.waitUntil`, element `waitFor*`, or a poll interval in such a loop                                                                        |
+| `unit-wall-clock-sleep`      | awaited `new Promise((r) => setTimeout(r, ms))`, `node:timers/promises` `setTimeout` (any alias), and each call of a local helper that returns or (as its last step) awaits one; a missing or literal `0` delay is a yield, not counted                                          | `node:test` `mock.timers`, or await the event itself                                                                                              |
+| `e2e-checkout-seed`          | a `seed*` helper from `helpers/seed-config.ts` called with `process.cwd()` (or a `const` holding it)                                                                                                                                                                             | `seedStableWorkspace()` or a temp repo                                                                                                            |
+| `e2e-fixed-port`             | `listen(<port>)`, `{ port: <n> }` passed to a `listen`/`serve`/`start*`/`create*` call, and `*_PORT`/`*Port` constants with a non-zero literal                                                                                                                                   | `listen(0)` and read `server.address().port`                                                                                                      |
+| `unit-platform-early-return` | in a unit test body, `if (<host platform>) { … return }` with no `t.skip()` in that branch, so the test passes on the other host instead of reporting a skip                                                                                                                     | a per-test `{ skip: <platform condition> && 'reason' }`, or inject the platform into the function under test (as `worktree-manager.test.ts` does) |
+| `unit-platform-suite-skip`   | a `describe` skipped on a darwin or linux condition, tests registered inside a platform `if`/`?:`/`&&`, or tests after an `if (<platform>) return` in a suite: they are never registered on that host, so the run reports `skipped 0` (the finding says how many tests it hides) | per-test `{ skip: … && 'reason' }`, through a shared `const` options object if every test needs it                                                |
+
+A host-platform read is `process.platform`, `os.platform()` or an imported `platform()`, directly or through a local `const`. A gate behind an imported predicate (`darwinUserTempDir() === null`) or a capability probe is invisible to the scan.
 
 An attempt-count loop is not a deadline, so a pause inside one still counts. The scan is per file: a sleep helper imported from another module is not followed to its call sites, so an exported helper's own sleep is counted once at its definition instead. A port the product
 itself probes (a well-known local-server port) is still a shared-machine risk and stays in the
 baseline until the probe can be pointed elsewhere.
+
+#### Unit-tier platform inventory
+
+Every required unit job runs on Linux, so a darwin-gated unit test is verified only by the nightly macOS lane ([#4386](https://github.com/copse-dev/agent-pane/issues/4386)). The same check prints, on every run, how many unit tests run on exactly one host (darwin-only, Linux-only, Windows-only) with per-file counts. It counts `{ skip }` options on `it`/`test`/`describe` (including a shared `const` options object) and top-of-body `if (<host platform>) { t.skip(…); return }` guards. The inventory is not ratcheted: more real-Seatbelt tests are welcome, as long as Linux reports them as skipped ([#4404](https://github.com/copse-dev/agent-pane/issues/4404)).
 
 ### Quarantine and admission
 
@@ -509,6 +517,12 @@ new tests should keep that trend:
   - **`subset` skips the coverage ratchet**, because a partial run's coverage
     number isn't comparable to `coverage-baseline.json`. The trunk-targeted run
     is where the ratchet applies.
+  - **The ratchet has per-area floors.** Besides the global line figure,
+    `coverage-baseline.json` holds `areas`, a floor for each layer in
+    `FLOORED_AREAS` (`scripts/lib/coverage-areas.mts`), so a drop in
+    `src/main/ipc` cannot hide behind a rise in `src/main/services`. Every run
+    prints the areas with the most uncovered lines in the job summary, and
+    `npm run coverage:update` resets the floors with the global baseline.
 - **Remote e2e for the local loop** (`npm run e2e:remote`) runs the same
   oracle-selected / CI-shaped suite on a cloud container from the working tree
   so agents and humans can keep iterating. Prefer it over local `test:e2e`
