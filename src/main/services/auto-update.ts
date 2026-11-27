@@ -27,6 +27,17 @@ import { approveClose, isCloseApproved, revokeCloseApproval } from './close-conf
 // before the relaunch that installs it.
 
 let wired = false
+// An update is waiting: the next quit installs it (`autoInstallOnAppQuit`).
+let downloaded = false
+
+/**
+ * Whether the quit now under way installs an update. Its turns must not go to a
+ * worker of this version while the updater replaces the binary under it; the
+ * relaunched version continues them instead.
+ */
+export function quitInstallsUpdate(): boolean {
+  return downloaded || updateRelaunchNoted()
+}
 // "Restart now": the window must close rather than detach, without asking,
 // and the run ends as an update relaunch so the next launch continues it.
 const installQuit = new InstallQuit([
@@ -104,6 +115,7 @@ export function initAutoUpdate(win: BrowserWindow): void {
     void promptDownload(win, info.version, activePolicy?.allowPrerelease ?? false)
   })
   autoUpdater.on('update-downloaded', (info: UpdateInfo): void => {
+    downloaded = true
     void promptInstall(win, info.version)
   })
   autoUpdater.on('error', (err: Error): void => {

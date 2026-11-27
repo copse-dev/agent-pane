@@ -35,16 +35,32 @@ export function summariseWorkingThreads(titles: string[]): string {
  * working. Closing tears the agent's session down mid-turn with no resume, so
  * this is the one chance the user gets to keep it alive.
  */
-export async function confirmClose(store: AppStore): Promise<boolean> {
+export async function confirmClose(
+  store: AppStore,
+  options: { continuesAfterQuit?: boolean } = {},
+): Promise<boolean> {
   const titles = workingThreadTitles(store)
   if (titles.length === 0) return true
 
   const one = titles.length === 1
+  const working = `${summariseWorkingThreads(titles)} ${one ? 'is' : 'are'} mid-turn.`
+  // With the hand-off on, the turns carry on in the background and are back
+  // when Copse opens again (docs/plans/local-turn-worker.md).
+  if (options.continuesAfterQuit === true) {
+    return await showConfirmDialog({
+      message: one
+        ? 'Close Copse while the agent is still working?'
+        : `Close Copse while ${String(titles.length)} threads are still working?`,
+      detail: `${working} ${one ? 'It keeps' : 'They keep'} going in the background after Copse closes, and ${one ? 'is' : 'are'} here when you open it again.`,
+      confirmLabel: 'Close',
+      cancelLabel: 'Keep Copse open',
+    })
+  }
   return await showConfirmDialog({
     message: one
       ? 'Close Copse while the agent is still working?'
       : `Close Copse while ${String(titles.length)} threads are still working?`,
-    detail: `${summariseWorkingThreads(titles)} ${one ? 'is' : 'are'} mid-turn. Closing stops the run — anything the agent has not already written to your files is lost.`,
+    detail: `${working} Closing stops the run — anything the agent has not already written to your files is lost.`,
     confirmLabel: 'Close anyway',
     cancelLabel: one ? 'Keep working' : 'Keep them working',
     danger: true,
@@ -57,6 +73,10 @@ export async function confirmClose(store: AppStore): Promise<boolean> {
  */
 export function mountCloseConfirm(api: ApiClient, store: AppStore): () => void {
   return api.closeConfirm.onRequest((req) => {
-    void confirmClose(store).then((confirmed) => api.closeConfirm.respond(req.id, confirmed))
+    void confirmClose(store, {
+      ...(req.continuesAfterQuit !== undefined
+        ? { continuesAfterQuit: req.continuesAfterQuit }
+        : {}),
+    }).then((confirmed) => api.closeConfirm.respond(req.id, confirmed))
   })
 }

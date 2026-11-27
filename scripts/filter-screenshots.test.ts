@@ -145,7 +145,7 @@ it('walks each contested range once for a batch while preserving manual, main an
     })
     assert.match(
       output,
-      /15 changed, 1 kept \(real\), 0 ignored \(noise\), 1 held \(flapping\), 13 held \(contested\)/,
+      /15 changed, 13 kept \(real\), 0 ignored \(noise\), 1 held \(flapping\), 1 held \(contested\)/,
     )
     assert.match(output, /flap\s+tests\/e2e\/screenshots\/bot\.png/)
     assert.match(output, /keep\s+tests\/e2e\/screenshots\/new\.png/)
@@ -280,12 +280,14 @@ describe('classifyScreenshotChange', () => {
     assert.equal(v.reason, 'dimensions changed')
   })
 
-  it('holds a real change to a baseline committed deliberately on the branch', () => {
+  it('keeps a real change to a baseline hand-committed on the branch for review', () => {
+    // A hand-committed hash this branch does not render must not merge silently (#4435).
     const v = classifyScreenshotChange(solid(100, 100, WHITE), solid(100, 100, RED), [], OPTS, {
       branchTouched: true,
       mainTouched: false,
     })
-    assert.equal(v.decision, 'contested')
+    assert.equal(v.decision, 'keep')
+    assert.equal(v.reason, "hand-committed baseline differs from this branch's render")
   })
 
   it('holds a real change to a baseline main has moved since the merge-base', () => {
@@ -305,26 +307,36 @@ describe('classifyScreenshotChange', () => {
     assert.equal(v.decision, 'ignore')
   })
 
-  it('holds a contested baseline even when the re-render resized', () => {
-    // The uncontested path keeps a resized shot for review; a deliberate baseline
-    // must never be gambled away on it.
+  it('holds a baseline main moved even when the re-render resized', () => {
+    // The uncontested path keeps a resized shot for review; main's newer
+    // baseline must not be gambled away on it.
     const v = classifyScreenshotChange(solid(100, 100, WHITE), solid(120, 100, WHITE), [], OPTS, {
-      branchTouched: true,
+      branchTouched: false,
       mainTouched: true,
     })
     assert.equal(v.decision, 'contested')
   })
 
-  it('contested beats flap for a deliberate baseline', () => {
-    // Even when the render matches a prior committed state, a deliberate baseline
-    // is reported as contested — the human signal, not the runner-flap signal.
+  it('keeps a hand-committed baseline main also moved when the render differs', () => {
+    // The branch's own hash is still unverified by any render.
+    const v = classifyScreenshotChange(solid(100, 100, WHITE), solid(120, 100, WHITE), [], OPTS, {
+      branchTouched: true,
+      mainTouched: true,
+    })
+    assert.equal(v.decision, 'keep')
+  })
+
+  it('keeps a hand-committed baseline whose render matches an older committed state', () => {
+    // #4435: a stale hand-committed hash differs from the render, which then
+    // matches an earlier committed state. That is the mismatch to show, not a
+    // runner flap to hide.
     const head = solid(100, 100, BLUE)
     const rerender = solid(100, 100, RED)
     const v = classifyScreenshotChange(head, rerender, [prior(solid(100, 100, RED))], OPTS, {
       branchTouched: true,
       mainTouched: false,
     })
-    assert.equal(v.decision, 'contested')
+    assert.equal(v.decision, 'keep')
   })
 
   it('keeps a real change when contested info is explicitly null', () => {
@@ -368,7 +380,7 @@ describe('classifyScreenshotChange', () => {
     assert.equal(v.decision, 'ignore')
   })
 
-  it('contested beats out-of-scope so deliberate work keeps the clearer report', () => {
+  it('keeps a hand-committed baseline that differs from its render even out of scope', () => {
     const v = classifyScreenshotChange(
       solid(100, 100, WHITE),
       solid(100, 100, RED),
@@ -377,7 +389,7 @@ describe('classifyScreenshotChange', () => {
       { branchTouched: true, mainTouched: false },
       false,
     )
-    assert.equal(v.decision, 'contested')
+    assert.equal(v.decision, 'keep')
   })
 
   it('keeps a brand-new shot even out of scope', () => {
