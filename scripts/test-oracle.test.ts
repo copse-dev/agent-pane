@@ -335,6 +335,26 @@ describe('test oracle import graph', () => {
     ])
   })
 
+  it('selects the spec that saves a reference whose hash changed (#4435)', () => {
+    const shotFiles: Record<string, string> = {
+      'tests/e2e/panel.e2e.ts': "await saveScreenshot('panel-open.png')",
+      'tests/e2e/other.e2e.ts': "await saveScreenshot('other.png')",
+    }
+    const shotTree: OracleFiles = {
+      paths: (dir) => Object.keys(shotFiles).filter((path) => path.startsWith(`${dir}/`)),
+      read: (path) => shotFiles[path] ?? '',
+      exists: (path) => Object.hasOwn(shotFiles, path),
+    }
+    const selection = computeSelection(
+      ['tests/e2e/screenshots/manifest.json', 'tests/e2e/screenshots/panel-open.png'],
+      shotTree,
+    )
+    assert.deepEqual(selection.selectedE2e, ['tests/e2e/panel.e2e.ts'])
+    assert.deepEqual(selection.e2eReasons.get('tests/e2e/panel.e2e.ts'), [
+      'saves changed reference panel-open.png',
+    ])
+  })
+
   it('keeps the classifier settings spec mapped through its type-only import', () => {
     const selection = computeSelection(['src/main/services/classifiers/classifier-service.ts'])
     assert.ok(selection.selectedE2e.includes('tests/e2e/settings-classifiers.e2e.ts'))
@@ -591,5 +611,18 @@ describe('test oracle demo screenshot ownership', () => {
       gate.affected.filter((name) => !name.startsWith('mobile-companion-')),
       [],
     )
+  })
+
+  it('owns no sibling shots when only a reference hash changes', () => {
+    // A hash change still selects its producer for the e2e plan (#4435), but
+    // it cannot change a pixel, so the spec's other shots stay out of scope.
+    const changed = [
+      'tests/e2e/screenshots/manifest.json',
+      'tests/e2e/screenshots/activity-interrupted-run.png',
+    ]
+    assert.ok(computeSelection(changed).selectedE2e.length > 0)
+    const gate = computeScreenshotGate(changed, false)
+    assert.deepEqual(gate.affected, [])
+    assert.deepEqual(gate.missing, [])
   })
 })

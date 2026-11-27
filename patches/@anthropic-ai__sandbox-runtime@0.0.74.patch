@@ -1,8 +1,26 @@
 diff --git a/dist/sandbox/linux-sandbox-utils.js b/dist/sandbox/linux-sandbox-utils.js
-index 185a9bd6a092041c24190a9216d2aa88ef910dd4..7e3226fedbdfd6997be425178c12574ea9724942 100644
+index 185a9bd6a092041c24190a9216d2aa88ef910dd4..8c7ab87dac4a78c26b44a95e6ed8efcc9a5c2cb2 100644
 --- a/dist/sandbox/linux-sandbox-utils.js
 +++ b/dist/sandbox/linux-sandbox-utils.js
-@@ -860,7 +860,7 @@ async function generateFilesystemArgs(readConfig, writeConfig, maskedFileBinds,
+@@ -588,9 +588,15 @@ function buildSandboxCommand(httpSocketPath, socksSocketPath, userCommand, apply
+     // Host filesystem is bind-mounted into the sandbox, so an explicit
+     // socatPath resolves to the same binary inside bwrap.
+     const socat = quote([socatPath ?? 'socat']);
++    // An unqualified TCP-LISTEN opens a dual-stack AF_INET6 socket, which
++    // fails at once on a kernel booted with IPv6 disabled (`ipv6.disable=1`
++    // also removes /proc/net/if_inet6) and leaves nothing listening. Use an
++    // IPv4 listener there; hosts with IPv6 keep the dual-stack one, so a
++    // client that resolves localhost to ::1 still connects.
++    const tcpListen = fs.existsSync('/proc/net/if_inet6') ? 'TCP-LISTEN' : 'TCP4-LISTEN';
+     const socatCommands = [
+-        `${socat} TCP-LISTEN:3128,fork,reuseaddr UNIX-CONNECT:${httpSocketPath} >/dev/null 2>&1 &`,
+-        `${socat} TCP-LISTEN:1080,fork,reuseaddr UNIX-CONNECT:${socksSocketPath} >/dev/null 2>&1 &`,
++        `${socat} ${tcpListen}:3128,fork,reuseaddr UNIX-CONNECT:${httpSocketPath} >/dev/null 2>&1 &`,
++        `${socat} ${tcpListen}:1080,fork,reuseaddr UNIX-CONNECT:${socksSocketPath} >/dev/null 2>&1 &`,
+         'trap "kill %1 %2 2>/dev/null; exit" EXIT',
+     ];
+     // apply-seccomp runs after socat so socat can still create Unix sockets.
+@@ -860,7 +866,7 @@ async function generateFilesystemArgs(readConfig, writeConfig, maskedFileBinds,
          // Deny writes within allowed paths (user-specified + mandatory denies)
          const denyPaths = [
              ...(writeConfig.denyWithinAllow || []),
@@ -25,7 +43,7 @@ index e6d9fb687115a70c6d1dd538e01945c68e324810..d4ffc48ec0c0eb6f4236e7d5dcd3422f
      const denyFilters = new Set();
      for (const pathPattern of denyPaths) {
 diff --git a/dist/sandbox/sandbox-manager.js b/dist/sandbox/sandbox-manager.js
-index 3a2d9c8abd01fefff36edea0cd76e9c31a3ed411..7e422b7a159da0ae00902cefcd5d38ac501c223c 100644
+index 3a2d9c8abd01fefff36edea0cd76e9c31a3ed411..69b955ff4e149367c807d5f3aafb7fb0665943da 100644
 --- a/dist/sandbox/sandbox-manager.js
 +++ b/dist/sandbox/sandbox-manager.js
 @@ -1293,7 +1293,7 @@ async function wrapWithSandbox(command, binShell, customConfig, abortSignal, opt
