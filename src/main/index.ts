@@ -18,6 +18,7 @@ import {
   turnHostPath,
 } from './services/turn-host/turn-host-launch.ts'
 import type { TurnHostLink } from './services/turn-host/turn-host-link.ts'
+import { setTestScenarioForwarder } from './services/turn-host/turn-host-test-scenarios.ts'
 import type { TurnWorkerConnection } from './services/turn-worker/turn-worker-socket.ts'
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
 import { initRemoteInterface } from './services/mobile/remote-interface.ts'
@@ -911,7 +912,15 @@ app
         })
       })
       // Never awaited: turns run in main until the host answers.
-      void connectOrStartTurnHost(link, launch)
+      const hostStarted = connectOrStartTurnHost(link, launch)
+      // An e2e run's scripted scenarios are set in the host too, which claims
+      // host turns' responses; a test waits for the host before it sends one.
+      if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') {
+        setTestScenarioForwarder(async (op) => {
+          await hostStarted
+          return link.testScenario(op)
+        })
+      }
     }
     stopFollowingForeignTurns = (): void => {
       foreignTurns.stop()

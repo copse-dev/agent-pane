@@ -588,6 +588,8 @@ export function seedEmptyProject(
     containerRunsEnabled?: boolean
     /** Hand running turns to background workers at quit (on by default in the app). */
     continueTurnsAfterQuit?: boolean
+    /** Run every turn in the resident turn host (Settings → Experimental). */
+    turnsRunInHost?: boolean
     /** Opt into the experimental "Start planning" composer control (off by default). */
     planModeEnabled?: boolean
     model?: string
@@ -726,6 +728,9 @@ export function seedEmptyProject(
   }
   if (options?.nextStepSuggestionEnabled !== undefined) {
     settings['nextStepSuggestionEnabled'] = options.nextStepSuggestionEnabled
+  }
+  if (options?.turnsRunInHost !== undefined) {
+    settings['turnsRunInHost'] = options.turnsRunInHost
   }
   if (options?.continueTurnsAfterQuit !== undefined) {
     settings['continueTurnsAfterQuit'] = options.continueTurnsAfterQuit

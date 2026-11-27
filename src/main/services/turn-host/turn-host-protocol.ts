@@ -45,6 +45,10 @@ import type { SshPromptRequest, SshPromptResponse } from '../ssh-workspace/ssh-p
  *   `profile-changed` tells the host the app wrote the profile, so it reads it
  *   again before its next turn starts.
  *
+ * - `test-scenario` (e2e builds only) sets, releases, clears or reads a scripted
+ *   model scenario in the host, where host turns claim their responses; the
+ *   host answers `test-scenario-result`. A release build's host refuses it.
+ *
  * Written for any transport: nothing here assumes the two ends share a machine
  * beyond the profile path (`harness-worker-roadmap.md` R2).
  */
@@ -61,6 +65,30 @@ export type AppToHost =
   | { t: 'review-diff-answer'; id: string; approved: boolean }
   | { t: 'ssh-prompt-answer'; id: string; response: SshPromptResponse }
   | { t: 'profile-changed' }
+  | { t: 'test-scenario'; id: string; op: TestScenarioOp }
+
+/** A scripted model scenario operation, for e2e builds (`mock-script.ts`). */
+export type TestScenarioOp =
+  | { kind: 'set'; scenarioId: string; scenario: unknown; scope?: string | undefined }
+  | { kind: 'release'; scenarioId: string; hold: string }
+  | { kind: 'clear' }
+  | { kind: 'status'; scenarioId: string }
+
+/** Where a scripted scenario stands (`mockScenarioStatus`). */
+export interface TestScenarioStatus {
+  complete: boolean
+  turn: number
+  response: number
+  waitingFor: string | null
+  cancelledTurns: number
+  errors: string[]
+}
+
+/** The host's answer to a `test-scenario`: the scenario's status, or why it failed. */
+export interface TestScenarioResult {
+  status?: TestScenarioStatus | undefined
+  error?: string | undefined
+}
 
 /** The part of an approval answer that crosses the line. */
 export interface HostApprovalAnswer {
@@ -91,6 +119,7 @@ export type HostToApp =
     }
   | { t: 'approval-cancel'; id: string }
   | { t: 'store-write'; store: string; changes: ProfileStoreChange[] }
+  | ({ t: 'test-scenario-result'; id: string } & TestScenarioResult)
 
 const id = z.string().min(1).max(256)
 
@@ -127,6 +156,26 @@ const appToHostSchema = z.discriminatedUnion('t', [
       ),
   }),
   z.object({ t: z.literal('profile-changed') }),
+  z.object({
+    t: z.literal('test-scenario'),
+    id,
+    op: z.discriminatedUnion('kind', [
+      z
+        .object({
+          kind: z.literal('set'),
+          scenarioId: id,
+          scenario: z.unknown(),
+          scope: id.optional(),
+        })
+        .transform(({ scope, ...op }): TestScenarioOp => ({
+          ...op,
+          ...(scope === undefined ? {} : { scope }),
+        })),
+      z.object({ kind: z.literal('release'), scenarioId: id, hold: id }),
+      z.object({ kind: z.literal('clear') }),
+      z.object({ kind: z.literal('status'), scenarioId: id }),
+    ]),
+  }),
 ])
 
 const objectLike = <T>(): z.ZodType<T> =>
@@ -207,6 +256,27 @@ const hostToAppSchema = z.discriminatedUnion('t', [
       ),
   }),
   z.object({ t: z.literal('approval-cancel'), id }),
+  z
+    .object({
+      t: z.literal('test-scenario-result'),
+      id,
+      status: z
+        .object({
+          complete: z.boolean(),
+          turn: z.number().int(),
+          response: z.number().int(),
+          waitingFor: z.string().max(256).nullable(),
+          cancelledTurns: z.number().int(),
+          errors: z.array(z.string().max(4_000)).max(64),
+        })
+        .optional(),
+      error: z.string().max(4_000).optional(),
+    })
+    .transform(({ status, error, ...rest }): Extract<HostToApp, { t: 'test-scenario-result' }> => ({
+      ...rest,
+      ...(status === undefined ? {} : { status }),
+      ...(error === undefined ? {} : { error }),
+    })),
   z.object({
     t: z.literal('store-write'),
     store: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),

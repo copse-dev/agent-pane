@@ -23,6 +23,7 @@ import {
 import type { HostToApp, TurnHostClient } from './turn-host-protocol.ts'
 import { readHostDispatchRecord } from './host-dispatch-record.ts'
 import { TurnHost } from './turn-host.ts'
+import { runTestScenarioOp } from './turn-host-test-scenarios.ts'
 
 let root = ''
 const savedDir = process.env['COPSE_DIR']
@@ -290,6 +291,43 @@ describe('TurnHost', { timeout: 30_000 }, () => {
     )
     assert.equal((await loadThreadMessages('p1', 'g')).length, 1, 'one reply, not two')
     turnHost.dispose()
+  })
+
+  it("runs a host turn on the app's scripted scenario, and reports it", async () => {
+    await saveProjectThread('p1', idleThread('s'))
+    const { host: turnHost } = host({ testScenario: runTestScenarioOp })
+    const peer = app()
+    turnHost.handle({ t: 'hello', version: VERSION, protocol: 1 }, peer.client)
+    const scenario = {
+      title: 'Scripted',
+      turns: [{ user: 'Hello scripted', responses: [{ text: 'Scripted reply' }] }],
+    }
+    turnHost.handle(
+      { t: 'test-scenario', id: 'x1', op: { kind: 'set', scenarioId: 'host-s', scenario } },
+      peer.client,
+    )
+    turnHost.handle(
+      { t: 'dispatch', id: 'd-s', projectId: 'p1', threadId: 's', payload: 'Hello scripted' },
+      peer.client,
+    )
+    await until(() => ended(peer.sent, 'd-s'), 'the scripted turn')
+    const messages = await loadThreadMessages('p1', 's')
+    assert.ok(JSON.stringify(messages).includes('Scripted reply'))
+    turnHost.handle(
+      { t: 'test-scenario', id: 'x2', op: { kind: 'status', scenarioId: 'host-s' } },
+      peer.client,
+    )
+    const result = peer.sent.find((m) => m.t === 'test-scenario-result' && m.id === 'x2')
+    assert.equal(result?.t === 'test-scenario-result' && result.status?.complete, true)
+    turnHost.handle({ t: 'test-scenario', id: 'x3', op: { kind: 'clear' } }, peer.client)
+    turnHost.dispose()
+
+    // A host built without test scenarios says so rather than running one.
+    const { host: plain } = host()
+    plain.handle({ t: 'test-scenario', id: 'x4', op: { kind: 'clear' } }, peer.client)
+    const refused = peer.sent.find((m) => m.t === 'test-scenario-result' && m.id === 'x4')
+    assert.match(refused?.t === 'test-scenario-result' ? (refused.error ?? '') : '', /no test/)
+    plain.dispose()
   })
 
   it('runs nothing for an app of another version, and retires', async () => {

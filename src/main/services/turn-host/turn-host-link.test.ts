@@ -299,6 +299,31 @@ describe('TurnHostLink', () => {
     )
   })
 
+  it('runs a scripted scenario operation in the host, and gives up when the line drops', async () => {
+    const host = new FakeHost()
+    const status = {
+      complete: false,
+      turn: 0,
+      response: 1,
+      waitingFor: 'hold',
+      cancelledTurns: 0,
+      errors: [],
+    }
+    host.respond = (message, reply): void => {
+      if (message.t !== 'test-scenario') return
+      if (message.op.kind === 'status') reply({ t: 'test-scenario-result', id: message.id, status })
+      else
+        queueMicrotask(() => {
+          host.drop()
+        })
+    }
+    const { link: line } = link(host)
+    assert.deepEqual(await line.testScenario({ kind: 'status', scenarioId: 's1' }), { status })
+    assert.equal(await line.testScenario({ kind: 'clear' }), null)
+    host.reachable = false
+    assert.equal(await line.testScenario({ kind: 'clear' }), null, 'no host, no answer')
+  })
+
   it("saves a host turn's store write and tells the host the profile changed", async () => {
     const host = new FakeHost()
     const saved: unknown[] = []

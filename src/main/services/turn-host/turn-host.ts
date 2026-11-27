@@ -30,6 +30,9 @@ import {
   type AppToHost,
   type DispatchState,
   type HostToApp,
+  type TestScenarioOp,
+  type TestScenarioResult,
+  type TestScenarioStatus,
   type TurnHostClient,
 } from './turn-host-protocol.ts'
 
@@ -66,6 +69,11 @@ export interface TurnHostDependencies {
   reloadProfile?: () => Promise<void>
   /** The dispatcher's dependencies; the in-process defaults when absent. */
   dispatcher?: AgentDispatcherDependencies
+  /**
+   * Run a scripted model scenario operation (e2e builds only): host turns
+   * claim their responses here. Throws what the scenario store throws.
+   */
+  testScenario?: (op: TestScenarioOp) => TestScenarioStatus | undefined
 }
 
 interface ClientState {
@@ -233,6 +241,20 @@ export class TurnHost {
       case 'profile-changed':
         this.profileStale = true
         return
+      case 'test-scenario':
+        client.send({ t: 'test-scenario-result', id: message.id, ...this.testScenario(message.op) })
+        return
+    }
+  }
+
+  private testScenario(op: TestScenarioOp): TestScenarioResult {
+    const run = this.deps.testScenario
+    if (!run) return { error: 'this turn host takes no test scenarios' }
+    try {
+      const status = run(op)
+      return status === undefined ? {} : { status }
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) }
     }
   }
 

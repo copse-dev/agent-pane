@@ -8,6 +8,8 @@ import {
   type DispatchState,
   type HostApprovalAnswer,
   type HostToApp,
+  type TestScenarioOp,
+  type TestScenarioResult,
   type TurnHostConnection,
 } from './turn-host-protocol.ts'
 
@@ -96,6 +98,7 @@ export class TurnHostLink {
   private helloWaiters: (() => void)[] = []
   private readonly pending = new Map<string, Pending>()
   private readonly statusWaiters = new Map<string, (state: DispatchState) => void>()
+  private readonly scenarioWaiters = new Map<string, (result: TestScenarioResult | null) => void>()
   private readonly subscribers = new Map<string, Set<Subscriber>>()
   /** Host prompts showing in the window, by the host's prompt id. */
   private readonly prompts = new Map<string, AbortController>()
@@ -175,6 +178,22 @@ export class TurnHostLink {
     if (this.ready) this.send({ t: 'profile-changed' })
   }
 
+  /**
+   * Run a scripted scenario operation in the host (e2e builds). Null when no
+   * host of this version is on the line, or the line dropped before it answered.
+   */
+  async testScenario(op: TestScenarioOp): Promise<TestScenarioResult | null> {
+    if (!(await this.ensureConnected())) return null
+    const id = (this.deps.createId ?? randomUUID)()
+    return new Promise((resolve) => {
+      this.scenarioWaiters.set(id, (result) => {
+        this.scenarioWaiters.delete(id)
+        resolve(result)
+      })
+      this.send({ t: 'test-scenario', id, op })
+    })
+  }
+
   /** Stop a thread's turn in the host. */
   stop(threadId: string): void {
     this.send({ t: 'stop', threadId })
@@ -251,6 +270,11 @@ export class TurnHostLink {
       case 'status':
         this.statusWaiters.get(message.id)?.(message.state)
         return
+      case 'test-scenario-result': {
+        const { t: _t, id, ...result } = message
+        this.scenarioWaiters.get(id)?.(result)
+        return
+      }
       case 'chunk':
         for (const subscriber of this.subscribers.get(message.threadId) ?? []) {
           subscriber.onMessage(message)
@@ -339,6 +363,7 @@ export class TurnHostLink {
     for (const waiter of this.helloWaiters.splice(0)) waiter()
     // A status asked on this line will not be answered on it.
     for (const waiter of [...this.statusWaiters.values()]) waiter('unknown')
+    for (const waiter of [...this.scenarioWaiters.values()]) waiter(null)
     // The host still waits on them, and asks again once a line is back.
     for (const controller of this.prompts.values()) controller.abort()
     this.prompts.clear()

@@ -20,6 +20,7 @@ import type { ProfileStoreChange } from '../turn-worker/read-only-profile-store.
 import { installReadOnlyProfile } from '../turn-worker/worker-profile.ts'
 import { quietWorkerEnvironment } from '../turn-worker/worker-environment.ts'
 import { connectTurnHost, turnHostSocketPath } from './turn-host-protocol.ts'
+import type { TurnHostDependencies } from './turn-host.ts'
 
 function log(line: string): void {
   process.stderr.write(`[turn-host ${new Date().toISOString()}] ${line}\n`)
@@ -92,6 +93,7 @@ async function main(): Promise<number> {
       done.resolve(undefined)
     },
     reloadProfile: profile.reload,
+    ...(await testScenarioDependency()),
   })
   forward = (store, changes): void => {
     host.storeWrite(store, changes)
@@ -117,6 +119,16 @@ async function main(): Promise<number> {
     await server.close()
     await runtime.teardown()
   }
+}
+
+/**
+ * Host turns claim scripted model responses in this process, so an e2e run's
+ * scenarios have to be set here too. Compiled out of release builds.
+ */
+async function testScenarioDependency(): Promise<Pick<TurnHostDependencies, 'testScenario'>> {
+  if (!__COPSE_TEST_SCENARIOS__ || process.env['COPSE_E2E'] !== '1') return {}
+  const { runTestScenarioOp } = await import('./turn-host-test-scenarios.ts')
+  return { testScenario: runTestScenarioOp }
 }
 
 main().then(
