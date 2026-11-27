@@ -182,7 +182,8 @@ export function canHostOutsideApp(model: string): boolean {
 
 /**
  * What a run host can run: one container run, whose guest runs Copse's loop or
- * an external coding agent, with every command inside the container. It never
+ * an external coding agent, with every command inside the container (its
+ * `sandbox`). It never
  * holds a ChatGPT sign-in (`canHostOutsideApp`) or a plugin runtime.
  */
 export const CONTAINER_RUN_HOST_CAPABILITIES: WorkerCapabilities = {

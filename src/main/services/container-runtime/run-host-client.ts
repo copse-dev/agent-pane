@@ -120,9 +120,10 @@ export async function followHost(
   const onMessage = (message: RunHostToApp): void => {
     switch (message.t) {
       case 'hello':
-        // Whatever answers on a run's socket must be a run host.
+        // Whatever answers on a run's socket must be a run host. Not a lost
+        // host: the run's container is not this answer's to clean up.
         if (!message.capabilities.roles.includes('container-run'))
-          finish(new RunHostLostError('Something other than a run host answered'))
+          finish(new Error('Something other than a run host answered on its socket'))
         return
       case 'state':
         for (const line of message.log) options.onLog?.(line)

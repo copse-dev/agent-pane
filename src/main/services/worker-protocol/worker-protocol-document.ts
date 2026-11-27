@@ -27,8 +27,13 @@ import { workerCapabilitiesSchema, type WorkerRole } from './worker-capabilities
  * - the full JSON Schema, a build output (`dist/schemas/worker-protocol.schema.json`)
  *   for a transport or a worker on another machine to code against;
  * - the manifest (`schemas/worker-protocol.manifest.json`): each role's
- *   protocol number and each message's fields, committed, so a change to the
- *   protocol shows in review and happens only on purpose.
+ *   protocol number and each message's top-level fields, committed, so adding,
+ *   removing or making optional a message or field shows in review. A change
+ *   inside a field's shape shows only in the full schema.
+ *
+ * A payload either end passes on unread (a stream chunk, a snapshot, a
+ * container record) is `{}` in the schema: a worker on another machine
+ * cannot code against those yet.
  */
 
 export const WORKER_PROTOCOL_MANIFEST_PATH = 'schemas/worker-protocol.manifest.json'

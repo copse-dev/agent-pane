@@ -393,7 +393,13 @@ describe('container run host', () => {
         },
       },
     )
-    await assert.rejects(follow, (error: unknown) => error instanceof RunHostLostError)
+    await assert.rejects(
+      follow,
+      (error: unknown) =>
+        error instanceof Error &&
+        !(error instanceof RunHostLostError) &&
+        /other than a run host/.test(error.message),
+    )
     assert.deepEqual(sent, [{ t: 'hello', version: '1.2.3', protocol: 1 }, { t: 'attach' }])
   })
 })

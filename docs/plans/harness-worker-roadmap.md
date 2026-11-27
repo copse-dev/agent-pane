@@ -84,10 +84,13 @@ beyond Copse's own loop, plugin runtimes and the OS sandbox. The app checks a tu
 against what the turn host said before it sends the turn, so a turn that would lose a
 plugin's tools or its sandbox stays in the app. The protocol is generated from the line
 schemas into `dist/schemas/worker-protocol.schema.json`, with a committed manifest
-(`schemas/worker-protocol.manifest.json`, `pnpm run gen:worker-protocol`) that a test pins.
+(`schemas/worker-protocol.manifest.json`, `pnpm run gen:worker-protocol`) of each message's
+top-level fields that a test pins.
 `worker-conformance.test.ts` drives both hosts over a real local socket with raw lines.
 Still open: the container run host keeps its own messages for progress, rather than the
-turn host's chunk and snapshot stream.
+turn host's chunk and snapshot stream, and payloads the ends pass on unread (stream
+chunks, snapshots, container records) have no shape in the schema yet, which a worker off
+this machine (R3) needs.
 
 ### R3. A worker on the SSH host
 

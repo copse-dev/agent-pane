@@ -60,11 +60,12 @@ describe('turnCannotRunOn', () => {
 })
 
 describe('workerCapabilitiesSchema', () => {
-  it('reads what a worker says and rejects a role it does not know', () => {
+  it('reads what a worker says, and passes over a role it does not know', () => {
     assert.deepEqual(workerCapabilitiesSchema.parse(loopOnly), loopOnly)
-    assert.equal(
-      workerCapabilitiesSchema.safeParse({ ...loopOnly, roles: ['mine'] }).success,
-      false,
+    assert.deepEqual(
+      workerCapabilitiesSchema.parse({ ...loopOnly, roles: ['turns', 'a-later-role'] }),
+      loopOnly,
     )
+    assert.equal(workerCapabilitiesSchema.safeParse({ ...loopOnly, roles: [7] }).success, false)
   })
 })

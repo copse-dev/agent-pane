@@ -137,7 +137,10 @@ describe('the bundled turn host', { skip: !E2E, timeout: 120_000 }, () => {
     await until(() => received.some((m) => m.t === 'status' && m.id === 'op-a'))
     line.close()
 
-    assert.equal(received[0]?.t, 'hello')
+    const hello = received[0]
+    assert.equal(hello?.t, 'hello')
+    assert.deepEqual(hello.capabilities?.roles, ['turns'])
+    assert.equal(hello.capabilities.pluginRuntimes, false)
     assert.ok(received.some((m) => m.t === 'chunk' && m.threadId === 'a'))
     assert.ok(received.some((m) => m.t === 'chunk' && m.threadId === 'b'))
     for (const id of ['a', 'b']) {

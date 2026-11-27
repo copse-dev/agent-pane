@@ -35,12 +35,23 @@ export interface WorkerCapabilities {
   }
   /** Plugins whose tools and models run in a runtime of their own. */
   pluginRuntimes: boolean
-  /** Whether project commands spawn confined by the OS sandbox there. */
+  /**
+   * Whether project commands run confined there: by the OS sandbox, or for a
+   * container run, inside the container.
+   */
   sandbox: boolean
 }
 
+const knownRole = (role: string): role is WorkerRole => WORKER_ROLES.some((known) => known === role)
+
 export const workerCapabilitiesSchema = z.object({
-  roles: z.array(z.enum(WORKER_ROLES)).max(WORKER_ROLES.length),
+  // A role this end does not know yet (a newer worker's) counts as nothing, so
+  // the hello it came in still reads.
+  roles: z
+    .array(z.string().max(64))
+    .max(16)
+    .transform((roles) => roles.filter(knownRole))
+    .pipe(z.array(z.enum(WORKER_ROLES))),
   models: z.object({
     chatgptPlan: z.boolean(),
     externalAgents: z.boolean(),

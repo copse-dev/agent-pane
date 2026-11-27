@@ -230,13 +230,10 @@ export class TurnHostLink {
     projectId: string,
     threadId: string,
     payload: string,
-    needs?: TurnNeeds,
+    needs: TurnNeeds,
   ): Promise<TurnPlacement> {
     if (!(await this.ensureConnected())) return 'app'
-    const cannot =
-      needs === undefined
-        ? null
-        : turnCannotRunOn(this.host?.capabilities ?? NO_CAPABILITIES, needs)
+    const cannot = turnCannotRunOn(this.host?.capabilities ?? NO_CAPABILITIES, needs)
     if (cannot !== null) {
       this.deps.log?.(`[turn-host] thread ${threadId} runs in the app: ${cannot}`)
       return 'app'

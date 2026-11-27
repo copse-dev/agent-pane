@@ -112,6 +112,9 @@ function link(
   }
 }
 
+/** A turn on Copse's own loop that needs nothing beyond it. */
+const PLAIN: TurnNeeds = { model: 'claude-sonnet-4-6', pluginRuntimes: false, sandbox: false }
+
 const dispatched = (host: FakeHost): number => host.sent.filter((m) => m.t === 'dispatch').length
 
 describe('TurnHostLink', () => {
@@ -123,7 +126,7 @@ describe('TurnHostLink', () => {
       reply({ t: 'ended', id: message.id, threadId: message.threadId })
     }
     const { link: line, taken } = link(host)
-    assert.equal(await line.run('p1', 't1', 'Hello'), 'host')
+    assert.equal(await line.run('p1', 't1', 'Hello', PLAIN), 'host')
     assert.deepEqual(taken, ['t1'])
     assert.deepEqual(line.runningThreadIds(), [])
   })
@@ -173,7 +176,7 @@ describe('TurnHostLink', () => {
       }
     }
     const { link: line } = link(host)
-    const placed = line.run('p1', 't1', 'Hello')
+    const placed = line.run('p1', 't1', 'Hello', PLAIN)
     await dispatchedTurn.promise
     await line.stopAllForQuit(60_000)
     assert.deepEqual(
@@ -215,7 +218,7 @@ describe('TurnHostLink', () => {
     host.connect = silentConnect
     const { link: line } = link(host, { connect: host.connect, helloTimeoutMs: 5 })
     assert.equal(await line.ensureConnected(), false)
-    assert.equal(await line.run('p1', 't1', 'Hello'), 'app')
+    assert.equal(await line.run('p1', 't1', 'Hello', PLAIN), 'app')
   })
 
   it('answers a task call it carried out after the line dropped, without a second run', async () => {
@@ -261,14 +264,14 @@ describe('TurnHostLink', () => {
         reply({ t: 'refused', id: message.id, threadId: message.threadId, reason: 'no' })
     }
     const { link: line } = link(host)
-    assert.equal(await line.run('p1', 't1', 'Hello'), 'app')
+    assert.equal(await line.run('p1', 't1', 'Hello', PLAIN), 'app')
   })
 
   it('runs in the app when no host answers', async () => {
     const host = new FakeHost()
     host.reachable = false
     const { link: line } = link(host)
-    assert.equal(await line.run('p1', 't1', 'Hello'), 'app')
+    assert.equal(await line.run('p1', 't1', 'Hello', PLAIN), 'app')
     assert.equal(dispatched(host), 0)
   })
 
@@ -287,7 +290,7 @@ describe('TurnHostLink', () => {
       if (message.t === 'status') reply({ t: 'status', id: message.id, state: 'ended' })
     }
     const { link: line } = link(host)
-    assert.equal(await line.run('p1', 't1', 'Hello'), 'host')
+    assert.equal(await line.run('p1', 't1', 'Hello', PLAIN), 'host')
     assert.equal(ran, 1)
     assert.equal(host.connections, 2, 'the app reconnected to ask')
   })
@@ -308,7 +311,7 @@ describe('TurnHostLink', () => {
       readRecord: () => Promise.resolve(record),
       isAlive: () => false,
     })
-    assert.equal(await line.run('p1', 't1', 'Hello'), 'host')
+    assert.equal(await line.run('p1', 't1', 'Hello', PLAIN), 'host')
     assert.equal(dispatched(host), 1)
     assert.deepEqual(uncertain, [], 'the follower settles it from the abandoned lease')
   })
@@ -323,7 +326,7 @@ describe('TurnHostLink', () => {
       })
     }
     const { link: line } = link(host, { isAlive: () => false })
-    assert.equal(await line.run('p1', 't1', 'Hello'), 'app')
+    assert.equal(await line.run('p1', 't1', 'Hello', PLAIN), 'app')
   })
 
   it('leaves a turn it cannot place to the user rather than running it', async () => {
@@ -337,14 +340,14 @@ describe('TurnHostLink', () => {
     }
     // No record, but the host process is still alive: it may yet have claimed it.
     const { link: line, uncertain } = link(host, { isAlive: () => true })
-    assert.equal(await line.run('p1', 't1', 'Hello'), 'host')
+    assert.equal(await line.run('p1', 't1', 'Hello', PLAIN), 'host')
     assert.deepEqual(uncertain, ['t1'])
   })
 
   it('sends no turns to a host of another version', async () => {
     const host = new FakeHost()
     const { link: line } = link(host, { version: '2.0.0' })
-    assert.equal(await line.run('p1', 't1', 'Hello'), 'app')
+    assert.equal(await line.run('p1', 't1', 'Hello', PLAIN), 'app')
     assert.equal(dispatched(host), 0)
   })
 

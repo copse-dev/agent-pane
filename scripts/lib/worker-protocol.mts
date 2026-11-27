@@ -5,7 +5,7 @@
 // its messages with (`src/main/services/worker-protocol/worker-protocol-document.ts`).
 // Those modules use the main process's path aliases, so they are bundled the way
 // the main process is before they are imported here.
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import * as esbuild from 'esbuild'
@@ -14,6 +14,7 @@ import { MAIN_EXTERNALS, MAIN_LOG_OVERRIDE } from '../main-externals.mts'
 export type WorkerProtocolModule =
   typeof import('../../src/main/services/worker-protocol/worker-protocol-document.ts')
 
+const ROOT = resolve(import.meta.dirname, '..', '..')
 const ENTRY = 'src/main/services/worker-protocol/worker-protocol-document.ts'
 
 function isWorkerProtocolModule(value: unknown): value is WorkerProtocolModule {
@@ -26,12 +27,14 @@ function isWorkerProtocolModule(value: unknown): value is WorkerProtocolModule {
 }
 
 export async function loadWorkerProtocol(): Promise<WorkerProtocolModule> {
-  // Inside the repo, so the bundle's externals resolve from its node_modules.
-  const dir = mkdtempSync(resolve('node_modules', '.worker-protocol-'))
+  // Inside the repo (ignored `.tmp/`), so the bundle's externals resolve from
+  // its node_modules.
+  mkdirSync(join(ROOT, '.tmp'), { recursive: true })
+  const dir = mkdtempSync(join(ROOT, '.tmp', 'worker-protocol-'))
   const outfile = join(dir, 'worker-protocol.mjs')
   try {
     await esbuild.build({
-      entryPoints: [resolve(ENTRY)],
+      entryPoints: [join(ROOT, ENTRY)],
       outfile,
       bundle: true,
       platform: 'node',
@@ -39,7 +42,7 @@ export async function loadWorkerProtocol(): Promise<WorkerProtocolModule> {
       target: 'node22',
       external: [...MAIN_EXTERNALS],
       logOverride: MAIN_LOG_OVERRIDE,
-      alias: { '@shared': resolve('./src/shared') },
+      alias: { '@shared': join(ROOT, 'src', 'shared') },
       define: { __COPSE_TEST_SCENARIOS__: 'false' },
       logLevel: 'error',
     })
