@@ -29037,7 +29037,7 @@ async function offerProjectTrust(api, root) {
       focusCancel: true
     });
     if (!confirmed || await api.workspace.get() !== root) return;
-    await api.workspace.setTrusted(true);
+    await api.workspace.setTrusted(true, root);
   } catch (err) {
     showErrorToast("Could not trust project", err);
   }

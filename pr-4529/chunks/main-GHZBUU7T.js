@@ -486,7 +486,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-REJYMKFY.js";
+} from "./chunk-BOEDHBCE.js";
 import "./chunk-X6JZSFJR.js";
 import {
   init_actions,
