@@ -2877,6 +2877,14 @@
       "sha256": "da342cb31643f0e930c0d4214fb602f520b32ef23d1d9e51f71238f51610ade9",
       "bytes": 48930
     },
+    "mobile-companion-activity-older-collapsed.png": {
+      "sha256": "db951fb51292d02e1d1ab8d95891fe0b98315445148f6bcbff833bef1b96ddac",
+      "bytes": 50500
+    },
+    "mobile-companion-activity-older-expanded.png": {
+      "sha256": "29d37d71bd5086f0eb88821d0fe49f3f66c9ed39a12b17123eefb190546eb7f3",
+      "bytes": 47778
+    },
     "mobile-companion-activity-settled.png": {
       "sha256": "fec3caac6a61b943a43cb4715245766a5d2f84473732d14571b55355d8800190",
       "bytes": 47787
@@ -3028,6 +3036,18 @@
     "model-version-suppression-acp-after.png": {
       "sha256": "4213e5dd09c2496c7580050be37796487aa6a16a2635b8cef2193b837bc7903f",
       "bytes": 11499
+    },
+    "model-version-suppression-acp-gpt-after.png": {
+      "sha256": "6bf471b9b9d2609fab3bf970bf4cc1d4d9f955c60696620e9ce011e7a0301cba",
+      "bytes": 9907
+    },
+    "model-version-suppression-acp-scored-successor.png": {
+      "sha256": "7c1518dc510f17b706098fe82380cb685813680b9d4a902ac616e5525bc3ee61",
+      "bytes": 14331
+    },
+    "model-version-suppression-acp-sol-after.png": {
+      "sha256": "cb9ab785437dfe091a34474864350eaf65c287e15a5ecb609cae8fbc677a7fc4",
+      "bytes": 8341
     },
     "model-version-suppression-picker.png": {
       "sha256": "2457420c8aad22f2963581c7b320a281dd1355dbbabd32f455667dd38bb2253f",
