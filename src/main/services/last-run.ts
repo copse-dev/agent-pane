@@ -17,12 +17,15 @@ import { z } from 'zod'
  *
  * A quit the user chose stops the run, which is what the close dialog tells
  * them, so its turns are not continued. A crash or an update relaunch was not
- * the user's choice, so they are. Only turns that ran in that previous run
+ * the user's choice, so they are. With "Continue turns after Copse closes" on,
+ * a quit hands its turns to background workers instead and is recorded as
+ * `hand-off`: a turn no worker took is continued by the next launch, as the
+ * close dialog promised. Only turns that ran in that previous run
  * count: the start time bounds them, and a first launch with no record
  * continues nothing.
  */
 
-export type RunEnding = 'quit' | 'update'
+export type RunEnding = 'quit' | 'update' | 'hand-off'
 
 export interface LastRunRecord {
   /** Epoch ms when that run started. */
@@ -33,7 +36,7 @@ export interface LastRunRecord {
 
 const lastRunSchema = z.object({
   startedAt: z.number().nonnegative(),
-  ended: z.enum(['quit', 'update']).optional(),
+  ended: z.enum(['quit', 'update', 'hand-off']).optional(),
 })
 
 export function lastRunPath(userDataPath: string): string {
@@ -110,15 +113,18 @@ export class RunRecorder {
     return this.updating
   }
 
-  /** Record how this run ends. Only the first call counts. */
-  async end(): Promise<void> {
+  /**
+   * Record how this run ends. Only the first call counts. `handsOff` is true when
+   * the quit gives its turns to background workers rather than stopping them.
+   */
+  async end(handsOff = false): Promise<void> {
     if (this.ended) return
     this.ended = true
     // Wait for the start record so it cannot land after the ending.
     await this.previous
     await writeLastRun(this.path, {
       startedAt: this.startedAt,
-      ended: this.updating ? 'update' : 'quit',
+      ended: this.updating ? 'update' : handsOff ? 'hand-off' : 'quit',
     }).catch((error: unknown) => {
       console.error('[last-run] could not record how this run ended:', error)
     })
@@ -149,8 +155,8 @@ export function updateRelaunchNoted(): boolean {
 }
 
 /** Record that this run is ending in an orderly quit. */
-export function recordRunEnd(): Promise<void> {
-  return recorder?.end() ?? Promise.resolve()
+export function recordRunEnd(handsOff = false): Promise<void> {
+  return recorder?.end(handsOff) ?? Promise.resolve()
 }
 
 /** How the previous run ended, once the recorder has read it. */

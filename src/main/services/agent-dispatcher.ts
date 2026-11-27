@@ -432,6 +432,14 @@ export class AgentDispatcher {
     return this.active.has(dispatchKey(projectId, threadId))
   }
 
+  /** Every thread with a turn in this process's slots. */
+  activeTurns(): { projectId: string; threadId: string }[] {
+    return [...this.active.keys()].map((key) => {
+      const [projectId = '', threadId = ''] = key.split('\0')
+      return { projectId, threadId }
+    })
+  }
+
   /** Retained dedupe records do not prove whether a completion wake has settled. */
   hasMachineOperationRecord(projectId: string, threadId: string): boolean {
     const prefix = `${dispatchKey(projectId, threadId)}\0`

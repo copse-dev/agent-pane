@@ -586,6 +586,8 @@ export function seedEmptyProject(
     nextStepSuggestionEnabled?: boolean
     /** Opt into the experimental unattended container runs (off by default). */
     containerRunsEnabled?: boolean
+    /** Hand running turns to background workers at quit (on by default in the app). */
+    continueTurnsAfterQuit?: boolean
     /** Opt into the experimental "Start planning" composer control (off by default). */
     planModeEnabled?: boolean
     model?: string
@@ -724,6 +726,9 @@ export function seedEmptyProject(
   }
   if (options?.nextStepSuggestionEnabled !== undefined) {
     settings['nextStepSuggestionEnabled'] = options.nextStepSuggestionEnabled
+  }
+  if (options?.continueTurnsAfterQuit !== undefined) {
+    settings['continueTurnsAfterQuit'] = options.continueTurnsAfterQuit
   }
   if (options?.containerRunsEnabled !== undefined) {
     settings['containerRunsEnabled'] = options.containerRunsEnabled

@@ -1,6 +1,17 @@
 import { initClientActions } from './services/clients/client-action-ipc.ts'
 import './disable-brotli-decoding.ts' // MUST be first — see the module
 import { stopAllForegroundShellProcesses } from './services/exec/foreground-shell-process.ts'
+import {
+  continuesTurnsAfterQuit,
+  everyTurnHandsOff,
+  handOffTurns,
+  turnWorkerPath,
+  type HandOffTarget,
+} from './services/turn-worker/turn-worker-launch.ts'
+import {
+  ForeignTurnFollower,
+  defaultForeignTurnDependencies,
+} from './services/turn-worker/foreign-turns.ts'
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
 import { initRemoteInterface } from './services/mobile/remote-interface.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
@@ -88,12 +99,14 @@ import {
   resumeMobileCompanion,
   stopMobileCompanion,
 } from './services/mobile/mobile-companion-service.ts'
-import { initAutoUpdate } from './services/auto-update.ts'
+import { initAutoUpdate, quitInstallsUpdate } from './services/auto-update.ts'
 import { initUpdatePrompt } from './services/update-prompt.ts'
 import {
   approveClose,
+  closeWentUnanswered,
   deferQuitForCloseConfirmation,
   guardWindowClose,
+  setQuitHandOffCheck,
   initCloseConfirm,
 } from './services/close-confirm.ts'
 import { checkToolAvailability } from './services/tool-availability.ts'
@@ -319,6 +332,18 @@ setSecretCipher(
 )
 const taskSupervisor = getTaskSupervisor()
 
+/** This quit came from a signal or a fault, with nobody to confirm it. */
+let unattendedQuit = false
+/** This quit hands its turns to workers (set once the quit goes ahead). */
+let quitHandsOff = false
+
+/** Quit without asking: a signal or a fault has nobody to answer the prompt. */
+function quitUnattended(): void {
+  unattendedQuit = true
+  approveClose()
+  app.quit()
+}
+
 // Own stdout/stderr's `error` events before anything can provoke one. A closed
 // terminal makes every later write fail with EIO; unowned, that failure becomes
 // an uncaught exception, which the handler below logs, which writes again —
@@ -331,8 +356,7 @@ const taskSupervisor = getTaskSupervisor()
 // the crash this guard now prevents.
 installStdioGuard({
   onSinkLost: () => {
-    approveClose()
-    app.quit()
+    quitUnattended()
   },
 })
 
@@ -342,8 +366,7 @@ installStdioGuard({
 installProcessFaultHandlers({
   isLogSinkAlive,
   onUncaughtException: () => {
-    approveClose()
-    app.quit()
+    quitUnattended()
   },
 })
 
@@ -812,6 +835,16 @@ app
       },
     })
     interruptTurnTranscripts = (): Promise<void> => transcriptWriter.interruptForShutdown()
+    // Turns a worker took over when Copse last quit, still going now: shown as
+    // running and repainted from disk until the worker lets go of them.
+    const foreignTurns = new ForeignTurnFollower(
+      defaultForeignTurnDependencies((snapshot) => {
+        if (!win.isDestroyed()) win.webContents.send('agent:transcript-snapshot', snapshot)
+      }),
+    )
+    stopFollowingForeignTurns = (): void => {
+      foreignTurns.stop()
+    }
 
     // A background task's exit lands on the card that started it (#3956).
     setLateCommandPhaseRecorder((owner, toolCallId, phase) =>
@@ -883,6 +916,18 @@ app
     recordStartupPhase('register-handlers')
     perfMark('main:register-handlers')
     const agentDispatcher = new AgentDispatcher(agentHost, registry, undefined, transcriptWriter)
+    listActiveTurns = (): HandOffTarget[] => agentDispatcher.activeTurns()
+    // The close dialog may only say turns keep going when a worker takes every
+    // one: a quit that hands off, with no update to install, and no turn the
+    // worker turns down (it waits for the next launch instead).
+    setQuitHandOffCheck(async () => {
+      const { workerCannotRun } = await import('./services/turn-worker/turn-worker.ts')
+      return everyTurnHandsOff(
+        agentDispatcher.activeTurns(),
+        continuesTurnsAfterQuit(getSetting) && !quitInstallsUpdate(),
+        workerCannotRun,
+      )
+    })
     setAgentInitiatedTurnAuthority(agentDispatcher)
     setDiffAcceptanceHandler({
       waitForIdle: (owner) => agentDispatcher.waitForIdle(owner.projectId, owner.threadId),
@@ -1317,10 +1362,12 @@ app
 
     // Thread ids with a live in-process run, so a renderer that's just loaded a
     // project's threads can tell a genuinely still-running turn apart from a
-    // persisted `status: 'running'` left over from a crash (#1406).
-    ipcMain.handle('agent:running-thread-ids', (event) => {
+    // persisted `status: 'running'` left over from a crash (#1406). A turn a
+    // worker is still running for this profile counts as running here too.
+    ipcMain.handle('agent:running-thread-ids', async (event) => {
       assertMainFrameSender(event, win)
-      return listRunningThreadIds()
+      const foreign = await foreignTurns.discover()
+      return [...new Set([...listRunningThreadIds(), ...foreign])]
     })
 
     // Re-run just the post-turn review for a thread — the retry action on a
@@ -1548,8 +1595,16 @@ app
           win.webContents.send('mcp:status-changed', getMcpServerStatuses())
         }
         // Once the tools a cut-off turn may have been using are back, continue
-        // the turns the last quit, update relaunch or crash ended.
-        void resumeInterruptedTurns(defaultInterruptedTurnResumeDependencies(agentDispatcher))
+        // the turns the last quit, update relaunch or crash ended, except
+        // those a turn worker is still continuing.
+        void foreignTurns.discover().then(() => {
+          const resume = defaultInterruptedTurnResumeDependencies(agentDispatcher)
+          return resumeInterruptedTurns({
+            ...resume,
+            isRunning: (threadId) =>
+              resume.isRunning(threadId) || foreignTurns.isFollowing(threadId),
+          })
+        })
       })
     disposeTerminal = disposeTerminalHandlers
     disposeVnc = disposeVncHandlers
@@ -1586,8 +1641,38 @@ let disposeContainerRunSupervisor: (() => void) | undefined
 let disposeDarkFactorySensor: (() => void) | undefined
 let disposeTaskSupervisorEvents: (() => void) | undefined
 let interruptTurnTranscripts: (() => Promise<void>) | undefined
+let listActiveTurns: (() => HandOffTarget[]) | undefined
+let stopFollowingForeignTurns: (() => void) | undefined
+
+/**
+ * Start a turn worker for each turn this quit cut off, so it continues now
+ * rather than at the next launch (`docs/plans/local-turn-worker.md` W2). Runs
+ * last, once the transcripts and the write queue have drained, so the worker
+ * reads the history this process saved.
+ */
+function handOffInterruptedTurns(targets: readonly HandOffTarget[]): void {
+  // A quit that installs an update leaves the turns to the next launch, which
+  // runs the new version: a worker of this version must not run them while the
+  // updater replaces the binary under it. The `hand-off` record still lets
+  // that launch continue them.
+  if (targets.length === 0 || !quitHandsOff || quitInstallsUpdate()) return
+  handOffTurns(targets, {
+    execPath: process.execPath,
+    workerPath: turnWorkerPath(),
+    userDataPath: app.getPath('userData'),
+    appVersion: app.getVersion(),
+    packaged: app.isPackaged,
+    env: process.env,
+    log: (line) => {
+      console.log(line)
+    },
+  })
+}
 
 async function cleanupBeforeQuit(): Promise<void> {
+  // Read before anything below stops them.
+  const handOff = listActiveTurns?.() ?? []
+  stopFollowingForeignTurns?.()
   const transcriptDrain = interruptTurnTranscripts?.()
   setAgentInitiatedTurnAuthority(null)
   stopAllAgentRuns()
@@ -1637,6 +1722,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   await shutdownStaticPreviewServers()
   await transcriptDrain
   await drainWriteQueue()
+  handOffInterruptedTurns(handOff)
   // Reap the detached gortex daemon too — left running it accumulates multi-GB
   // graphs across sessions and OOM-kills the app on a later launch.
   await Promise.allSettled([shutdownMcpServers(), shutdownProjectSandbox(), stopGortexDaemon()])
@@ -1648,9 +1734,13 @@ app.on('before-quit', (event) => {
   // kills the in-flight turns the user is being warned about, so a prompt after
   // it would come too late to save them. Re-issues the quit once confirmed.
   if (deferQuitForCloseConfirmation(event)) return
-  // The quit is going ahead: the user chose it, so its turns are not continued
-  // on the next launch (unless the updater asked for it).
-  const runEnded = recordRunEnd()
+  // The quit is going ahead. Only a quit the user confirmed hands its turns to
+  // workers, and only with the setting on; otherwise the user chose to stop
+  // them, so the next launch does not continue them (unless the updater asked).
+  // A signal, a fault, or a close nobody answered (the renderer went away or
+  // the prompt timed out) has nobody at the keyboard, so it stops them too.
+  quitHandsOff = !unattendedQuit && !closeWentUnanswered() && continuesTurnsAfterQuit(getSetting)
+  const runEnded = recordRunEnd(quitHandsOff)
   beginMainWindowQuit()
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()
@@ -1698,8 +1788,7 @@ function quitFromSignal(signal: NodeJS.Signals): void {
   // load-bearing for SIGHUP in particular: the same hangup that delivers the
   // signal also kills the renderer, so the prompt would go to a window that can
   // never answer and the quit would stall for the full confirmation timeout.
-  approveClose()
-  app.quit()
+  quitUnattended()
 }
 
 /**

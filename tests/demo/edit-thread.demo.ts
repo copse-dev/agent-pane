@@ -2,6 +2,9 @@ import { $, $$, browser, expect } from '@wdio/globals'
 import { Key } from 'webdriverio'
 import { prepareE2eScreenshot, saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 
+/** The phone-sized page the narrow flow runs on. */
+const PHONE = { width: 390, height: 844 }
+
 async function openPrototype(): Promise<void> {
   await browser.setWindowSize(1280, 860)
   await browser.url('/prototypes/edit-thread.html')
@@ -140,15 +143,21 @@ describe('edit thread prototype', () => {
     await saveElementScreenshot('#app', 'edit-thread-review-light.png')
     await $('#cancel').click()
     await browser.setWindowSize(390, 844)
-    await prepareE2eScreenshot()
+    // Frame the app to the whole phone-sized page, here and in the capture. The
+    // default 1280x800 frame would clip it to 800 px tall while the fixed toast
+    // still sits on the 844 px page, over the footer's buttons.
+    await prepareE2eScreenshot(PHONE)
     await noOverflow()
     await $('#review').click()
     await expect($('#history-preview')).toBeDisplayed()
     await expect($('#review')).toBeDisplayed()
     await noOverflow()
     await expect($('#toast')).toBeDisplayed()
-    await toastClearsEditorFooter()
-    await saveElementScreenshot('#app', 'edit-thread-review-narrow.png')
+    // Check the toast in the frame the capture pins, not only the one above.
+    await saveElementScreenshot('#app', 'edit-thread-review-narrow.png', {
+      frameSize: PHONE,
+      beforeCapture: toastClearsEditorFooter,
+    })
     await $('#review').click()
     expect(await $$('.message').length).toBe(3)
     await $('#compose-text').setValue('Continue with the current search requirements.')
