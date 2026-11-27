@@ -168,7 +168,7 @@ const api: ApiClient = {
     pickParentDirectory: () => ipcRenderer.invoke('workspace:pick-parent-directory'),
     getHomeDirectory: () => ipcRenderer.invoke('workspace:get-home-directory'),
     unsandboxedProjectHooks: (root?: string) =>
-      ipcRenderer.invoke('hooks:unsandboxed-project-hooks', ...(root === undefined ? [] : [root])),
+      ipcRenderer.invoke('hooks:unsandboxed-project-hooks', root),
     onOpened: (handler: (root: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, root: string): void => {
         handler(root)

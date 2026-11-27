@@ -1260,7 +1260,7 @@
         "api": "workspace.unsandboxedProjectHooks",
         "args": [
           0,
-          null
+          1
         ]
       },
       "index:query": {
