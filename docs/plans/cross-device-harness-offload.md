@@ -4,6 +4,7 @@
 landed the loop-in-guest half of this while it was open: O0, O3 and O4 below are delivered for
 a disposable local container. What remains unbuilt, and is what this plan now exists for, is
 ownership — the lease in O1 and the attach/detach in O2, which that plan parks as its T2.
+The order of the remaining work is in [`harness-worker-roadmap.md`](harness-worker-roadmap.md).
 This plan answers one question the
 package extraction made worth asking: now that the agent runtime no longer needs Electron,
 what stops it running on a different machine from the window that started it?

@@ -192,7 +192,8 @@ takes main down, or a `kill` still cuts the turn off, and the next launch contin
 This part runs every turn outside the app from its first step, so the app going away, for any
 reason, never interrupts one.
 
-It is the local box of the shared harness worker in `cross-device-harness-offload.md`: one
+It is phase R1 of `harness-worker-roadmap.md`, the local box of the shared harness worker in
+`cross-device-harness-offload.md`: one
 bundle that owns a thread's turns under its lease, with windows and the phone attaching to it.
 The host's protocol is written for any transport, so the same verbs (dispatch, attach,
 decisions, store writes) later reach a worker on an SSH host, in a container or on a cloud
