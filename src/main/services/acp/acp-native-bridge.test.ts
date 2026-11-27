@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { readDecisionLog } from '../security/decision-log-store.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
+import { drainWriteQueue } from '../storage/write-queue.ts'
 import { z } from 'zod'
 import { setTimeout as delay } from 'node:timers/promises'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
@@ -568,6 +569,7 @@ describe('startAcpNativeBridge', () => {
       }
     } finally {
       storageSet('activeProjectId', previousProjectId)
+      await drainWriteQueue()
       if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
       else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
       rmSync(auditRoot, { recursive: true, force: true })
@@ -1039,6 +1041,9 @@ describe('startAcpNativeBridge', () => {
           finish.resolve()
           await bridge?.close()
           setAcpToolCompletionHandler(null)
+          // The late result's decision-log writes may still be queued; removing
+          // the root under them fails with ENOTEMPTY on macOS (#4539).
+          await drainWriteQueue()
           if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
           else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
           rmSync(root, { recursive: true, force: true })
@@ -1945,6 +1950,7 @@ describe('startAcpNativeBridge', () => {
       lease.end()
     } finally {
       await setSetting('threadSendAccess', [])
+      await drainWriteQueue()
       if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
       else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
       rmSync(root, { recursive: true, force: true })
