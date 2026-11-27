@@ -176,8 +176,11 @@ export function initCloseConfirm(win: BrowserWindow): void {
 
   requestConfirm = (): Promise<boolean> =>
     new Promise<boolean>((resolve) => {
-      // A detached window has no page to ask; the quit was the user's choice.
+      // A detached window has no page to ask. The quit still goes ahead, but
+      // nobody answered it (the detach came from an earlier window close), so
+      // it hands nothing off.
       if (win.isDestroyed() || isWindowDetached(win)) {
+        unanswered = true
         resolve(true)
         return
       }

@@ -56,8 +56,11 @@ without Electron.
    as `hand-off` in `last-run.json` (hooks plan decision 5), so a turn no worker took, because
    the worker declined it or never started, is continued by the next launch instead. Only a
    quit the user confirmed hands off: a signal (Ctrl+C on `make run`, SIGTERM), a fault quit,
-   or a close the dialog let through unanswered (the renderer went away, or two minutes passed)
-   has nobody to confirm it, so it stops the run and is recorded as `quit`.
+   or a close the dialog let through unanswered (the renderer went away, two minutes passed, or
+   the window was already detached) has nobody to confirm it, so it stops the run and is
+   recorded as `quit`. A worker told to end (SIGTERM, SIGHUP, SIGINT) runs the same teardown
+   before it exits; a SIGKILLed worker cannot, and what its turn started runs on in its own
+   process group, as after a SIGKILL of the app.
    The worker runs only Copse's own loop. A thread on an external coding agent (ACP) or a
    remote agent is left for the next launch, because the worker could not stop that agent or
    the processes it starts once it exits.
