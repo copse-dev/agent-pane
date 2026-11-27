@@ -22,11 +22,16 @@ const PROJECT_ID = 'e2e-workspace-trust-offer'
 // offers to trust the project, behind its own confirmation, without answering
 // the prompt. The push is rejected, so nothing leaves the machine.
 describe('workspace trust offer on a shell prompt', () => {
+  let parent = ''
   let root = ''
 
   before(async function () {
     this.timeout(60_000)
-    root = realpathSync(mkdtempSync(join(tmpdir(), 'copse-e2e-trust-offer-')))
+    // The consent names the folder, so its leaf is fixed (and matches the
+    // seeded project name) to keep the screenshot identical across runs.
+    parent = realpathSync(mkdtempSync(join(tmpdir(), 'copse-e2e-trust-offer-')))
+    root = join(parent, 'workspace')
+    mkdirSync(root)
     const git = (...args: string[]): void => {
       execFileSync('git', args, { cwd: root, stdio: 'pipe' })
     }
@@ -52,7 +57,7 @@ describe('workspace trust offer on a shell prompt', () => {
 
   after(() => {
     resetUserData()
-    if (root) removeE2eTree(root)
+    if (parent) removeE2eTree(parent)
   })
 
   it('names missing trust as the reason and trusts only after confirming', async function () {
