@@ -13,6 +13,7 @@ import { MOBILE_CONTENT_SECURITY_POLICY } from './src/shared/mobile-content-secu
 import { mobileAssetRoutes } from './src/shared/mobile-asset-routes.ts'
 import { loadRemoteAssets } from './src/main/services/mobile/remote-assets.ts'
 import { createRemoteChatFixture } from './tests/demo/helpers/remote-chat-fixture.ts'
+import { installPageViewport } from './tests/demo/helpers/page-viewport.ts'
 
 /** Cap how long afterTest may talk to a possibly-dead Chrome session. */
 const AFTER_TEST_SESSION_BUDGET_MS = 5_000
@@ -32,6 +33,21 @@ const MARKETING_ROOT = resolve('site')
 const MARKETING_MOUNT = '/marketing'
 const MARKETING_DEMO_MOUNT = `${MARKETING_MOUNT}/demo/main`
 let server: Server | undefined
+
+/**
+ * The Chrome for Testing build the browser tier renders with. Without a
+ * `browserVersion`, WebdriverIO uses whatever Google Chrome the runner image
+ * has installed, so a GitHub image update changes every PR's demo run at once:
+ * on 2026-11-25, Chrome 157 -> 158 failed `landing-cupcake-walkthrough` on
+ * every open PR (#4506), and a new build can move browser reference
+ * screenshots that no PR touched.
+ *
+ * Bump it in its own PR: pick a version from
+ * https://googlechromelabs.github.io/chrome-for-testing/known-good-versions.json,
+ * let CI render it, fix any spec it breaks, and accept the screenshot
+ * candidates it produces in that PR.
+ */
+const DEMO_CHROME_VERSION = '158.0.8127.36'
 
 const contentTypes: Readonly<Record<string, string>> = {
   '.css': 'text/css; charset=utf-8',
@@ -357,6 +373,8 @@ export const config: WebdriverIO.Config = {
   capabilities: [
     {
       browserName: 'chrome',
+      // A local Chromium override brings its own version.
+      ...(process.env['COPSE_DEMO_CHROME_BINARY'] ? {} : { browserVersion: DEMO_CHROME_VERSION }),
       'wdio:enforceWebDriverClassic': true,
       'goog:chromeOptions': {
         args: [
@@ -389,11 +407,14 @@ export const config: WebdriverIO.Config = {
   mochaOpts: { ui: 'bdd', timeout: 90_000 },
   onPrepare: startDemoServer,
   onComplete: stopDemoServer,
-  before() {
+  async before() {
     // Demo Chrome can wedge on session DELETE the same way Electron e2e does
     // (#1134 tip b21d7f73 / markdown-list-indent.demo.ts). Cap + swallow so
     // teardown cannot flip a green demo suite red.
     installDeleteSessionSafety(browser)
+    // Chrome for Testing's headless window is taller than its page, so window
+    // sizes are page sizes in this tier, starting at 1280x800.
+    await installPageViewport(browser)
   },
   afterTest: async (_test, _context, result) => {
     if (!result.passed) {

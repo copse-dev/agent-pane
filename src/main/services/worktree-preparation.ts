@@ -274,6 +274,13 @@ export function preparationEnvironment(env: NodeJS.ProcessEnv = process.env): No
   }
 }
 
+// uv loads its TLS trust at startup even with UV_OFFLINE, and fails when one
+// of these names a bundle the sandbox cannot read (a corporate CA under the
+// denied home directory). Offline runs never open a TLS connection, so they
+// drop the user's trust settings. Online runs go through the package firewall,
+// which rewrites them (`REPLACING_TRUST_VARIABLES`).
+const OFFLINE_UV_TLS_VARIABLES = new Set(['SSL_CERT_FILE', 'SSL_CERT_DIR', 'UV_NATIVE_TLS'])
+
 function environmentForPlan(
   env: NodeJS.ProcessEnv,
   plan: WorktreePreparationPlan,
@@ -290,7 +297,11 @@ function environmentForPlan(
                 ['PIP_INDEX_URL', 'PIP_EXTRA_INDEX_URL', 'PIP_TRUSTED_HOST'].includes(key),
             ),
           )
-        : { ...env }
+        : plan.ecosystem === 'uv' && offline
+          ? Object.fromEntries(
+              Object.entries(env).filter(([key]) => !OFFLINE_UV_TLS_VARIABLES.has(key)),
+            )
+          : { ...env }
   const rustBin =
     plan.ecosystem === 'cargo' ? resolveInstalledRustToolchainBin(plan.root, env) : null
   const result: NodeJS.ProcessEnv = {

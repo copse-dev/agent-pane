@@ -86,7 +86,7 @@ minimumReleaseAgeExclude:
 # regression test in scripts/adm-zip-symlink-patch.test.ts keeps that protection
 # pinned if a future release regresses it.
 
-# Five patches to @anthropic-ai/sandbox-runtime, all in one patch file. Drop
+# Six patches to @anthropic-ai/sandbox-runtime, all in one patch file. Drop
 # each once upstream does the same; the named test fails loudly if a version
 # bump silently drops the patch.
 #
@@ -122,6 +122,13 @@ minimumReleaseAgeExclude:
 #    needs trustd for TLS verification, but enabling it globally would also
 #    relax unrelated commands. Honor the overlay, retaining the global fallback.
 #    Guarded by `project-sandbox/acp-trustd.test.ts`.
+#
+# 6. Linux starts the in-namespace proxy listeners as unqualified `TCP-LISTEN`,
+#    which opens an AF_INET6 socket and exits at once on a kernel booted with
+#    `ipv6.disable=1` (Claude Code cloud containers), so no sandboxed command
+#    reaches the network. The patch uses `TCP4-LISTEN` when
+#    `/proc/net/if_inet6` is absent and keeps dual-stack otherwise (#4409).
+#    Guarded by `project-sandbox/sandbox-socat-ipv6.test.ts`.
 patchedDependencies:
   '@anthropic-ai/sandbox-runtime@0.0.74': patches/@anthropic-ai__sandbox-runtime@0.0.74.patch
   # 2.7.0 drops test-build defaults, misreports exports, hides profile errors,
