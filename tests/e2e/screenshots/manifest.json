@@ -2873,6 +2873,14 @@
       "sha256": "da342cb31643f0e930c0d4214fb602f520b32ef23d1d9e51f71238f51610ade9",
       "bytes": 48930
     },
+    "mobile-companion-activity-older-collapsed.png": {
+      "sha256": "db951fb51292d02e1d1ab8d95891fe0b98315445148f6bcbff833bef1b96ddac",
+      "bytes": 50500
+    },
+    "mobile-companion-activity-older-expanded.png": {
+      "sha256": "29d37d71bd5086f0eb88821d0fe49f3f66c9ed39a12b17123eefb190546eb7f3",
+      "bytes": 47778
+    },
     "mobile-companion-activity-settled.png": {
       "sha256": "fec3caac6a61b943a43cb4715245766a5d2f84473732d14571b55355d8800190",
       "bytes": 47787
