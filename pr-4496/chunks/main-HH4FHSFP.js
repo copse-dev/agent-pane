@@ -498,7 +498,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-XS35QGOK.js";
+} from "./chunk-UHDFXCOH.js";
 import "./chunk-X6JZSFJR.js";
 import {
   createSshWorkspaceConsent,
@@ -57689,10 +57689,12 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     if (!run4) {
       text.textContent = "";
       delete element.dataset["phase"];
+      element.removeAttribute("data-stopped");
       onStateChanged();
       return;
     }
     element.dataset["phase"] = run4.phase;
+    element.toggleAttribute("data-stopped", run4.phase === "failed" && run4.stoppedByUser === true);
     const result = run4.record?.result;
     const fetched = run4.record?.carryOut.ref !== null && run4.record?.carryOut.ref !== void 0;
     const commits = result === void 0 || result === null ? "" : result.commits.length === 0 ? "no commits" : `${String(result.commits.length)} commit${result.commits.length === 1 ? "" : "s"} ${fetched ? "back" : "made but NOT fetched"}`;
@@ -60270,7 +60272,12 @@ ${description}
           model,
           // The footer picker only names a branch; this is where that selection
           // becomes the worktree's base, or the shared checkout's branch.
-          baseBranch
+          baseBranch,
+          // With no selection to send (no listed default, or a detached
+          // checkout), the picker is showing the project checkout's branch,
+          // so start there — unlike machine-started threads, which main cuts
+          // from the fetched default branch.
+          "project-branch"
         );
         if (!getThreadById(store2, id)) return false;
         preparedPromptState = prepared.promptState;
