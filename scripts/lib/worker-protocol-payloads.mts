@@ -94,12 +94,7 @@ function refsIn(value: unknown, into: Set<string>): void {
   }
 }
 
-/**
- * The worker protocol document with each pass-through payload pointed at its
- * type, and the API protocol definitions those types need under `$defs`.
- * Throws when a listed message, field or type is missing, so a rename cannot
- * leave the published schema quietly vague again.
- */
+/** `derived.from`'s definition without the fields `derived.without` names. */
 function derive(name: string, derived: DerivedType, apiDefs: JsonSchema): JsonSchema {
   const source = apiDefs[derived.from]
   if (!isRecord(source)) throw new Error(`the API protocol does not describe ${derived.from}`)
@@ -119,6 +114,12 @@ function derive(name: string, derived: DerivedType, apiDefs: JsonSchema): JsonSc
   }
 }
 
+/**
+ * The worker protocol document with each pass-through payload pointed at its
+ * type, and the API protocol definitions those types need under `$defs`.
+ * Throws when a listed message, field or type is missing, so a rename cannot
+ * leave the published schema quietly vague again.
+ */
 export function withPayloadTypes(document: JsonSchema, sourceDefs: JsonSchema): JsonSchema {
   const apiDefs: JsonSchema = { ...sourceDefs }
   for (const [name, derived] of Object.entries(DERIVED_TYPES)) {
@@ -147,7 +148,11 @@ export function withPayloadTypes(document: JsonSchema, sourceDefs: JsonSchema): 
     // then the bare name may not be the type this line carries.
     if (Object.keys(apiDefs).some((name) => name.startsWith(`${payload.type}__`)))
       throw new Error(`the API protocol has more than one ${payload.type}; name the one meant`)
-    properties[payload.field] = { $ref: `#/$defs/${payload.type}` }
+    const ref = { $ref: `#/$defs/${payload.type}` }
+    // A field the line checks keeps its checked limits beside the full type.
+    const checked = properties[payload.field]
+    properties[payload.field] =
+      isRecord(checked) && Object.keys(checked).length > 0 ? { allOf: [checked, ref] } : ref
     wanted.add(payload.type)
   }
   // Each definition with the ones it refers to, until nothing new turns up.

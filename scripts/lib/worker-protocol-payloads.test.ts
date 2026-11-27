@@ -24,7 +24,8 @@ describe('worker protocol payload types', () => {
     const text = JSON.stringify(published)
     for (const payload of WORKER_PAYLOAD_TYPES)
       assert.ok(
-        text.includes(`"${payload.field}":{"$ref":"#/$defs/${payload.type}"}`),
+        text.includes(`"${payload.field}":{"$ref":"#/$defs/${payload.type}"}`) ||
+          text.includes(`"$ref":"#/$defs/${payload.type}"}]`),
         payload.type,
       )
     const defs = published['$defs']
@@ -79,6 +80,9 @@ describe('worker protocol payload types', () => {
       assert.ok(!command['required'].includes(added), added)
     }
     assert.deepEqual(command['properties']['thread'], { $ref: '#/$defs/Thread' })
+    // The line's own limits still apply beside the full type.
+    const text = JSON.stringify(published)
+    assert.ok(text.includes('"command":{"allOf":['), 'command keeps its checked limits')
   })
 
   it('refuses a message or field that is not on the line', () => {
