@@ -860,6 +860,7 @@ describe('Copse dogfooding of the reusable reviewer', () => {
   it('accepts the actual pnpm lock and rejects external resolutions and unsafe patch paths', () => {
     assert.deepEqual(copsePnpmPatches(readFileSync('pnpm-lock.yaml', 'utf8')), {
       '@anthropic-ai/sandbox-runtime@0.0.74': 'patches/@anthropic-ai__sandbox-runtime@0.0.74.patch',
+      'when-exit@2.1.5': 'patches/when-exit@2.1.5.patch',
       'xcodebuildmcp@2.7.0': 'patches/xcodebuildmcp@2.7.0.patch',
     })
     const makeLock = (resolution: unknown, extra: Record<string, unknown> = {}): string =>
