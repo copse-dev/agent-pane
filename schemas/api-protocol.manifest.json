@@ -2905,7 +2905,7 @@
         "api": "workspace.setTrusted",
         "args": [
           1,
-          1
+          2
         ]
       },
       "workspace:trust-from-approval": {

@@ -23,6 +23,8 @@ interface TrustState {
   root: string
   trustCalls: boolean[]
   hookRoots: (string | undefined)[]
+  /** Another window switches the workspace right after the renderer's check. */
+  switchAfterGet?: string
 }
 
 function untrustedAt(root: string): TrustState {
@@ -36,10 +38,18 @@ function makeApi(state: TrustState): ApiClient {
     workspace: {
       ...base.workspace,
       open: async () => state.root,
-      get: async () => state.root,
+      get: async (): Promise<string> => {
+        const seen = state.root
+        if (state.switchAfterGet) state.root = state.switchAfterGet
+        return seen
+      },
       set: async (path) => path,
       isTrusted: async () => state.trusted,
-      setTrusted: async (trusted): Promise<never[]> => {
+      setTrusted: async (trusted, expectedRoot): Promise<never[]> => {
+        // Main refuses when the workspace moved; the offer always names its root.
+        if (expectedRoot !== undefined && expectedRoot !== state.root) {
+          throw new Error('workspace changed')
+        }
         state.trustCalls.push(trusted)
         state.trusted = trusted
         return []
@@ -107,4 +117,15 @@ test('does not trust a project the window switched away from while asking', asyn
   clickActiveConfirmDialogConfirm()
   await flush()
   assert.deepEqual(state.trustCalls, [])
+})
+
+test('does not trust another project when the switch lands after the check', async () => {
+  const state = untrustedAt('/new')
+  await addProject(createStore({ projects: [] }), makeApi(state))
+  await flush()
+  state.switchAfterGet = '/other'
+  clickActiveConfirmDialogConfirm()
+  await flush()
+  assert.deepEqual(state.trustCalls, [])
+  assert.equal(state.trusted, false)
 })

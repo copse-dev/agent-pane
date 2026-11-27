@@ -1351,7 +1351,9 @@ async function offerProjectTrust(api: ApiClient, root: string): Promise<void> {
     // Trust applies to the window's workspace. If the user switched projects
     // while the dialog was open, the yes was about a project no longer shown.
     if (!confirmed || (await api.workspace.get()) !== root) return
-    await api.workspace.setTrusted(true)
+    // Main re-checks the root at the moment it trusts, closing the gap between
+    // the check above and this call.
+    await api.workspace.setTrusted(true, root)
   } catch (err: unknown) {
     showErrorToast('Could not trust project', err)
   }

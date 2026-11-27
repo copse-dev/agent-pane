@@ -159,7 +159,8 @@ const api: ApiClient = {
     get: () => ipcRenderer.invoke('workspace:get'),
     set: (root: string, sshHost?: string) => ipcRenderer.invoke('workspace:set', root, sshHost),
     isTrusted: () => ipcRenderer.invoke('workspace:is-trusted'),
-    setTrusted: (trusted: boolean) => ipcRenderer.invoke('workspace:set-trusted', trusted),
+    setTrusted: (trusted: boolean, expectedRoot?: string) =>
+      ipcRenderer.invoke('workspace:set-trusted', trusted, expectedRoot),
     trustFromApproval: (approvalId: string) =>
       ipcRenderer.invoke('workspace:trust-from-approval', approvalId),
     trustOfferDetails: (approvalId: string) =>

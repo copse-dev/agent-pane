@@ -213,17 +213,27 @@ export function registerWorkspaceHandlers(
   })
 
   ipcMain.handle('workspace:is-trusted', () => isWorkspaceTrusted(getWorkspaceRoot()))
-  ipcMain.handle('workspace:set-trusted', async (event, trusted: unknown) => {
-    assertMainFrameSender(event, win)
-    const root = getWorkspaceRoot()
-    if (!root) throw new IpcValidationError('No workspace open')
-    if (typeof trusted !== 'boolean') throw new IpcValidationError('trusted must be a boolean')
-    // Spawning project MCP servers is the code-execution sink, so trusting a workspace
-    // is a privileged action — only the main frame may request it (issue #100).
-    const statuses = await setWorkspaceTrustAndReload(registry, root, trusted)
-    broadcastToAppWindows('mcp:status-changed', statuses)
-    return statuses
-  })
+  ipcMain.handle(
+    'workspace:set-trusted',
+    async (event, trusted: unknown, rawExpected?: unknown) => {
+      assertMainFrameSender(event, win)
+      const root = getWorkspaceRoot()
+      if (!root) throw new IpcValidationError('No workspace open')
+      if (typeof trusted !== 'boolean') throw new IpcValidationError('trusted must be a boolean')
+      // A caller that asked about one project names it, so a workspace switch from
+      // another window between its check and this call cannot redirect the trust.
+      const expected =
+        rawExpected === undefined ? undefined : parseIpcArgs(zPathString.min(1), [rawExpected])
+      if (expected !== undefined && expected !== root) {
+        throw new IpcValidationError('The workspace changed; trust was not changed')
+      }
+      // Spawning project MCP servers is the code-execution sink, so trusting a workspace
+      // is a privileged action — only the main frame may request it (issue #100).
+      const statuses = await setWorkspaceTrustAndReload(registry, root, trusted)
+      broadcastToAppWindows('mcp:status-changed', statuses)
+      return statuses
+    },
+  )
   // Trust the project a shell prompt said was the only reason it asked. The
   // renderer names the prompt, not a path: the root is the one main attached to
   // that still-open request, so this can only ever trust what a prompt offered.

@@ -279,7 +279,8 @@ export interface ApiClient {
     get: () => Promise<string | null>
     set: (root: string, sshHost?: string) => Promise<string>
     isTrusted: () => Promise<boolean>
-    setTrusted: (trusted: boolean) => Promise<McpServerStatus[]>
+    /** With `expectedRoot`, refuses unless that is still the window's workspace. */
+    setTrusted: (trusted: boolean, expectedRoot?: string) => Promise<McpServerStatus[]>
     /** Trust the project an open shell prompt offered; leaves the prompt unanswered. */
     trustFromApproval: (approvalId: string) => Promise<true>
     /** The offered project's name and `sandbox: false` hooks, or null once the prompt is gone. */
