@@ -22,6 +22,7 @@ import {
 } from './services/plugins/plugin-client-service.ts'
 import { dispatchSubthreadPrompt, initThreadPrompts } from './services/thread-prompts.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
+import { abortScratchFetchesForQuit } from './services/default-branch-fetch.ts'
 import { removeOrphanedPlanWindowHistory } from './services/storage/plan-window-history-cleanup.ts'
 import { startDefaultBranchRefresh } from './services/default-branch-refresh.ts'
 import { startMachineService, stopMachineService } from './services/machines/machine-service.ts'
@@ -1673,6 +1674,9 @@ async function cleanupBeforeQuit(): Promise<void> {
   const handOff = listActiveTurns?.() ?? []
   stopFollowingForeignTurns?.()
   const transcriptDrain = interruptTurnTranscripts?.()
+  // Host-side default-branch fetches run in their own process group and would
+  // outlive the app, leaving a partial scratch repository behind (#4407).
+  const scratchFetchesAborted = abortScratchFetchesForQuit()
   setAgentInitiatedTurnAuthority(null)
   stopAllAgentRuns()
   await stopAllForegroundShellProcesses()
@@ -1719,6 +1723,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   shutdownBrowserSession()
   await stopMachineService()
   await shutdownStaticPreviewServers()
+  await scratchFetchesAborted
   await transcriptDrain
   await drainWriteQueue()
   handOffInterruptedTurns(handOff)
