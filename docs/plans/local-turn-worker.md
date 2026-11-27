@@ -133,11 +133,30 @@ without Electron.
 - _Exit gate:_ e2e. Relaunch while a worker runs, see the thread running with output
   arriving, then settling with no Retry card and no second continuation.
 
-### W4: stop from the desktop
+### W4: attach and stop from the desktop
 
-The Stop button on a worker-held thread signals the worker by its lease pid (same host only),
-and the worker aborts the turn. Without this, a handed-off turn can only be stopped by
-waiting for it.
+- The worker first checks, from the read-only profile and the thread files, that it would
+  continue the thread at all (the resume rules and the model checks above). Only then does it
+  take the thread's lease, before its slow boot, so an app relaunched meanwhile follows it
+  instead of continuing the turn too; a thread the worker declines is never held.
+- The turn runs under that same claim, and the worker gives the lease back only after the
+  turn's last write has landed and its socket has closed, so nothing else starts on the
+  thread under that write.
+- From the takeover until it exits, the worker serves the thread on a local socket (`turn-worker-socket.ts`): a
+  Unix socket under `<profile>/run/` (a named pipe on Windows), named by a hash of the profile
+  and thread, newline-delimited JSON. `attach` replies with the turn's runtime snapshot and
+  then streams every stamped chunk, the same order an in-process turn reaches the window.
+  `stop` aborts the turn as Stop does in-process. A stop that arrives during the boot is
+  kept: the continuation then never starts, and the thread is settled interrupted, so the
+  window offers Continue.
+- The app's follower attaches to that socket and forwards into `agent:transcript-snapshot`
+  and `agent:chunk`, so a handed-off turn streams live. Without an answer there (an older
+  worker, or one just starting) it repaints from disk as in W3. A window reload re-sends
+  `attach`. Stop on a followed thread goes to the worker; pressed before the worker answers,
+  it is sent as soon as it does. A thread whose worker died without releasing its lease is
+  settled interrupted rather than left spinning.
+- Not covered by e2e yet: a live attach needs a worker turn slow enough to outlast a
+  relaunch, and mock scenarios live in the app process.
 
 ### Later
 
@@ -166,8 +185,8 @@ waiting for it.
   A packaged build that flips that fuse off (computer use asks for it) breaks the worker and
   the other Node workers that launch the same way. Such a build needs a separate Node
   binary or a utility process kept alive past quit instead.
-- **Following lags the stream.** A followed thread repaints from disk, so it shows finished
-  messages, not tokens as they stream. Fine for a hand-off; not for dispatch via worker.
+- **Following without the socket lags the stream.** When the worker cannot be reached, a
+  followed thread repaints from disk and shows finished messages, not tokens as they stream.
 - **OAuth refreshes the worker cannot save.** A sign-in that refreshes by rotating its
   refresh token would leave the app holding a spent token, because the worker keeps store
   writes in memory. ChatGPT plan models refresh this way, so the worker leaves those turns
