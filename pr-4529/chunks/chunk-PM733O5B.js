@@ -29026,7 +29026,7 @@ async function createNewProject(store, api) {
 async function offerProjectTrust(api, root) {
   try {
     if (await api.workspace.isTrusted()) return;
-    const unsandboxedHooks = await api.workspace.unsandboxedProjectHooks().catch(() => []);
+    const unsandboxedHooks = await api.workspace.unsandboxedProjectHooks(root).catch(() => []);
     const { confirmProjectTrust } = await import("./workspace-trust-consent-IF5AN4PG.js");
     const confirmed = await confirmProjectTrust({
       projectName: basename(root),
