@@ -6,6 +6,7 @@ import {
 } from '../container-runtime/run-host.ts'
 import {
   appToHostSchema,
+  HOST_CHECKED_SHAPES,
   hostToAppSchema,
   TURN_HOST_PROTOCOL,
 } from '../turn-host/turn-host-protocol.ts'
@@ -34,8 +35,11 @@ import { workerCapabilitiesSchema, type WorkerRole } from './worker-capabilities
  * A payload either end passes on unread (a stream chunk, a snapshot, a
  * container record) is `{}` here; the published schema points each at the API
  * protocol's description of its type (`scripts/lib/worker-protocol-payloads.mts`).
- * A payload the app checks with a custom rule carries that rule's fields as
- * its schema (`publishedShape` in `turn-host-protocol.ts`).
+ * A payload the app checks with a custom rule (`HOST_CHECKED_SHAPES` in
+ * `turn-host-protocol.ts`) carries the fields that rule checks. For a thread
+ * prompt the published schema then points at the full command type; a task
+ * call is published as those checked fields only, since its full input type is
+ * not in the API protocol yet (open for R3).
  */
 
 export const WORKER_PROTOCOL_MANIFEST_PATH = 'schemas/worker-protocol.manifest.json'
@@ -80,6 +84,11 @@ function toJson(schema: z.ZodType): JsonSchema {
   const { $schema: _drop, ...rest }: JsonSchema = z.toJSONSchema(schema, {
     io: 'input',
     unrepresentable: 'any',
+    override: (ctx) => {
+      const checked = HOST_CHECKED_SHAPES.get(ctx.zodSchema)
+      if (checked === undefined) return
+      Object.assign(ctx.jsonSchema, toJson(checked))
+    },
   })
   return rest
 }

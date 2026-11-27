@@ -22,6 +22,20 @@ export interface WorkerPayloadType {
   type: string
 }
 
+/**
+ * A type the API protocol does not name, made from one it does: a host's
+ * thread prompt is the window's command less the fields the app adds when it
+ * forwards it (`HostThreadPromptCommand` in `turn-host-protocol.ts`).
+ */
+interface DerivedType {
+  from: string
+  without: readonly string[]
+}
+
+const DERIVED_TYPES: Readonly<Record<string, DerivedType>> = {
+  HostThreadPromptCommand: { from: 'ThreadPromptCommand', without: ['id', 'expiresAt'] },
+}
+
 export const WORKER_PAYLOAD_TYPES: readonly WorkerPayloadType[] = [
   {
     role: 'turns',
@@ -51,6 +65,13 @@ export const WORKER_PAYLOAD_TYPES: readonly WorkerPayloadType[] = [
     field: 'record',
     type: 'ThreadContainerRecord',
   },
+  {
+    role: 'turns',
+    direction: 'workerToClient',
+    message: 'thread-prompt',
+    field: 'command',
+    type: 'HostThreadPromptCommand',
+  },
 ]
 
 function child(value: unknown, key: string): JsonSchema {
@@ -79,7 +100,31 @@ function refsIn(value: unknown, into: Set<string>): void {
  * Throws when a listed message, field or type is missing, so a rename cannot
  * leave the published schema quietly vague again.
  */
-export function withPayloadTypes(document: JsonSchema, apiDefs: JsonSchema): JsonSchema {
+function derive(name: string, derived: DerivedType, apiDefs: JsonSchema): JsonSchema {
+  const source = apiDefs[derived.from]
+  if (!isRecord(source)) throw new Error(`the API protocol does not describe ${derived.from}`)
+  const properties = child(source, 'properties')
+  for (const key of derived.without)
+    if (!Object.hasOwn(properties, key)) throw new Error(`${derived.from} has no field ${key}`)
+  const listed = source['required']
+  return {
+    ...source,
+    description: `${derived.from} without ${derived.without.join(', ')} (${name}).`,
+    properties: Object.fromEntries(
+      Object.entries(properties).filter(([key]) => !derived.without.includes(key)),
+    ),
+    required: (Array.isArray(listed) ? listed : []).filter(
+      (key: unknown) => typeof key !== 'string' || !derived.without.includes(key),
+    ),
+  }
+}
+
+export function withPayloadTypes(document: JsonSchema, sourceDefs: JsonSchema): JsonSchema {
+  const apiDefs: JsonSchema = { ...sourceDefs }
+  for (const [name, derived] of Object.entries(DERIVED_TYPES)) {
+    if (Object.hasOwn(apiDefs, name)) throw new Error(`the API protocol already has ${name}`)
+    apiDefs[name] = derive(name, derived, sourceDefs)
+  }
   const copy: JsonSchema = structuredClone(document)
   const wanted = new Set<string>()
   for (const payload of WORKER_PAYLOAD_TYPES) {

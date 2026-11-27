@@ -68,6 +68,19 @@ describe('worker protocol payload types', () => {
     }
   })
 
+  it("publishes a host's thread prompt as the window's command less what the app adds", () => {
+    const defs = published['$defs']
+    assert.ok(isRecord(defs))
+    const command = defs['HostThreadPromptCommand']
+    assert.ok(isRecord(command) && isRecord(command['properties']))
+    assert.ok(Array.isArray(command['required']))
+    for (const added of ['id', 'expiresAt']) {
+      assert.ok(!Object.hasOwn(command['properties'], added), added)
+      assert.ok(!command['required'].includes(added), added)
+    }
+    assert.deepEqual(command['properties']['thread'], { $ref: '#/$defs/Thread' })
+  })
+
   it('refuses a message or field that is not on the line', () => {
     const document = workerProtocolDocument()
     const roles = structuredClone(document.roles)
