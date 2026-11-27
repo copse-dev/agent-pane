@@ -81,7 +81,8 @@ if (update) {
   // Area figures move more than the total when one file changes, so their
   // floors keep a wider margin.
   const floors = updatedFloors(areas, AREA_UPDATE_MARGIN)
-  await writeFile(BASELINE, JSON.stringify({ lines: next, areas: floors }, null, 2) + '\n')
+  const written = Object.keys(floors).length > 0 ? { lines: next, areas: floors } : { lines: next }
+  await writeFile(BASELINE, JSON.stringify(written, null, 2) + '\n')
   console.log(
     `coverage-gate: baseline updated to ${String(next)}% lines (measured ${String(current)}%), ` +
       `with floors for ${String(Object.keys(floors).length)} areas.`,
