@@ -100,9 +100,10 @@ interface CheckoutInspection {
  * leaves the last fetched tip): a proposed, delegated or scheduled thread must
  * not inherit whatever branch the project checkout happens to be parked on.
  * `project-branch` keeps the composer's rule: the branch its picker displayed.
- * Either falls back to the other source, then to `main`, so a repository with
- * no usable default (a fresh `git init` with no remote) still starts somewhere
- * real.
+ * Either falls back to the other source. A repository that reports no default
+ * at all (a fresh `git init` with no remote) then starts from `main`; one whose
+ * reported default was refused fails the send and asks for a base, rather than
+ * returning the name that was just rejected.
  *
  * Both sources are names, not refs, so each is checked before it is used.
  * `getDefaultBranch` reports whatever `refs/remotes/origin/HEAD` names even
@@ -130,17 +131,37 @@ async function checkoutBaseBranch(
       `Branch "${requested}" no longer exists in this repository. Pick another branch to start from.`,
     )
   }
-  if (
-    fallback === 'default-branch' &&
-    inspection.defaultBranch &&
-    (await refs.defaultBranchResolves(inspection.defaultBranch))
-  ) {
-    return inspection.defaultBranch
+  const reportedDefault = inspection.defaultBranch
+  let defaultResolves: boolean | undefined
+  const usableDefault = async (): Promise<string | null> => {
+    if (!reportedDefault) return null
+    defaultResolves ??= await refs.defaultBranchResolves(reportedDefault)
+    return defaultResolves ? reportedDefault : null
   }
-  if (inspection.currentBranch && (await refs.branchExists(inspection.currentBranch))) {
-    return inspection.currentBranch
+  if (fallback === 'default-branch') {
+    const verified = await usableDefault()
+    if (verified) return verified
   }
-  return inspection.defaultBranch ?? DEFAULT_GIT_BRANCH
+  // A thread that asked for the default must not get it back through the
+  // checkout: a project parked on the stale local branch the dangling default
+  // names would hand over the very base just refused. The composer's
+  // `project-branch` keeps the checkout's branch, since that is what its picker
+  // showed the user.
+  const current = inspection.currentBranch
+  const currentIsRefusedDefault = fallback === 'default-branch' && current === reportedDefault
+  if (current && !currentIsRefusedDefault && (await refs.branchExists(current))) {
+    return current
+  }
+  const verified = await usableDefault()
+  if (verified) return verified
+  if (!reportedDefault) return DEFAULT_GIT_BRANCH
+  // The reported default was refused: its `origin/HEAD` dangles. Handing the
+  // same name to the allocator anyway would cut the worktree from a stale
+  // local branch of that name (or fail with no transcript), so stop and let the
+  // user name the base instead.
+  throw new Error(
+    `The repository's default branch "${reportedDefault}" no longer exists on origin, so Copse can't tell where to start this thread. Pick a branch to start from, or run \`git remote set-head origin --auto\` in the project.`,
+  )
 }
 
 export interface ThreadCheckoutTransactionDependencies {
