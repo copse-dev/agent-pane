@@ -172,7 +172,8 @@ export function attachRendererCrashRecovery(
  * calling `close()`: the primary window's close guard asks the renderer
  * whether a turn is running, and a dead renderer never answers, so `close()`
  * left the blank window up until the guard's two-minute timeout. A dead
- * renderer has no running turn to warn about.
+ * renderer has no running turn to warn about; a turn running in the main
+ * process detaches the window instead (`closeCrashedWindow`).
  */
 export function applyCrashLoopChoice(
   response: number,

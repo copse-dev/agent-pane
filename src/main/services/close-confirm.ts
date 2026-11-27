@@ -70,15 +70,25 @@ export function revokeCloseApproval(): void {
 }
 
 /**
+ * Decide whether a close should detach the window rather than close it.
+ * `rendererGone` is true when the renderer has crashed, so the window cannot
+ * keep it running in the background.
+ */
+export type DetachInstead = (options: { rendererGone: boolean }) => boolean
+
+const detachers = new WeakMap<BrowserWindow, DetachInstead>()
+
+/**
  * Intercept the window's own close (traffic light, Alt+F4, Cmd+W) and re-issue
  * it once confirmed. `before-quit` covers the quit routes; this covers the ones
  * that reach the window directly.
  */
-export function guardWindowClose(win: BrowserWindow, detachInstead?: () => boolean): void {
+export function guardWindowClose(win: BrowserWindow, detachInstead?: DetachInstead): void {
+  if (detachInstead) detachers.set(win, detachInstead)
   win.on('close', (event) => {
     // A running turn no longer needs the window (main writes its transcript),
     // so the close detaches it and there is nothing to warn about.
-    if (detachInstead?.()) {
+    if (detachInstead?.({ rendererGone: false })) {
       event.preventDefault()
       return
     }
@@ -86,6 +96,19 @@ export function guardWindowClose(win: BrowserWindow, detachInstead?: () => boole
       if (!win.isDestroyed()) win.close()
     })
   })
+}
+
+/**
+ * Close a window whose renderer has crashed. It cannot go through `close()`:
+ * the confirmation asks the renderer, which never answers. It still honours the
+ * window's detach rule, which reads only main-process state, so a turn running
+ * in the main process keeps going with the window hidden instead of the last
+ * window's destruction quitting the app and stopping it.
+ */
+export function closeCrashedWindow(win: BrowserWindow): void {
+  if (win.isDestroyed()) return
+  if (detachers.get(win)?.({ rendererGone: true })) return
+  win.destroy()
 }
 
 /**

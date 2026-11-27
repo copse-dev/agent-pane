@@ -4,6 +4,7 @@
  */
 
 import { dialog, type BrowserWindow } from 'electron'
+import { closeCrashedWindow } from '../services/close-confirm.ts'
 import { appendRendererCrash, rendererCrashLogPath } from './renderer-crash-log.ts'
 import {
   RENDERER_CRASH_LOOP_WINDOW_MS,
@@ -43,7 +44,7 @@ export function attachAppRendererCrashHandling(
           applyCrashLoopChoice(response, {
             retry,
             destroy: () => {
-              win.destroy()
+              closeCrashedWindow(win)
             },
           })
         })
