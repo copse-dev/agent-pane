@@ -40,7 +40,12 @@ export function attachAppRendererCrashHandling(
         })
         .then(({ response }) => {
           if (win.isDestroyed()) return
-          applyCrashLoopChoice(response, { retry, destroy: () => { win.destroy(); } })
+          applyCrashLoopChoice(response, {
+            retry,
+            destroy: () => {
+              win.destroy()
+            },
+          })
         })
         .catch((error: unknown) => {
           console.warn('[renderer] could not show the crash-loop notice:', error)
