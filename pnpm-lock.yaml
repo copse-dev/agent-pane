@@ -33,6 +33,9 @@ patchedDependencies:
   '@anthropic-ai/sandbox-runtime@0.0.74':
     hash: bcaf160f671ace46ec9b5e6993a5b4599b58dce55805c615e0af2d671dcce674
     path: patches/@anthropic-ai__sandbox-runtime@0.0.74.patch
+  when-exit@2.1.5:
+    hash: 657370bd62d695b22e7b5e42a56bad3beea06f8c78b8b8279d6f6e438b242a8f
+    path: patches/when-exit@2.1.5.patch
   xcodebuildmcp@2.7.0:
     hash: ff48d03ac621c630f0d0540b305f089e63578b78ec28b4a75ccb49793dfe4b31
     path: patches/xcodebuildmcp@2.7.0.patch
@@ -7681,7 +7684,7 @@ snapshots:
   atomically@2.1.1:
     dependencies:
       stubborn-fs: 2.0.0
-      when-exit: 2.1.5
+      when-exit: 2.1.5(patch_hash=657370bd62d695b22e7b5e42a56bad3beea06f8c78b8b8279d6f6e438b242a8f)
 
   aws4@1.13.2: {}
 
@@ -10920,7 +10923,7 @@ snapshots:
     transitivePeerDependencies:
       - '@noble/hashes'
 
-  when-exit@2.1.5: {}
+  when-exit@2.1.5(patch_hash=657370bd62d695b22e7b5e42a56bad3beea06f8c78b8b8279d6f6e438b242a8f): {}
 
   which-module@2.0.1: {}
 

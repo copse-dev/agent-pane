@@ -131,6 +131,17 @@ minimumReleaseAgeExclude:
 #    Guarded by `project-sandbox/sandbox-socat-ipv6.test.ts`.
 patchedDependencies:
   '@anthropic-ai/sandbox-runtime@0.0.74': patches/@anthropic-ai__sandbox-runtime@0.0.74.patch
+  # electron-store -> conf -> atomically -> when-exit hooks a copy of signal-exit's list when main
+  # loads. That list includes SIGABRT, SIGIOT, SIGTRAP and SIGSYS, which the kernel raises in the
+  # thread that faulted. A JS listener makes libuv install a handler that queues the signal and
+  # returns. After Chromium's arm64 `brk #0` (CHECK failures, PartitionAlloc OOM), returning
+  # re-runs the trap, so main spun at 100% CPU for minutes instead of crashing and never wrote a
+  # crash report. abort() still dies (libc re-raises with the default action), but the hooks add
+  # nothing there, and their SIGIOT alias swallowed the re-raise after an external `kill -ABRT`.
+  # The patch drops those four. SIGINT/SIGTERM/SIGHUP and `exit` keep atomically's temp-file
+  # cleanup. Remove it once when-exit stops hooking them.
+  # Guarded by src/main/services/storage/fault-signal-listeners.test.ts.
+  when-exit@2.1.5: patches/when-exit@2.1.5.patch
   # 2.7.0 drops test-build defaults, misreports exports, hides profile errors,
   # and ignores MCP cancellation in native commands. Remove when upstream fixes
   # these plus the silently ignored profile-creation flag without a profile.
