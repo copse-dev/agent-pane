@@ -21,6 +21,8 @@ const proposal: ThreadProposal = {
 interface Harness {
   api: ThreadProposalControllerApi
   prepared: Array<{ threadId: string; prompt: string; choice: string }>
+  /** The base arguments each checkout request carried, in call order. */
+  bases: Array<{ baseBranch: string | undefined; baseFallback: string | undefined }>
   runs: Array<{ threadId: string; payload: string }>
 }
 
@@ -49,6 +51,7 @@ const SHARED_CHECKOUT: PreparedThreadCheckout = {
 
 function harness(options: { prepareFails?: Error; grants?: PreparedThreadCheckout } = {}): Harness {
   const prepared: Harness['prepared'] = []
+  const bases: Harness['bases'] = []
   const runs: Harness['runs'] = []
   const checkout: PreparedThreadCheckout = options.grants ?? {
     checkoutMode: 'worktree',
@@ -65,11 +68,21 @@ function harness(options: { prepareFails?: Error; grants?: PreparedThreadCheckou
   }
   return {
     prepared,
+    bases,
     runs,
     api: {
       agent: {
-        prepareCheckout(_projectId, threadId, prompt, choice): Promise<PreparedThreadCheckout> {
+        prepareCheckout(
+          _projectId,
+          threadId,
+          prompt,
+          choice,
+          _model,
+          baseBranch,
+          baseFallback,
+        ): Promise<PreparedThreadCheckout> {
           prepared.push({ threadId, prompt, choice })
+          bases.push({ baseBranch, baseFallback })
           if (options.prepareFails) return Promise.reject(options.prepareFails)
           return Promise.resolve(checkout)
         },
@@ -144,6 +157,10 @@ test('accepting a proposal starts an isolated thread seeded with the prompt', as
   assert.deepEqual(created.proposedBy, { threadId: 'source', proposalId: 'call-1' })
   // The card promised an isolated checkout, so the request must ask for one.
   assert.deepEqual(h.prepared, [{ threadId, prompt: proposal.prompt, choice: 'worktree' }])
+  // Nobody looked at a branch picker to accept the card, so the request names
+  // no base and leaves main's `default-branch` fallback in force: the thread
+  // starts from the fetched default branch, never the parked project checkout.
+  assert.deepEqual(h.bases, [{ baseBranch: undefined, baseFallback: undefined }])
   assert.equal(created.worktreeChoice, 'worktree')
   assert.equal(created.gitBranch, 'copse/migrate-settings')
   // The prompt is in the transcript, not just in the run payload.

@@ -5,7 +5,8 @@ import type { RemoteArtifactImageRequest } from '@shared/remote-artifact-image.t
 import type { RemoteArtifactDownloadRequest } from '@shared/remote-artifact-download.ts'
 import type { ApiClient, FilePathBridge } from './api.d.ts'
 import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
-import type { PrComposerCreateRequest } from '@shared/types/git.ts'
+import type { GitLineSelection, PrComposerCreateRequest } from '@shared/types/git.ts'
+import type { ThreadBaseFallback } from '@shared/types/worktree.ts'
 import type { AppleSuggestionAnswer } from '@shared/types/apple-development.ts'
 import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
 import { createWorkspaceNavigation } from './workspace-navigation.ts'
@@ -426,6 +427,7 @@ const api: ApiClient = {
       choice: 'automatic' | 'shared' | 'worktree',
       model?: string,
       baseBranch?: string,
+      baseFallback?: ThreadBaseFallback,
     ) =>
       ipcRenderer.invoke(
         'agent:prepare-checkout',
@@ -435,6 +437,7 @@ const api: ApiClient = {
         choice,
         model,
         baseBranch,
+        baseFallback,
       ),
     renameCheckoutBranch: (projectId: string, threadId: string, title: string) =>
       ipcRenderer.invoke('agent:rename-checkout-branch', projectId, threadId, title),
@@ -847,8 +850,17 @@ const api: ApiClient = {
   closeConfirm: {
     respond: (id: string, confirmed: boolean) =>
       ipcRenderer.invoke('close-confirm:respond', id, confirmed),
-    onRequest: (handler: (req: { id: string }) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, req: { id: string }): void => {
+    onRequest: (
+      handler: (req: {
+        id: string
+        continuesAfterQuit?: boolean
+        containerRunThreads?: string[]
+      }) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        req: { id: string; continuesAfterQuit?: boolean; containerRunThreads?: string[] },
+      ): void => {
         handler(req)
       }
       ipcRenderer.on('app:close-confirm-request', listener)
@@ -1895,6 +1907,15 @@ const api: ApiClient = {
       ipcRenderer.invoke('git:prompt-state', projectId, threadId),
     checkoutBranch: (projectId: string, threadId: string, branch: string) =>
       ipcRenderer.invoke('git:checkout-branch', projectId, threadId, branch),
+    setPathStaged: (projectId: string, threadId: string, path: string, staged: boolean) =>
+      ipcRenderer.invoke('git:set-path-staged', projectId, threadId, path, staged),
+    setLinesStaged: (
+      projectId: string,
+      threadId: string,
+      path: string,
+      staged: boolean,
+      selection: GitLineSelection,
+    ) => ipcRenderer.invoke('git:set-lines-staged', projectId, threadId, path, staged, selection),
     listBranches: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('git:list-branches', projectId, threadId),
     getDefaultBranch: (projectId: string, threadId: string) =>
@@ -1951,6 +1972,21 @@ const api: ApiClient = {
       ipcRenderer.invoke('gh:mark-pr-ready', owner, repo, number),
     enableAutoMerge: (owner: string, repo: string, number: number) =>
       ipcRenderer.invoke('gh:enable-auto-merge', owner, repo, number),
+    replyToReviewThread: (
+      owner: string,
+      repo: string,
+      number: number,
+      threadId: string,
+      body: string,
+    ) => ipcRenderer.invoke('gh:reply-to-review-thread', owner, repo, number, threadId, body),
+    setReviewThreadResolved: (
+      owner: string,
+      repo: string,
+      number: number,
+      threadId: string,
+      resolved: boolean,
+    ) =>
+      ipcRenderer.invoke('gh:set-review-thread-resolved', owner, repo, number, threadId, resolved),
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
@@ -2018,6 +2054,12 @@ if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') {
     },
     requestCloseConfirm() {
       return ipcRenderer.invoke('test:requestCloseConfirm')
+    },
+    setCloseConfirmContainerRuns(threadIds: string[]) {
+      return ipcRenderer.invoke('test:setCloseConfirmContainerRuns', threadIds)
+    },
+    emitContainerRun(progress: unknown) {
+      return ipcRenderer.invoke('test:emitContainerRun', progress)
     },
     createMainWindow() {
       return ipcRenderer.invoke('test:createMainWindow')

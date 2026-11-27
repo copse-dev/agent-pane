@@ -96,6 +96,7 @@ Source files remain authoritative; deleting this cache is safe.
                                      #   an imported Claude Code session's copy lives under projects/
     history-edit-transaction.json    # pending edit rollback journal (temporary, private)
     history-edit-undo.json           # previous transcript/history for one-step Undo (optional, private)
+    writer.lease.<epoch>             # which process may advance this thread's turn (optional, private)
     messages/<messageId>.md          # OKF: verbatim message content (frontmatter + body)
     messages/<messageId>.reasoning.md  # OKF: thinking text (optional)
     messages/~rev-<sha256>.md        # an already-saved message's replacement prose; its reasoning,
@@ -121,6 +122,7 @@ Source files remain authoritative; deleting this cache is safe.
       comments.json                  # inline comments on revisions
       approval.json                  # present after approve (revision + profile + hash)
     subagents/<subagentId>/          # nested subagent session, same structure recursively
+    subagents/~rev-<sha256>/         # an already-saved message's replacement subagent session
 ```
 
 - **`tasks/<taskId>/`** holds operational supervisor records for delayed / long-lived
@@ -267,6 +269,15 @@ Source files remain authoritative; deleting this cache is safe.
   the current transcript still matches that revision. A later transcript
   mutation makes the snapshot ineligible. Both history-edit sidecars are
   atomically written with owner-only permissions and must never be logged.
+- **`writer.lease.<epoch>`** names the process that holds the thread's writer
+  lease (`writer-lease.ts`): host, pid, a per-process owner id, the fencing
+  epoch in its name and a heartbeat. The highest epoch is the lease. A
+  dispatcher takes it for each turn by creating the next epoch's file with an
+  exclusive hard link, and marks it released when the turn ends; older epochs
+  are removed, so one file remains. A record that is released, whose heartbeat
+  is older than its time-to-live, or whose pid is gone on this host, is free to
+  take over. It records its thread id, so a copied directory never looks owned.
+  It is not part of a thread folder export.
 
 **Ids in file names.** `<messageId>`, `<toolCallId>` and `<subagentId>` above are
 the id as written only when it is 1–128 characters of `[A-Za-z0-9_-]` (UUIDs and
@@ -440,14 +451,23 @@ written first under `~rev-<sha256>` names, so a failed spine write leaves the
 previous line resolving against intact files. Once the new line has committed,
 the writer removes the replaced line's prose and reasoning files in `messages/`
 (the original `<messageId>.md` / `.reasoning.md` or an earlier revision) that no
-committed line references. A failed removal is logged and leaves an orphan; it
+committed line references, and likewise each replaced subagent directory directly
+in `subagents/`. A failed removal is logged and leaves an orphan; it
 never fails the write. Superseded blob revisions (`blobs/~rev-<sha256>…`) can be
 shared by two messages, so they stay until the next whole-thread save prunes
 unreferenced files (a history edit or its undo, for example) or the thread is
 deleted. A transcript read outside the store's write queue that took the previous
-spine folds the committed one again rather than skip the thread. A nested
-subagent transcript under `subagents/<subagentId>/` is still rewritten in place
-([#4438](https://github.com/copse-dev/agent-pane/issues/4438)).
+spine folds the committed one again rather than skip the thread.
+
+A nested subagent transcript is replaced as a whole
+([#4438](https://github.com/copse-dev/agent-pane/issues/4438)). Its prose, blobs
+and own `events.jsonl` are written to a fresh `subagents/~rev-<sha256>/`
+directory, where the digest covers the subagent id and every nested file's path
+and contents; the parent's spine `subagent.ref` then switches to it in the same
+commit, and its `id` is always present because the directory name no longer
+spells it. A running subagent's partial transcript changes on every settled tool
+call, so a failed write part-way through leaves the previous directory intact.
+An unchanged transcript hashes to the same directory and reuses it.
 
 ## Machine-continuation line schema (`type: "machine_continuation"`)
 

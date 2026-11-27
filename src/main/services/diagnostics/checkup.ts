@@ -36,8 +36,12 @@ import {
 } from './checkup-report.ts'
 import { getElectronAppVersion, isElectronAppPackaged } from '../electron-app-runtime.ts'
 import { unrepairableOpenFileFault } from '../acp/acp-resource-fault.ts'
+import { readRendererCrashes, rendererCrashLogPath } from '../../windows/renderer-crash-log.ts'
 
 export type { CheckupReport } from './checkup-report.ts'
+
+/** How far back `/checkup` reports window crashes. */
+const RENDERER_CRASH_REPORT_WINDOW_MS = 7 * 24 * 60 * 60_000
 
 /** Cloud providers we always report on (so "none configured" and per-key at-rest state surface). */
 const FIXED_CLOUD_PROVIDERS: Array<{ id: string; label: string }> = [
@@ -209,6 +213,10 @@ export async function runCheckup(roots: AgentRoots): Promise<CheckupReport> {
     },
     spawnHelperExecutable: spawnHelperExecutable(),
     agentOpenFiles: agentOpenFilesSnapshot(),
+    rendererCrashes: {
+      path: rendererCrashLogPath(),
+      recent: await readRendererCrashes(Date.now() - RENDERER_CRASH_REPORT_WINDOW_MS),
+    },
   }
 
   return buildCheckupReport(snapshot)

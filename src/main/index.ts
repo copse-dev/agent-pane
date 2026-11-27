@@ -1,6 +1,17 @@
 import { initClientActions } from './services/clients/client-action-ipc.ts'
 import './disable-brotli-decoding.ts' // MUST be first — see the module
 import { stopAllForegroundShellProcesses } from './services/exec/foreground-shell-process.ts'
+import {
+  continuesTurnsAfterQuit,
+  everyTurnHandsOff,
+  handOffTurns,
+  turnWorkerPath,
+  type HandOffTarget,
+} from './services/turn-worker/turn-worker-launch.ts'
+import {
+  ForeignTurnFollower,
+  defaultForeignTurnDependencies,
+} from './services/turn-worker/foreign-turns.ts'
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
 import { initRemoteInterface } from './services/mobile/remote-interface.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
@@ -11,6 +22,8 @@ import {
 } from './services/plugins/plugin-client-service.ts'
 import { dispatchSubthreadPrompt, initThreadPrompts } from './services/thread-prompts.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
+import { abortScratchFetchesForQuit } from './services/default-branch-fetch.ts'
+import { removeOrphanedPlanWindowHistory } from './services/storage/plan-window-history-cleanup.ts'
 import { startDefaultBranchRefresh } from './services/default-branch-refresh.ts'
 import { startMachineService, stopMachineService } from './services/machines/machine-service.ts'
 import {
@@ -32,7 +45,7 @@ import {
 armPerfTrace()
 installIpcPerfTracing()
 
-import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeImage, safeStorage } from 'electron'
 import { ThreadDeepLinks } from './services/thread-deep-links.ts'
 import { findThreadOwners } from './services/thread-store.ts'
 import { z } from 'zod'
@@ -57,6 +70,7 @@ import {
   isWindowDetached,
   reattachWindow,
   shouldDetachOnClose,
+  shouldQuitDetachedApp,
 } from './windows/window-detach.ts'
 import { isWorktreeDeferralPending } from '@shared/git/worktree-policy.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types'
@@ -86,12 +100,15 @@ import {
   resumeMobileCompanion,
   stopMobileCompanion,
 } from './services/mobile/mobile-companion-service.ts'
-import { initAutoUpdate } from './services/auto-update.ts'
+import { initAutoUpdate, quitInstallsUpdate } from './services/auto-update.ts'
 import { initUpdatePrompt } from './services/update-prompt.ts'
 import {
   approveClose,
+  closeWentUnanswered,
   deferQuitForCloseConfirmation,
   guardWindowClose,
+  setCloseConfirmContainerRuns,
+  setQuitHandOffCheck,
   initCloseConfirm,
 } from './services/close-confirm.ts'
 import { checkToolAvailability } from './services/tool-availability.ts'
@@ -115,7 +132,10 @@ import {
   SIMULATOR_DESKTOP_SHOW_CHANNEL,
 } from './services/simulator-desktop/simulator-desktop-panel.ts'
 import { initAskUser } from './services/ask-user.ts'
-import { createElectronUserAlertSender } from './services/user-alerts-electron.ts'
+import {
+  createElectronUserAlertSender,
+  setDetachedWindowReviver,
+} from './services/user-alerts-electron.ts'
 import { setTerminalCommandLauncher } from './services/exec/terminal-launch.ts'
 import { initSshPrompt } from './services/ssh-workspace/ssh-prompt.ts'
 import { initSshAskpassServer } from './services/ssh-workspace/askpass.ts'
@@ -220,6 +240,8 @@ import {
   describeImagesSchema,
 } from './ipc/ipc-guards.ts'
 import { describeImagesForHandoff } from './services/image-description.ts'
+import { memberOf } from '@shared/member-of.ts'
+import { THREAD_BASE_FALLBACKS } from '@shared/types/worktree.ts'
 import {
   recordStartupPhase,
   startEventLoopWatchdog,
@@ -271,6 +293,11 @@ import { recordExecutionObservation } from './services/execution-runtime/audit-r
 import { getBranchCiAutomationService } from './services/automations/branch-ci-automation-service.ts'
 import { getTaskSupervisor } from './services/supervisor/task-supervisor.ts'
 import { installLongTaskWakeConsumer } from './services/supervisor/long-task-wake.ts'
+import {
+  defaultInterruptedTurnResumeDependencies,
+  resumeInterruptedTurns,
+} from './services/interrupted-turn-resume.ts'
+import { recordRunEnd, startRunRecorder } from './services/last-run.ts'
 import { installDarkFactorySensor } from './services/supervisor/dark-factory-sensor.ts'
 import { installCiWatchConsumer } from './services/github/ci-watch-service.ts'
 import {
@@ -308,6 +335,27 @@ setSecretCipher(
   }),
 )
 const taskSupervisor = getTaskSupervisor()
+const isThreadBaseFallback = memberOf(THREAD_BASE_FALLBACKS)
+
+/** This quit came from a signal or a fault, with nobody to confirm it. */
+/**
+ * Agent turns and container runs still going: either keeps a closed window
+ * detached instead of quitting.
+ */
+function workInFlight(): number {
+  return listRunningThreadIds().length + getContainerRunService().activeThreadIds().length
+}
+
+let unattendedQuit = false
+/** This quit hands its turns to workers (set once the quit goes ahead). */
+let quitHandsOff = false
+
+/** Quit without asking: a signal or a fault has nobody to answer the prompt. */
+function quitUnattended(): void {
+  unattendedQuit = true
+  approveClose()
+  app.quit()
+}
 
 // Own stdout/stderr's `error` events before anything can provoke one. A closed
 // terminal makes every later write fail with EIO; unowned, that failure becomes
@@ -321,8 +369,7 @@ const taskSupervisor = getTaskSupervisor()
 // the crash this guard now prevents.
 installStdioGuard({
   onSinkLost: () => {
-    approveClose()
-    app.quit()
+    quitUnattended()
   },
 })
 
@@ -332,8 +379,7 @@ installStdioGuard({
 installProcessFaultHandlers({
   isLogSinkAlive,
   onUncaughtException: () => {
-    approveClose()
-    app.quit()
+    quitUnattended()
   },
 })
 
@@ -352,6 +398,7 @@ setBrowserSessionPlatform({
     if (!win || win.isDestroyed()) return
     win.webContents.send(CANVAS_ARTEFACT_SHOW_CHANNEL, identity)
   },
+  decodeImage: (dataUrl) => nativeImage.createFromDataURL(dataUrl),
 })
 
 setSimulatorDesktopPanelPresenter((udid, options) => {
@@ -493,6 +540,48 @@ function bringBackMainWindow(win: BrowserWindow): void {
   reattachWindow(win, () => loadMainWindowRenderer(win), { show: showsNativeMainWindows() })
 }
 
+const DETACHED_IDLE_POLL_MS = 5_000
+let detachedIdleTimer: ReturnType<typeof setInterval> | undefined
+
+/**
+ * Outside macOS a window closed mid-turn is hidden with no Dock to return
+ * through. Once its turns end, finish the close the user asked for. Two idle
+ * samples in a row, five seconds apart, so a machine wake that starts within
+ * that time keeps the app. A background process still running after that is
+ * stopped by the quit, as any quit stops it. Another open window keeps the app
+ * up: the user is still working in it.
+ */
+function quitDetachedAppWhenIdle(win: BrowserWindow): void {
+  if (process.platform === 'darwin' || detachedIdleTimer !== undefined) return
+  let idleSamples = 0
+  const stop = (): void => {
+    clearInterval(detachedIdleTimer)
+    detachedIdleTimer = undefined
+  }
+  detachedIdleTimer = setInterval(() => {
+    const detached = !win.isDestroyed() && isWindowDetached(win)
+    if (!detached) {
+      stop()
+      return
+    }
+    const idle = shouldQuitDetachedApp({
+      platform: process.platform,
+      detached,
+      runningTurns: workInFlight(),
+      mobileCompanionEnabled: getMobileCompanionState().enabled,
+      otherWindowsOpen: BrowserWindow.getAllWindows().some(
+        (other) => other !== win && !other.isDestroyed() && other.isVisible(),
+      ),
+    })
+    idleSamples = idle ? idleSamples + 1 : 0
+    if (idleSamples < 2) return
+    stop()
+    console.log('[window] detached turns finished; quitting')
+    app.quit()
+  }, DETACHED_IDLE_POLL_MS)
+  detachedIdleTimer.unref()
+}
+
 /** `threads:annotate-message`: only the summary labels the window derives. */
 const transcriptAnnotationSchema = z
   .object({
@@ -507,6 +596,15 @@ const releaseSmokeTest = process.argv.includes('--release-smoke-test')
 // the single-instance lock (each client spawns its own) or open a window.
 const acpMode = process.argv.includes('--acp')
 const threadDeepLinks = new ThreadDeepLinks(getMainWindow, findThreadOwners)
+// A notification for a window closed mid-turn reloads it rather than showing a
+// blank page (outside macOS there is no Dock click to do that instead).
+setDetachedWindowReviver((target, threadId) => {
+  const win = getMainWindow()
+  if (!win || target !== win || win.isDestroyed() || !isWindowDetached(win)) return false
+  bringBackMainWindow(win)
+  if (threadId !== undefined) threadDeepLinks.open({ threadId, projectId: null })
+  return true
+})
 setPluginClientThreadOpener((projectId, threadId) => {
   const win = getMainWindow()
   if (!win || win.isDestroyed()) return false
@@ -519,6 +617,8 @@ const gotSingleInstanceLock =
 if (!gotSingleInstanceLock) {
   app.quit()
 } else if (!agentEval && !acpMode && !releaseSmokeTest) {
+  // How this run ends decides which cut-off turns the next launch continues.
+  startRunRecorder(app.getPath('userData'), Date.now() - process.uptime() * 1_000)
   for (const arg of process.argv) threadDeepLinks.accept(arg)
   app.on('open-url', (event, url) => {
     event.preventDefault()
@@ -659,15 +759,21 @@ app
     void resumeMobileCompanion()
     initUpdatePrompt(win)
     initCloseConfirm(win)
-    guardWindowClose(win, () => {
+    setCloseConfirmContainerRuns(() => getContainerRunService().activeThreadIds())
+    guardWindowClose(win, ({ rendererGone }) => {
       const mobile = getMobileCompanionState().enabled
       const detach = shouldDetachOnClose({
         platform: process.platform,
         quitting: isMainWindowQuitting(),
-        runningTurns: listRunningThreadIds().length,
+        runningTurns: workInFlight(),
         mobileCompanionEnabled: mobile,
       })
-      if (detach) detachWindow(win, { keepRenderer: mobile })
+      if (detach) {
+        // A crashed renderer cannot serve the phone while hidden, so drop it
+        // and let reattaching reload the window.
+        detachWindow(win, { keepRenderer: mobile && !rendererGone })
+        quitDetachedAppWhenIdle(win)
+      }
       return detach
     })
     // Probe for rg/git/gh and the search backends only now: these are ~9 process
@@ -690,6 +796,7 @@ app
     // Packaged macOS build only: background update check + prompts (no-op elsewhere).
     initAutoUpdate(win)
     startStorageMaintenance()
+    removeOrphanedPlanWindowHistory()
     startDefaultBranchRefresh()
     // P5: boot the plugin service before `createRegistry()` so persisted
     // `pluginDisabled` state is applied to the shared registry before
@@ -744,6 +851,22 @@ app
       },
     })
     interruptTurnTranscripts = (): Promise<void> => transcriptWriter.interruptForShutdown()
+    // Turns a worker took over when Copse last quit, still going now: shown as
+    // running, streamed from the worker (or repainted from disk) until it lets
+    // go of them, and stopped through it.
+    const foreignTurns = new ForeignTurnFollower(
+      defaultForeignTurnDependencies(app.getPath('userData'), {
+        snapshot: (snapshot) => {
+          if (!win.isDestroyed()) win.webContents.send('agent:transcript-snapshot', snapshot)
+        },
+        chunk: ({ threadId, chunk, stamp }) => {
+          if (!win.isDestroyed()) win.webContents.send('agent:chunk', threadId, chunk, stamp)
+        },
+      }),
+    )
+    stopFollowingForeignTurns = (): void => {
+      foreignTurns.stop()
+    }
 
     // A background task's exit lands on the card that started it (#3956).
     setLateCommandPhaseRecorder((owner, toolCallId, phase) =>
@@ -815,6 +938,18 @@ app
     recordStartupPhase('register-handlers')
     perfMark('main:register-handlers')
     const agentDispatcher = new AgentDispatcher(agentHost, registry, undefined, transcriptWriter)
+    listActiveTurns = (): HandOffTarget[] => agentDispatcher.activeTurns()
+    // The close dialog may only say turns keep going when a worker takes every
+    // one: a quit that hands off, with no update to install, and no turn the
+    // worker turns down (it waits for the next launch instead).
+    setQuitHandOffCheck(async () => {
+      const { workerCannotRun } = await import('./services/turn-worker/turn-worker.ts')
+      return everyTurnHandsOff(
+        agentDispatcher.activeTurns(),
+        continuesTurnsAfterQuit(getSetting) && !quitInstallsUpdate(),
+        workerCannotRun,
+      )
+    })
     setAgentInitiatedTurnAuthority(agentDispatcher)
     setDiffAcceptanceHandler({
       waitForIdle: (owner) => agentDispatcher.waitForIdle(owner.projectId, owner.threadId),
@@ -936,9 +1071,22 @@ app
     disposeTaskSupervisorEvents = taskSupervisor.subscribe((task) => {
       if (!win.isDestroyed()) win.webContents.send('supervisor:changed', task.projectId)
     })
-    void taskSupervisor.start().catch((error: unknown) => {
-      console.error('[task-supervisor] Startup reconciliation failed:', error)
-    })
+    void taskSupervisor
+      .start()
+      .catch((error: unknown) => {
+        console.error('[task-supervisor] Startup reconciliation failed:', error)
+      })
+      // Container runs the last session left to their host processes; after
+      // the supervisor has loaded, so each finds the task it settles.
+      .then(() => getContainerRunService().reattach())
+      .then((threads) => {
+        if (threads.length > 0) {
+          console.log(`[container-run] following ${String(threads.length)} run(s) left running`)
+        }
+      })
+      .catch((error: unknown) => {
+        console.error('[container-run] Could not follow runs left running:', error)
+      })
     setAcpToolCompletionHandler((completion, prompt) =>
       agentDispatcher.dispatchMachine({
         projectId: completion.owner.projectId,
@@ -1047,6 +1195,7 @@ app
         choiceArg: unknown,
         modelArg?: unknown,
         baseBranchArg?: unknown,
+        baseFallbackArg?: unknown,
       ) => {
         assertMainFrameSender(event, win)
         assertPrimaryMainWindow(event.sender)
@@ -1065,6 +1214,9 @@ app
         // ends up in `git switch` or `git worktree add` either way.
         const baseBranch =
           baseBranchArg === undefined ? undefined : parseIpcArgs(zGitBranchName, [baseBranchArg])
+        if (baseFallbackArg !== undefined && !isThreadBaseFallback(baseFallbackArg)) {
+          throw new Error('Invalid checkout base fallback')
+        }
         return prepareThreadCheckout({
           projectId,
           threadId,
@@ -1072,6 +1224,7 @@ app
           choice: choiceArg,
           ...(modelArg !== undefined ? { model: modelArg } : {}),
           ...(baseBranch !== undefined ? { baseBranch } : {}),
+          ...(baseFallbackArg !== undefined ? { baseFallback: baseFallbackArg } : {}),
         })
       },
     )
@@ -1129,6 +1282,8 @@ app
         turnTreeId: request.turnTreeId,
         payload: parseAgentRunPayload(request.payload),
         display: request.display,
+        // The renderer read model, reasoning and execution mode from the chat.
+        payloadCarriesSelection: true,
       })
       if (result === 'completed') {
         await parkCompletedPullRequestWorktree(request.projectId, request.threadId).catch(
@@ -1216,6 +1371,7 @@ app
         args,
       )
       await transcriptWriter.attach(projectId, threadIds)
+      foreignTurns.reattach(projectId, threadIds)
     })
 
     // A small-model label for a message main wrote. Main merges it into its own
@@ -1245,14 +1401,18 @@ app
       const reason = z.literal('send_now').optional().parse(reasonArg)
       transcriptWriter.noteUserAbort(threadId, reason ?? 'stop')
       abortAgent(threadId, reason)
+      // A turn a worker runs stops there.
+      foreignTurns.requestStop(threadId)
     })
 
     // Thread ids with a live in-process run, so a renderer that's just loaded a
     // project's threads can tell a genuinely still-running turn apart from a
-    // persisted `status: 'running'` left over from a crash (#1406).
-    ipcMain.handle('agent:running-thread-ids', (event) => {
+    // persisted `status: 'running'` left over from a crash (#1406). A turn a
+    // worker is still running for this profile counts as running here too.
+    ipcMain.handle('agent:running-thread-ids', async (event) => {
       assertMainFrameSender(event, win)
-      return listRunningThreadIds()
+      const foreign = await foreignTurns.discover()
+      return [...new Set([...listRunningThreadIds(), ...foreign])]
     })
 
     // Re-run just the post-turn review for a thread — the retry action on a
@@ -1479,6 +1639,17 @@ app
         if (!win.isDestroyed()) {
           win.webContents.send('mcp:status-changed', getMcpServerStatuses())
         }
+        // Once the tools a cut-off turn may have been using are back, continue
+        // the turns the last quit, update relaunch or crash ended, except
+        // those a turn worker is still continuing.
+        void foreignTurns.discover().then(() => {
+          const resume = defaultInterruptedTurnResumeDependencies(agentDispatcher)
+          return resumeInterruptedTurns({
+            ...resume,
+            isRunning: (threadId) =>
+              resume.isRunning(threadId) || foreignTurns.isFollowing(threadId),
+          })
+        })
       })
     disposeTerminal = disposeTerminalHandlers
     disposeVnc = disposeVncHandlers
@@ -1515,9 +1686,42 @@ let disposeContainerRunSupervisor: (() => void) | undefined
 let disposeDarkFactorySensor: (() => void) | undefined
 let disposeTaskSupervisorEvents: (() => void) | undefined
 let interruptTurnTranscripts: (() => Promise<void>) | undefined
+let listActiveTurns: (() => HandOffTarget[]) | undefined
+let stopFollowingForeignTurns: (() => void) | undefined
+
+/**
+ * Start a turn worker for each turn this quit cut off, so it continues now
+ * rather than at the next launch (`docs/plans/local-turn-worker.md` W2). Runs
+ * last, once the transcripts and the write queue have drained, so the worker
+ * reads the history this process saved.
+ */
+function handOffInterruptedTurns(targets: readonly HandOffTarget[]): void {
+  // A quit that installs an update leaves the turns to the next launch, which
+  // runs the new version: a worker of this version must not run them while the
+  // updater replaces the binary under it. The `hand-off` record still lets
+  // that launch continue them.
+  if (targets.length === 0 || !quitHandsOff || quitInstallsUpdate()) return
+  handOffTurns(targets, {
+    execPath: process.execPath,
+    workerPath: turnWorkerPath(),
+    userDataPath: app.getPath('userData'),
+    appVersion: app.getVersion(),
+    packaged: app.isPackaged,
+    env: process.env,
+    log: (line) => {
+      console.log(line)
+    },
+  })
+}
 
 async function cleanupBeforeQuit(): Promise<void> {
+  // Read before anything below stops them.
+  const handOff = listActiveTurns?.() ?? []
+  stopFollowingForeignTurns?.()
   const transcriptDrain = interruptTurnTranscripts?.()
+  // Host-side default-branch fetches run in their own process group and would
+  // outlive the app, leaving a partial scratch repository behind (#4407).
+  const scratchFetchesAborted = abortScratchFetchesForQuit()
   setAgentInitiatedTurnAuthority(null)
   stopAllAgentRuns()
   await stopAllForegroundShellProcesses()
@@ -1537,7 +1741,9 @@ async function cleanupBeforeQuit(): Promise<void> {
   disposeDarkFactorySensor = undefined
   disposeTaskSupervisorEvents?.()
   disposeTaskSupervisorEvents = undefined
-  await getContainerRunService().stopAll()
+  // Container runs go on outside the app under the same rule as turns, and an
+  // update quit stops them: the new version may not speak the old host's line.
+  await getContainerRunService().stopAll(quitHandsOff && !quitInstallsUpdate())
   await cancelAllSupervisedBackgroundProcesses()
   await taskSupervisor.shutdown()
   disposeContainerRunSupervisor?.()
@@ -1564,8 +1770,10 @@ async function cleanupBeforeQuit(): Promise<void> {
   shutdownBrowserSession()
   await stopMachineService()
   await shutdownStaticPreviewServers()
+  await scratchFetchesAborted
   await transcriptDrain
   await drainWriteQueue()
+  handOffInterruptedTurns(handOff)
   // Reap the detached gortex daemon too — left running it accumulates multi-GB
   // graphs across sessions and OOM-kills the app on a later launch.
   await Promise.allSettled([shutdownMcpServers(), shutdownProjectSandbox(), stopGortexDaemon()])
@@ -1577,6 +1785,13 @@ app.on('before-quit', (event) => {
   // kills the in-flight turns the user is being warned about, so a prompt after
   // it would come too late to save them. Re-issues the quit once confirmed.
   if (deferQuitForCloseConfirmation(event)) return
+  // The quit is going ahead. Only a quit the user confirmed hands its turns to
+  // workers, and only with the setting on; otherwise the user chose to stop
+  // them, so the next launch does not continue them (unless the updater asked).
+  // A signal, a fault, or a close nobody answered (the renderer went away or
+  // the prompt timed out) has nobody at the keyboard, so it stops them too.
+  quitHandsOff = !unattendedQuit && !closeWentUnanswered() && continuesTurnsAfterQuit(getSetting)
+  const runEnded = recordRunEnd(quitHandsOff)
   beginMainWindowQuit()
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()
@@ -1587,16 +1802,23 @@ app.on('before-quit', (event) => {
   event.preventDefault()
   if (quitCleanupStarted) return
   quitCleanupStarted = true
-  void runWithDeadline(cleanupBeforeQuit, QUIT_CLEANUP_DEADLINE_MS, {
-    onError: (err) => {
-      console.error('[shutdown] Cleanup failed:', err)
+  void runWithDeadline(
+    async () => {
+      await runEnded
+      await cleanupBeforeQuit()
     },
-    onTimeout: () => {
-      console.error(
-        `[shutdown] Cleanup exceeded ${String(QUIT_CLEANUP_DEADLINE_MS)}ms; exiting anyway`,
-      )
+    QUIT_CLEANUP_DEADLINE_MS,
+    {
+      onError: (err) => {
+        console.error('[shutdown] Cleanup failed:', err)
+      },
+      onTimeout: () => {
+        console.error(
+          `[shutdown] Cleanup exceeded ${String(QUIT_CLEANUP_DEADLINE_MS)}ms; exiting anyway`,
+        )
+      },
     },
-  }).then((outcome) => {
+  ).then((outcome) => {
     quitCleanupFinished = true
     // A cleanup that blew its deadline is still pending, so `app.quit()` would
     // hand control back to a teardown that has already proved it will not
@@ -1617,8 +1839,7 @@ function quitFromSignal(signal: NodeJS.Signals): void {
   // load-bearing for SIGHUP in particular: the same hangup that delivers the
   // signal also kills the renderer, so the prompt would go to a window that can
   // never answer and the quit would stall for the full confirmation timeout.
-  approveClose()
-  app.quit()
+  quitUnattended()
 }
 
 /**

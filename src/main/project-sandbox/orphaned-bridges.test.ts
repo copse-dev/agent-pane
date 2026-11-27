@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { isOrphanedBridge } from './orphaned-bridges.ts'
+import { isOrphanedBridge, isOrphanedLogMonitor } from './orphaned-bridges.ts'
 
 const PREFIX = 'UNIX-LISTEN:/tmp/claude-'
 
@@ -44,5 +44,29 @@ describe('isOrphanedBridge', () => {
     // ever signals bridges it could itself have spawned.
     const macBridge = 'socat UNIX-LISTEN:/var/folders/x/claude-http-abc.sock,fork TCP:localhost:1'
     assert.equal(isOrphanedBridge(macBridge, 1, PREFIX), false)
+  })
+})
+
+describe('isOrphanedLogMonitor', () => {
+  /** ASRT's macOS monitor as `ps -o command=` shows it. */
+  const MONITOR = 'log stream --predicate (eventMessage ENDSWITH "_k3j9x2m1q_SBX") --style compact'
+
+  it('matches a reparented ASRT log monitor', () => {
+    assert.equal(isOrphanedLogMonitor(MONITOR, 1), true)
+    assert.equal(isOrphanedLogMonitor(`/usr/bin/${MONITOR}`, 1), true)
+  })
+
+  it('leaves a monitor whose owner is still alive', () => {
+    // A second app instance's working monitor.
+    assert.equal(isOrphanedLogMonitor(MONITOR, 4242), false)
+  })
+
+  it("leaves the user's own log streams alone", () => {
+    assert.equal(isOrphanedLogMonitor('log stream --style compact', 1), false)
+    assert.equal(
+      isOrphanedLogMonitor('log stream --predicate (eventMessage ENDSWITH "x") --style compact', 1),
+      false,
+    )
+    assert.equal(isOrphanedLogMonitor(`${MONITOR} --level debug`, 1), false)
   })
 })

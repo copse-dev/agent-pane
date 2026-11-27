@@ -5,7 +5,7 @@ import {
 } from '@shared/browser-session.ts'
 import { currentBrowserScope } from './browser-network-grants.ts'
 import { errorMessage } from '@shared/errors.ts'
-import type { BrowserWindow, BrowserWindowConstructorOptions, Session } from 'electron'
+import type { BrowserWindow, BrowserWindowConstructorOptions, NativeImage, Session } from 'electron'
 import { DOM_SNAPSHOT_SCRIPT, parsePageSnapshot, renderSnapshot } from './snapshot-format.ts'
 import { expectBoolean, expectRecord, expectString } from '@shared/unknown-value.ts'
 import type { CanvasArtefactIdentity } from '@shared/types/canvas.ts'
@@ -227,6 +227,11 @@ export interface BrowserSessionPlatform {
   showUrl(url: string, partition: string): void
   /** Promote an already-rendered canvas artefact tab to the front. */
   showArtefact(identity: CanvasArtefactIdentity): void
+  /**
+   * Decode a captured PNG `data:` URL (Electron's `nativeImage`). Injected rather than
+   * imported so the browser tools stay loadable on the plain-Node agent path.
+   */
+  decodeImage(dataUrl: string): NativeImage
 }
 
 let platform: BrowserSessionPlatform | null = null
@@ -421,8 +426,8 @@ export class BrowserSessionManager {
 
   async screenshot(viewId?: string): Promise<BrowserScreenshot> {
     const tab = this.resolveTab(viewId)
-    const { nativeImage } = await import('electron')
-    const image = nativeImage.createFromDataURL(await captureBrowserScreenshotDataUrl(tab.window))
+    const dataUrl = await captureBrowserScreenshotDataUrl(tab.window)
+    const image = requirePlatform().decodeImage(dataUrl)
     if (image.isEmpty()) throw new Error(`browser screenshot of ${tab.id} was empty`)
     const { width, height } = image.getSize()
     return {
@@ -448,10 +453,10 @@ export class BrowserSessionManager {
   async capturePreview(viewId: string, maxWidth = PREVIEW_WIDTH): Promise<string | null> {
     const tab = this.tabs.find((t) => t.id === viewId)
     if (!tab) return null
-    const { nativeImage } = await import('electron')
-    return capturePreviewDataUrl(
+    return await capturePreviewDataUrl(
       tab.window.webContents,
-      (dataUrl) => nativeImage.createFromDataURL(dataUrl),
+      // Resolved inside the capture's try, so a missing platform degrades to null too.
+      (dataUrl) => requirePlatform().decodeImage(dataUrl),
       maxWidth,
       () => tab.window.getContentSize()[0] ?? DEFAULT_WIDTH,
     )

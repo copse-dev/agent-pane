@@ -86,6 +86,14 @@ export interface CheckupSnapshot {
    * nothing has hit that this run.
    */
   agentOpenFiles: { command: string; code: string; limit: string } | null
+  /**
+   * Window interface (renderer) crashes recorded in the last week, newest
+   * last, and where the record is kept (#4445).
+   */
+  rendererCrashes: {
+    path: string
+    recent: Array<{ at: number; reason: string; exitCode: number; context: string | null }>
+  }
 }
 
 function formatTokens(n: number): string {
@@ -355,6 +363,27 @@ export function buildCheckupReport(s: CheckupSnapshot): CheckupReport {
       status: 'error',
       detail: `${s.agentOpenFiles.command} ran out of open files (${s.agentOpenFiles.code}, ${s.agentOpenFiles.limit}) and a replacement process did too, so it cannot read files, load settings, or start MCP servers.`,
       fix: "Raise the open-file limit for your desktop session (macOS: `launchctl limit maxfiles`; Linux: the login's `nofile` limit), then restart Copse.",
+    })
+  }
+
+  // Window crashes. The window reloads by itself, so without this row a crash
+  // is only a stderr line the user never sees.
+  const crashes = s.rendererCrashes.recent
+  const lastCrash = crashes.at(-1)
+  if (lastCrash) {
+    const count = crashes.length
+    add({
+      id: 'renderer-crashes',
+      category: 'Copse',
+      label: 'Window crashes',
+      status: 'warn',
+      detail:
+        `${count.toString()} window ${count === 1 ? 'crash' : 'crashes'} in the last 7 days; ` +
+        `the latest at ${new Date(lastCrash.at).toISOString()} (reason ${lastCrash.reason}, ` +
+        `exit code ${lastCrash.exitCode.toString()}` +
+        (lastCrash.context ? `, ${lastCrash.context}` : '') +
+        `). Full record: ${s.rendererCrashes.path}`,
+      fix: 'If this keeps happening, attach that file to a bug report.',
     })
   }
 

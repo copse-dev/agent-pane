@@ -5,7 +5,7 @@ const path = require('node:path')
 
 /** Consume a fixture once, after the old Electron process has shut down. */
 function applyPendingSeedConfig(profileRoot, workspaceRoot = path.join(profileRoot, 'workspace')) {
-  for (const name of ['config', 'settings']) {
+  for (const name of ['config', 'settings', 'last-run']) {
     try {
       fs.renameSync(
         path.join(profileRoot, `.e2e-pending-${name}.json`),

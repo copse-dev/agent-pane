@@ -8,9 +8,11 @@ import type { AgentHost } from '@copse/agent/agent-host.ts'
 import { ToolRegistry } from './tool-registry.ts'
 import {
   AgentDispatcher,
+  WriterLeaseLostError,
   type AgentDispatcherDependencies,
   type TurnTranscriptSink,
   type AgentDispatchRequest,
+  type MachineAgentDispatchRequest,
 } from './agent-dispatcher.ts'
 import type { ThreadExecutionContext } from './thread-execution-context.ts'
 import type { AgentTurnEpoch } from './thread-store.ts'
@@ -18,6 +20,7 @@ import type { AgentInitiatedTurnClaim } from './acp/agent-initiated-turn.ts'
 import { getRunPlan } from './thread-plan-context.ts'
 import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
+import type { WriterLeaseRecord } from '@copse/thread-store/writer-lease.ts'
 import { isDeferralModeActive } from './security/deferral-mode.ts'
 
 const host: AgentHost<StreamChunk> = { emit: () => undefined }
@@ -67,6 +70,7 @@ function dependencies(
     prepareExecutionContext: async () => context,
     isScheduledAutomationRun: () => false,
     transcriptLength: async () => 0,
+    loadThreadSelection: async () => null,
     run: async (_threadId, userContent, priorMessages) => ({
       usage: { inputTokens: 0, outputTokens: 0 },
       messages: [...priorMessages, { role: 'user', content: userContent }],
@@ -125,6 +129,96 @@ describe('AgentDispatcher', () => {
       origin: { kind: 'machine', operationId: 'accept-1' },
     })
     assert.deepEqual(saved[0], [{ role: 'user', content: 'The user accepted a.txt.' }])
+  })
+
+  describe('a machine turn runs on the thread’s own selection', () => {
+    const machine = (payload: AgentDispatchRequest['payload']): MachineAgentDispatchRequest => ({
+      ...request({ payload }),
+      operationId: 'wake-1',
+      turnTreeId: 'tree-1',
+    })
+
+    async function runOptions(
+      payload: AgentDispatchRequest['payload'],
+      selection: Awaited<ReturnType<AgentDispatcherDependencies['loadThreadSelection']>>,
+      extra: Partial<MachineAgentDispatchRequest> = {},
+    ): Promise<Parameters<AgentDispatcherDependencies['run']>[5]> {
+      const seen: Array<Parameters<AgentDispatcherDependencies['run']>[5]> = []
+      let reads = 0
+      const dispatcher = new AgentDispatcher(
+        host,
+        registry,
+        dependencies({
+          loadEpoch: async () => ({ turnTreeId: 'tree-1', continuationUsed: 0 }),
+          loadThreadSelection: async (projectId, threadId) => {
+            reads += 1
+            assert.equal(projectId, 'project-1')
+            assert.equal(threadId, 'thread-1')
+            return selection
+          },
+          run: async (_threadId, userContent, priorMessages, _host, _registry, options) => {
+            seen.push(options)
+            return {
+              usage: { inputTokens: 0, outputTokens: 0 },
+              messages: [...priorMessages, { role: 'user', content: userContent }],
+            }
+          },
+        }),
+      )
+      assert.equal(await dispatcher.dispatchMachine({ ...machine(payload), ...extra }), 'completed')
+      assert.equal(reads, extra.payloadCarriesSelection ? 0 : 1)
+      assert.equal(seen.length, 1)
+      const [options] = seen
+      assert.ok(options)
+      return options
+    }
+
+    const wakePayload = {
+      userContent: 'The background task finished.',
+      invokedSkills: [],
+      priorTodos: [],
+    }
+
+    it('fills the model, reasoning and execution mode a wake leaves out', async () => {
+      const options = await runOptions(wakePayload, {
+        model: 'lmstudio:qwen3-coder',
+        reasoning: 'high',
+        executionMode: 'agent',
+      })
+      assert.equal(options.model, 'lmstudio:qwen3-coder')
+      assert.equal(options.reasoning, 'high')
+      assert.equal(options.executionMode, 'agent')
+    })
+
+    it('keeps what the payload names', async () => {
+      const options = await runOptions(
+        { ...wakePayload, model: 'claude-sonnet-4-6', reasoning: 'low' },
+        { model: 'lmstudio:qwen3-coder', reasoning: 'high' },
+      )
+      assert.equal(options.model, 'claude-sonnet-4-6')
+      assert.equal(options.reasoning, 'low')
+      assert.equal(options.executionMode, undefined)
+    })
+
+    it('never fills a renderer-built payload from saved metadata', async () => {
+      // The renderer left executionMode and reasoning out because the chat has
+      // none; a slower meta.json write must not put them back.
+      const options = await runOptions(
+        { ...wakePayload, model: 'claude-sonnet-4-6' },
+        { model: 'lmstudio:qwen3-coder', reasoning: 'high', executionMode: 'agent' },
+        { payloadCarriesSelection: true },
+      )
+      assert.equal(options.model, 'claude-sonnet-4-6')
+      assert.equal(options.reasoning, undefined)
+      assert.equal(options.executionMode, undefined)
+    })
+
+    it('leaves the payload alone when there is no saved thread', async () => {
+      const options = await runOptions(wakePayload, null)
+      assert.equal(options.model, undefined)
+      assert.equal(options.reasoning, undefined)
+      assert.equal(options.executionMode, undefined)
+    })
   })
 
   it('defers approvals only during the first turn of a verified scheduled run', async () => {
@@ -1769,6 +1863,7 @@ describe('AgentDispatcher', () => {
           end: (): void => {
             ended = true
           },
+          fence: (): void => {},
         }),
       },
     )
@@ -1796,7 +1891,7 @@ describe('AgentDispatcher', () => {
       {
         begin: (_projectId, threadId): ReturnType<TurnTranscriptSink['begin']> => {
           begun.push(threadId)
-          return { emit: (): void => {}, end: (): void => {} }
+          return { emit: (): void => {}, end: (): void => {}, fence: (): void => {} }
         },
       },
     )
@@ -1919,5 +2014,222 @@ describe('AgentDispatcher', () => {
     await dispatcher.dispatch(request())
 
     assert.equal(ran, true)
+  })
+
+  describe('writer lease', () => {
+    it('refuses a thread another Copse process is running, before marking it running', async () => {
+      const begun: string[] = []
+      let ran = false
+      const dispatcher = new AgentDispatcher(
+        host,
+        registry,
+        dependencies({
+          claimWriter: async () => ({
+            status: 'held',
+            holder: { host: 'laptop', pid: 4242, owner: 'laptop:4242:x' },
+          }),
+          run: async (_threadId, _content, messages) => {
+            ran = true
+            return { usage: { inputTokens: 0, outputTokens: 0 }, messages }
+          },
+        }),
+        {
+          begin: (_projectId, threadId): ReturnType<TurnTranscriptSink['begin']> => {
+            begun.push(threadId)
+            return { emit: (): void => {}, end: (): void => {}, fence: (): void => {} }
+          },
+        },
+      )
+      await assert.rejects(
+        dispatcher.dispatch(request()),
+        /another Copse process \(laptop, pid 4242\)/,
+      )
+      assert.equal(ran, false)
+      assert.deepEqual(begun, [], 'a thread owned elsewhere must not be marked running here')
+      assert.equal(dispatcher.isActive('project-1', 'thread-1'), false)
+    })
+
+    it('holds the lease for exactly the turn and keeps in-process exclusion synchronous', async () => {
+      const events: string[] = []
+      let finishTurn: () => void = () => undefined
+      const dispatcher = new AgentDispatcher(
+        host,
+        registry,
+        dependencies({
+          claimWriter: async (_projectId, threadId) => {
+            events.push(`claim ${threadId}`)
+            return {
+              status: 'claimed',
+              claim: {
+                lease: {
+                  v: 1,
+                  threadId,
+                  owner: 'me',
+                  host: 'here',
+                  pid: 1,
+                  epoch: 1,
+                  acquiredAt: 0,
+                  heartbeatAt: 0,
+                  ttlMs: 30_000,
+                },
+                release: async (): Promise<void> => {
+                  events.push('release')
+                },
+              },
+            }
+          },
+          run: async (_threadId, _content, messages) => {
+            events.push('run')
+            await new Promise<void>((resolve) => {
+              finishTurn = resolve
+            })
+            return { usage: { inputTokens: 0, outputTokens: 0 }, messages }
+          },
+        }),
+        {
+          begin: (): ReturnType<TurnTranscriptSink['begin']> => {
+            events.push('open transcript')
+            return { emit: (): void => {}, end: (): void => {}, fence: (): void => {} }
+          },
+        },
+      )
+      const first = dispatcher.dispatch(request())
+      // The slot is taken before the lease is, so a second send cannot slip in.
+      await assert.rejects(dispatcher.dispatch(request()), /already running/)
+      while (!events.includes('run')) await settle()
+      finishTurn()
+      await first
+      assert.deepEqual(events, ['claim thread-1', 'open transcript', 'run', 'release'])
+    })
+
+    function heldLease(threadId: string): WriterLeaseRecord {
+      return {
+        v: 1,
+        threadId,
+        owner: 'me',
+        host: 'here',
+        pid: 1,
+        epoch: 1,
+        acquiredAt: 0,
+        heartbeatAt: 0,
+        ttlMs: 30_000,
+      }
+    }
+
+    it('writes nothing more to the thread once another process takes the lease over', async () => {
+      let loseLease: () => void = () => undefined
+      let released = false
+      let fenced = false
+      const saved: LLMMessage[][] = []
+      const owned: StreamChunk[] = []
+      const dispatcher = new AgentDispatcher(
+        host,
+        registry,
+        dependencies({
+          claimWriter: async (_projectId, threadId, onLost) => {
+            loseLease = onLost
+            return {
+              status: 'claimed',
+              claim: {
+                lease: heldLease(threadId),
+                release: async (): Promise<void> => {
+                  released = true
+                },
+              },
+            }
+          },
+          saveHistory: async (_projectId, _threadId, messages) => {
+            saved.push(messages)
+          },
+          run: async (threadId, content, messages, turnHost, _registry, options) => {
+            turnHost.emit(threadId, { type: 'text', text: 'before' })
+            loseLease()
+            turnHost.emit(threadId, { type: 'text', text: 'after' })
+            const history: LLMMessage[] = [...messages, { role: 'user', content }]
+            options.onHistoryCheckpoint?.(history)
+            turnHost.emit(threadId, { type: 'done' })
+            return { usage: { inputTokens: 0, outputTokens: 0 }, messages: history }
+          },
+        }),
+        {
+          begin: (): ReturnType<TurnTranscriptSink['begin']> => ({
+            emit: (chunk): void => void owned.push(chunk),
+            end: (): void => {},
+            fence: (): void => {
+              fenced = true
+            },
+          }),
+        },
+      )
+      await assert.rejects(dispatcher.dispatch(request()), WriterLeaseLostError)
+      assert.deepEqual(saved, [], 'neither a checkpoint nor the final history is written')
+      assert.equal(fenced, true)
+      assert.deepEqual(owned, [{ type: 'text', text: 'before' }])
+      assert.equal(released, true)
+      assert.equal(dispatcher.isActive('project-1', 'thread-1'), false)
+    })
+
+    it('does not start a turn whose lease was lost before it ran', async () => {
+      let loseLease: () => void = () => undefined
+      let ran = false
+      const dispatcher = new AgentDispatcher(
+        host,
+        registry,
+        dependencies({
+          claimWriter: async (_projectId, threadId, onLost) => {
+            loseLease = onLost
+            return {
+              status: 'claimed',
+              claim: { lease: heldLease(threadId), release: async (): Promise<void> => {} },
+            }
+          },
+          prepareExecutionContext: async () => {
+            loseLease()
+            return context
+          },
+          run: async (_threadId, _content, messages) => {
+            ran = true
+            return { usage: { inputTokens: 0, outputTokens: 0 }, messages }
+          },
+        }),
+      )
+      await assert.rejects(dispatcher.dispatch(request()), WriterLeaseLostError)
+      assert.equal(ran, false)
+    })
+
+    it("charges a self-start to the new turn's tree while its lease is still being claimed", async () => {
+      let grantLease: () => void = () => undefined
+      const dispatcher = new AgentDispatcher(
+        host,
+        registry,
+        dependencies({
+          claimWriter: async (_projectId, threadId) => {
+            await new Promise<void>((resolve) => {
+              grantLease = resolve
+            })
+            return {
+              status: 'claimed',
+              claim: { lease: heldLease(threadId), release: async (): Promise<void> => {} },
+            }
+          },
+        }),
+      )
+      const turn = dispatcher.dispatch(
+        request({
+          payload: {
+            userContent: 'go',
+            invokedSkills: [],
+            priorTodos: [],
+            turnTreeId: 'tree-human',
+          },
+        }),
+      )
+      const claim = dispatcher.claimAgentInitiatedTurn('project-1', 'thread-1', {
+        override: false,
+      })
+      grantLease()
+      assert.equal(grantedTurnTree(await claim), 'tree-human')
+      await turn
+    })
   })
 })

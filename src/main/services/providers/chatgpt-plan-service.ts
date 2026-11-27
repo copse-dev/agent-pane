@@ -260,16 +260,24 @@ export class ChatGptPlanService {
 
 let service: ChatGptPlanService | undefined
 
-let focusCopseWindow: (() => void) | undefined
+/** The desktop capabilities a sign-in needs, which only the Electron main process has. */
+export interface ChatGptPlanDesktop {
+  /** Open the authorization page in the user's browser. */
+  openExternal: (url: string) => Promise<void>
+  /** Bring Copse forward once the sign-in callback lands. */
+  focusWindow: () => void
+}
+
+let desktop: ChatGptPlanDesktop | undefined
 
 /**
- * How Copse brings its window forward once the sign-in callback lands. The
- * main process sets it when it registers the ChatGPT plan handlers. This
- * module also loads in the standalone thread-container worker, which must stay
- * electron-free, so it never imports the window code itself.
+ * Installed by the main process when it registers the ChatGPT plan handlers.
+ * This module also loads on the agent path and in the standalone
+ * thread-container worker, both of which must stay electron-free, so it never
+ * imports Electron itself, not even lazily.
  */
-export function setChatGptPlanWindowFocus(focus: () => void): void {
-  focusCopseWindow = focus
+export function setChatGptPlanDesktop(next: ChatGptPlanDesktop): void {
+  desktop = next
 }
 
 /** Lazy construction respects the host's persistent-store and secure-storage boot order. */
@@ -277,12 +285,12 @@ export function getChatGptPlanService(): ChatGptPlanService {
   service ??= new ChatGptPlanService(createChatGptPlanStore(), {
     fetch: (...args): Promise<Response> => fetch(...args),
     openBrowser: async (url): Promise<void> => {
-      const { shell } = await import('electron')
-      await shell.openExternal(url)
+      if (!desktop) throw new Error('ChatGPT sign-in needs the Copse desktop app.')
+      await desktop.openExternal(url)
     },
     focusApp: (): void => {
       try {
-        focusCopseWindow?.()
+        desktop?.focusWindow()
       } catch (err) {
         console.warn('[chatgpt-plan] could not focus Copse after sign-in callback:', err)
       }
