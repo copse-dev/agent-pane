@@ -10,9 +10,11 @@ name: Bump release version
 #   - the current version has not been published yet. One release is in flight
 #     at a time, so the schedule never queues betas nobody has install-tested.
 #     Publish it and the next run resumes. If it can never be published (its
-#     release run failed), dispatch this workflow with the next version: an
-#     explicit version cuts past the unpublished one and carries its notes
-#     forward, since it has no GitHub Release to keep them.
+#     release run failed, or its artifacts expired), dispatch this workflow with
+#     the next version: an explicit version cuts past the unpublished one and
+#     carries its notes forward, since it has no GitHub Release to keep them.
+#     The `publication-window` job reports how long the skipped version can
+#     still be published, and raises an issue before it no longer can.
 #   - Unreleased is empty. There is nothing to release.
 #
 # Publication stays manual (`Publish release artifacts`). Stable releases are
@@ -42,6 +44,8 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       RELEASE_REPOSITORY: copse-dev/copse-releases
+    outputs:
+      unpublished: ${{ steps.bump.outputs.unpublished }}
     steps:
       - name: Require release App credentials
         env:
@@ -90,7 +94,9 @@ jobs:
               exit 1
             fi
             if [ -z "$REQUESTED_VERSION" ]; then
-              echo "::notice::v$current is not published in $RELEASE_REPOSITORY yet; skipping this week's bump. If its release run failed, dispatch this workflow with the next version to cut past it."
+              echo "::notice::v$current is not published in $RELEASE_REPOSITORY yet; skipping this week's bump. If it can never be published, dispatch this workflow with the next version to cut past it."
+              # The publication-window job checks how long it still can be.
+              echo "unpublished=$current" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             # A person chose to abandon the unpublished version, usually one
@@ -175,3 +181,89 @@ jobs:
             echo
             cat "$RUNNER_TEMP/release-notes.md"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # Skipping for an unpublished version is the one-release-in-flight rule at
+  # work, but alone it is silent: a build nobody publishes looks like one being
+  # install-tested until its artifacts expire. Then it can never be published
+  # and the skip would repeat every week for good, as with v0.1.0-beta.16. So
+  # check the version's successful Release (macOS) run, by the tag's commit,
+  # and how long its artifacts last (scripts/release-publication-window.mts).
+  # Near expiry this opens or updates an `area:release` issue, as it does for a
+  # cancelled or never-run build that report-failure misses; once the artifacts
+  # have expired it fails too. It never cuts past the version itself:
+  # abandoning a build is a person's call (docs/releasing-macos.md#publication-window).
+  publication-window:
+    needs: bump
+    if: needs.bump.outputs.unpublished != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read # the version's Release (macOS) run and its artifacts
+      contents: read # the tag, and this checkout
+      issues: write # the unpublished-release issue
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+          # Only gh api uses the token here; keep it out of .git/config.
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with: { node-version-file: '.nvmrc' }
+      - name: Check how long the unpublished version can still be published
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.bump.outputs.unpublished }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          window=scripts/release-publication-window.mts
+          release_sha=none runs=none artifacts=none
+          # Only a confirmed 404 means untagged. Any other failure leaves the
+          # window unknown, which must not read as fine.
+          if ref="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" 2> "$RUNNER_TEMP/tag.err")"; then
+            release_sha="$(jq -r .object.sha <<< "$ref")"
+            # Cut release tag creates lightweight tags; peel an annotated one.
+            if [ "$(jq -r .object.type <<< "$ref")" = tag ]; then
+              release_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$release_sha" | jq -r .object.sha)"
+            fi
+            runs="$RUNNER_TEMP/runs.json"
+            gh api --paginate --slurp \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/release-mac.yml/runs?head_sha=$release_sha&per_page=100" > "$runs"
+            run_id="$(node "$window" latest-run "$runs" "$release_sha")"
+            if [ -n "$run_id" ]; then
+              artifacts="$RUNNER_TEMP/artifacts.json"
+              gh api --paginate --slurp \
+                "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts?per_page=100" > "$artifacts"
+            fi
+          else
+            case "$(cat "$RUNNER_TEMP/tag.err")" in
+              *"HTTP 404"*) ;;
+              *)
+                echo "::error::Could not look up $tag, so its publication window is unknown: $(cat "$RUNNER_TEMP/tag.err")"
+                exit 1
+                ;;
+            esac
+          fi
+          report="$RUNNER_TEMP/report.json"
+          node "$window" report "$tag" "$release_sha" "$runs" "$artifacts" > "$report"
+          level="$(jq -r .level "$report")"
+          message="$(jq -r .message "$report")"
+          echo "::$level::$message"
+          echo "$message" >> "$GITHUB_STEP_SUMMARY"
+          title="$(jq -r '.issue.title // empty' "$report")"
+          if [ -n "$title" ]; then
+            { jq -r .issue.body "$report"; printf '\n[Bump release version run](%s)\n' "$RUN_URL"; } > "$RUNNER_TEMP/issue.md"
+            # One open issue per tag, as report-failure keeps in release-mac.yml:
+            # each later week comments on it with the current countdown.
+            existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --label area:release \
+              --search "\"$title\" in:title" --json number,title \
+              | jq -r --arg title "$title" 'map(select(.title == $title))[0].number // empty')"
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/issue.md"
+            else
+              gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --label area:release --body-file "$RUNNER_TEMP/issue.md"
+            fi
+          fi
+          # Expired artifacts stall the weekly train until a person cuts past
+          # the version, so fail visibly rather than skip quietly each week.
+          if [ "$level" = error ]; then exit 1; fi
