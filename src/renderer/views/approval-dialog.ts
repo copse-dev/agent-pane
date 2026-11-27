@@ -236,6 +236,20 @@ export function mountApprovalDialog(
     el('input', { type: 'checkbox', class: 'approval-remember-input' }),
     'Always allow this tool',
   )
+  // Shown when workspace trust is the only reason a shell prompt is asking, so
+  // the user can see why and fix the cause instead of answering every command.
+  const trustOfferText = el('span', { class: 'approval-trust-offer-text' })
+  const trustOfferButton = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary approval-trust-offer-btn' },
+    'Trust project…',
+  )
+  const trustOffer = el(
+    'div',
+    { class: 'approval-trust-offer', hidden: '' },
+    trustOfferText,
+    trustOfferButton,
+  )
   const turnTreeLeaseLabel = el(
     'label',
     { class: 'approval-remember approval-turn-tree' },
@@ -278,6 +292,7 @@ export function mountApprovalDialog(
     heading,
     origin,
     items,
+    trustOffer,
     rememberLabel,
     turnTreeLeaseLabel,
     uiActions(approveOnceButton, approveButton, rejectButton, {
@@ -339,6 +354,7 @@ export function mountApprovalDialog(
     turnTreeLeaseLabel: string | undefined
     turnTreeLeaseDefault: boolean | undefined
     turnTreeLeaseSubject: string | undefined
+    workspaceTrustOffer: { root: string } | undefined
     receivedAt: number
     /** Arrival order; the clock alone ties within a millisecond. */
     arrival: number
@@ -362,6 +378,10 @@ export function mountApprovalDialog(
   let cancelSettle: (() => void) | null = null
   /** Whether the user expanded a collapsed body on the open prompt. */
   let detailsExpanded = false
+  /** Project roots trusted from a prompt in this window, so the offer turns into a confirmation. */
+  const trustedFromPrompt = new Set<string>()
+  /** True while a trust-from-prompt request is in flight. */
+  let trustingFromPrompt = false
   function closeDialog(): void {
     dialog.close()
     chatScrim.hidden = true
@@ -634,6 +654,8 @@ export function mountApprovalDialog(
     approveButton.classList.toggle('ui-btn-primary', !showOnce)
     approveButton.classList.toggle('ui-btn-secondary', showOnce)
 
+    renderTrustOffer()
+
     // A two-tier prompt owns the remember channel through its buttons, so the
     // checkbox stays out of the way rather than offering a second, conflicting
     // way to answer the same question.
@@ -667,6 +689,60 @@ export function mountApprovalDialog(
       // Sandboxed approval includes bounded retries by default. Outside-sandbox
       // retries remain explicit, and mixed-command batches hide the grant above.
       turnTreeLeaseInput.checked = batch.every((request) => request.turnTreeLeaseDefault === true)
+    }
+  }
+
+  /**
+   * The offer to trust a project is shown only when every request on screen
+   * carries it for the same root: one button trusts one project, and a mixed
+   * batch would otherwise imply trusting fixes prompts it does not.
+   */
+  function sharedTrustOffer(): { id: string; root: string } | null {
+    const first = batch[0]
+    const root = first?.workspaceTrustOffer?.root
+    if (!first || root === undefined) return null
+    return batch.every((req) => req.workspaceTrustOffer?.root === root)
+      ? { id: first.id, root }
+      : null
+  }
+
+  function renderTrustOffer(): void {
+    const offer = sharedTrustOffer()
+    trustOffer.hidden = offer === null
+    if (offer === null) return
+    const trusted = trustedFromPrompt.has(offer.root)
+    trustOfferText.textContent = trusted
+      ? 'Project trusted. Commands like this will run without asking from now on; approve or reject this one.'
+      : "Copse is asking because this project isn't trusted. In a trusted project, commands like this run without asking."
+    trustOfferButton.hidden = trusted
+    trustOfferButton.disabled = trustingFromPrompt
+  }
+
+  async function trustFromPrompt(): Promise<void> {
+    const offer = sharedTrustOffer()
+    if (offer === null || trustingFromPrompt) return
+    // Main reads the name and `sandbox: false` hooks from the root this prompt
+    // would trust, not from whichever project another window last opened.
+    const details = await api.workspace.trustOfferDetails(offer.id).catch(() => null)
+    if (details === null) return
+    const { confirmProjectTrust } = await import('./workspace-trust-consent.ts')
+    const confirmed = await confirmProjectTrust({
+      projectName: details.name,
+      unsandboxedHooks: details.unsandboxedHooks,
+      lead: 'Only trust a folder whose contents you wrote or have reviewed.',
+    })
+    if (!confirmed) return
+    trustingFromPrompt = true
+    renderTrustOffer()
+    try {
+      // Main trusts the root it attached to this prompt; the prompt stays open.
+      await api.workspace.trustFromApproval(offer.id)
+      trustedFromPrompt.add(offer.root)
+    } catch {
+      // The prompt was answered or withdrawn meanwhile; nothing was trusted.
+    } finally {
+      trustingFromPrompt = false
+      if (active) renderTrustOffer()
     }
   }
 
@@ -887,6 +963,7 @@ export function mountApprovalDialog(
       turnTreeLeaseLabel,
       turnTreeLeaseDefault,
       turnTreeLeaseSubject,
+      workspaceTrustOffer,
     }) => {
       if (queue.some((request) => request.id === id) || batch.some((request) => request.id === id))
         return
@@ -912,6 +989,7 @@ export function mountApprovalDialog(
         turnTreeLeaseLabel,
         turnTreeLeaseDefault,
         turnTreeLeaseSubject,
+        workspaceTrustOffer,
         receivedAt: Date.now(),
         arrival: arrivals++,
       }
@@ -1012,6 +1090,9 @@ export function mountApprovalDialog(
   })
   rejectButton.addEventListener('click', () => {
     resolve(false, false)
+  })
+  trustOfferButton.addEventListener('click', () => {
+    void trustFromPrompt()
   })
 
   return {
