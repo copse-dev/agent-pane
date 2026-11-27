@@ -127,18 +127,91 @@ describe('TurnHostLink', () => {
           reply({ t: 'ended', id: message.id, threadId: message.threadId })
         }
       }
-      if (message.t === 'stop') endTurn()
+      if (message.t === 'stop-all') {
+        endTurn()
+        reply({ t: 'stopped-all' })
+      }
     }
     const { link: line } = link(host)
     const placed = line.run('p1', 't1', 'Hello')
     await dispatchedTurn.promise
     await line.stopAllForQuit(60_000)
     assert.deepEqual(
-      host.sent.filter((m) => m.t === 'stop'),
-      [{ t: 'stop', threadId: 't1', reason: 'quit' }],
+      host.sent.filter((m) => m.t === 'stop-all'),
+      [{ t: 'stop-all', reason: 'quit' }],
     )
     assert.equal(await placed, 'host')
     assert.deepEqual(line.runningThreadIds(), [])
+  })
+
+  it("waits for a quit to stop the host's own turns too, not only the ones it sent", async () => {
+    const host = new FakeHost()
+    let drained = (): void => undefined
+    host.respond = (message, reply): void => {
+      if (message.t === 'stop-all')
+        drained = (): void => {
+          reply({ t: 'stopped-all' })
+        }
+    }
+    const { link: line } = link(host)
+    assert.ok(await line.ensureConnected())
+    let stopped = false
+    const quit = line.stopAllForQuit(60_000).then(() => {
+      stopped = true
+    })
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(stopped, false, 'a wake the host began is still ending')
+    drained()
+    await quit
+    assert.equal(stopped, true)
+  })
+
+  it('gives up on a host that never says hello', async () => {
+    const host = new FakeHost()
+    const connect = host.connect
+    // It takes the line and never answers.
+    const silentConnect: TurnHostLinkDependencies['connect'] = (_onMessage, onClose) =>
+      connect(() => undefined, onClose)
+    host.connect = silentConnect
+    const { link: line } = link(host, { connect: host.connect, helloTimeoutMs: 5 })
+    assert.equal(await line.ensureConnected(), false)
+    assert.equal(await line.run('p1', 't1', 'Hello'), 'app')
+  })
+
+  it('answers a task call it carried out after the line dropped, without a second run', async () => {
+    const host = new FakeHost()
+    const calls = Promise.withResolvers<undefined>()
+    let runs = 0
+    const result = Promise.withResolvers<{ task: null }>()
+    const { link: line } = link(host, {
+      callTaskSupervisor: () => {
+        runs += 1
+        calls.resolve(undefined)
+        return result.promise
+      },
+    })
+    assert.ok(await line.ensureConnected())
+    const call = {
+      t: 'task-call' as const,
+      id: 'call-1',
+      projectId: 'p1',
+      threadId: 't1',
+      call: { op: 'cancel' as const, projectId: 'p1', taskId: 'task-1' },
+    }
+    host.say(call)
+    await calls.promise
+    host.drop()
+    result.resolve({ task: null })
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.ok(await line.ensureConnected())
+    host.say(call)
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(runs, 1, 'carried out once')
+    assert.deepEqual(host.sent.filter((m) => m.t === 'task-call-answer').at(-1), {
+      t: 'task-call-answer',
+      id: 'call-1',
+      result: { task: null },
+    })
   })
 
   it('hands a refused turn back to the app', async () => {

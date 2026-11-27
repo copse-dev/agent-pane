@@ -72,6 +72,8 @@ export type AppToHost =
   | { t: 'dispatch'; id: string; projectId: string; threadId: string; payload: string }
   | { t: 'attach' }
   | { t: 'stop'; threadId: string; reason?: 'quit' | undefined }
+  /** A quit that keeps no turns: stop every turn the host runs, then say `stopped-all`. */
+  | { t: 'stop-all'; reason: 'quit' }
   | { t: 'status'; id: string }
   | { t: 'approval-answer'; id: string; response: HostApprovalAnswer }
   | { t: 'review-diff-answer'; id: string; approved: boolean }
@@ -183,6 +185,8 @@ export type HostToApp =
   | { t: 'taken'; projectId: string; threadId: string }
   | { t: 'process-result'; id: string; ok: boolean; logs?: HostProcessLogs | null | undefined }
   | { t: 'processes-result'; id: string; processes: HostProcessRoot[] }
+  /** Every turn running when `stop-all` came has ended. */
+  | { t: 'stopped-all' }
   | { t: 'approval-cancel'; id: string }
   | { t: 'store-write'; store: string; changes: ProfileStoreChange[] }
   | { t: 'shell-output'; chunk: string; taskId: string | null }
@@ -203,6 +207,7 @@ const appToHostSchema = z.discriminatedUnion('t', [
   }),
   z.object({ t: z.literal('attach') }),
   z.object({ t: z.literal('stop'), threadId: id, reason: z.literal('quit').optional() }),
+  z.object({ t: z.literal('stop-all'), reason: z.literal('quit') }),
   z.object({ t: z.literal('status'), id }),
   z.object({
     t: z.literal('approval-answer'),
@@ -443,6 +448,7 @@ const hostToAppSchema = z.discriminatedUnion('t', [
       )
       .max(10_000),
   }),
+  z.object({ t: z.literal('stopped-all') }),
   z.object({ t: z.literal('taken'), projectId: id, threadId: id }),
   z.object({ t: z.literal('approval-cancel'), id }),
   z.object({

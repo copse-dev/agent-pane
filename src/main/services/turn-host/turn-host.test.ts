@@ -262,6 +262,25 @@ describe('TurnHost', { timeout: 30_000 }, () => {
     turnHost.dispose()
   })
 
+  it('says when a quit has stopped every turn it runs', async () => {
+    await saveProjectThread('p1', idleThread('q'))
+    const { host: turnHost } = host()
+    const peer = app()
+    turnHost.handle({ t: 'hello', version: VERSION, protocol: 1 }, peer.client)
+    turnHost.handle(
+      { t: 'dispatch', id: 'dq', projectId: 'p1', threadId: 'q', payload: 'Hello' },
+      peer.client,
+    )
+    turnHost.handle({ t: 'stop-all', reason: 'quit' }, peer.client)
+    await until(() => peer.sent.some((m) => m.t === 'stopped-all'), 'the stop')
+    assert.ok(
+      peer.sent.findIndex((m) => m.t === 'ended' && m.id === 'dq') <
+        peer.sent.findIndex((m) => m.t === 'stopped-all'),
+      'only once the turn has ended',
+    )
+    turnHost.dispose()
+  })
+
   it('runs a repeated operation id once, and reports it by id', async () => {
     await saveProjectThread('p1', idleThread('g'))
     const { host: turnHost } = host()

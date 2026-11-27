@@ -42,6 +42,8 @@ export type TurnPlacement = 'host' | 'app'
 export interface TurnHostLinkDependencies {
   /** This app's version; the host must match it to be sent turns. */
   version: string
+  /** How long a new line waits for the host's hello (tests shorten it). */
+  helloTimeoutMs?: number
   /** Open a line to the profile's host; null when nothing answers. */
   connect: (
     onMessage: (message: HostToApp) => void,
@@ -107,6 +109,9 @@ type PromptKinds = {
 /** How many answered prompts the link remembers, to answer a replay the same way. */
 const ANSWERED_LIMIT = 256
 
+/** A host answers hello at once; one that does not in this time is not one. */
+const HELLO_TIMEOUT_MS = 10_000
+
 interface Pending {
   projectId: string
   threadId: string
@@ -130,6 +135,7 @@ export class TurnHostLink {
   /** The host's pid and whether its version matches this app's, once it said hello. */
   private host: { pid: number; matches: boolean } | null = null
   private helloWaiters: (() => void)[] = []
+  private stoppedAllWaiters: (() => void)[] = []
   private readonly pending = new Map<string, Pending>()
   private readonly statusWaiters = new Map<string, (state: DispatchState) => void>()
   private readonly scenarioWaiters = new Map<string, (result: TestScenarioResult | null) => void>()
@@ -181,7 +187,22 @@ export class TurnHostLink {
     const hello = new Promise<void>((resolve) => this.helloWaiters.push(resolve))
     connection.send({ t: 'hello', version: this.deps.version, protocol: TURN_HOST_PROTOCOL })
     connection.send({ t: 'attach' })
-    await hello
+    // A peer that took the line but never says hello must not hold every later
+    // caller: drop the line and run turns in the app.
+    let timer: NodeJS.Timeout | undefined
+    const silent = new Promise<'silent'>((resolve) => {
+      timer = setTimeout(() => {
+        resolve('silent')
+      }, this.deps.helloTimeoutMs ?? HELLO_TIMEOUT_MS)
+      timer.unref()
+    })
+    const outcome = await Promise.race([hello, silent])
+    clearTimeout(timer)
+    if (outcome === 'silent' && this.connection === connection) {
+      this.deps.log?.('[turn-host] the host did not say hello; turns run in the app')
+      connection.close()
+      this.lost()
+    }
     // The app may have written the profile after the host read it and before
     // this line was up, when no notice could reach it.
     if (this.ready) this.send({ t: 'profile-changed' })
@@ -250,13 +271,18 @@ export class TurnHostLink {
    */
   async stopAllForQuit(timeoutMs: number): Promise<void> {
     const turns = [...this.pending.values()]
-    if (turns.length === 0) return
-    for (const turn of turns) this.send({ t: 'stop', threadId: turn.threadId, reason: 'quit' })
+    // Every turn the host runs, not only the ones this app sent it: a wake the
+    // host began itself, or a turn an earlier app session sent.
+    if (!this.ready) return
+    const drained = new Promise<void>((resolve) => {
+      this.stoppedAllWaiters.push(resolve)
+    })
+    this.send({ t: 'stop-all', reason: 'quit' })
     let timer: NodeJS.Timeout | undefined
     const deadline = new Promise<void>((resolve) => {
       timer = setTimeout(resolve, timeoutMs)
     })
-    await Promise.race([Promise.all(turns.map((turn) => turn.done)), deadline])
+    await Promise.race([Promise.all([drained, ...turns.map((turn) => turn.done)]), deadline])
     clearTimeout(timer)
   }
 
@@ -419,6 +445,9 @@ export class TurnHostLink {
       case 'processes-result':
         this.processListWaiters.get(message.id)?.(message.processes)
         return
+      case 'stopped-all':
+        for (const waiter of this.stoppedAllWaiters.splice(0)) waiter()
+        return
       case 'shell-output':
         this.deps.onShellOutput?.(message.chunk, message.taskId)
         return
@@ -461,15 +490,27 @@ export class TurnHostLink {
         return refusal(prompt)
       })
       .then((reply) => {
-        if (this.prompts.get(prompt.id) !== controller) return
-        this.prompts.delete(prompt.id)
-        this.answered.set(prompt.id, reply)
-        if (this.answered.size > ANSWERED_LIMIT) {
-          const oldest = this.answered.keys().next().value
-          if (oldest !== undefined) this.answered.delete(oldest)
+        if (this.prompts.get(prompt.id) !== controller) {
+          // Taken down: the line dropped, or the host withdrew it. A task call
+          // or thread prompt has been carried out all the same, so the host's
+          // replay on the next line gets this answer, not a second run. Any
+          // other prompt's answer came from its abort, not from the user.
+          if (prompt.t === 'task-call' || prompt.t === 'thread-prompt')
+            this.remember(prompt.id, reply)
+          return
         }
+        this.prompts.delete(prompt.id)
+        this.remember(prompt.id, reply)
         this.send(reply)
       })
+  }
+
+  private remember(id: string, reply: AppToHost): void {
+    this.answered.set(id, reply)
+    if (this.answered.size > ANSWERED_LIMIT) {
+      const oldest = this.answered.keys().next().value
+      if (oldest !== undefined) this.answered.delete(oldest)
+    }
   }
 
   /** The user's answer to a prompt, as the host's reply; null with nothing to ask. */
@@ -528,6 +569,7 @@ export class TurnHostLink {
     this.connection = null
     this.host = null
     for (const waiter of this.helloWaiters.splice(0)) waiter()
+    for (const waiter of this.stoppedAllWaiters.splice(0)) waiter()
     // A status asked on this line will not be answered on it.
     for (const waiter of [...this.statusWaiters.values()]) waiter('unknown')
     for (const waiter of [...this.scenarioWaiters.values()]) waiter(null)
