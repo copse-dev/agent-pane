@@ -26,6 +26,15 @@ import { scanShellComposition, splitSegments } from './command-routing.ts'
 import { analyzeReadOutsideProject } from './read-outside-project.ts'
 import { hostReachReasons } from './host-reach.ts'
 import {
+  codeArgvCommands,
+  codeSecretReasons,
+  foldStringConcatenation,
+  gitAliasExpansion,
+  releaseWorkCommandReasons,
+  releaseWorkReasons,
+} from './release-work.ts'
+import { taskRecipe } from './task-recipes.ts'
+import {
   REASON_FIND_DELETE,
   REASON_RECURSIVE_DELETE,
   dangerousInSandboxReasons,
@@ -2025,6 +2034,122 @@ function mergeDecision(out: MutableDecision, decision: ShellHarmDecision): void 
  * every one of them is noise, because source code keeps its real commands inside
  * string literals, where the text-level inspectors read them instead.
  */
+/**
+ * Wrappers the harm gate looks through that the shared argv unwrapping does not:
+ * `caffeinate -i cmd`, `mise exec tool@1 -- cmd`, `asdf exec cmd`, `corepack pnpm …`. They
+ * stay out of `unwrapWrappers`, which standard mode shares, so only this gate changes; the
+ * payload is assessed as a command of its own.
+ */
+function harmOnlyWrapperPayload(argv: string[]): string[] | null {
+  const head = commandName(argv[0])
+  if (head === 'caffeinate') {
+    let i = 1
+    while (i < argv.length && (argv[i] ?? '').startsWith('-')) {
+      i += /^-[dimsu]*[tw]$/.test(argv[i] ?? '') ? 2 : 1
+    }
+    return i < argv.length ? argv.slice(i) : null
+  }
+  if ((head === 'mise' || head === 'rtx') && (argv[1] === 'exec' || argv[1] === 'x')) {
+    const dashes = argv.indexOf('--')
+    return dashes !== -1 && dashes < argv.length - 1 ? argv.slice(dashes + 1) : null
+  }
+  if (head === 'asdf' && argv[1] === 'exec' && argv.length > 2) return argv.slice(2)
+  // `uv run python - <<'PY'`, `bundle exec rake …`: project runners that run their operand.
+  const runner = PROJECT_RUNNERS.get(head)
+  if (runner !== undefined && argv[1] === runner) {
+    let i = 2
+    while (i < argv.length && (argv[i] ?? '').startsWith('-')) {
+      i +=
+        /^--?[\w-]+$/.test(argv[i] ?? '') && PROJECT_RUNNER_VALUE_OPTIONS.has(argv[i] ?? '') ? 2 : 1
+    }
+    return i < argv.length ? argv.slice(i) : null
+  }
+  if (head === 'corepack' && /^(?:npm|pnpm|yarn)(?:@\S+)?$/.test(argv[1] ?? '')) {
+    return [(argv[1] ?? '').replace(/@.*$/, ''), ...argv.slice(2)]
+  }
+  return null
+}
+
+const PROJECT_RUNNERS = new Map([
+  ['uv', 'run'],
+  ['poetry', 'run'],
+  ['pipenv', 'run'],
+  ['pdm', 'run'],
+  ['rye', 'run'],
+  ['hatch', 'run'],
+  ['bundle', 'exec'],
+])
+const PROJECT_RUNNER_VALUE_OPTIONS = new Set([
+  '--with',
+  '--python',
+  '-p',
+  '--project',
+  '--directory',
+  '--package',
+  '--env',
+  '-e',
+  '--env-file',
+  '--group',
+  '--extra',
+  '--gemfile',
+])
+
+/**
+ * Reasons from a task recipe that the gate adopts: release, secret and outward effects, and
+ * any refusal. Uncertainty and local-effect prompts are left out, so reading a recipe never
+ * asks about more than typing its release step would.
+ */
+const RECIPE_IGNORED_REASON =
+  /could not|cannot|not read|prevents complete|does not say|requires confirmation|relocation|overwrites|symlink|printf -v|^redirect |rsync --delete|deletes files found|crontab -r/
+
+function inspectTaskRecipe(
+  argv: string[],
+  cwd: string,
+  context: ShellHarmContext,
+  out: MutableDecision,
+  depth: number,
+  seenScripts: Set<string>,
+): void {
+  if (!context.readScript) return
+  const recipe = taskRecipe(argv, cwd, context.readScript)
+  if (recipe === null) return
+  for (const reason of recipe.reasons) addUnique(out.prompt, reason)
+  if (recipe.lines.length === 0) return
+  if (depth >= MAX_SCRIPT_DEPTH) return
+  const key = `recipe:${cwd}:${recipe.label}`
+  if (seenScripts.has(key)) return
+  seenScripts.add(key)
+  const seen = new Set(seenScripts)
+  for (const line of recipe.lines) {
+    const decision = assess(`cd ${quoteWords([cwd])} && ${line}`, context, depth + 1, seen, 'shell')
+    adoptSpecificReasons(out, decision, `${recipe.label} runs: `)
+  }
+}
+
+/** Merge a nested decision's refusals and specific prompts, not its uncertainty prompts. */
+function adoptSpecificReasons(
+  out: MutableDecision,
+  decision: ShellHarmDecision,
+  prefix: string,
+): void {
+  if (decision.action === 'deny') {
+    for (const reason of decision.reasons) addUnique(out.deny, `${prefix}${reason}`)
+  } else if (decision.action === 'prompt') {
+    for (const reason of decision.reasons) {
+      if (!RECIPE_IGNORED_REASON.test(reason)) addUnique(out.prompt, `${prefix}${reason}`)
+    }
+  }
+}
+
+/** Where a `cd` leaves the following segments, resolved lexically. */
+function changedDirectory(argv: string[], cwd: string, context: ShellHarmContext): string {
+  const target = argv.slice(1).find((arg) => !arg.startsWith('-'))
+  if (target === undefined) return context.homeDir
+  if (target.includes('$')) return cwd
+  const expanded = expandTilde(target, context.homeDir, cwd)
+  return isAbsolute(expanded) ? resolve(expanded) : resolve(cwd, expanded)
+}
+
 function inspectCommandLine(
   command: string,
   context: ShellHarmContext,
@@ -2034,6 +2159,8 @@ function inspectCommandLine(
 ): void {
   const expanded = substitutePathVariables(command, context)
   inspectRedirects(expanded, context, out)
+  for (const reason of releaseWorkCommandReasons(expanded)) addUnique(out.prompt, reason)
+  let cwd = context.workspaceRoot ?? process.cwd()
 
   const nestedCommands: string[][] = []
   const argvs: string[][] = []
@@ -2054,6 +2181,32 @@ function inspectCommandLine(
       addUnique(out.prompt, 'printf -v assigns a shell variable used by later commands')
     }
     argvs.push(argv)
+    if (commandName(argv[0]) === 'cd') {
+      cwd = changedDirectory(argv, cwd, context)
+      continue
+    }
+    const atCwd =
+      cwd === (context.workspaceRoot ?? process.cwd()) ? '' : `cd ${quoteWords([cwd])} && `
+    // Looking through these wrappers is new, so their payload adds only specific reasons:
+    // an uncertainty prompt there would be a prompt the gate never raised before.
+    const wrapped = harmOnlyWrapperPayload(argv)
+    if (wrapped && depth < MAX_SCRIPT_DEPTH) {
+      // A copy of the scripts already read: a script read here, filtered, must still be read
+      // in full by the route that reached it before this one existed.
+      const seen = new Set(seenScripts)
+      adoptSpecificReasons(
+        out,
+        assess(atCwd + quoteWords(wrapped), context, depth + 1, seen, 'shell'),
+        '',
+      )
+      for (const program of heredocPrograms(command, wrapped)) {
+        adoptSpecificReasons(out, assess(program, context, depth + 1, seen, 'code'), '')
+      }
+    }
+    const alias = gitAliasExpansion(argv)
+    if (alias) nestedCommands.push([atCwd + alias])
+    for (const reason of releaseWorkReasons(argv)) addUnique(out.prompt, reason)
+    inspectTaskRecipe(argv, cwd, context, out, depth, seenScripts)
     inspectCredentialStoreOperands(argv, context, out)
     nestedCommands.push(...programFlagPayloads(argv))
     const containerPayload = containerExecPayload(argv)
@@ -2111,7 +2264,10 @@ function assess(
   language: SourceLanguage,
 ): ShellHarmDecision {
   const out: MutableDecision = { deny: [], prompt: [] }
-  const inspectableCommand = command.replace(/^#![^\r\n]*(?:\r?\n|$)/, '')
+  const withoutShebang = command.replace(/^#![^\r\n]*(?:\r?\n|$)/, '')
+  // In code, `"rel" + "ease"` spells `release`; read it that way.
+  const inspectableCommand =
+    language === 'code' ? foldStringConcatenation(withoutShebang) : withoutShebang
   const normalized = normalizeShellCommandForAnalysis(inspectableCommand)
 
   // Text-level inspectors. These are regex matchers over the source, not shell
@@ -2135,7 +2291,17 @@ function assess(
     inspectCommandLine(inspectableCommand, context, out, depth, seenScripts)
   }
 
-  if (language === 'code') inspectNetworkCode(inspectableCommand, out)
+  if (language === 'code') {
+    inspectNetworkCode(inspectableCommand, out)
+    for (const reason of codeSecretReasons(inspectableCommand)) addUnique(out.prompt, reason)
+    for (const argvCommand of codeArgvCommands(inspectableCommand)) {
+      if (depth >= MAX_SCRIPT_DEPTH) {
+        addUnique(out.prompt, 'nested child-process code could not be fully inspected')
+        break
+      }
+      mergeDecision(out, assess(argvCommand, context, depth + 1, seenScripts, 'shell'))
+    }
+  }
 
   // Programmatic exec/system/popen calls carry shell strings inside code.
   // Shell interpreter arguments already recurse above; scanning shell text here
