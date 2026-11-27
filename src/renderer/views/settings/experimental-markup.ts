@@ -183,7 +183,7 @@ export const experimentalFields: readonly SettingField[] = [
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'deferredWorktreesEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'containerRunsEnabled', kind: 'checkbox', default: false, save: true },
-  { name: 'turnsRunInHost', kind: 'checkbox', default: true, save: true },
+  { name: 'turnsRunInHost', kind: 'checkbox', default: false, save: true },
   { name: 'planModeEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
   { name: DEVELOPER_MODE_SETTING, kind: 'checkbox', default: false, save: true },
