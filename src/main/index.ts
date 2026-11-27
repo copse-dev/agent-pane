@@ -22,6 +22,7 @@ import {
 } from './services/plugins/plugin-client-service.ts'
 import { dispatchSubthreadPrompt, initThreadPrompts } from './services/thread-prompts.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
+import { abortScratchFetchesForQuit } from './services/default-branch-fetch.ts'
 import { removeOrphanedPlanWindowHistory } from './services/storage/plan-window-history-cleanup.ts'
 import { startDefaultBranchRefresh } from './services/default-branch-refresh.ts'
 import { startMachineService, stopMachineService } from './services/machines/machine-service.ts'
@@ -44,7 +45,7 @@ import {
 armPerfTrace()
 installIpcPerfTracing()
 
-import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeImage, safeStorage } from 'electron'
 import { ThreadDeepLinks } from './services/thread-deep-links.ts'
 import { findThreadOwners } from './services/thread-store.ts'
 import { z } from 'zod'
@@ -238,6 +239,8 @@ import {
   describeImagesSchema,
 } from './ipc/ipc-guards.ts'
 import { describeImagesForHandoff } from './services/image-description.ts'
+import { memberOf } from '@shared/member-of.ts'
+import { THREAD_BASE_FALLBACKS } from '@shared/types/worktree.ts'
 import {
   recordStartupPhase,
   startEventLoopWatchdog,
@@ -331,6 +334,7 @@ setSecretCipher(
   }),
 )
 const taskSupervisor = getTaskSupervisor()
+const isThreadBaseFallback = memberOf(THREAD_BASE_FALLBACKS)
 
 /** This quit came from a signal or a fault, with nobody to confirm it. */
 let unattendedQuit = false
@@ -385,6 +389,7 @@ setBrowserSessionPlatform({
     if (!win || win.isDestroyed()) return
     win.webContents.send(CANVAS_ARTEFACT_SHOW_CHANNEL, identity)
   },
+  decodeImage: (dataUrl) => nativeImage.createFromDataURL(dataUrl),
 })
 
 setSimulatorDesktopPanelPresenter((udid, options) => {
@@ -835,10 +840,16 @@ app
     })
     interruptTurnTranscripts = (): Promise<void> => transcriptWriter.interruptForShutdown()
     // Turns a worker took over when Copse last quit, still going now: shown as
-    // running and repainted from disk until the worker lets go of them.
+    // running, streamed from the worker (or repainted from disk) until it lets
+    // go of them, and stopped through it.
     const foreignTurns = new ForeignTurnFollower(
-      defaultForeignTurnDependencies((snapshot) => {
-        if (!win.isDestroyed()) win.webContents.send('agent:transcript-snapshot', snapshot)
+      defaultForeignTurnDependencies(app.getPath('userData'), {
+        snapshot: (snapshot) => {
+          if (!win.isDestroyed()) win.webContents.send('agent:transcript-snapshot', snapshot)
+        },
+        chunk: ({ threadId, chunk, stamp }) => {
+          if (!win.isDestroyed()) win.webContents.send('agent:chunk', threadId, chunk, stamp)
+        },
       }),
     )
     stopFollowingForeignTurns = (): void => {
@@ -1159,6 +1170,7 @@ app
         choiceArg: unknown,
         modelArg?: unknown,
         baseBranchArg?: unknown,
+        baseFallbackArg?: unknown,
       ) => {
         assertMainFrameSender(event, win)
         assertPrimaryMainWindow(event.sender)
@@ -1177,6 +1189,9 @@ app
         // ends up in `git switch` or `git worktree add` either way.
         const baseBranch =
           baseBranchArg === undefined ? undefined : parseIpcArgs(zGitBranchName, [baseBranchArg])
+        if (baseFallbackArg !== undefined && !isThreadBaseFallback(baseFallbackArg)) {
+          throw new Error('Invalid checkout base fallback')
+        }
         return prepareThreadCheckout({
           projectId,
           threadId,
@@ -1184,6 +1199,7 @@ app
           choice: choiceArg,
           ...(modelArg !== undefined ? { model: modelArg } : {}),
           ...(baseBranch !== undefined ? { baseBranch } : {}),
+          ...(baseFallbackArg !== undefined ? { baseFallback: baseFallbackArg } : {}),
         })
       },
     )
@@ -1241,6 +1257,8 @@ app
         turnTreeId: request.turnTreeId,
         payload: parseAgentRunPayload(request.payload),
         display: request.display,
+        // The renderer read model, reasoning and execution mode from the chat.
+        payloadCarriesSelection: true,
       })
       if (result === 'completed') {
         await parkCompletedPullRequestWorktree(request.projectId, request.threadId).catch(
@@ -1328,6 +1346,7 @@ app
         args,
       )
       await transcriptWriter.attach(projectId, threadIds)
+      foreignTurns.reattach(projectId, threadIds)
     })
 
     // A small-model label for a message main wrote. Main merges it into its own
@@ -1357,6 +1376,8 @@ app
       const reason = z.literal('send_now').optional().parse(reasonArg)
       transcriptWriter.noteUserAbort(threadId, reason ?? 'stop')
       abortAgent(threadId, reason)
+      // A turn a worker runs stops there.
+      foreignTurns.requestStop(threadId)
     })
 
     // Thread ids with a live in-process run, so a renderer that's just loaded a
@@ -1673,6 +1694,9 @@ async function cleanupBeforeQuit(): Promise<void> {
   const handOff = listActiveTurns?.() ?? []
   stopFollowingForeignTurns?.()
   const transcriptDrain = interruptTurnTranscripts?.()
+  // Host-side default-branch fetches run in their own process group and would
+  // outlive the app, leaving a partial scratch repository behind (#4407).
+  const scratchFetchesAborted = abortScratchFetchesForQuit()
   setAgentInitiatedTurnAuthority(null)
   stopAllAgentRuns()
   await stopAllForegroundShellProcesses()
@@ -1719,6 +1743,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   shutdownBrowserSession()
   await stopMachineService()
   await shutdownStaticPreviewServers()
+  await scratchFetchesAborted
   await transcriptDrain
   await drainWriteQueue()
   handOffInterruptedTurns(handOff)

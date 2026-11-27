@@ -14,6 +14,7 @@ import { mobileAssetRoutes } from './src/shared/mobile-asset-routes.ts'
 import { loadRemoteAssets } from './src/main/services/mobile/remote-assets.ts'
 import { createRemoteChatFixture } from './tests/demo/helpers/remote-chat-fixture.ts'
 import { installPageViewport } from './tests/demo/helpers/page-viewport.ts'
+import { DEMO_CHROME_PIN } from './scripts/lib/demo-chrome.mts'
 
 /** Cap how long afterTest may talk to a possibly-dead Chrome session. */
 const AFTER_TEST_SESSION_BUDGET_MS = 5_000
@@ -35,19 +36,20 @@ const MARKETING_DEMO_MOUNT = `${MARKETING_MOUNT}/demo/main`
 let server: Server | undefined
 
 /**
- * The Chrome for Testing build the browser tier renders with. Without a
- * `browserVersion`, WebdriverIO uses whatever Google Chrome the runner image
- * has installed, so a GitHub image update changes every PR's demo run at once:
- * on 2026-11-25, Chrome 157 -> 158 failed `landing-cupcake-walkthrough` on
- * every open PR (#4506), and a new build can move browser reference
- * screenshots that no PR touched.
- *
- * Bump it in its own PR: pick a version from
- * https://googlechromelabs.github.io/chrome-for-testing/known-good-versions.json,
- * let CI render it, fix any spec it breaks, and accept the screenshot
- * candidates it produces in that PR.
+ * The pinned Chrome for Testing build, its sha256 values and the bump steps
+ * live in `scripts/lib/demo-chrome.mts`: a bump changes the version and both
+ * hashes together. CI installs it with `scripts/install-demo-chrome.mts` and
+ * passes the verified binaries in through COPSE_DEMO_CHROME_BINARY /
+ * COPSE_DEMO_CHROMEDRIVER_BINARY, so WebdriverIO's own unverified download is
+ * never used there.
  */
-const DEMO_CHROME_VERSION = '158.0.8127.36'
+const DEMO_CHROME_VERSION = DEMO_CHROME_PIN.version
+if (process.env['CI'] && !process.env['COPSE_DEMO_CHROME_BINARY']) {
+  throw new Error(
+    'CI must run the browser tier on the checksum-verified Chrome: run ' +
+      '`node scripts/install-demo-chrome.mts` before `test:demo`.',
+  )
+}
 
 const contentTypes: Readonly<Record<string, string>> = {
   '.css': 'text/css; charset=utf-8',

@@ -25,7 +25,7 @@
 interface ModelLineage {
   /** Models that replace one another: `claude-opus`, `gpt`, `gpt-mini`, `gpt-sol`. */
   readonly lineage: string
-  /** Numeric version segments: `claude-opus-5-5` → [5, 5], `gpt-5.6-sol` → [5, 6]. */
+  /** Numeric version segments: `claude-opus-5-5` → [5, 5], `gpt-5.6-sol` / `gpt-5-6-sol` → [5, 6]. */
   readonly version: readonly number[]
 }
 
@@ -33,10 +33,13 @@ interface ModelLineage {
 // and nothing else, so `claude-haiku-4-5-20251001` (a dated snapshot) and
 // `claude-mythos-preview` are not claimed.
 const CLAUDE_ID = /^claude-(opus|sonnet|haiku|fable)-(\d{1,2}(?:-\d{1,2})?)$/
-// A bare OpenAI id: numeric version with an optional dotted minor, then an
-// optional lower-case tier word. `gpt-4o` fails the version, `gpt-5-2025-08-07`
-// fails the tier, `gpt-5-chat-latest` fails the anchor.
-const GPT_ID = /^gpt-(\d{1,2}(?:\.\d{1,2})?)(?:-([a-z][a-z0-9]*))?$/
+// A bare OpenAI id: numeric version with an optional minor, then an optional
+// lower-case tier word. The minor is dotted as OpenAI ships it (`gpt-6.1-sol`)
+// or dashed as the intellect catalog keys it (`gpt-6-1-sol`), and the picker
+// compares the two forms when an agent lists a scored and an unscored release.
+// `gpt-4o` fails the version, `gpt-5-2025-08-07` fails the tier,
+// `gpt-5-chat-latest` and `gpt-6-1-sol-high` fail the anchor.
+const GPT_ID = /^gpt-(\d{1,2})(?:[.-](\d{1,2}))?(?:-([a-z][a-z0-9]*))?$/
 
 function parseModelLineage(id: string): ModelLineage | null {
   const claude = CLAUDE_ID.exec(id)
@@ -48,15 +51,30 @@ function parseModelLineage(id: string): ModelLineage | null {
   }
   const gpt = GPT_ID.exec(id)
   if (gpt) {
-    const version = gpt[1]
-    if (version === undefined) return null
-    const tier = gpt[2]
+    const major = gpt[1]
+    if (major === undefined) return null
+    const minor = gpt[2]
+    const tier = gpt[3]
     return {
       lineage: tier === undefined ? 'gpt' : `gpt-${tier}`,
-      version: version.split('.').map(Number),
+      version: minor === undefined ? [Number(major)] : [Number(major), Number(minor)],
     }
   }
   return null
+}
+
+/**
+ * `id` with a dashed GPT minor re-dotted the way OpenAI ships it
+ * (`gpt-6-1-sol` → `gpt-6.1-sol`), so a successor named by the intellect
+ * catalog's dashed key reads as its release. Any other id comes back unchanged.
+ */
+export function releaseSpelling(id: string): string {
+  const gpt = GPT_ID.exec(id)
+  const major = gpt?.[1]
+  const minor = gpt?.[2]
+  if (major === undefined || minor === undefined) return id
+  const tier = gpt?.[3]
+  return `gpt-${major}.${minor}${tier === undefined ? '' : `-${tier}`}`
 }
 
 /** Segment-wise comparison with missing segments read as 0: [5] < [5, 5] < [6]. */
