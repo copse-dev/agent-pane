@@ -145,6 +145,10 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
+          # Same as the setup action: the image's packages.microsoft.com source
+          # answers 403 and would fail the index refresh. Nothing here needs it.
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list \
+            /etc/apt/sources.list.d/microsoft-prod.sources
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends bubblewrap cargo ripgrep socat
           if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
