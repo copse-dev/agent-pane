@@ -103,7 +103,7 @@ export function createBrowserDesignMode(options: BrowserDesignModeOptions): Brow
   const hint = el(
     'p',
     { class: 'browser-design-hint' },
-    'Click an element to pin it. Esc stops picking.',
+    'Click an element to pin it. ↑ picks its parent, Esc stops.',
   )
   const clearBtn = el(
     'button',
@@ -145,7 +145,7 @@ export function createBrowserDesignMode(options: BrowserDesignModeOptions): Brow
     tray.classList.toggle('is-picking', active)
     hint.textContent = active
       ? items.length === 0
-        ? 'Click an element to pin it. Esc stops picking.'
+        ? 'Click an element to pin it. ↑ picks its parent, Esc stops.'
         : 'Click another element, or add a note to each one.'
       : 'Picking is off. Turn it back on from the toolbar.'
     const count = items.length

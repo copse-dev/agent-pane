@@ -124,6 +124,11 @@ const PICK_SCRIPT = (theme: DesignTheme): string => `(() => {
     const tag = root.querySelector('.tag');
     (document.documentElement || document.body).appendChild(host);
     let current = null;
+    // The element under the pointer, and whether ArrowUp has climbed above it.
+    // A climbed outline holds until the pointer reaches a different element,
+    // and a click then pins what the outline shows, not the child beneath it.
+    let hovered = null;
+    let climbed = false;
     const show = (el) => {
       current = el;
       if (!el) { box.style.display = 'none'; tag.style.display = 'none'; return; }
@@ -143,12 +148,19 @@ const PICK_SCRIPT = (theme: DesignTheme): string => `(() => {
       return el && el !== host ? el : null;
     };
     const swallow = (e) => { e.preventDefault(); e.stopImmediatePropagation(); };
-    const onMove = (e) => { const el = at(e); if (el !== current) show(el); };
+    const onMove = (e) => {
+      const el = at(e);
+      if (climbed && el === hovered) return;
+      climbed = false;
+      hovered = el;
+      if (el !== current) show(el);
+    };
     const onScroll = () => { if (current) show(current); };
-    const onClick = (e) => { swallow(e); const el = at(e) || current; finish(el); };
+    const onClick = (e) => { swallow(e); finish(climbed ? current : at(e) || current); };
     const onKey = (e) => {
       if (e.key === 'Escape') { swallow(e); finish(null); }
-      else if (e.key === 'ArrowUp' && current && current.parentElement && current.parentElement !== document.documentElement) { swallow(e); show(current.parentElement); }
+      else if (e.key === 'ArrowUp' && current && current.parentElement && current.parentElement !== document.documentElement) { swallow(e); climbed = true; show(current.parentElement); }
+      else if (e.key === 'Enter' && current) { swallow(e); finish(current); }
     };
     const BLOCK = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'dblclick', 'contextmenu', 'auxclick'];
     const listen = (on) => {

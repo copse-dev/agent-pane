@@ -170,6 +170,40 @@ describe('browser design mode', () => {
     })
   })
 
+  it('pins the climbed ancestor that the outline shows, not the child under the pointer', async () => {
+    const { window, contents } = guest('<ul class="menu"><li><a href="#a">Alpha</a></li></ul>')
+    const link = window.document.querySelector('a')
+    assert.ok(link)
+    stubHit(window, link)
+    const pending = pickBrowserElement(contents)
+    await tick()
+    window.dispatchEvent(new window.MouseEvent('pointermove', { clientX: 10, clientY: 40 }))
+    window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowUp' }))
+    window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowUp' }))
+    // A jitter over the same child keeps the climbed outline.
+    window.dispatchEvent(new window.MouseEvent('pointermove', { clientX: 11, clientY: 40 }))
+    window.dispatchEvent(new window.MouseEvent('click', { clientX: 11, clientY: 40 }))
+    const result = await pending
+    assert.ok(result.kind === 'picked')
+    assert.equal(result.element.tag, 'ul')
+    assert.equal(result.element.selector, 'ul.menu')
+  })
+
+  it('pins the outlined element on Enter', async () => {
+    const { window, contents } = guest('<ul><li><a href="#a">Alpha</a></li></ul>')
+    const link = window.document.querySelector('a')
+    assert.ok(link)
+    stubHit(window, link)
+    const pending = pickBrowserElement(contents)
+    await tick()
+    window.dispatchEvent(new window.MouseEvent('pointermove'))
+    window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowUp' }))
+    window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter' }))
+    const result = await pending
+    assert.ok(result.kind === 'picked')
+    assert.equal(result.element.tag, 'li')
+  })
+
   it('swallows page clicks while picking so the page does not act on them', async () => {
     const { window, contents } = guest('<a href="#next">Next</a>')
     const link = window.document.querySelector('a')

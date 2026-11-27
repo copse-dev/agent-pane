@@ -1559,8 +1559,10 @@ export function mountBrowserPane(
     designBtn.addEventListener('click', () => {
       setMenuOpen(false)
       // One overlay owns the pointer at a time: drawing would swallow the picks.
-      if (design.toggle() && tab.annotation?.active) {
-        tab.annotation.deactivate()
+      if (design.toggle()) {
+        if (tab.annotation?.active) tab.annotation.deactivate()
+        // The picker's keys (↑ for the parent, Enter, Esc) are read in the page.
+        tab.webview?.focus()
       }
     })
     annotateBtn.addEventListener('click', () => {

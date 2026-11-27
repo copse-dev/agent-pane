@@ -122,7 +122,7 @@ describe('browser design mode', function () {
     const tray = $('.browser-tab-panel.is-active .browser-design-tray')
     await expect(tray).toBeDisplayed()
     await expect($('.browser-design-hint')).toHaveText(
-      'Click an element to pin it. Esc stops picking.',
+      'Click an element to pin it. ↑ picks its parent, Esc stops.',
     )
 
     await clickInGuest('.cta')
@@ -183,6 +183,27 @@ describe('browser design mode', function () {
       },
     )
     await expect($('.browser-tab-panel.is-active .browser-design-tray')).not.toBeDisplayed()
+    await expect($('.browser-tab-panel.is-active .browser-design-btn')).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+  })
+
+  it('climbs to the parent with the arrow key and pins it with Enter', async () => {
+    await $('.browser-tab-panel.is-active .browser-design-btn').click()
+    const point = await guestCentre('.cta')
+    const host = await $('.browser-tab-panel.is-active .browser-webview')
+    const size = await host.getSize()
+    await host.moveTo({
+      xOffset: Math.round(point.x - size.width / 2),
+      yOffset: Math.round(point.y - size.height / 2),
+    })
+    await browser.pause(150)
+    await browser.keys('ArrowUp')
+    await browser.keys('Enter')
+    await $('.browser-design-item').waitForDisplayed({ timeout: 10_000 })
+    await expect($('.browser-design-item .browser-design-selector')).toHaveText('section.hero')
+    await browser.keys('Escape')
     await expect($('.browser-tab-panel.is-active .browser-design-btn')).toHaveAttribute(
       'aria-pressed',
       'false',
