@@ -1,5 +1,8 @@
 import type { ToolRegistry } from '../tool-registry.ts'
 
+/** The longest one teardown step may take before the next one starts. */
+const TEARDOWN_STEP_MS = 5_000
+
 /**
  * The agent runtime a process outside the app boots before it runs turns: the
  * sandbox, the tool registry with skills, plugins, custom tools and MCP
@@ -74,11 +77,23 @@ export async function bootWorkerRuntime(log: (line: string) => void): Promise<Wo
   await loadCustomTools(registry)
   await loadMcpServers(registry)
 
+  // Each step has a time limit: a step that waits on an app no longer there
+  // (a host command's task cancel, say) must not keep the process from exiting.
   const stop = async (what: string, step: () => Promise<void> | void): Promise<void> => {
+    let timer: NodeJS.Timeout | undefined
     try {
-      await step()
+      await Promise.race([
+        Promise.resolve().then(step),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            reject(new Error(`timed out after ${String(TEARDOWN_STEP_MS)} ms`))
+          }, TEARDOWN_STEP_MS)
+        }),
+      ])
     } catch (error) {
       log(`could not stop ${what}: ${String(error)}`)
+    } finally {
+      clearTimeout(timer)
     }
   }
   let tornDown: Promise<void> | null = null
