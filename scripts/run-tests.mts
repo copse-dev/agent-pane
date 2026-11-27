@@ -20,6 +20,7 @@ import {
   changedTrackedTestFiles,
   intentionalTestUpdates,
 } from './lib/tracked-test-tree.mts'
+import { reexecOutsideRootIfNeeded } from './lib/root-container-userns.mts'
 
 const userDataFilesShim = resolve('src/main/services/storage/user-data-files.test-shim.ts')
 const repoRoot = resolve('.')
@@ -31,6 +32,9 @@ if (bundleOnly && testOnly) {
   console.error('[run-tests] pass at most one of --bundle-only / --test-only')
   process.exit(2)
 }
+
+// Root Linux containers: the real-sandbox tests need an ordinary user.
+reexecOutsideRootIfNeeded('run-tests', { requireSandbox: false })
 
 /**
  * Positional args are filters (`npm test -- thread-store hooks/`): only the

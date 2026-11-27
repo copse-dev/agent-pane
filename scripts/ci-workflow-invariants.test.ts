@@ -17,6 +17,10 @@ import { load } from 'js-yaml'
 import { z } from 'zod'
 import { parseScreenshotManifest } from './lib/screenshot-manifest.mts'
 import { readShardWeights } from './test-oracle.mts'
+import {
+  RELEASE_ARTIFACT_RETENTION_DAYS,
+  publishedArtifactNames,
+} from './release-publication-window.mts'
 
 /**
  * Structural pins for workflow contracts that unit tests can enforce without
@@ -1535,6 +1539,47 @@ describe('release-bump.yml workflow invariants', () => {
     assert.match(workflow, /REQUESTED_VERSION: \$\{\{ inputs\.version \}\}/)
     assert.equal(workflow.split('${{ inputs.version }}').length - 1, 1)
   })
+
+  it('checks how long a skipped version can still be published, in a job of its own', () => {
+    // A skip for an unpublished version is otherwise silent until the build's
+    // artifacts expire, and then it repeats every week for good (beta.16).
+    const skip = workflow.slice(
+      workflow.indexOf('if [ -z "$REQUESTED_VERSION" ]; then'),
+      workflow.indexOf('args+=(--carry-forward)'),
+    )
+    assert.match(skip, /echo "unpublished=\$current" >> "\$GITHUB_OUTPUT"\n\s+exit 0\n/)
+    const { jobs } = z
+      .object({
+        jobs: z.object({
+          bump: z.object({
+            permissions: z.unknown().optional(),
+            outputs: z.record(z.string(), z.string()),
+          }),
+          'publication-window': z.object({
+            needs: z.string(),
+            if: z.string(),
+            permissions: z.record(z.string(), z.string()),
+            steps: z.array(z.object({ run: z.string().optional() })),
+          }),
+        }),
+      })
+      .parse(load(workflow))
+    assert.equal(jobs.bump.outputs['unpublished'], '${{ steps.bump.outputs.unpublished }}')
+    // Issue and Actions access stay off the job that edits files and opens the PR.
+    assert.equal(jobs.bump.permissions, undefined)
+    assert.doesNotMatch(workflow, /^ {2}(issues|actions): /m)
+    const check = jobs['publication-window']
+    assert.equal(check.needs, 'bump')
+    assert.equal(check.if, "needs.bump.outputs.unpublished != ''")
+    assert.deepEqual(check.permissions, { actions: 'read', contents: 'read', issues: 'write' })
+    const script = check.steps.map((step) => step.run ?? '').join('\n')
+    assert.match(script, /node "\$window" report /)
+    assert.match(script, /gh issue create --repo "\$GITHUB_REPOSITORY" .*--label area:release/)
+    // It reports and files; cutting past an unpublished version stays a dispatch.
+    assert.doesNotMatch(script, /release-bump\.mts|create-pull-request|gh workflow run/)
+    // Values reach the shell through `env`, never interpolated into the script.
+    assert.doesNotMatch(script, /\$\{\{/)
+  })
 })
 
 describe('release-mac.yml workflow invariants', () => {
@@ -1613,6 +1658,40 @@ describe('release-mac.yml workflow invariants', () => {
       /if: \$\{\{ !github\.event\.repository\.private \}\}\n {8}uses: actions\/attest/,
     )
     assert.match(workflow, /if: github\.event\.repository\.private/)
+  })
+
+  it('keeps the published artifacts for the retention the bump window check assumes', () => {
+    // release-publication-window.mts reads these artifacts by name, and dates
+    // an expired build from this retention once GitHub stops listing them.
+    const step = z.object({
+      uses: z.string().optional(),
+      with: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
+    })
+    const { jobs } = z
+      .object({
+        jobs: z.object({
+          'build-test': z.object({
+            strategy: z.object({ matrix: z.object({ arch: z.array(z.string()) }) }),
+            steps: z.array(step),
+          }),
+          assemble: z.object({ steps: z.array(step) }),
+        }),
+      })
+      .parse(load(workflow))
+    const uploaded: string[] = []
+    for (const upload of [...jobs['build-test'].steps, ...jobs.assemble.steps]) {
+      const name = upload.with?.['name']
+      if (!upload.uses?.startsWith('actions/upload-artifact@')) continue
+      if (typeof name !== 'string' || !name.startsWith('copse-macos-')) continue
+      assert.equal(upload.with?.['retention-days'], RELEASE_ARTIFACT_RETENTION_DAYS, name)
+      for (const arch of jobs['build-test'].strategy.matrix.arch) {
+        uploaded.push(name.replace('${{ matrix.arch }}', arch))
+      }
+    }
+    assert.deepEqual(
+      [...new Set(uploaded)].sort(),
+      publishedArtifactNames('${{ needs.preflight.outputs.release_sha }}').sort(),
+    )
   })
 
   it('packages on a runner that can run an LSMinimumSystemVersion 26.0 build', () => {
