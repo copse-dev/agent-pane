@@ -20,13 +20,18 @@ type PromptMessage = Extract<HostToApp, { t: 'approval' | 'review-diff' | 'ssh-p
 
 const DENIED: ApprovalResponse = { approved: false, remember: false }
 
-interface OpenPrompt {
+interface OpenPrompt<T> {
   message: PromptMessage
-  settle: (answer: unknown) => void
+  resolve: (answer: T) => void
 }
 
 export class HostApprovals {
-  private readonly open = new Map<string, OpenPrompt>()
+  /** Waiting prompts by kind, so each settles only with an answer of its own type. */
+  private readonly approvals = new Map<string, OpenPrompt<ApprovalResponse>>()
+  private readonly diffs = new Map<string, OpenPrompt<boolean>>()
+  private readonly ssh = new Map<string, OpenPrompt<SshPromptResponse>>()
+  /** Every waiting prompt in the order it was raised, for an app that attaches. */
+  private readonly raised = new Map<string, PromptMessage>()
   private readonly send: (message: HostToApp) => void
   private readonly createId: () => string
 
@@ -43,9 +48,9 @@ export class HostApprovals {
     signal?: AbortSignal,
   ): Promise<ApprovalResponse> {
     return this.prompt(
+      this.approvals,
       { t: 'approval', id: this.createId(), projectId, threadId, request },
       DENIED,
-      isApprovalResponse,
       signal,
     )
   }
@@ -61,9 +66,9 @@ export class HostApprovals {
     signal?: AbortSignal,
   ): Promise<boolean> {
     return this.prompt(
+      this.diffs,
       { t: 'review-diff', id: this.createId(), projectId, threadId, entry },
       false,
-      (answer) => typeof answer === 'boolean',
       signal,
     )
   }
@@ -75,76 +80,70 @@ export class HostApprovals {
     request: SshPromptRequest,
   ): Promise<SshPromptResponse> {
     return this.prompt(
+      this.ssh,
       { t: 'ssh-prompt', id: this.createId(), projectId, threadId, request },
       { value: '' },
-      isSshPromptResponse,
     )
   }
 
   /** An app answered an approval. A prompt already settled ignores it. */
   answer(id: string, answer: HostApprovalAnswer): void {
-    this.settle(id, 'approval', {
+    this.settle(this.approvals, id, {
       approved: answer.approved,
       remember: answer.remember,
       ...(answer.grantScope ? { grantScope: answer.grantScope } : {}),
       resolution: 'user',
-    } satisfies ApprovalResponse)
+    })
   }
 
   answerDiff(id: string, approved: boolean): void {
-    this.settle(id, 'review-diff', approved)
+    this.settle(this.diffs, id, approved)
   }
 
   answerSsh(id: string, response: SshPromptResponse): void {
-    this.settle(id, 'ssh-prompt', response)
+    this.settle(this.ssh, id, response)
   }
 
   /** Ask an app that just attached everything still waiting. */
   replay(send: (message: HostToApp) => void): void {
-    for (const prompt of this.open.values()) send(prompt.message)
+    for (const message of this.raised.values()) send(message)
   }
 
   pendingCount(): number {
-    return this.open.size
+    return this.raised.size
   }
 
   private prompt<T>(
+    open: Map<string, OpenPrompt<T>>,
     message: PromptMessage,
     unanswered: T,
-    is: (answer: unknown) => answer is T,
     signal?: AbortSignal,
   ): Promise<T> {
     if (signal?.aborted === true) return Promise.resolve(unanswered)
     return new Promise((resolve) => {
       const onAbort = (): void => {
-        this.settle(message.id, message.t, unanswered)
+        this.settle(open, message.id, unanswered)
       }
       signal?.addEventListener('abort', onAbort, { once: true })
-      this.open.set(message.id, {
+      open.set(message.id, {
         message,
-        settle: (answer): void => {
+        resolve: (answer): void => {
           signal?.removeEventListener('abort', onAbort)
-          resolve(is(answer) ? answer : unanswered)
+          resolve(answer)
         },
       })
+      this.raised.set(message.id, message)
       this.send(message)
     })
   }
 
-  /** Settle a prompt with an answer of its own kind; any other answer is ignored. */
-  private settle(id: string, kind: PromptMessage['t'], answer: unknown): void {
-    const prompt = this.open.get(id)
-    if (prompt?.message.t !== kind) return
-    this.open.delete(id)
+  /** Settle a prompt of this kind; an id of another kind, or one settled, is ignored. */
+  private settle<T>(open: Map<string, OpenPrompt<T>>, id: string, answer: T): void {
+    const prompt = open.get(id)
+    if (!prompt) return
+    open.delete(id)
+    this.raised.delete(id)
     this.send({ t: 'approval-cancel', id })
-    prompt.settle(answer)
+    prompt.resolve(answer)
   }
-}
-
-function isApprovalResponse(answer: unknown): answer is ApprovalResponse {
-  return typeof answer === 'object' && answer !== null && 'approved' in answer
-}
-
-function isSshPromptResponse(answer: unknown): answer is SshPromptResponse {
-  return typeof answer === 'object' && answer !== null && 'value' in answer
 }
