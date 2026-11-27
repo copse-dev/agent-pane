@@ -212,6 +212,30 @@ describe('browser design mode', () => {
     assert.equal(events.listenerCount('destroyed'), 0)
   })
 
+  it('resolves navigated when the document goes away while the crop is taken', async () => {
+    const { window, contents, events } = guest('<p>x</p>')
+    const p = window.document.querySelector('p')
+    assert.ok(p)
+    stubHit(window, p)
+    let cropRequested = false
+    contents.capturePage = (): Promise<never> => {
+      cropRequested = true
+      // Held open: the next document commits before the capture returns.
+      return new Promise(() => undefined)
+    }
+    const pending = pickBrowserElement(contents)
+    await tick()
+    window.dispatchEvent(new window.MouseEvent('click'))
+    // Let the guest resolve the pick (two animation frames) and the crop start.
+    await tick()
+    await tick()
+    await tick()
+    assert.equal(cropRequested, true)
+    events.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
+    assert.deepEqual(await pending, { kind: 'navigated' })
+    assert.equal(events.listenerCount('did-start-navigation'), 0)
+  })
+
   it('draws numbered markers for pinned elements and rejects malformed ids', async () => {
     const { window, contents } = guest('<p>a</p><p>b</p>')
     const [a] = Array.from(window.document.querySelectorAll('p'))

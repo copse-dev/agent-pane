@@ -382,10 +382,14 @@ export async function pickBrowserElement(
     if (raw === 'navigated') return { kind: 'navigated' }
     if (raw === null || raw === undefined) return { kind: 'cancelled' }
     const { token, ...rest } = zDesignGuestPick.parse(raw)
-    const [source, screenshot] = await Promise.all([
-      probeSource(contents, token),
-      cropElement(contents, rest.rect, rest.viewport),
+    // Keep racing navigation while enriching: a crop taken after the document
+    // changed would pair this element's markup with another page's pixels.
+    const enriched = await Promise.race([
+      Promise.all([probeSource(contents, token), cropElement(contents, rest.rect, rest.viewport)]),
+      gone,
     ])
+    if (enriched === 'navigated') return { kind: 'navigated' }
+    const [source, screenshot] = enriched
     return { kind: 'picked', element: { ...rest, source, screenshot } }
   } finally {
     contents.off('did-start-navigation', onNavigate)
