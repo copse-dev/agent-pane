@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  CI_PENDING_STEP,
   CI_WORKFLOW,
+  RELEASE_PREFLIGHT_JOB,
   RELEASE_WORKFLOW,
   ciFinished,
   releaseTagAt,
@@ -22,6 +24,7 @@ interface Fake {
   refError?: { status: number }
   tagObject?: unknown
   runs?: unknown
+  jobs?: Record<number, unknown>
   ciRuns?: unknown
   ciError?: { status: number }
 }
@@ -31,10 +34,11 @@ interface Calls {
   tags: string[]
   dispatches: { workflow_id: string; ref: string; inputs: { tag: string } }[]
   runLookups: { workflow_id: string; head_sha: string; event?: string }[]
+  jobLookups: number[]
 }
 
 function context(fake: Fake): { ctx: ReleaseDispatchContext; calls: Calls; logs: string[] } {
-  const calls: Calls = { refs: [], tags: [], dispatches: [], runLookups: [] }
+  const calls: Calls = { refs: [], tags: [], dispatches: [], runLookups: [], jobLookups: [] }
   const logs: string[] = []
   const text =
     fake.packageJson === undefined
@@ -72,6 +76,11 @@ function context(fake: Fake): { ctx: ReleaseDispatchContext; calls: Calls; logs:
             })
           }
           return Promise.resolve({ data: fake.runs ?? { total_count: 0, workflow_runs: [] } })
+        },
+        listJobsForWorkflowRun: ({ run_id, filter }) => {
+          assert.equal(filter, 'latest', "a re-run's latest attempt decides")
+          calls.jobLookups.push(run_id)
+          return Promise.resolve({ data: fake.jobs?.[run_id] ?? { jobs: [] } })
         },
         createWorkflowDispatch: ({ workflow_id, ref, inputs }) => {
           calls.dispatches.push({ workflow_id, ref, inputs })
@@ -144,6 +153,32 @@ describe('releaseTagAt', () => {
   })
 })
 
+/** Jobs of a Release (macOS) run whose preflight got as far as `pendingStep`. */
+function preflight(pendingStep: { status: string; conclusion: string | null }): unknown {
+  return {
+    jobs: [
+      {
+        name: RELEASE_PREFLIGHT_JOB,
+        steps: [
+          {
+            name: 'Validate tag, version, ancestry, and exact-SHA CI',
+            status: 'completed',
+            conclusion: 'success',
+          },
+          { name: CI_PENDING_STEP, ...pendingStep },
+          {
+            name: 'Preserve the validation used for packaging',
+            status: 'completed',
+            conclusion: 'skipped',
+          },
+        ],
+      },
+    ],
+  }
+}
+const STOPPED_PENDING = preflight({ status: 'completed', conclusion: 'failure' })
+const DECIDED = preflight({ status: 'completed', conclusion: 'skipped' })
+
 describe('startReleaseBuild', () => {
   it('dispatches Release (macOS) at the tag when the commit has no run', async () => {
     const { ctx, calls } = context({})
@@ -157,16 +192,86 @@ describe('startReleaseBuild', () => {
   it('never dispatches a second run for a commit, even after a failed one', async () => {
     // Both release-cut.yml and release-dispatch.yml may reach this for one
     // commit. A failed release is reported and fixed forward, not retried.
-    const { ctx, calls } = context({ runs: { total_count: 1 } })
+    for (const jobs of [DECIDED, { jobs: [{ name: 'build-test', steps: [] }] }]) {
+      const { ctx, calls } = context({ runs: { workflow_runs: [{ id: 11 }] }, jobs: { 11: jobs } })
+      assert.equal(await startReleaseBuild(ctx, SHA, 'v1.2.3'), 'already-started')
+      assert.deepEqual(calls.dispatches, [])
+    }
+  })
+
+  it('counts a run that has not reached its evidence read yet', async () => {
+    // Its one read is still to come, so it will see whatever CI state exists
+    // then; dispatching too would build the commit twice.
+    for (const jobs of [
+      { jobs: [] },
+      { jobs: [{ name: RELEASE_PREFLIGHT_JOB, steps: [] }] },
+      preflight({ status: 'queued', conclusion: null }),
+    ]) {
+      const { ctx, calls } = context({ runs: { workflow_runs: [{ id: 11 }] }, jobs: { 11: jobs } })
+      assert.equal(await startReleaseBuild(ctx, SHA, 'v1.2.3'), 'already-started')
+      assert.deepEqual(calls.dispatches, [])
+    }
+  })
+
+  it('does not count a run that stopped because CI had not finished', async () => {
+    for (const jobs of [STOPPED_PENDING, preflight({ status: 'in_progress', conclusion: null })]) {
+      const { ctx, calls, logs } = context({
+        runs: { workflow_runs: [{ id: 11 }] },
+        jobs: { 11: jobs },
+      })
+      assert.equal(await startReleaseBuild(ctx, SHA, 'v1.2.3'), 'started')
+      assert.deepEqual(calls.jobLookups, [11])
+      assert.equal(calls.dispatches.length, 1)
+      assert.match(logs.join('\n'), /run 11 stopped before CI finished; it does not count/)
+    }
+  })
+
+  it('still counts a decided run beside early stopped ones', async () => {
+    const { ctx, calls } = context({
+      runs: { workflow_runs: [{ id: 11 }, { id: 12 }] },
+      jobs: { 11: STOPPED_PENDING, 12: DECIDED },
+    })
     assert.equal(await startReleaseBuild(ctx, SHA, 'v1.2.3'), 'already-started')
+    assert.deepEqual(calls.jobLookups, [11, 12])
     assert.deepEqual(calls.dispatches, [])
   })
 
-  it('fails closed when existing runs cannot be read', async () => {
-    const { ctx, calls } = context({ runs: { workflow_runs: [] } })
-    await assert.rejects(startReleaseBuild(ctx, SHA, 'v1.2.3'), /existing Release \(macOS\) runs/)
-    assert.deepEqual(calls.dispatches, [])
+  it('fails closed when existing runs or their jobs cannot be read', async () => {
+    for (const fake of [
+      { runs: { total_count: 0 } },
+      { runs: { workflow_runs: [{ status: 'completed' }] } },
+      { runs: { workflow_runs: [{ id: 11 }] }, jobs: { 11: {} } },
+    ]) {
+      const { ctx, calls } = context(fake)
+      await assert.rejects(startReleaseBuild(ctx, SHA, 'v1.2.3'), /Release \(macOS\) run/)
+      assert.deepEqual(calls.dispatches, [], JSON.stringify(fake))
+    }
     await assert.rejects(startReleaseBuild(context({}).ctx, 'v1.2.3', 'v1.2.3'))
+  })
+})
+
+describe('a manual dispatch before CI finishes, then CI completion', () => {
+  it('still starts the automatic build once CI has finished', async () => {
+    // The person's run stopped at preflight while CI was pending. When CI then
+    // completes, release-dispatch.yml must not mistake it for the release.
+    const runs = { workflow_runs: [{ id: 21 }] }
+    const pending = context({
+      runs,
+      jobs: { 21: STOPPED_PENDING },
+      ciRuns: { workflow_runs: [{ run_number: 30, status: 'in_progress' }] },
+    })
+    assert.equal(await startReleaseWhenCiFinished(pending.ctx, SHA, 'v1.2.3'), 'ci-running')
+    assert.deepEqual(pending.calls.dispatches, [])
+
+    const completed = context({
+      runs,
+      jobs: { 21: STOPPED_PENDING },
+      ciRuns: { workflow_runs: [{ run_number: 30, status: 'completed', conclusion: 'success' }] },
+    })
+    assert.equal(await startReleaseWhenCiFinished(completed.ctx, SHA, 'v1.2.3'), 'started')
+    assert.deepEqual(completed.calls.dispatches, [
+      { workflow_id: RELEASE_WORKFLOW, ref: 'v1.2.3', inputs: { tag: 'v1.2.3' } },
+    ])
   })
 })
 

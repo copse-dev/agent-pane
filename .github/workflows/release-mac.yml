@@ -40,6 +40,8 @@ jobs:
       release_type: ${{ steps.release.outputs.release_type }}
       tag: ${{ steps.release.outputs.tag }}
       update_channel: ${{ steps.release.outputs.update_channel }}
+      # `true` when this run was dispatched before CI for the commit finished.
+      ci_pending: ${{ steps.release.outputs.ci_pending }}
     steps:
       # First step in the whole workflow, before the checkout and long before
       # the mac runner: an unset signing secret is the likeliest reason a first
@@ -121,15 +123,27 @@ jobs:
           echo "update_channel=$update_channel" >> "$GITHUB_OUTPUT"
 
           # Only the CI workflow's explicit full-release gate is sufficient.
-          # This run starts once CI for the commit has finished, so the evidence
-          # is read once: pending evidence means it was dispatched too early.
+          # This run normally starts once CI for the commit has finished, so the
+          # evidence is read once. Pending evidence means it was dispatched too
+          # early: that is not a release decision, so it stops in the next step.
           result=0
           bash scripts/verify-release-validation.sh "$release_sha" > release-validation.json || result=$?
           if [ "$result" = 75 ]; then
-            echo "::error::CI for $release_sha has not finished. Release dispatch starts this workflow when it does; dispatch by hand only after CI completes."
-            exit 1
+            echo "ci_pending=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           exit "$result"
+      # A run stopped here never reached a validation decision, so it does not
+      # use up the commit's one automatic Release (macOS) run: release-dispatch
+      # still starts the build when CI finishes. scripts/release-dispatch.mts
+      # recognises this step by its exact name (CI_PENDING_STEP).
+      - name: 'Stop: CI for the tagged commit has not finished'
+        if: steps.release.outputs.ci_pending == 'true'
+        env:
+          RELEASE_SHA: ${{ steps.release.outputs.release_sha }}
+        run: |
+          echo "::error::CI for $RELEASE_SHA has not finished. Release dispatch starts Release (macOS) when it does; this run does not count as the commit's release."
+          exit 1
       - name: Preserve the validation used for packaging
         uses: actions/upload-artifact@v7
         with:
@@ -463,7 +477,9 @@ jobs:
   # failure is seen; a retry that fails again comments on it.
   report-failure:
     needs: [preflight, verify-clean-release-build, build-test, assemble]
-    if: failure()
+    # A run stopped because CI had not finished is not a failed release: CI's
+    # completion still starts the build through release-dispatch.yml.
+    if: failure() && needs.preflight.outputs.ci_pending != 'true'
     runs-on: ubuntu-24.04
     permissions:
       issues: write

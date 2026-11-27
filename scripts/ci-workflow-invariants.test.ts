@@ -17,6 +17,7 @@ import { load } from 'js-yaml'
 import { z } from 'zod'
 import { parseScreenshotManifest } from './lib/screenshot-manifest.mts'
 import { readShardWeights } from './test-oracle.mts'
+import { CI_PENDING_STEP, RELEASE_PREFLIGHT_JOB } from './release-dispatch.mts'
 import {
   RELEASE_ARTIFACT_RETENTION_DAYS,
   publishedArtifactNames,
@@ -1721,8 +1722,25 @@ describe('release-mac.yml workflow invariants', () => {
     )
     assert.match(
       evidence,
-      /if \[ "\$result" = 75 \]; then\n.*::error::CI for \$release_sha has not finished.*\n +exit 1\n +fi\n +exit "\$result"\n/,
+      /if \[ "\$result" = 75 \]; then\n +echo "ci_pending=true" >> "\$GITHUB_OUTPUT"\n +exit 0\n +fi\n +exit "\$result"\n/,
     )
+  })
+
+  it('stops a dispatch made before CI finished in the step release-dispatch recognises', () => {
+    // An early manual dispatch made no release decision. release-dispatch.mts
+    // finds this step by name in the run's jobs and does not count the run, so
+    // CI's completion still starts the build; the step name is the contract.
+    assert.equal(RELEASE_PREFLIGHT_JOB, 'preflight')
+    assert.match(workflow, /^ {2}preflight:\n/m)
+    const step = workflow.slice(
+      workflow.indexOf(`- name: '${CI_PENDING_STEP}'`),
+      workflow.indexOf('- name: Preserve the validation used for packaging'),
+    )
+    assert.ok(step.length > 0, 'the stop step must sit between the evidence read and the upload')
+    assert.match(step, /^ {8}if: steps\.release\.outputs\.ci_pending == 'true'$/m)
+    assert.match(step, /\n {10}exit 1\n/)
+    assert.doesNotMatch(step.slice(step.indexOf('run: |')), /\$\{\{/)
+    assert.match(workflow, /^ {6}ci_pending: \$\{\{ steps\.release\.outputs\.ci_pending \}\}$/m)
   })
 
   it('requires the tagged commit to be reachable from release, not trunk', () => {
@@ -1845,7 +1863,8 @@ describe('release-mac.yml workflow invariants', () => {
     const report = workflow.slice(workflow.indexOf('\n  report-failure:'))
     assert.match(
       report,
-      /needs: \[preflight, verify-clean-release-build, build-test, assemble\]\n {4}if: failure\(\)/,
+      /needs: \[preflight, verify-clean-release-build, build-test, assemble\]\n(?: {4}#.*\n)* {4}if: failure\(\) && needs\.preflight\.outputs\.ci_pending != 'true'\n/,
+      'a run stopped because CI had not finished is not a failed release',
     )
     assert.match(report, /^ {6}issues: write$/m)
     assert.doesNotMatch(report, /contents: write/)

@@ -19,6 +19,14 @@ import { safeJsonParse } from './lib/safe-json.mts'
 
 export const RELEASE_WORKFLOW = 'release-mac.yml'
 export const CI_WORKFLOW = 'ci.yml'
+/**
+ * The release-mac.yml preflight step that stops a run dispatched before CI
+ * for its commit finished. Such a run made no release decision, so it does not
+ * count as the commit's one automatic run. The name must match the workflow's
+ * step exactly; scripts/ci-workflow-invariants.test.ts pins it.
+ */
+export const RELEASE_PREFLIGHT_JOB = 'preflight'
+export const CI_PENDING_STEP = 'Stop: CI for the tagged commit has not finished'
 
 const SHA = /^[0-9a-f]{40}$/
 // A plausible package version, only so a tag ref is never built from junk.
@@ -51,6 +59,9 @@ export interface ReleaseDispatchGitHub {
           per_page: number
           event?: 'push'
         },
+      ) => Promise<{ data: unknown }>
+      listJobsForWorkflowRun: (
+        p: RepoParams & { run_id: number; filter: 'latest'; per_page: number },
       ) => Promise<{ data: unknown }>
       createWorkflowDispatch: (
         p: RepoParams & { workflow_id: string; ref: string; inputs: { tag: string } },
@@ -148,11 +159,47 @@ export async function releaseTagAt(
 }
 
 /**
+ * Whether a Release (macOS) run stopped because CI for its commit had not
+ * finished: its latest attempt's preflight reached CI_PENDING_STEP. A run that
+ * has not got that far counts, since its single evidence read is still to come
+ * and will see whatever CI state exists then.
+ */
+async function stoppedBeforeCiFinished(
+  ctx: ReleaseDispatchContext,
+  runId: number,
+): Promise<boolean> {
+  const { data } = await ctx.github.rest.actions.listJobsForWorkflowRun({
+    owner: ctx.owner,
+    repo: ctx.repo,
+    run_id: runId,
+    filter: 'latest',
+    per_page: 100,
+  })
+  const jobs = field(data, 'jobs')
+  if (!Array.isArray(jobs))
+    throw new Error(`Could not read the jobs of Release (macOS) run ${String(runId)}`)
+  const jobList: readonly unknown[] = jobs
+  for (const job of jobList) {
+    if (field(job, 'name') !== RELEASE_PREFLIGHT_JOB) continue
+    const steps = field(job, 'steps')
+    if (!Array.isArray(steps)) return false
+    const stepList: readonly unknown[] = steps
+    for (const step of stepList) {
+      if (field(step, 'name') !== CI_PENDING_STEP) continue
+      return field(step, 'conclusion') === 'failure' || field(step, 'status') === 'in_progress'
+    }
+  }
+  return false
+}
+
+/**
  * Dispatches `Release (macOS)` at the tag unless the commit already has a run
- * of it. Any earlier run counts, failed ones included: a failed release is
- * reported by that run and fixed forward (docs/releasing-macos.md), not
- * retried automatically. A run dispatched at the tag carries the release SHA
- * as its head, which makes this lookup exact.
+ * of it that made, or may still make, a release decision. Failed runs count: a
+ * failed release is reported by that run and fixed forward
+ * (docs/releasing-macos.md), not retried automatically. The exception is a run
+ * dispatched by hand before CI finished, which stopped without deciding
+ * anything. A run dispatched at the tag carries the release SHA as its head,
+ * which makes this lookup exact.
  */
 export async function startReleaseBuild(
   ctx: ReleaseDispatchContext,
@@ -165,12 +212,19 @@ export async function startReleaseBuild(
     repo: ctx.repo,
     workflow_id: RELEASE_WORKFLOW,
     head_sha: sha,
-    per_page: 1,
+    per_page: 100,
   })
-  const count = field(data, 'total_count')
-  if (typeof count !== 'number') throw new Error('Could not read existing Release (macOS) runs')
-  if (count > 0) {
-    ctx.log(`Release (macOS) already has a run for ${tag}; nothing to dispatch.`)
+  const runs = field(data, 'workflow_runs')
+  if (!Array.isArray(runs)) throw new Error('Could not read existing Release (macOS) runs')
+  const list: readonly unknown[] = runs
+  for (const run of list) {
+    const id = field(run, 'id')
+    if (typeof id !== 'number') throw new Error('Could not read a Release (macOS) run id')
+    if (await stoppedBeforeCiFinished(ctx, id)) {
+      ctx.log(`Release (macOS) run ${String(id)} stopped before CI finished; it does not count.`)
+      continue
+    }
+    ctx.log(`Release (macOS) already has run ${String(id)} for ${tag}; nothing to dispatch.`)
     return 'already-started'
   }
   // GITHUB_TOKEN may dispatch: workflow_dispatch is the documented exception

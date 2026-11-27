@@ -155,8 +155,9 @@ Monday. Publishing is the only routine manual step:
    at that commit and starts `Release (macOS)`. Nothing waits for CI: the CI
    run's completion is the trigger. If the tag was cut after CI had already
    finished (a recovery run of `Cut release tag`), that workflow starts the build
-   itself. A commit gets one `Release (macOS)` run automatically; a failed CI run
-   still starts it, so the failure is reported (see [Failed releases](#failed-releases)).
+   itself. A commit gets one `Release (macOS)` run automatically, not counting a
+   run dispatched by hand before CI finished; a failed CI run still starts it,
+   so the failure is reported (see [Failed releases](#failed-releases)).
 5. `Release (macOS)` re-checks the tag, the version match, reachability from
    `release`, and the tagged commit's exact `Full release validation` check — it will not
    accept a branch-tip, merge-ref, or unrelated successful run. It then builds,
@@ -383,10 +384,13 @@ Dispatch it from the tag itself (choose the tag under "Use workflow from", or
 `gh workflow run release-mac.yml --ref <tag> -f tag=<tag>`). A dispatch run
 records the commit of the ref it ran from, and `Publish release artifacts`
 accepts only a run of the tag's commit, so a rebuild dispatched from `main`
-can never be published. It also reads CI evidence once rather than waiting, so
-dispatch it only after the tagged commit's CI has finished. A hand-pushed `v*`
-tag needs no dispatch: CI runs at the tag, and its completion starts the build
-through `Release dispatch`.
+can never be published. It also reads CI evidence once rather than waiting. A
+run dispatched before the tagged commit's CI has finished stops at preflight
+(`Stop: CI for the tagged commit has not finished`) without opening the
+release-failure issue, and it does not count as the commit's release run: CI's
+completion still starts the build through `Release dispatch`. A hand-pushed
+`v*` tag needs no dispatch: CI runs at the tag, and its completion starts the
+build the same way.
 
 Private-repository artifact attestation requires GitHub Enterprise Cloud and
 this organization is on Team. While the source remains private, both workflows
