@@ -2100,7 +2100,7 @@ const PROJECT_RUNNER_VALUE_OPTIONS = new Set([
  * asks about more than typing its release step would.
  */
 const RECIPE_IGNORED_REASON =
-  /could not|cannot|not read|prevents complete|does not say|requires confirmation|relocation|overwrites|symlink|printf -v|^redirect |rsync --delete|deletes files found|crontab -r/
+  /could not|cannot|not read|prevents complete|does not say|requires confirmation|relocation|overwrites|symlink|printf -v|^redirect |rsync --delete|deletes files found|crontab -r|recursive\/forced delete|find -delete|git clean removes|git reset --hard|git checkout discards|truncation\/shredding|unbounded/
 
 function inspectTaskRecipe(
   argv: string[],

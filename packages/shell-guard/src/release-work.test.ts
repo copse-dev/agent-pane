@@ -112,8 +112,12 @@ describe('harm gate: task recipes', () => {
 
   it('keeps a recipe uncertainty out of the verdict', () => {
     const files = {
-      [`${workspace}/package.json`]: JSON.stringify({ scripts: { lint: './tools/missing.sh' } }),
+      [`${workspace}/package.json`]: JSON.stringify({
+        scripts: { lint: './tools/missing.sh', 'build:demo': 'rm -rf demo/dist && vite build' },
+      }),
     }
     allows('pnpm run lint', files)
+    // A recipe's own clean-up is a local effect; typing the release step is what asks.
+    allows('pnpm run build:demo', files)
   })
 })
