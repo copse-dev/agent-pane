@@ -181,6 +181,14 @@ DEV_SCRIPTS = re.compile(r"^(build|build:demo|test|test:e2e(:[\w-]+)?|test:demo|
 DEV_TOOLS = {'oxfmt', 'eslint', 'tsc', 'vitest', 'prettier', 'wdio', 'tsx'}
 READ_CMDS = {'cat', 'head', 'tail', 'ls', 'wc', 'shasum', 'sha256sum', 'grep', 'rg', 'stat', 'file', 'diff', 'sort', 'uniq', 'jq', 'true', 'echo', 'printf', 'pwd', 'date', 'test', '['}
 FILTERS = {'tail', 'head', 'grep', 'rg', 'sort', 'uniq', 'wc', 'cat', 'jq', 'sed'}
+# read subcommands ride along with any grant, so their options are allow-listed too: no
+# --output, --ext-diff, --textconv or anything else that writes or runs a configured program
+GIT_READ_OPT = re.compile(r"^(--|-\d+|-[nq]|-[sbvpaU\d]+|--(check|stat|shortstat|numstat|name-only|name-status|"
+    r"show-current|left-right|count|oneline|short|branch|porcelain(=v\d)?|exit-code|cached|staged|verify|quiet|"
+    r"is-ancestor|tags|graph|decorate|all|no-color|color=never|patch|abbrev-ref|abbrev(=\d+)?|show-toplevel|"
+    r"is-inside-work-tree|merged|no-merged|contains|list|first-parent|reverse|no-merges|merges|follow|word-diff|"
+    r"ignore-space-change|unified=\d+|max-count=\d+|format=.*|pretty=.*|date=[\w-]+|since=.*|until=.*|author=.*|"
+    r"diff-filter=[A-Za-z]+|relative-date|untracked-files(=\w+)?|no-renames|find-renames|show-toplevel|git-common-dir))$")
 GIT_READ = {'status', 'log', 'diff', 'rev-parse', 'rev-list', 'show', 'branch', 'remote', 'ls-files', 'merge-base', 'describe', 'shortlog', 'blame', 'cat-file'}
 SECRETISH = re.compile(r"(^|/)(\.env|\.npmrc|\.netrc|id_[a-z0-9]+|.*\.pem|.*\.key|credentials|\.ssh|\.aws|\.gnupg|keychain)", re.I)
 
@@ -346,7 +354,10 @@ def _git(a, ctx):
     if not a: raise Unparsed('git')
     sub, args = a[0], a[1:]
     if sub in GIT_READ:
-        if sub == 'branch' and any(x in ('-D', '-d', '-m', '-M', '--delete', '-f', '--force') for x in args): raise Unparsed('branch write')
+        bad = [x for x in args if x.startswith('-') and not GIT_READ_OPT.match(x)]
+        if bad: raise Unparsed('git read option ' + bad[0])
+        if sub == 'branch' and any(x.startswith('-') and not re.match(r'^(--show-current|--list|-[arv]+|--contains|--merged|--no-merged|--format=.*)$', x) for x in args): raise Unparsed('branch write')
+        if sub == 'branch' and [x for x in args if not x.startswith('-')] and '--list' not in args and not any(x in ('--contains', '--merged', '--no-merged') for x in args): raise Unparsed('branch create')
         if sub == 'remote' and args and args[0] not in ('-v', 'show', 'get-url'): raise Unparsed('remote write')
         return [('any', 'git-read')]
     if sub == 'fetch':
@@ -422,7 +433,13 @@ def _gh(a, ctx):
         x = args[i]
         repo = x.split('=', 1)[1] if '=' in x else x[2:] if x.startswith('-R') and len(x) > 2 else (args[i + 1] if i + 1 < len(args) else '')
         if repo.lower() != (ctx.get('repo') or '').lower(): raise Unparsed('gh --repo')
-    nums = [int(x) for x in args if x.isdigit()]
+    def repo_ok(o):
+        for f, v in o:
+            if f in ('--repo', '-R') and v.lower() != (ctx.get('repo') or '').lower(): raise Unparsed('gh --repo')
+    def pr_number(pos):
+        # the PR is the positional argument, never a digit given to an option
+        if len(pos) > 1 or (pos and not pos[0].isdigit()): raise Unparsed('pr argument')
+        return int(pos[0]) if pos else None
     if group == 'pr' and sub in ('view', 'checks', 'list', 'diff', 'status'): return [('gh-read', 'pr ' + sub)]
     if group == 'run' and sub in ('view', 'list', 'watch'): return [('gh-read', 'run ' + sub)]
     if group == 'api':
@@ -437,6 +454,7 @@ def _gh(a, ctx):
                       valued=('--title', '-t', '--body', '-b', '--label', '-l', '--assignee', '-a', '--reviewer', '-r',
                               '--base', '-B', '--head', '-H', '--body-file', '-F', '--repo', '-R'))
         if pos: raise Unparsed('pr create args')
+        repo_ok(o)
         owner = (ctx.get('repo') or '').split('/')[0].lower()
         for f, v in o:
             if f in ('--base', '-B') and v not in DEFAULT_BRANCHES and v != ctx.get('base'): raise Unparsed('pr base')
@@ -447,19 +465,38 @@ def _gh(a, ctx):
             if f in ('--body-file', '-F') and not _safe_path(v): raise Unparsed('body-file')
         return [('pr-create', {})]
     if group == 'pr' and sub == 'comment':
-        if any(x in ('--body-file', '-F') for x in args): raise Unparsed('comment body-file')
-        return [('pr-comment', {'pr': nums[0] if nums else None})]
+        o, pos = opts(args, valued=('--body', '-b', '--body-file', '-F', '--repo', '-R'))
+        repo_ok(o)
+        if any(f in ('--body-file', '-F') and not _safe_path(v) for f, v in o): raise Unparsed('comment body-file')
+        return [('pr-comment', {'pr': pr_number(pos)})]
     if group == 'pr' and sub == 'merge':
         o, pos = opts(args, flags=('--squash', '-s', '--merge', '-m', '--rebase', '-r', '--auto', '--delete-branch', '-d'),
                       valued=('--subject', '-t', '--body', '-b', '--repo', '-R', '--match-head-commit'))
-        if '--auto' in [f for f, _ in o]: return [('pr-automerge', {'pr': nums[0] if nums else None})]
-        return [('pr-merge', {'pr': nums[0] if nums else None})]
+        repo_ok(o)
+        if '--auto' in [f for f, _ in o]: return [('pr-automerge', {'pr': pr_number(pos)})]
+        return [('pr-merge', {'pr': pr_number(pos)})]
     if group == 'pr' and sub == 'edit':
-        if any(x in ('--body-file', '-F', '--base', '-B', '--add-reviewer', '--add-assignee') for x in args): raise Unparsed('pr edit flag')
-        return [('pr-edit', {'pr': nums[0] if nums else None})]
-    if group == 'pr' and sub == 'ready': return [('pr-ready', {'pr': nums[0] if nums else None})]
-    if group == 'run' and sub == 'rerun': return [('ci-rerun', {'pr': None})]
+        o, pos = opts(args, valued=('--title', '-t', '--body', '-b', '--body-file', '-F', '--add-label', '--remove-label', '--repo', '-R'))
+        repo_ok(o)
+        if any(f in ('--body-file', '-F') and not _safe_path(v) for f, v in o): raise Unparsed('pr edit body-file')
+        return [('pr-edit', {'pr': pr_number(pos)})]
+    if group == 'pr' and sub == 'ready':
+        o, pos = opts(args, valued=('--repo', '-R'))
+        repo_ok(o)
+        return [('pr-ready', {'pr': pr_number(pos)})]
+    if group == 'run' and sub == 'rerun':
+        o, pos = opts(args, flags=('--failed', '--debug', '-d'), valued=('--job', '-j', '--repo', '-R'))
+        repo_ok(o)
+        if len(pos) > 1 or (pos and not pos[0].isdigit()): raise Unparsed('run id')
+        return [('ci-rerun', {'pr': None})]
     raise Unparsed('gh ' + group + ' ' + sub)
+
+# install reads every workspace package's manifest and runs its lifecycle scripts, and loads a pnpmfile
+INSTALL_FILES = {'package.json', 'pnpm-lock.yaml', 'package-lock.json', 'npm-shrinkwrap.json', 'pnpm-workspace.yaml',
+                 '.npmrc', '.pnpmfile.cjs', '.pnpmfile.mjs', 'yarn.lock'}
+def _touches(ctx, names):
+    """A changed file with one of these basenames, anywhere in the workspace."""
+    return any(f.rsplit('/', 1)[-1] in names for f in ctx.get('untrusted_files') or ())
 
 def _pnpm(a, ctx, h):
     while a and a[0] in ('--silent', '-s', '--offline'): a = a[1:]
@@ -469,10 +506,10 @@ def _pnpm(a, ctx, h):
     if sub == 'run' or (h == 'pnpm' and DEV_SCRIPTS.match(sub)):
         script = args[0] if sub == 'run' else sub
         if not script or not DEV_SCRIPTS.match(script): raise Unparsed('script ' + str(script))
-        if ctx.get('untrusted_files') and ('package.json' in ctx['untrusted_files']): raise Unparsed('modified package.json')
+        if _touches(ctx, {'package.json'}): raise Unparsed('modified package.json')
         return [('dev', 'run ' + script)]
     if sub in ('test', 't'):
-        if ctx.get('untrusted_files') and 'package.json' in ctx['untrusted_files']: raise Unparsed('modified package.json')
+        if _touches(ctx, {'package.json'}): raise Unparsed('modified package.json')
         return [('dev', 'test')]
     if sub == 'exec':
         if not args or args[0] not in DEV_TOOLS: raise Unparsed('exec ' + (args[0] if args else ''))
@@ -485,8 +522,7 @@ def _pnpm(a, ctx, h):
         if pos: raise Unparsed('install with packages')
         frozen = (h == 'npm' and sub == 'ci') or (h == 'pnpm' and '--frozen-lockfile' in [f for f, _ in o])
         if not frozen: raise Unparsed('install not frozen')
-        if set(ctx.get('untrusted_files') or ()) & {'package.json', 'pnpm-lock.yaml', 'package-lock.json', 'pnpm-workspace.yaml', '.npmrc'}:
-            raise Unparsed('modified manifest or lockfile')
+        if _touches(ctx, INSTALL_FILES): raise Unparsed('modified manifest, lockfile or pnpmfile')
         return [('dev-install', 'install')]
     if sub in ('add', 'remove', 'rm', 'uninstall', 'view', 'info'):
         if any(x in ('-g', '--global') or x.startswith('--registry') for x in args): raise Unparsed('global/registry')

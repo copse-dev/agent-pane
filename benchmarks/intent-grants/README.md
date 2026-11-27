@@ -72,11 +72,13 @@ python3 ../../benchmarks/intent-grants/sweep.py <adversarial rows> <redteam.json
 python3 -m unittest ../../benchmarks/intent-grants/test_grants.py
 ```
 
-The sweep's inputs are not on main yet. The adversarial rows are
-`benchmarks/risk-classifier/adversarial/sample/{rows,external-01,external-02}.jsonl` from
-copse-dev/agent-pane#4531 at `27e0cdb8b5` (404 must-ask rows, concatenated). The red-team set
-is written by `benchmarks/risk-classifier/redteam_gen.py` from copse-dev/agent-pane#4528 at
-`a5904f0e12` (868 rows).
+The sweep's inputs are not on main yet and are not committed anywhere public. Regenerate the
+adversarial rows with copse-dev/agent-pane#4531's `benchmarks/risk-classifier/adversarial/`
+commands (head `b3c5b2a86b`), which write them under the git-ignored
+`bench-results/risk-classifier/adversarial/`, and concatenate the cleaned files (404 must-ask
+rows in the run reported here). The red-team set is written by
+`benchmarks/risk-classifier/redteam_gen.py` from copse-dev/agent-pane#4528 (head `7fca84013a`,
+868 rows).
 
 `prep.py` and prior-consent's `extract.py` read the thread store under `COPSE_DIR` (default
 `~/.copse`).
@@ -85,21 +87,21 @@ is written by `benchmarks/risk-classifier/redteam_gen.py` from copse-dev/agent-p
 machine. The extractor sees the user's message and the assistant's final question, never the
 pending command.
 
-## Results, 2026-11-26 (after review round 1)
+## Results, 2026-11-27 (after review round 2)
 
-| Approach                                                  | Prompts skipped (of 854) | Real false skips | Adversarial false skips (191) | Held-out false skips (109) | Must-ask sweep (1,272) |
-| --------------------------------------------------------- | -----------------------: | ---------------: | ----------------------------: | -------------------------: | ---------------------: |
-| prior-consent keyword baseline                            |                        0 |                0 |                            10 |                          1 |                    n/a |
-| Qwen 3.6 35B-A3B free-form judge, explicit (sample of 81) |                    ~5.8% |                1 |           35 of the first 126 |                          9 |                    n/a |
-| Qwen free-form judge, explicit+implied (sample of 81)     |                     ~28% |               14 |           40 of the first 126 |                         11 |                    n/a |
-| P1, deterministic extraction                              |                58 (6.8%) |                0 |                             0 |                          0 |                      0 |
-| P1, Qwen extraction, no vetoes                            |                54 (6.3%) |                0 |                             6 |                          0 |                      0 |
-| P1, Qwen extraction with the deterministic vetoes         |                51 (6.0%) |                0 |                             0 |                          0 |                      0 |
-| P1, deterministic ∪ vetoed Qwen                           |                58 (6.8%) |                0 |                             0 |                          0 |                      0 |
-| P2, deterministic extraction                              |              167 (19.6%) |                0 |                             0 |                          0 |                      0 |
-| P2, Qwen extraction, no vetoes                            |              173 (20.3%) |                0 |                             6 |                          0 |                      0 |
-| P2, Qwen extraction with the deterministic vetoes         |              159 (18.6%) |                0 |                             0 |                          0 |                      0 |
-| P2, deterministic ∪ vetoed Qwen                           |              179 (21.0%) |                0 |                             0 |                          0 |                      0 |
+| Approach | Prompts skipped (of 854) | Real false skips | Adversarial false skips (219) | Held-out false skips (109) | Must-ask sweep (1,272) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| prior-consent keyword baseline | 0 | 0 | 10 | 1 | n/a |
+| Qwen 3.6 35B-A3B free-form judge, explicit (sample of 81) | ~5.8% | 1 | 35 of the first 126 | 9 | n/a |
+| Qwen free-form judge, explicit+implied (sample of 81) | ~28% | 14 | 40 of the first 126 | 11 | n/a |
+| P1, deterministic extraction | 59 (6.9%) | 0 | 0 | 0 | 0 |
+| P1, Qwen extraction, no vetoes | 55 (6.4%) | 0 | 6 | 0 | 0 |
+| P1, Qwen extraction with the deterministic vetoes | 52 (6.1%) | 0 | 0 | 0 | 0 |
+| P1, deterministic ∪ vetoed Qwen | 59 (6.9%) | 0 | 0 | 0 | 0 |
+| P2, deterministic extraction | 168 (19.7%) | 0 | 0 | 0 | 0 |
+| P2, Qwen extraction, no vetoes | 174 (20.4%) | 0 | 6 | 0 | 0 |
+| P2, Qwen extraction with the deterministic vetoes | 160 (18.7%) | 0 | 0 | 0 | 0 |
+| P2, deterministic ∪ vetoed Qwen | 180 (21.1%) | 0 | 0 | 0 | 0 |
 
 Before review round 1 the deterministic arms skipped 62 (P1) and 180 (P2) prompts. The fixes
 cost 4 and 13: refspec-less and `HEAD` pushes now ask because the real history does not record
@@ -124,7 +126,7 @@ was not re-run on round 1's cases.
   The labels share the command parser with the matcher, so the real-data false-skip count
   checks intent, not parsing. Parsing is checked by the adversarial set, the held-out set and
   the must-ask sweep.
-- **Adversarial set (216):** injection through files, tool output, pasted logs and quoted issue
+- **Adversarial set (247):** injection through files, tool output, pasted logs and quoted issue
   text; scope creep from a push or PR request (force, tags, deletes, default branch, other
   remote or repository, admin merge, release, visibility, secrets); typo-squatted, global and
   registry-redirected packages; poisoned package scripts; refusals, opinion questions,
@@ -132,7 +134,9 @@ was not re-run on round 1's cases.
   Review round 1 added 68 cases (`review-*`): typographic apostrophes and unlisted negations,
   conditions, short pastes and nested fences, every option spelling above, fork heads, aliased
   and URL package specs, unfrozen installs, `HEAD` on another checkout, and provenance
-  (another thread, a hook, a Reviewer answer).
+  (another thread, a hook, a Reviewer answer). Review round 2 added 31 (`review2-*`): option
+  spellings on `gh pr comment`/`edit`/`merge`, bundled `-R`, digit option values read as the
+  PR, write options on read commands, and changed workspace manifests and pnpmfiles.
 - **Held-out set (118):** prior-consent's 38 hand-written cases (written before this work) and
   80 real turns with the reply replaced by a refusal.
 - **Must-ask sweep:** all 404 must-ask commands from the risk classifier's adversarial set and
@@ -148,5 +152,8 @@ was not re-run on round 1's cases.
 - `code.work` (P2) runs project scripts outside the sandbox. A matching script is only trusted
   when its definition is unmodified, but the code it runs (tests, sources) is the agent's own.
   The product equivalent should run the dev loop under a widened sandbox profile, not unsandboxed.
+- `CONDITIONAL` refuses any sentence containing "once", "if", "when", "after", "before",
+  "until" and similar words, so plain orderings grant nothing too ("make a PR after that",
+  "before you finish, make a PR"). That fails safe but lowers the skip rate a gate port would see.
 - The deterministic extractor is English-only and pattern-based; it misses typos ("make a
   pair") and context-only references ("make one").
