@@ -16,7 +16,7 @@ import {
   type SpineMachineContinuationLine,
 } from '@shared/threads/spine-schema.ts'
 import { randomUUID } from 'node:crypto'
-import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
+import { isReasoningLevel, type ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
 import type { TurnOutcome } from '@shared/types/turn-outcome.ts'
 import { AgentTurnBusyError } from '@shared/agent-turn-busy.ts'
@@ -38,6 +38,7 @@ import {
   appendMachineContinuation,
   getLatestThreadPlan,
   getProjectThread,
+  getThreadMeta,
   loadAgentHistory,
   loadAgentTurnEpoch,
   saveAgentHistory,
@@ -92,12 +93,31 @@ export interface MachineAgentDispatchRequest extends AgentDispatchRequest {
    * this wake would report, so it is recorded without a turn or budget charge.
    */
   alreadyObserved?: () => boolean
+  /**
+   * Set when the payload already carries the chat's live selection: the
+   * renderer's own machine run reads model, reasoning and execution mode from
+   * the chat, so a field it leaves out means the chat has none. Main sends such
+   * a payload as it is. A wake main starts on its own fills what it leaves out
+   * from the thread's saved metadata instead.
+   */
+  payloadCarriesSelection?: true
 }
 
 type MachineOperationRef = Pick<
   MachineAgentDispatchRequest,
   'projectId' | 'threadId' | 'operationId' | 'turnTreeId'
 >
+
+/**
+ * The per-thread choices a renderer dispatch reads from the chat and puts in
+ * its payload. A turn main starts on its own has no renderer to ask, so it
+ * reads them from the thread's saved metadata instead.
+ */
+export interface ThreadTurnSelection {
+  model?: string
+  reasoning?: ReasoningLevel
+  executionMode?: 'agent'
+}
 
 /** Set once another process takes a running turn's writer lease over. */
 interface WriterFence {
@@ -142,6 +162,12 @@ export interface AgentDispatcherDependencies {
    * can see but the model cannot — see {@link contextWasLost}.
    */
   transcriptLength: (projectId: string, threadId: string) => Promise<number>
+  /**
+   * The thread's own model, reasoning dial and execution mode, for a machine
+   * turn whose payload does not name them. Null when there is no saved thread
+   * to read, which leaves the payload as it is.
+   */
+  loadThreadSelection: (projectId: string, threadId: string) => Promise<ThreadTurnSelection | null>
   run: (
     threadId: string,
     userContent: UserContent,
@@ -182,6 +208,48 @@ async function recoverHistoryFromTranscript(
   return recoverAgentHistory(thread.messages)
 }
 
+export async function loadThreadSelection(
+  projectId: string,
+  threadId: string,
+): Promise<ThreadTurnSelection | null> {
+  const meta = await getThreadMeta(projectId, threadId)
+  if (!meta) return null
+  // `meta.json` passes these two through unchecked; read them as the values
+  // the renderer would have sent, or not at all.
+  const model: unknown = meta.model
+  const reasoning: unknown = meta.reasoning
+  return {
+    ...(typeof model === 'string' && model.length > 0 ? { model } : {}),
+    ...(isReasoningLevel(reasoning) ? { reasoning } : {}),
+    ...(meta.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
+  }
+}
+
+/**
+ * Fill what a machine payload leaves out from the thread's own selection. A
+ * payload that names a model, reasoning level or execution mode keeps it; only
+ * the gaps are filled, so a turn main starts runs on the same model the user
+ * picked for the chat rather than falling through to the global default.
+ */
+function withThreadSelection(
+  payload: AgentDispatchPayload,
+  selection: ThreadTurnSelection | null,
+): AgentDispatchPayload {
+  if (!selection) return payload
+  return {
+    ...payload,
+    ...(payload.model === undefined && selection.model !== undefined
+      ? { model: selection.model }
+      : {}),
+    ...(payload.reasoning === undefined && selection.reasoning !== undefined
+      ? { reasoning: selection.reasoning }
+      : {}),
+    ...(payload.executionMode === undefined && selection.executionMode === 'agent'
+      ? { executionMode: 'agent' as const }
+      : {}),
+  }
+}
+
 export const defaultAgentDispatcherDependencies: AgentDispatcherDependencies = {
   loadPlan: getLatestThreadPlan,
   loadHistory: loadAgentHistory,
@@ -197,6 +265,7 @@ export const defaultAgentDispatcherDependencies: AgentDispatcherDependencies = {
     context.automation !== undefined &&
     getAutomationService().ownsRunThread(context.projectId, context.threadId, context.automation),
   transcriptLength: threadTranscriptLength,
+  loadThreadSelection,
   run: runAgent,
   claimWriter: (projectId, threadId, onLost) => claimThreadWriter(projectId, threadId, { onLost }),
 }
@@ -625,6 +694,12 @@ export class AgentDispatcher {
     try {
       await this.dependencies.saveEpoch(request.projectId, request.threadId, nextEpoch)
       this.epochs.set(key, nextEpoch)
+      // Read at dispatch time, like a renderer send: a model the user picked
+      // while this wake waited applies to it. A renderer-built payload is the
+      // fresher source, so saved metadata never overrides what it left out.
+      const selection = request.payloadCarriesSelection
+        ? null
+        : await this.dependencies.loadThreadSelection(request.projectId, request.threadId)
       const hidden = request.display === 'hidden'
       const display = request.display === 'hidden' ? undefined : request.display
       host.emit(request.threadId, {
@@ -642,7 +717,7 @@ export class AgentDispatcher {
         {
           ...request,
           payload: {
-            ...request.payload,
+            ...withThreadSelection(request.payload, selection),
             turnTreeId: request.turnTreeId,
             continuationBudgetUsed: nextEpoch.continuationUsed,
           },
