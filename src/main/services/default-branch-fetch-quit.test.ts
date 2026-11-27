@@ -1,11 +1,12 @@
 import { after, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
 import {
   abortScratchFetchesForQuit,
   fetchThroughScratchRepository,
@@ -29,15 +30,19 @@ function git(cwd: string, args: string[]): string {
   })
 }
 
-/** Command lines still mentioning `needle` once a short kill grace has passed. */
+const execFileAsync = promisify(execFile)
+
+/**
+ * Command lines still mentioning `needle`, polled until none are left or a
+ * short kill grace has passed. Each `ps` run is its own wait, so the loop
+ * needs no timer.
+ */
 async function processesNamingAfterGrace(needle: string): Promise<string[]> {
   const deadline = Date.now() + 3_000
   for (;;) {
-    const survivors = execFileSync('ps', ['-A', '-o', 'args='], { encoding: 'utf-8' })
-      .split('\n')
-      .filter((line) => line.includes(needle))
+    const { stdout } = await execFileAsync('ps', ['-A', '-o', 'args='])
+    const survivors = stdout.split('\n').filter((line) => line.includes(needle))
     if (survivors.length === 0 || Date.now() > deadline) return survivors
-    await new Promise((resolve) => setTimeout(resolve, 100))
   }
 }
 
