@@ -98,6 +98,10 @@ export function withPayloadTypes(document: JsonSchema, apiDefs: JsonSchema): Jso
       throw new Error(`${payload.role} ${payload.message} has no field ${payload.field}`)
     if (!Object.hasOwn(apiDefs, payload.type))
       throw new Error(`the API protocol does not describe ${payload.type}`)
+    // The API protocol names a second type of the same name `<name>__<file>`:
+    // then the bare name may not be the type this line carries.
+    if (Object.keys(apiDefs).some((name) => name.startsWith(`${payload.type}__`)))
+      throw new Error(`the API protocol has more than one ${payload.type}; name the one meant`)
     properties[payload.field] = { $ref: `#/$defs/${payload.type}` }
     wanted.add(payload.type)
   }
@@ -113,6 +117,13 @@ export function withPayloadTypes(document: JsonSchema, apiDefs: JsonSchema): Jso
     refsIn(definition, refs)
     queue.push(...refs)
   }
-  copy['$defs'] = Object.fromEntries(Object.entries(defs).sort(([a], [b]) => a.localeCompare(b)))
+  // The document's own definitions, if it ever has any, stay; a name both use
+  // would make one of them point at the other's type.
+  const own = isRecord(copy['$defs']) ? copy['$defs'] : {}
+  for (const name of Object.keys(defs))
+    if (Object.hasOwn(own, name)) throw new Error(`$defs/${name} is defined twice`)
+  copy['$defs'] = Object.fromEntries(
+    Object.entries({ ...own, ...defs }).sort(([a], [b]) => a.localeCompare(b)),
+  )
   return copy
 }

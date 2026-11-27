@@ -87,10 +87,12 @@ schemas into `dist/schemas/worker-protocol.schema.json`, with a committed manife
 (`schemas/worker-protocol.manifest.json`, `pnpm run gen:worker-protocol`) of each message's
 top-level fields that a test pins.
 `worker-conformance.test.ts` drives both hosts over a real local socket with raw lines.
-The published schema describes the payloads the line passes on unread (stream chunks,
-snapshots, container records) with the API protocol's types, so a worker off this machine
-can write them. R2 is done. The container run host still reports a run's progress as its own
-log and phase lines; it carries the turn stream once it relays the guest's loop (R5).
+The published schema describes every payload a worker writes: the ones the line passes on
+unread (stream chunks, snapshots, container records) with the API protocol's types, and the
+ones the app checks before it acts (a thread prompt, a task call) with the fields it checks.
+The exit gate is met. One part moves to R5: the container run host still reports a run's
+progress as its own log and phase lines, and carries the turn stream only once it relays the
+guest's loop.
 
 ### R3. A worker on the SSH host
 

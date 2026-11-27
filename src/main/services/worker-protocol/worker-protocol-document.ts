@@ -32,8 +32,10 @@ import { workerCapabilitiesSchema, type WorkerRole } from './worker-capabilities
  *   inside a field's shape shows only in the full schema.
  *
  * A payload either end passes on unread (a stream chunk, a snapshot, a
- * container record) is `{}` here. The published schema points those at the
- * API protocol's description of the type (`scripts/lib/worker-protocol-payloads.mts`).
+ * container record) is `{}` here; the published schema points each at the API
+ * protocol's description of its type (`scripts/lib/worker-protocol-payloads.mts`).
+ * A payload the app checks with a custom rule carries that rule's fields as
+ * its schema (`publishedShape` in `turn-host-protocol.ts`).
  */
 
 export const WORKER_PROTOCOL_MANIFEST_PATH = 'schemas/worker-protocol.manifest.json'

@@ -332,6 +332,16 @@ const askUserRequestSchema = askUserParamsSchema
     ...(presentation === undefined ? {} : { presentation }),
   }))
 
+/**
+ * What a custom check below accepts, for the published schema
+ * (`worker-protocol-document.ts`): the fields the app reads, as JSON Schema,
+ * so a worker elsewhere knows what it must send.
+ */
+function publishedShape(shape: z.ZodType): Record<string, unknown> {
+  const { $schema: _drop, ...rest }: Record<string, unknown> = z.toJSONSchema(shape)
+  return rest
+}
+
 /** The fields of a host turn's thread prompt the app reads before the window does. */
 const threadPromptCommandShape = z.looseObject({
   sourceThreadId: id,
@@ -433,9 +443,9 @@ export const hostToAppSchema = z.discriminatedUnion('t', [
     threadId: id,
     // Built by the same tool code as an in-process prompt; the window checks
     // the destination and the grant again before it submits.
-    command: z.custom<HostThreadPromptCommand>(
-      (value) => threadPromptCommandShape.safeParse(value).success,
-    ),
+    command: z
+      .custom<HostThreadPromptCommand>((value) => threadPromptCommandShape.safeParse(value).success)
+      .meta(publishedShape(threadPromptCommandShape)),
   }),
   z.object({
     t: z.literal('task-call'),
@@ -444,7 +454,9 @@ export const hostToAppSchema = z.discriminatedUnion('t', [
     threadId: id,
     // Made by the same supervised-command code as an in-process call; the
     // app's supervisor checks the record as it writes it.
-    call: z.custom<HostTaskCall>((value) => hostTaskCallShape.safeParse(value).success),
+    call: z
+      .custom<HostTaskCall>((value) => hostTaskCallShape.safeParse(value).success)
+      .meta(publishedShape(hostTaskCallShape)),
   }),
   z.object({
     t: z.literal('process-result'),

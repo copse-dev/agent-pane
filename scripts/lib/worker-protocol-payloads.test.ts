@@ -35,6 +35,61 @@ describe('worker protocol payload types', () => {
     }
   })
 
+  it('keeps an optional payload optional, and describes what the app checks', () => {
+    const roles = published['roles']
+    assert.ok(isRecord(roles) && isRecord(roles['turns']))
+    const union = roles['turns']['workerToClient']
+    assert.ok(isRecord(union))
+    const variants = union['oneOf'] ?? union['anyOf']
+    assert.ok(Array.isArray(variants))
+    const message = (name: string): Record<string, unknown> => {
+      const found: unknown = variants.find(
+        (variant: unknown) =>
+          isRecord(variant) &&
+          isRecord(variant['properties']) &&
+          isRecord(variant['properties']['t']) &&
+          variant['properties']['t']['const'] === name,
+      )
+      assert.ok(isRecord(found) && isRecord(found['properties']), name)
+      return found
+    }
+    const chunk = message('chunk')
+    assert.ok(Array.isArray(chunk['required']))
+    assert.ok(!chunk['required'].includes('stamp'))
+    // Checked by the app before it acts, so a worker must be told their fields.
+    for (const [name, field] of [
+      ['thread-prompt', 'command'],
+      ['task-call', 'call'],
+    ] as const) {
+      const properties = message(name)['properties']
+      assert.ok(isRecord(properties))
+      const shape = properties[field]
+      assert.ok(isRecord(shape) && Object.keys(shape).length > 0, `${name}.${field} has a shape`)
+    }
+  })
+
+  it('refuses a message or field that is not on the line', () => {
+    const document = workerProtocolDocument()
+    const roles = structuredClone(document.roles)
+    const union = roles.turns.workerToClient
+    const variants = union['oneOf'] ?? union['anyOf']
+    assert.ok(Array.isArray(variants))
+    roles.turns.workerToClient = {
+      ...union,
+      oneOf: variants.filter(
+        (variant: unknown) =>
+          !(
+            isRecord(variant) &&
+            isRecord(variant['properties']) &&
+            isRecord(variant['properties']['t']) &&
+            variant['properties']['t']['const'] === 'snapshot'
+          ),
+      ),
+      anyOf: undefined,
+    }
+    assert.throws(() => withPayloadTypes({ ...document, roles }, api.$defs), /snapshot/)
+  })
+
   it('refuses a payload type the API protocol does not describe', () => {
     const { StreamChunk: _gone, ...rest } = api.$defs
     assert.throws(() => withPayloadTypes({ ...workerProtocolDocument() }, rest), /StreamChunk/)
