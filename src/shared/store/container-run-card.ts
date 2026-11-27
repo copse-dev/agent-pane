@@ -153,6 +153,7 @@ export function containerRunSummary(progress: ContainerRunProgress): string | nu
   if (isLive(progress)) return null
   const result = progress.record?.result ?? null
   const ref = progress.record?.carryOut.ref ?? null
+  if (progress.phase === 'failed' && progress.stoppedByUser === true) return 'Stopped by you'
   if (progress.phase === 'failed') return `Failed: ${progress.error ?? 'the run did not complete'}`
   if (!result) return 'Finished without a result'
   const commits =

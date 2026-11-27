@@ -81,9 +81,10 @@ without Electron.
    policy would ask about is deferred with the existing deferral mode (`deferral-mode.ts`,
    used by scheduled automation runs), not approved. The deferred items surface on the thread
    when the desktop returns (`deferred-approvals.md`).
-7. **Opt-out setting.** `continueTurnsAfterQuit` turns the hand-off on. It defaults to off
-   until Settings offers the switch and Stop reaches a worker's turn, and then to on. With it
-   off, quit behaves as in the restart-continuation PR.
+7. **Opt-out setting.** `continueTurnsAfterQuit` turns the hand-off on. It defaulted to off
+   until Settings offered the switch ("When Copse closes", in Agent settings) and Stop
+   reached a worker's turn, and is on now. With it off, quit behaves as in the
+   restart-continuation PR. It covers container runs as well as turns.
 8. **Never for an update that changes the store format.** The worker must not run against a
    thread store whose format is newer than it understands. The worker is the quitting app's
    own binary, so this only matters if a later change starts workers from another version.
@@ -263,6 +264,23 @@ start out of the app.
   relaunch reattaches from the host file. C2 drops C1's stop-when-the-app-leaves rule.
   Exit gate: quit mid-run, relaunch, and see the run
   finish once with its commits on the ref.
+  Status: built. `stopAll` lets go of host runs when `continueTurnsAfterQuit` is on (the
+  client's `detach`), and every other run stops as before. The supervisor's external-task
+  lifetime hooks keep the run's task running through shutdown (`survivesShutdown`) and
+  through the restart reconcile while its host is alive (`isAlive`). After the supervisor
+  loads, `reattach` follows each live `container-hosts/<runtime>.json` and settles the
+  run and its task as if this session had started it.
+  A host that ends with no app attached keeps its file and writes how the run ended into it
+  (`ended`), so a relaunch after the run finished settles the run and its task from that,
+  and the settled listeners record it in the thread. A host that was killed without saying
+  (`lost`: its pid is gone and there is no `ended`) settles as failed, and the app removes
+  its container and staged sign-in. The host stops its run on SIGTERM, SIGHUP and SIGINT,
+  so a logout or shutdown runs the runner's own cleanup. The app removes a host file once
+  it has settled the run, and also when following it fails, so a file whose pid now
+  belongs to another process is tried once. Quits nobody chose (signals, faults) and quits
+  that install an update stop container runs instead of letting them go, as for turns, and
+  so does a run the user already asked to stop. The close dialog names container runs
+  alongside working threads.
 - **C3, settle without the app.** When no app is attached at the end, the host records the
   run in the thread's model history itself (`recordContainerRunTurn`, which the app runs from
   `onSettled` today). Without this step, the next message to the thread does not know what

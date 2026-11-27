@@ -27,9 +27,9 @@ export interface RunHostChild {
 }
 
 /**
- * The app lost the host without the host reporting how the run ended. The
- * host has been told to end; what its runner would have cleaned up is the
- * caller's to remove.
+ * The app lost the host without the host reporting how the run ended. A host
+ * this session started has been told to end; what its runner would have
+ * cleaned up is the caller's to remove.
  */
 export class RunHostLostError extends Error {
   override readonly name = 'RunHostLostError'
@@ -45,33 +45,59 @@ export interface RunHostClientDependencies {
   connectTimeoutMs?: number
 }
 
+/** Rejection of a run the app let go of at quit; its host carries on. */
+export class RunHostDetached extends Error {
+  constructor() {
+    super('The run continues outside the app')
+    this.name = 'RunHostDetached'
+  }
+}
+
+export interface FollowHostOptions extends RunThreadOptions {
+  /** Let go of the run without stopping it, as the app does when it quits. */
+  detach?: AbortSignal
+}
+
 export async function runThroughHost(
   request: ContainerRunHostRequest,
-  options: RunThreadOptions,
+  options: FollowHostOptions,
   deps: RunHostClientDependencies,
 ): Promise<ThreadContainerRecord> {
-  const connect = deps.connect ?? connectLocalLine<RunHostToApp, AppToRunHost>
   const child = await deps.launch(await deps.writeRequest(request), request.runtimeId)
+  const host = { exited: false }
+  void child.exited.then(() => {
+    host.exited = true
+  })
   try {
-    return await followHost(request, options, deps, connect, child)
+    return await followHost(deps.socketPath(request.runtimeId), options, {
+      ...(deps.connect ? { connect: deps.connect } : {}),
+      // A host that has just started may not be listening yet.
+      waitMs: deps.connectTimeoutMs ?? 30_000,
+      gone: () => host.exited,
+    })
   } catch (error) {
     if (error instanceof RunHostLostError) child.kill()
     throw error
   }
 }
 
-async function followHost(
-  request: ContainerRunHostRequest,
-  options: RunThreadOptions,
-  deps: RunHostClientDependencies,
-  connect: typeof connectLocalLine<RunHostToApp, AppToRunHost>,
-  child: RunHostChild,
+/**
+ * Attach to a host that is serving a run, and settle as the in-process runner
+ * would: with the record, or with the run's failure. A relaunched app follows
+ * a run the last session left running the same way (`waitMs` 0: it is up, or
+ * it is gone).
+ */
+export async function followHost(
+  path: string,
+  options: FollowHostOptions,
+  deps: {
+    connect?: typeof connectLocalLine<RunHostToApp, AppToRunHost>
+    waitMs?: number
+    /** Whether the host is known to have exited, so waiting is pointless. */
+    gone?: () => boolean
+  } = {},
 ): Promise<ThreadContainerRecord> {
-  const host = { exited: false }
-  void child.exited.then(() => {
-    host.exited = true
-  })
-
+  const connect = deps.connect ?? connectLocalLine<RunHostToApp, AppToRunHost>
   let settle: { resolve: (record: ThreadContainerRecord) => void; reject: (error: Error) => void }
   const result = new Promise<ThreadContainerRecord>((resolve, reject) => {
     settle = { resolve, reject }
@@ -108,14 +134,17 @@ async function followHost(
     finish(new RunHostLostError('The run host stopped before the run finished'))
   }
 
-  const path = deps.socketPath(request.runtimeId)
-  const deadline = Date.now() + (deps.connectTimeoutMs ?? 30_000)
+  const deadline = Date.now() + (deps.waitMs ?? 0)
   let live: LocalLineConnection<AppToRunHost> | null
   for (;;) {
     live = await connect(path, runHostToAppSchema, onMessage, onClose)
     if (live !== null) break
-    if (host.exited) throw new RunHostLostError('The run host exited before it started')
-    if (Date.now() >= deadline) throw new RunHostLostError('The run host did not start in time')
+    if (deps.gone?.() === true) throw new RunHostLostError('The run host exited before it started')
+    if (Date.now() >= deadline) {
+      throw new RunHostLostError(
+        deps.waitMs ? 'The run host did not start in time' : 'The run host is not running',
+      )
+    }
     if (options.signal?.aborted === true) {
       throw new RunHostLostError('Stopped by you before the run host started')
     }
@@ -126,12 +155,18 @@ async function followHost(
   const askStop = (): void => {
     live.send({ t: 'stop' })
   }
+  const letGo = (): void => {
+    finish(new RunHostDetached())
+  }
   if (options.signal?.aborted === true) askStop()
   else options.signal?.addEventListener('abort', askStop, { once: true })
+  if (options.detach?.aborted === true) letGo()
+  else options.detach?.addEventListener('abort', letGo, { once: true })
   try {
     return await result
   } finally {
     options.signal?.removeEventListener('abort', askStop)
+    options.detach?.removeEventListener('abort', letGo)
   }
 }
 
@@ -180,9 +215,7 @@ export function runHostClientDependencies(launch: RunHostLaunchOptions): RunHost
           {
             env: { ...launch.env, ELECTRON_RUN_AS_NODE: '1' },
             stdio: ['ignore', log.fd, log.fd],
-            // Its own process group, so its children end with it on `kill`. Until
-            // the app can attach to a run again, the host stops a run whose app
-            // leaves (`run-host.ts`).
+            // Its own process group, so the app's exit does not take the run with it.
             detached: true,
           },
         )

@@ -1421,6 +1421,10 @@
       "sha256": "48920480ce695d4c39ddd04c04dd61f19941bf68489b90670ef1728bafddbe8c",
       "bytes": 95105
     },
+    "close-confirm-container-run.png": {
+      "sha256": "6d3c75ee52a87abcf4df19219a4976df8292210ba56439d87b778b85ffab5e0b",
+      "bytes": 51153
+    },
     "close-confirm-working-thread.png": {
       "sha256": "23fcb9362a0676b68fffaa2eaf41aaa66624549289e52b7d280e782d7f5af68c",
       "bytes": 45006
@@ -1736,6 +1740,14 @@
     "container-run-result.png": {
       "sha256": "a9760300176da97cd77725ef40fd049c13a957d550267b314ee35a83b0aeda36",
       "bytes": 91849
+    },
+    "container-run-stopped-banner.png": {
+      "sha256": "6c3aab41d3039aef4d902ac2f28045967b933090930833981cb36fd19358fcb5",
+      "bytes": 11370
+    },
+    "container-run-stopped-toast.png": {
+      "sha256": "58eaf534b9bd8e640b8dc25d904b679c1c1f4d4f3e6d80da10834ca4669fad16",
+      "bytes": 5729
     },
     "container-supervised-task.png": {
       "sha256": "b8f6305800be1aed80dac2760598f1d016f344f9b92af7775ad47e82e3daca69",
@@ -4688,6 +4700,10 @@
     "settings-content-full-width-scroll.png": {
       "sha256": "0554877a1b6b57e4344c2ccf0377578caf710254b5c80878d944cafeef31a128",
       "bytes": 99280
+    },
+    "settings-continue-after-quit.png": {
+      "sha256": "47e13cf836f40b43dc3d06589e752d94391f03e41e7ff872b494c43d19c8f99a",
+      "bytes": 40506
     },
     "settings-copse-engineering-off.png": {
       "sha256": "500d1eb92976a0ccf34bf8b2bc3644cfc072c238cebd2620a38080ae4bcc4c62",

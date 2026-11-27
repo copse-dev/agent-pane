@@ -40,6 +40,13 @@ const CLOSE_CONFIRM_TIMEOUT_MS = 2 * 60_000
 
 let requestConfirm: (() => Promise<boolean>) | null = null
 
+let containerRunThreads: () => string[] = () => []
+
+/** Where the question finds the threads with a container run going. */
+export function setCloseConfirmContainerRuns(list: () => string[]): void {
+  containerRunThreads = list
+}
+
 // Set when the close was let through with nobody's answer: the renderer went
 // away or never replied. Cleared by a real answer.
 let unanswered = false
@@ -223,7 +230,11 @@ export function initCloseConfirm(win: BrowserWindow): void {
         .catch(() => false)
         .then((continuesAfterQuit) => {
           if (!pending.has(id) || win.isDestroyed()) return
-          win.webContents.send('app:close-confirm-request', { id, continuesAfterQuit })
+          win.webContents.send('app:close-confirm-request', {
+            id,
+            continuesAfterQuit,
+            containerRunThreads: containerRunThreads(),
+          })
         })
     })
 }

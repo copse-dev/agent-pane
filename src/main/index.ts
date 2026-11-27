@@ -107,6 +107,7 @@ import {
   closeWentUnanswered,
   deferQuitForCloseConfirmation,
   guardWindowClose,
+  setCloseConfirmContainerRuns,
   setQuitHandOffCheck,
   initCloseConfirm,
 } from './services/close-confirm.ts'
@@ -337,6 +338,14 @@ const taskSupervisor = getTaskSupervisor()
 const isThreadBaseFallback = memberOf(THREAD_BASE_FALLBACKS)
 
 /** This quit came from a signal or a fault, with nobody to confirm it. */
+/**
+ * Agent turns and container runs still going: either keeps a closed window
+ * detached instead of quitting.
+ */
+function workInFlight(): number {
+  return listRunningThreadIds().length + getContainerRunService().activeThreadIds().length
+}
+
 let unattendedQuit = false
 /** This quit hands its turns to workers (set once the quit goes ahead). */
 let quitHandsOff = false
@@ -558,7 +567,7 @@ function quitDetachedAppWhenIdle(win: BrowserWindow): void {
     const idle = shouldQuitDetachedApp({
       platform: process.platform,
       detached,
-      runningTurns: listRunningThreadIds().length,
+      runningTurns: workInFlight(),
       mobileCompanionEnabled: getMobileCompanionState().enabled,
       otherWindowsOpen: BrowserWindow.getAllWindows().some(
         (other) => other !== win && !other.isDestroyed() && other.isVisible(),
@@ -750,12 +759,13 @@ app
     void resumeMobileCompanion()
     initUpdatePrompt(win)
     initCloseConfirm(win)
+    setCloseConfirmContainerRuns(() => getContainerRunService().activeThreadIds())
     guardWindowClose(win, ({ rendererGone }) => {
       const mobile = getMobileCompanionState().enabled
       const detach = shouldDetachOnClose({
         platform: process.platform,
         quitting: isMainWindowQuitting(),
-        runningTurns: listRunningThreadIds().length,
+        runningTurns: workInFlight(),
         mobileCompanionEnabled: mobile,
       })
       if (detach) {
@@ -1061,9 +1071,22 @@ app
     disposeTaskSupervisorEvents = taskSupervisor.subscribe((task) => {
       if (!win.isDestroyed()) win.webContents.send('supervisor:changed', task.projectId)
     })
-    void taskSupervisor.start().catch((error: unknown) => {
-      console.error('[task-supervisor] Startup reconciliation failed:', error)
-    })
+    void taskSupervisor
+      .start()
+      .catch((error: unknown) => {
+        console.error('[task-supervisor] Startup reconciliation failed:', error)
+      })
+      // Container runs the last session left to their host processes; after
+      // the supervisor has loaded, so each finds the task it settles.
+      .then(() => getContainerRunService().reattach())
+      .then((threads) => {
+        if (threads.length > 0) {
+          console.log(`[container-run] following ${String(threads.length)} run(s) left running`)
+        }
+      })
+      .catch((error: unknown) => {
+        console.error('[container-run] Could not follow runs left running:', error)
+      })
     setAcpToolCompletionHandler((completion, prompt) =>
       agentDispatcher.dispatchMachine({
         projectId: completion.owner.projectId,
@@ -1718,7 +1741,9 @@ async function cleanupBeforeQuit(): Promise<void> {
   disposeDarkFactorySensor = undefined
   disposeTaskSupervisorEvents?.()
   disposeTaskSupervisorEvents = undefined
-  await getContainerRunService().stopAll()
+  // Container runs go on outside the app under the same rule as turns, and an
+  // update quit stops them: the new version may not speak the old host's line.
+  await getContainerRunService().stopAll(quitHandsOff && !quitInstallsUpdate())
   await cancelAllSupervisedBackgroundProcesses()
   await taskSupervisor.shutdown()
   disposeContainerRunSupervisor?.()

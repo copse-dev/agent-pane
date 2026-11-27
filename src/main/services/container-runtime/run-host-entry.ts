@@ -62,7 +62,17 @@ async function main(): Promise<number> {
       import('../providers/container-provider.ts'),
       import('./thread-container.ts'),
     ])
+  // A logout, a shutdown or a `kill` ends the run the way Stop does, so the
+  // runner removes the staged sign-in and the container on its way out.
+  const ended = new AbortController()
+  const endings: readonly NodeJS.Signals[] = ['SIGTERM', 'SIGHUP', 'SIGINT']
+  for (const signal of endings) {
+    process.once(signal, () => {
+      ended.abort()
+    })
+  }
   await hostContainerRun(request, {
+    signal: ended.signal,
     resolve: resolveContainerProvider,
     run: runThreadInContainer,
     socketPath: runHostSocketPath(userDataPath, request.runtimeId),

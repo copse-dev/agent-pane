@@ -1,9 +1,10 @@
-import { rm, writeFile, mkdir } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
+import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { isChatGptPlanModel } from '@copse/llm/chatgpt-plan.ts'
-import type { ThreadContainerRecord } from '@shared/types/container-run.ts'
+import type { ContainerRunProgress, ThreadContainerRecord } from '@shared/types/container-run.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { localSocketPath, serveLocalLine } from '../local-socket.ts'
@@ -45,9 +46,19 @@ export type ContainerRunBase = Omit<
   | 'maxSteps'
 >
 
+/**
+ * What the app showed for the run when it started it, kept by the host so an
+ * app relaunched mid-run can show the same run again.
+ */
+export type ContainerRunHostDisplay = Omit<
+  ContainerRunProgress,
+  'runtimeId' | 'phase' | 'finishedAt' | 'log' | 'warnings' | 'record' | 'error'
+>
+
 export interface ContainerRunHostRequest {
   runtimeId: string
   projectId: string
+  display: ContainerRunHostDisplay
   /** The user's model selection, as the app resolved it. */
   model: string
   useAgentLogin: boolean
@@ -72,22 +83,33 @@ const phaseSchema = z.enum(['installing', 'running', 'collecting'])
 
 // The record comes from this user's own host, written by the same code that
 // writes it in the app; the envelope is checked, the record is not.
+const doneSchema = z.object({
+  t: z.literal('done'),
+  record: z.custom<ThreadContainerRecord>((value) => isRecord(value)),
+})
+const failedSchema = z.object({ t: z.literal('failed'), error: z.string() })
+
 export const runHostToAppSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('state'), phase: phaseSchema.nullable(), log: z.array(z.string()) }),
   z.object({ t: z.literal('log'), line: z.string() }),
   z.object({ t: z.literal('phase'), phase: phaseSchema }),
-  z.object({
-    t: z.literal('done'),
-    record: z.custom<ThreadContainerRecord>((value) => isRecord(value)),
-  }),
-  z.object({ t: z.literal('failed'), error: z.string() }),
+  doneSchema,
+  failedSchema,
 ])
+
+const runHostEndSchema = z.discriminatedUnion('t', [doneSchema, failedSchema])
+
+/** How a run ended, as its host reports it. */
+export type RunHostEnd = Extract<RunHostToApp, { t: 'done' | 'failed' }>
 
 export const containerRunHostRequestSchema = z.object({
   runtimeId: z.string().regex(/^run-[\w-]+$/),
   projectId: z.string().min(1),
   model: z.string().min(1),
   useAgentLogin: z.boolean(),
+  display: z.custom<ContainerRunHostDisplay>(
+    (value) => isRecord(value) && typeof value['threadId'] === 'string',
+  ),
   base: z.custom<ContainerRunBase>(
     (value) =>
       isRecord(value) &&
@@ -137,6 +159,95 @@ export function runHostFilePath(userDataPath: string, runtimeId: string): string
   return join(userDataPath, 'container-hosts', `${runtimeId}.json`)
 }
 
+/** `container-hosts/<runtime>.json`: a live host, as a relaunched app finds it. */
+export interface RunHostFile {
+  pid: number
+  socket: string
+  runtimeId: string
+  projectId: string
+  display: ContainerRunHostDisplay
+  /**
+   * Set by a host that ended with no app to tell (Copse was closed): how the
+   * run ended, for the next launch to settle it from.
+   */
+  ended?: RunHostEnd
+}
+
+/**
+ * A host file as a relaunched app finds it: `live` is still serving its run,
+ * `ended` finished it with nobody attached, and `lost` ended without saying
+ * how (killed, or the machine went down), leaving its cleanup undone.
+ */
+export interface ListedRunHost extends RunHostFile {
+  state: 'live' | 'ended' | 'lost'
+}
+
+const runHostFileSchema = z.object({
+  pid: z.number().int().positive(),
+  socket: z.string().min(1),
+  runtimeId: z.string().regex(/^run-[\w-]+$/),
+  projectId: z.string().min(1),
+  display: z.custom<ContainerRunHostDisplay>(
+    (value) =>
+      isRecord(value) &&
+      typeof value['threadId'] === 'string' &&
+      typeof value['prompt'] === 'string',
+  ),
+  ended: runHostEndSchema.optional(),
+})
+
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    // ESRCH: gone. EPERM: another user's process reusing the pid, never ours.
+    return false
+  }
+}
+
+/**
+ * The host files in this profile, for a relaunched app to follow or settle.
+ * An unreadable file is removed; the others stay until the app has settled
+ * their run (`forgetRunHost`).
+ */
+export async function listRunHosts(
+  userDataPath: string,
+  alive: (pid: number) => boolean = processAlive,
+): Promise<ListedRunHost[]> {
+  const dir = join(userDataPath, 'container-hosts')
+  let names: string[]
+  try {
+    names = await readdir(dir)
+  } catch {
+    return []
+  }
+  const hosts: ListedRunHost[] = []
+  for (const name of names) {
+    if (!name.endsWith('.json') || name.endsWith('.request.json')) continue
+    const path = join(dir, name)
+    let text: string
+    try {
+      text = await readFile(path, 'utf8')
+    } catch {
+      continue
+    }
+    const parsed = safeJsonParse(text, decodeWithSchema(runHostFileSchema))
+    if (parsed === null) await rm(path, { force: true })
+    else {
+      const { ended, ...file } = parsed
+      if (ended) hosts.push({ ...file, ended, state: 'ended' })
+      else hosts.push({ ...file, state: alive(file.pid) ? 'live' : 'lost' })
+    }
+  }
+  return hosts
+}
+
+/** Remove a host file once its run is settled. */
+export async function forgetRunHost(userDataPath: string, runtimeId: string): Promise<void> {
+  await rm(runHostFilePath(userDataPath, runtimeId), { force: true })
+}
+
 export interface RunHostDependencies {
   resolve: typeof resolveContainerProvider
   run: typeof runThreadInContainer
@@ -145,6 +256,8 @@ export interface RunHostDependencies {
   log: (line: string) => void
   /** How long to keep serving the result for an app that has not read it. */
   lingerMs?: number
+  /** Fires when this process is told to end (SIGTERM, SIGHUP, SIGINT): stop the run. */
+  signal?: AbortSignal
 }
 
 export type RunHostOutcome =
@@ -152,12 +265,6 @@ export type RunHostOutcome =
   | { status: 'failed'; error: string }
 
 const LOG_TAIL = 60
-
-/**
- * How long a started host waits for the app to attach: the app's own connect
- * deadline (`run-host-client.ts`). An app that never arrives is gone.
- */
-const APP_ATTACH_TIMEOUT_MS = 30_000
 
 function sameOrigins(a: readonly string[], b: readonly string[]): boolean {
   const left = new Set(a)
@@ -176,6 +283,8 @@ export async function hostContainerRun(
   let log: string[] = []
   let final: Extract<RunHostToApp, { t: 'done' | 'failed' }> | null = null
   const app = { attached: false }
+  // Whether an attached app was sent how the run ended.
+  let delivered = false
 
   const server = await serveLocalLine<AppToRunHost, RunHostToApp>(
     deps.socketPath,
@@ -190,36 +299,29 @@ export async function hostContainerRun(
       app.attached = true
       client.join()
       client.send({ t: 'state', phase, log })
-      if (final !== null) client.send(final)
-    },
-    () => {
-      // The app can't attach to a run again yet, so a run whose app left (a
-      // crash, a force quit) has nobody to see or stop it. Stop it, as the
-      // guest stops when its own host goes (decision A8).
-      if (final !== null || server.joined() > 0) return
-      deps.log(`${runtimeId}: the app left; stopping`)
-      stop.abort()
+      if (final !== null) {
+        client.send(final)
+        delivered = true
+      }
     },
   )
-  const attachTimer = setTimeout(() => {
-    if (app.attached) return
-    deps.log(`${runtimeId}: no app attached; stopping`)
+  // An app that leaves, or never attaches, is not a stop: a relaunched app
+  // follows the run again from the host file. A signal to this process is.
+  const onSignal = (): void => {
+    deps.log(`${runtimeId}: signalled; stopping`)
     stop.abort()
-  }, APP_ATTACH_TIMEOUT_MS)
-  attachTimer.unref()
+  }
+  if (deps.signal?.aborted === true) onSignal()
+  else deps.signal?.addEventListener('abort', onSignal, { once: true })
   await mkdir(join(deps.hostFile, '..'), { recursive: true, mode: 0o700 })
-  await writeFile(
-    deps.hostFile,
-    JSON.stringify({
-      pid: process.pid,
-      socket: deps.socketPath,
-      runtimeId,
-      projectId: request.projectId,
-      threadId: base.threadId ?? null,
-      startedAt: Date.now(),
-    }),
-    { mode: 0o600 },
-  )
+  const hostFile: RunHostFile = {
+    pid: process.pid,
+    socket: deps.socketPath,
+    runtimeId,
+    projectId: request.projectId,
+    display: request.display,
+  }
+  await writeFile(deps.hostFile, JSON.stringify(hostFile), { mode: 0o600 })
 
   let outcome: RunHostOutcome
   try {
@@ -248,19 +350,19 @@ export async function hostContainerRun(
       },
       signal: stop.signal,
     } satisfies RunThreadOptions)
-    clearTimeout(attachTimer)
     outcome = { status: 'done', record }
     final = { t: 'done', record }
   } catch (error) {
     outcome = { status: 'failed', error: errorMessage(error) }
     final = { t: 'failed', error: outcome.error }
   }
-  clearTimeout(attachTimer)
+  deps.signal?.removeEventListener('abort', onSignal)
   deps.log(
     outcome.status === 'failed'
       ? `${runtimeId}: failed: ${outcome.error}`
       : `${runtimeId}: ${outcome.status}`,
   )
+  if (server.joined() > 0) delivered = true
   server.broadcast(final)
 
   // Serve the result until the app has read it: it may still be connecting when
@@ -268,6 +370,12 @@ export async function hostContainerRun(
   const deadline = Date.now() + (deps.lingerMs ?? 30_000)
   while ((!app.attached || server.joined() > 0) && Date.now() < deadline) await delay(100)
   await server.close()
-  await rm(deps.hostFile, { force: true })
+  if (delivered) await rm(deps.hostFile, { force: true })
+  else {
+    // Nobody heard how it ended (the app was closed): leave that for the next
+    // launch to settle the run from.
+    const ended: RunHostFile = { ...hostFile, ended: final }
+    await writeFile(deps.hostFile, JSON.stringify(ended), { mode: 0o600 })
+  }
   return outcome
 }

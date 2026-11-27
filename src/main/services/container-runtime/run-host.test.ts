@@ -1,23 +1,24 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
 import type { LLMProvider } from '@copse/llm/types.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 import type { ContainerProviderPlan } from '../providers/container-provider.ts'
 import { fakeRecord } from './container-run-record.test-support.ts'
 import {
   canHostOutsideApp,
   hostContainerRun,
-  runHostToAppSchema,
-  type AppToRunHost,
+  forgetRunHost,
+  listRunHosts,
   type ContainerRunHostRequest,
   type RunHostDependencies,
   type RunHostOutcome,
-  type RunHostToApp,
 } from './run-host.ts'
-import { connectLocalLine } from '../local-socket.ts'
 import {
+  followHost,
+  RunHostDetached,
   RunHostLostError,
   runThroughHost,
   type RunHostChild,
@@ -53,6 +54,16 @@ function hostRequest(overrides: Partial<ContainerRunHostRequest> = {}): Containe
   return {
     runtimeId: 'run-test-1',
     projectId: 'p1',
+    display: {
+      threadId: 't1',
+      startedAt: 1,
+      prompt: 'Fix it',
+      model: 'claude-sonnet-4-6',
+      egressAllowlist: EGRESS,
+      credential: 'host',
+      checkout: null,
+      continuedFrom: null,
+    },
     model: 'claude-sonnet-4-6',
     useAgentLogin: false,
     base: {
@@ -199,6 +210,139 @@ describe('container run host', () => {
     )
   })
 
+  it('lets go of a run without stopping it, and a relaunched app follows it to the end', async () => {
+    const dir = scratch()
+    let finishRun: (record: ReturnType<typeof fakeRecord>) => void = () => undefined
+    let stopped = false
+    const wired = inProcess(dir, {
+      resolve: () => Promise.resolve(plan()),
+      run: (_request, options?: RunThreadOptions) =>
+        new Promise((resolve) => {
+          options?.signal?.addEventListener('abort', () => {
+            stopped = true
+          })
+          options?.onLog?.('working')
+          options?.onPhase?.('running')
+          finishRun = resolve
+        }),
+    })
+    const detach = new AbortController()
+    const quitting = runThroughHost(
+      hostRequest(),
+      {
+        detach: detach.signal,
+        onPhase: () => {
+          detach.abort()
+        },
+      },
+      wired.client,
+    )
+    await assert.rejects(quitting, RunHostDetached)
+    assert.equal(stopped, false, 'letting go is not a stop')
+    assert.ok(existsSync(wired.hostFile), 'the host is still serving the run')
+
+    const lines: string[] = []
+    let caughtUp: () => void = () => undefined
+    const replayed = new Promise<void>((resolve) => {
+      caughtUp = resolve
+    })
+    const following = followHost(wired.client.socketPath('run-test-1'), {
+      onLog: (line) => {
+        lines.push(line)
+        caughtUp()
+      },
+    })
+    await replayed
+    finishRun(fakeRecord('t1'))
+    const record = await following
+    assert.equal(record.result?.finalText, 'Done.')
+    assert.deepEqual(lines, ['working'], 'the relaunched app gets the log so far')
+  })
+
+  it('lists live, ended and lost hosts, and clears unreadable files', async () => {
+    const dir = scratch()
+    const hosts = join(dir, 'container-hosts')
+    mkdirSync(hosts)
+    const entry = (runtimeId: string, pid: number, ended?: object): string =>
+      JSON.stringify({
+        pid,
+        socket: '/s.sock',
+        runtimeId,
+        projectId: 'p1',
+        display: hostRequest().display,
+        ...(ended ? { ended } : {}),
+      })
+    writeFileSync(join(hosts, 'run-live.json'), entry('run-live', 100))
+    writeFileSync(join(hosts, 'run-dead.json'), entry('run-dead', 200))
+    writeFileSync(join(hosts, 'run-over.json'), entry('run-over', 300, { t: 'failed', error: 'x' }))
+    writeFileSync(join(hosts, 'run-junk.json'), '{')
+    writeFileSync(join(hosts, 'run-x.request.json'), '{}')
+    const listed = await listRunHosts(dir, (pid) => pid === 100)
+    assert.deepEqual(listed.map((host) => [host.runtimeId, host.state]).sort(), [
+      ['run-dead', 'lost'],
+      ['run-live', 'live'],
+      ['run-over', 'ended'],
+    ])
+    assert.equal(existsSync(join(hosts, 'run-dead.json')), true, 'kept until its run is settled')
+    assert.equal(existsSync(join(hosts, 'run-junk.json')), false)
+    assert.equal(existsSync(join(hosts, 'run-x.request.json')), true, 'a pending request is kept')
+    await forgetRunHost(dir, 'run-dead')
+    assert.equal(existsSync(join(hosts, 'run-dead.json')), false)
+  })
+
+  it('leaves how the run ended in its file when no app heard it', async () => {
+    const dir = scratch()
+    const wired = inProcess(dir, {
+      resolve: () => Promise.resolve(plan()),
+      run: (_request, options?: RunThreadOptions) =>
+        new Promise((resolve) => {
+          options?.onPhase?.('running')
+          setTimeout(() => {
+            resolve(fakeRecord('t1'))
+          }, 200)
+        }),
+    })
+    const detach = new AbortController()
+    await assert.rejects(
+      runThroughHost(
+        hostRequest(),
+        {
+          detach: detach.signal,
+          onPhase: () => {
+            detach.abort()
+          },
+        },
+        wired.client,
+      ),
+      RunHostDetached,
+    )
+    assert.equal((await wired.outcome).status, 'done')
+    const left: unknown = JSON.parse(readFileSync(wired.hostFile, 'utf8'))
+    assert.ok(isRecord(left) && isRecord(left['ended']))
+    assert.equal(left['ended']['t'], 'done')
+  })
+
+  it('stops its run when it is told to end', async () => {
+    const dir = scratch()
+    const ended = new AbortController()
+    const outcome = hostContainerRun(hostRequest(), {
+      resolve: () => Promise.resolve(plan()),
+      run: (_request, options?: RunThreadOptions) =>
+        new Promise((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => {
+            reject(new Error('stopped'))
+          })
+          ended.abort()
+        }),
+      socketPath: join(dir, 'host.sock'),
+      hostFile: join(dir, 'hosts', 'run.json'),
+      log: (): void => undefined,
+      lingerMs: 0,
+      signal: ended.signal,
+    })
+    assert.deepEqual(await outcome, { status: 'failed', error: 'stopped' })
+  })
+
   it('ends a host it lost, and says so', async () => {
     let kills = 0
     await assert.rejects(
@@ -221,42 +365,5 @@ describe('container run host', () => {
         error instanceof RunHostLostError && /exited before it started/.test(error.message),
     )
     assert.equal(kills, 1)
-  })
-
-  it("stops the run when the app's line closes before the run ends", async () => {
-    const dir = scratch()
-    const socketPath = join(dir, 'host.sock')
-    let running: () => void = () => undefined
-    const started = new Promise<void>((resolve) => {
-      running = resolve
-    })
-    const outcome = hostContainerRun(hostRequest(), {
-      resolve: () => Promise.resolve(plan()),
-      run: (_request, options?: RunThreadOptions) =>
-        new Promise((_resolve, reject) => {
-          options?.signal?.addEventListener('abort', () => {
-            reject(new Error('stopped'))
-          })
-          running()
-        }),
-      socketPath,
-      hostFile: join(dir, 'hosts', 'run.json'),
-      log: (): void => undefined,
-      lingerMs: 0,
-    })
-    let app = null
-    while (app === null) {
-      app = await connectLocalLine<RunHostToApp, AppToRunHost>(
-        socketPath,
-        runHostToAppSchema,
-        () => undefined,
-        () => undefined,
-      )
-    }
-    app.send({ t: 'attach' })
-    await started
-    // As an app crash or force quit would.
-    app.close()
-    assert.deepEqual(await outcome, { status: 'failed', error: 'stopped' })
   })
 })

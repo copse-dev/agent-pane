@@ -30,7 +30,11 @@ function thread(id: string, title: string, status: Thread['status'] = 'idle'): T
   }
 }
 
-type CloseConfirmHandler = (req: { id: string; continuesAfterQuit?: boolean }) => void
+type CloseConfirmHandler = (req: {
+  id: string
+  continuesAfterQuit?: boolean
+  containerRunThreads?: string[]
+}) => void
 
 const responses: { id: string; confirmed: boolean }[] = []
 let emit: CloseConfirmHandler = (): void => {}
@@ -112,6 +116,45 @@ describe('close-confirm', () => {
     clickActiveConfirmDialogConfirm()
     await flush()
     assert.deepEqual(responses, [{ id: 'close-5', confirmed: true }])
+  })
+
+  it('names a container run that carries on outside Copse', async () => {
+    const store = createStore({ threads: [thread('c', 'Fix the lint backlog')] })
+    mountCloseConfirm(api, store)
+
+    emit({ id: 'close-6', continuesAfterQuit: true, containerRunThreads: ['c'] })
+    await flush()
+
+    const dialog = qsRequired<HTMLDialogElement>(document, '#confirm-dialog')
+    assert.ok(dialog.open, 'a container run alone still asks')
+    assert.equal(
+      qsRequired(dialog, '.confirm-dialog-message').textContent,
+      'Close Copse while a container run is going?',
+    )
+    assert.match(
+      qsRequired(dialog, '.confirm-dialog-detail').textContent,
+      /Fix the lint backlog has a container run going\. It keeps going outside Copse/,
+    )
+    clickActiveConfirmDialogConfirm()
+    await flush()
+    assert.deepEqual(responses, [{ id: 'close-6', confirmed: true }])
+  })
+
+  it('says closing stops a container run when the hand-off is off', async () => {
+    const store = createStore({
+      threads: [thread('b', 'Fix login', 'running'), thread('c', 'Fix the lint backlog')],
+    })
+    mountCloseConfirm(api, store)
+
+    emit({ id: 'close-7', containerRunThreads: ['c'] })
+    await flush()
+
+    const detail = qsRequired(document, '#confirm-dialog .confirm-dialog-detail').textContent
+    assert.match(detail, /Fix login is mid-turn\./)
+    assert.match(detail, /Fix the lint backlog has a container run going\. Closing stops it\./)
+    clickActiveConfirmDialogCancel()
+    await flush()
+    assert.deepEqual(responses, [{ id: 'close-7', confirmed: false }])
   })
 
   it('allows the close when the user confirms anyway', async () => {
