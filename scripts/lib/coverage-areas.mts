@@ -21,14 +21,15 @@ export interface AreaCoverage {
 /**
  * Areas that get a floor when the baseline is updated. They are the layers
  * #4391 measured: the IPC handlers with almost no unit coverage, and the large
- * well-covered layers a regression would otherwise hide in.
+ * well-covered layers a regression would otherwise hide in. `src/shared/types`
+ * is left out: c8 counts declaration-only files as uncovered lines, so a new
+ * type file would lower it with nothing a test could run.
  */
 export const FLOORED_AREAS: readonly string[] = [
   'src/main/ipc',
   'src/main/services',
   'src/main/windows',
   'src/renderer/views',
-  'src/shared/types',
 ]
 
 /**
@@ -115,16 +116,35 @@ export function areaFloorFailures(
   return failures
 }
 
-/** The floor `--update` writes for each floored area: `margin` points under the measured figure. */
+/**
+ * The floors `--update` writes: `margin` points under the measured figure for
+ * each floored area and each area the baseline already floors. An area the run
+ * did not measure keeps its previous floor, so an incomplete summary cannot
+ * quietly drop one.
+ */
 export function updatedFloors(
   areas: readonly AreaCoverage[],
   margin: number,
+  previous: Readonly<Record<string, number>> = {},
   names: readonly string[] = FLOORED_AREAS,
 ): Record<string, number> {
   const floors: Record<string, number> = {}
-  for (const name of names) {
+  for (const name of new Set([...names, ...Object.keys(previous)])) {
     const area = areas.find((candidate) => candidate.area === name)
     if (area) floors[name] = Math.max(0, Math.floor((area.pct - margin) * 100) / 100)
+    else if (Object.hasOwn(previous, name)) floors[name] = previous[name] ?? 0
+  }
+  return floors
+}
+
+/** The `areas` floors of a parsed baseline; anything that is not a number is ignored. */
+export function baselineFloors(baseline: Record<string, unknown>): Record<string, number> {
+  const floors: Record<string, number> = {}
+  const areas = baseline['areas']
+  if (isRecord(areas)) {
+    for (const [area, floor] of Object.entries(areas)) {
+      if (typeof floor === 'number') floors[area] = floor
+    }
   }
   return floors
 }

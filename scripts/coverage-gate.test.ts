@@ -115,4 +115,19 @@ describe('coverage gate', () => {
       areas: { 'src/main/ipc': 29.5, 'src/main/services': 94.5 },
     })
   })
+
+  it('keeps floors for areas an update did not measure', () => {
+    const updated = runGate(
+      92.42,
+      { lines: 73.04, areas: { 'src/main/ipc': 31.63, 'src/main/windows': 82.35 } },
+      ['--update'],
+      undefined,
+      { 'src/main/services/agent.ts': { covered: 95, total: 100 } },
+    )
+    assert.equal(updated.status, 0)
+    assert.deepEqual(updated.baseline, {
+      lines: 92.17,
+      areas: { 'src/main/ipc': 31.63, 'src/main/services': 94.5, 'src/main/windows': 82.35 },
+    })
+  })
 })

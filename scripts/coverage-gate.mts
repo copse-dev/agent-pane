@@ -19,11 +19,13 @@
 // cannot hide behind a rise elsewhere. Every run prints the areas with the most
 // uncovered lines; `--update` resets the floors with the global baseline.
 //
+import { existsSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { expectRecord, isRecord } from '../src/shared/unknown-value.mts'
+import { expectRecord } from '../src/shared/unknown-value.mts'
 import {
   areaFloorFailures,
+  baselineFloors,
   formatAreaTable,
   summariseAreas,
   updatedFloors,
@@ -80,7 +82,8 @@ if (update) {
   const next = Math.floor((current - UPDATE_MARGIN) * 100) / 100
   // Area figures move more than the total when one file changes, so their
   // floors keep a wider margin.
-  const floors = updatedFloors(areas, AREA_UPDATE_MARGIN)
+  const previous = existsSync(BASELINE) ? baselineFloors(await readJson(BASELINE)) : {}
+  const floors = updatedFloors(areas, AREA_UPDATE_MARGIN, previous)
   const written = Object.keys(floors).length > 0 ? { lines: next, areas: floors } : { lines: next }
   await writeFile(BASELINE, JSON.stringify(written, null, 2) + '\n')
   console.log(
@@ -92,12 +95,7 @@ if (update) {
 
 const baseline = await readJson(BASELINE)
 const required = typeof baseline['lines'] === 'number' ? baseline['lines'] : 0
-const floors: Record<string, number> = {}
-if (isRecord(baseline['areas'])) {
-  for (const [area, floor] of Object.entries(baseline['areas'])) {
-    if (typeof floor === 'number') floors[area] = floor
-  }
-}
+const floors = baselineFloors(baseline)
 const delta = current - required
 
 const summaryLine =

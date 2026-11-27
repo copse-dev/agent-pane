@@ -54,10 +54,21 @@ describe('coverage areas', () => {
 
   it('sets floors a margin under the measured figure for the named areas it measured', () => {
     const areas = summariseAreas(summary, root)
-    assert.deepEqual(updatedFloors(areas, 0.5, ['src/main/ipc', 'src/main/services', 'src/gone']), {
-      'src/main/ipc': 32.83,
-      'src/main/services': 94.5,
-    })
+    assert.deepEqual(
+      updatedFloors(areas, 0.5, {}, ['src/main/ipc', 'src/main/services', 'src/gone']),
+      {
+        'src/main/ipc': 32.83,
+        'src/main/services': 94.5,
+      },
+    )
+  })
+
+  it('keeps an existing floor for an area the run did not measure', () => {
+    const areas = summariseAreas(summary, root)
+    assert.deepEqual(
+      updatedFloors(areas, 0.5, { 'src/gone': 12, 'src/main/ipc': 90 }, ['src/main/ipc']),
+      { 'src/main/ipc': 32.83, 'src/gone': 12 },
+    )
   })
 
   it('prints a table that names floors where they exist', () => {

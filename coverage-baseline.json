@@ -4,7 +4,6 @@
     "src/main/ipc": 31.63,
     "src/main/services": 94.71,
     "src/main/windows": 82.35,
-    "src/renderer/views": 94.72,
-    "src/shared/types": 57.85
+    "src/renderer/views": 94.72
   }
 }
