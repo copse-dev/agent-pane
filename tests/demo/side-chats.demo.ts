@@ -8,14 +8,14 @@ const sidebarTitles = async (): Promise<string[]> =>
 
 const MAIN = 'Fix flaky mermaid e2e'
 
-/** Reveal a hover-only message action, then click it. */
-async function hoverClick(messageSelector: string, actionSelector: string): Promise<void> {
+/** A prompt's actions sit behind its ⋯ menu: open it, then pick the action. */
+async function clickPromptAction(messageSelector: string, actionSelector: string): Promise<void> {
   const message = $(messageSelector)
   await message.waitForDisplayed({ timeout: 10_000 })
   await message.scrollIntoView()
-  await message.moveTo()
+  await message.$('.msg-actions-trigger').click()
   const action = message.$(actionSelector)
-  await action.waitForExist({ timeout: 5_000 })
+  await action.waitForDisplayed({ timeout: 5_000 })
   await action.click()
 }
 
@@ -157,8 +157,8 @@ describe('Side chats beside the main thread', () => {
     )
   })
 
-  it('starts a side chat from a hover action on a message and offers suggestions', async () => {
-    await hoverClick('#conversation .msg-user', '.msg-side-chat')
+  it('starts a side chat from the actions menu on a prompt and offers suggestions', async () => {
+    await clickPromptAction('#conversation .msg-user', '.msg-side-chat')
     await $('.side-chat-empty').waitForDisplayed({ timeout: 10_000 })
     await expect($$('.side-chat-suggestion')).toBeElementsArrayOfSize(3)
     await expect($('[data-side-chat-context]')).toHaveText(

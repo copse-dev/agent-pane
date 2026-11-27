@@ -2628,6 +2628,14 @@ const REOPENABLE_REASONING = '.msg-assistant:not(.msg-concise) .message-reasonin
 const BACKFILL_CHUNK_SIZE = 30
 /** Stands in for a row built without a signature, which matches no wanted row. */
 const UNSIGNED_ROW: TranscriptRowSignature = { patched: '', settled: '' }
+/**
+ * The id of a prompt's actions menu, for its trigger's `aria-controls`. It is
+ * derived from the thread and message so a reconciled row and a fresh rebuild
+ * of the same prompt produce identical markup; a counter made them differ.
+ */
+function userActionsMenuId(threadId: string, msgId: string): string {
+  return `msg-actions-menu-${threadId}-${msgId}`.replace(/[^A-Za-z0-9_-]/g, '_')
+}
 
 export function mountConversation(
   root: HTMLElement,
@@ -3778,8 +3786,7 @@ export function mountConversation(
   /**
    * Per-prompt actions. **Fork from here** branches the conversation as it stood
    * at that message into a new thread; **Resend** submits the prompt again as a
-   * fresh turn. Both are hover affordances on the user bubble, matching the
-   * assistant bubble's Copy.
+   * fresh turn. The actions follow the prompt text in the bubble footer.
    */
   function buildUserActions(threadId: string, msgId: string): HTMLElement {
     const fork = el(
@@ -3821,13 +3828,67 @@ export function mountConversation(
       runResend(threadId)
     })
     const sideChat = buildSideChatAction(threadId, msgId)
-    const actions = el(
+    const menuId = userActionsMenuId(threadId, msgId)
+    // A disclosure, not an ARIA menu: the revealed actions are ordinary buttons
+    // in the Tab order, so `aria-haspopup` would promise menu keys they lack.
+    const trigger = el(
+      'button',
+      {
+        class: 'msg-action msg-actions-trigger',
+        type: 'button',
+        title: 'Message actions',
+        'aria-label': 'Message actions',
+        'aria-expanded': 'false',
+        'aria-controls': menuId,
+      },
+      '⋯',
+    )
+    const menu = el(
       'div',
-      { class: 'msg-actions' },
+      { class: 'msg-actions-menu', id: menuId },
       fork,
       ...(sideChat ? [sideChat] : []),
       resend,
     )
+    // The trigger leads in the DOM so Tab goes from ⋯ into the actions it just
+    // revealed; CSS `order` keeps it at the end of the row.
+    const actions = el('div', { class: 'msg-actions' }, trigger, menu)
+    const closeActions = (): void => {
+      actions.classList.remove('is-open')
+      trigger.setAttribute('aria-expanded', 'false')
+      document.removeEventListener('click', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+    const closeOnOutsideClick = (event: MouseEvent): void => {
+      if (event.target instanceof Node && !actions.contains(event.target)) closeActions()
+    }
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      closeActions()
+      // Only an Escape pressed inside the row hands focus back to ⋯. One typed
+      // elsewhere, such as the composer's stop gesture, keeps its focus.
+      if (event.target instanceof Node && actions.contains(event.target)) trigger.focus()
+    }
+    actions.addEventListener('focusout', (event) => {
+      // Switching windows blurs too, but focus returns here; only a move
+      // elsewhere in the app dismisses the menu.
+      if (!document.hasFocus()) return
+      if (event.relatedTarget instanceof Node && actions.contains(event.relatedTarget)) return
+      closeActions()
+    })
+    trigger.addEventListener('click', () => {
+      if (actions.classList.contains('is-open')) {
+        closeActions()
+      } else {
+        actions.classList.add('is-open')
+        trigger.setAttribute('aria-expanded', 'true')
+        document.addEventListener('click', closeOnOutsideClick)
+        document.addEventListener('keydown', closeOnEscape)
+      }
+    })
+    actions.addEventListener('click', (event) => {
+      if (event.target !== trigger) closeActions()
+    })
     const message = getThreadById(store, threadId)?.messages.find((item) => item.id === msgId)
     if ((message?.images?.length ?? 0) > 0) {
       const imageCount = message?.images?.length ?? 0
@@ -3843,7 +3904,7 @@ export function mountConversation(
       resendWithoutImages.addEventListener('click', () => {
         runResend(threadId, false)
       })
-      actions.append(resendWithoutImages)
+      menu.append(resendWithoutImages)
     }
     return actions
   }

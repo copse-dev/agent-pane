@@ -71,7 +71,7 @@ describe('copse.dev feature tour screenshots', () => {
     await browser.switchFrame(null)
     await settleCapture()
     const latest = at([...(await $$('.messages-list .msg-user').getElements())], 1)
-    await latest.moveTo()
+    await latest.$('.msg-actions-trigger').click()
     await expect(latest.$('.msg-fork')).toBeDisplayed()
     await expect(latest.$('.msg-resend')).toBeDisplayed()
     await expectCleanCapture()

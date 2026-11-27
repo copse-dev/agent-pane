@@ -266,7 +266,7 @@ describe('Pasting text into the composer', () => {
     await expect(await $$('.messages-list .msg-user').getElements()).toBeElementsArrayOfSize(1)
     const original = await $('.messages-list .msg-user').getElement()
     const originalId = await original.getAttribute('data-message-id')
-    await original.moveTo()
+    await original.$('.msg-actions-trigger').click()
     await original.$('.msg-resend').click()
     await scenario.waitForComplete()
     await waitForAgentIdle()
@@ -335,7 +335,7 @@ describe('Pasting text into the composer', () => {
         },
       ],
     })
-    await $(resent).moveTo()
+    await $(`${resent} .msg-actions-trigger`).click()
     await $(`${resent} .msg-resend`).click()
     await restoredScenario.waitForComplete()
     await waitForAgentIdle()

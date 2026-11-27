@@ -3,7 +3,7 @@ import { browser } from '@wdio/globals'
 import { parkPointer } from './screenshot.ts'
 
 function foldedPromptCaptureState(selector: string): {
-  opacity: string
+  menuOpen: boolean
   focused: boolean
   hovered: boolean
 } {
@@ -11,19 +11,22 @@ function foldedPromptCaptureState(selector: string): {
   const actions = row?.querySelector('.msg-actions')
   if (!row || !actions) throw new Error('Folded prompt capture requires its action strip')
   return {
-    opacity: getComputedStyle(actions).opacity,
+    menuOpen: actions.classList.contains('is-open'),
     focused: actions.matches(':focus-within'),
     hovered: row.matches(':hover'),
   }
 }
 
-/** Capture the normal nonhover state; element screenshots can drop Chromium hover. */
+/**
+ * Capture the resting state — actions menu closed, no hover or focus; element
+ * screenshots can drop Chromium hover.
+ */
 export async function settleFoldedPromptCapture(selector: string): Promise<void> {
   await parkPointer()
   await browser.waitUntil(
     async () => {
       const state = await browser.execute(foldedPromptCaptureState, selector)
-      return state.opacity === '0' && !state.focused && !state.hovered
+      return !state.menuOpen && !state.focused && !state.hovered
     },
     { timeout: 2_000, timeoutMsg: 'Folded prompt action strip did not settle after hover' },
   )
@@ -33,7 +36,7 @@ export async function settleFoldedPromptCapture(selector: string): Promise<void>
 /** An immediate post-capture check catches a framing-induced hover/focus change. */
 export async function assertFoldedPromptCaptureSettled(selector: string): Promise<void> {
   assert.deepEqual(await browser.execute(foldedPromptCaptureState, selector), {
-    opacity: '0',
+    menuOpen: false,
     focused: false,
     hovered: false,
   })

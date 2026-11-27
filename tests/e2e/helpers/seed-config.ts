@@ -6124,7 +6124,10 @@ export function seedThreadRenameArchiveFixture(workspaceRoot: string): {
  * exchanges, so the transcript shows a prompt that is *not* the latest (Fork
  * from here only) alongside the latest one (Fork from here + Resend).
  */
-export function seedForkResendFixture(workspaceRoot: string): {
+export function seedForkResendFixture(
+  workspaceRoot: string,
+  latestPrompt = 'Now make it fall back to the dashboard.',
+): {
   projectId: string
   threadId: string
   title: string
@@ -6163,7 +6166,7 @@ export function seedForkResendFixture(workspaceRoot: string): {
           {
             id: 'msg-fork-user-latest',
             role: 'user',
-            content: 'Now make it fall back to the dashboard.',
+            content: latestPrompt,
             toolCalls: [],
             createdAt: now + 2,
           },

@@ -5,8 +5,17 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
-import { e2eWorkspaceDir, resetUserData, seedForkResendFixture } from './helpers/seed-config.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import {
+  e2eWorkspaceDir,
+  resetUserData,
+  seedForkResendFixture,
+  seedStableWorkspace,
+} from './helpers/seed-config.ts'
+import {
+  saveAppScreenshot,
+  saveFramedElementScreenshot,
+  withCaptureFrame,
+} from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -66,7 +75,10 @@ describe('fork a thread and resend the last message', function () {
 
   it('offers per-prompt actions, and Fork from here branches the conversation', async function () {
     resetUserData()
-    const { title } = seedForkResendFixture(process.cwd())
+    const { title } = seedForkResendFixture(
+      process.cwd(),
+      'I want to build a mobile-first club site with ride signups, Strava login if possible, a digital brevet card, a leaderboard, and points for coming on the ride or going to the pub. Please prototype the screen first and show how the scoring might work.',
+    )
     await browser.reloadSession()
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -88,34 +100,42 @@ describe('fork a thread and resend the last message', function () {
     await expect(firstPrompt.$('.msg-resend')).toHaveAttribute('hidden')
     await expect(latestPrompt.$('.msg-resend')).not.toHaveAttribute('hidden')
 
-    // The row is a hover affordance (opacity 0 at rest), exactly like the Copy
-    // button on an assistant reply — so it only becomes visible on hover.
-    await expect(latestPrompt.$('.msg-actions')).not.toBeDisplayed()
-    await latestPrompt.moveTo()
-    await expect(latestPrompt.$('.msg-actions')).toBeDisplayed()
+    await expect(latestPrompt.$('.msg-actions-trigger')).toBeDisplayed()
+    await expect(latestPrompt.$('.msg-resend')).not.toBeDisplayed()
+    mkdirSync(SCREENSHOT_DIR, { recursive: true })
+    await saveAppScreenshot('message-fork-resend-collapsed.png')
+    await latestPrompt.$('.msg-actions-trigger').moveTo()
+    await expect(latestPrompt.$('.msg-resend')).not.toBeDisplayed()
+    await latestPrompt.$('.msg-actions-trigger').click()
     await expect(latestPrompt.$('.msg-resend')).toBeDisplayed()
+    await expect(latestPrompt.$('.msg-actions-trigger')).toHaveAttribute('aria-expanded', 'true')
 
-    const actionCenterOffset = await browser.execute(() => {
+    const geometry = await browser.execute(() => {
       const prompts = document.querySelectorAll<HTMLElement>('.messages-list .msg-user')
       const bubble = prompts[prompts.length - 1]
-      if (!bubble) return null
-      const actions = bubble.querySelector<HTMLElement>('.msg-actions')
-      if (!actions) return null
-      const bubbleRect = bubble.getBoundingClientRect()
-      const actionsRect = actions.getBoundingClientRect()
-      return actionsRect.top + actionsRect.height / 2 - (bubbleRect.top + bubbleRect.height / 2)
+      const text = bubble?.querySelector<HTMLElement>('.message-text')
+      const actions = bubble?.querySelector<HTMLElement>('.msg-actions')
+      if (!text || !actions) return null
+      return {
+        textHeight: text.getBoundingClientRect().height,
+        footerGap: actions.getBoundingClientRect().top - text.getBoundingClientRect().bottom,
+      }
     })
-    assert.ok(actionCenterOffset !== null, 'the latest prompt actions must render')
+    assert.ok(geometry !== null, 'the latest prompt actions must render')
+    assert.ok(geometry.textHeight > 40, 'the prompt must wrap across multiple lines')
     assert.ok(
-      Math.abs(actionCenterOffset) <= 1,
-      `one-line prompt actions must be vertically centred in the bubble, offset ${String(actionCenterOffset)}`,
+      geometry.footerGap >= 4,
+      `prompt actions must clear the text, gap ${String(geometry.footerGap)}`,
     )
 
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     await saveAppScreenshot('message-fork-resend-actions.png')
+    await latestPrompt.$('.msg-actions-trigger').click()
+    await expect(latestPrompt.$('.msg-resend')).not.toBeDisplayed()
+    await expect(latestPrompt.$('.msg-actions-trigger')).toHaveAttribute('aria-expanded', 'false')
 
     // Fork from the FIRST prompt: the new thread carries only that exchange.
-    await firstPrompt.moveTo()
+    await firstPrompt.$('.msg-actions-trigger').click()
     await firstPrompt.$('.msg-fork').click()
     await $('.context-menu-item*=Fork a copy').click()
 
@@ -150,6 +170,83 @@ describe('fork a thread and resend the last message', function () {
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'message-fork-resend-forked-thread.png'))
   })
 
+  it('opens prompt actions from the keyboard and leaves an Escape in the composer alone', async function () {
+    resetUserData()
+    seedForkResendFixture(seedStableWorkspace())
+    await browser.reloadSession()
+
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await browser.waitUntil(
+      async () => (await $$('.messages-list .msg-user').getElements()).length === 2,
+      {
+        timeout: 10_000,
+        timeoutMsg: 'expected both seeded prompts in the transcript',
+      },
+    )
+    const latestId = await at(
+      [...(await $$('.messages-list .msg-user').getElements())],
+      1,
+    ).getAttribute('data-message-id')
+    if (!latestId) throw new Error('the latest prompt has no message id')
+    const latest = `.messages-list [data-message-id="${latestId}"]`
+    const trigger = `${latest} .msg-actions-trigger`
+    const focusedName = (): Promise<string | null> =>
+      browser.execute(() => {
+        const active = document.activeElement
+        if (!active || active === document.body) return null
+        return active.getAttribute('aria-label') ?? active.textContent
+      })
+
+    // ⋯ names the actions it reveals, and they follow it in the Tab order.
+    const menuId = await $(trigger).getAttribute('aria-controls')
+    if (!menuId) throw new Error('the ⋯ trigger must name the menu it controls')
+    await expect($(`${latest} .msg-actions-menu`)).toHaveAttribute('id', menuId)
+    await browser.execute((selector) => {
+      document.querySelector<HTMLElement>(selector)?.focus()
+    }, trigger)
+    await browser.keys(['Enter'])
+    await expect($(trigger)).toHaveAttribute('aria-expanded', 'true')
+    const tabbed: Array<string | null> = []
+    for (let press = 0; press < 3; press++) {
+      await browser.keys(['Tab'])
+      tabbed.push(await focusedName())
+    }
+    expect(tabbed).toEqual(['Fork from here', 'Side chat', 'Resend'])
+    await browser.keys(['Shift', 'Tab'])
+    await browser.keys(['Shift', 'Tab'])
+    expect(await focusedName()).toBe('Fork from here')
+    // The app-shell helpers dispatch resize, which can move focus; frame the
+    // prompt as it stands so the keyboard focus is what the capture shows.
+    await withCaptureFrame(async () => {
+      await saveFramedElementScreenshot(latest, 'message-fork-resend-keyboard-focus.png')
+    })
+    expect(await focusedName()).toBe('Fork from here')
+
+    // Escape from inside the menu closes it and hands focus back to ⋯.
+    await browser.keys(['Escape'])
+    await expect($(trigger)).toHaveAttribute('aria-expanded', 'false')
+    expect(await focusedName()).toBe('Message actions')
+
+    // Tabbing past the last action leaves the menu, which closes behind it.
+    await browser.keys(['Enter'])
+    await expect($(trigger)).toHaveAttribute('aria-expanded', 'true')
+    for (let press = 0; press < 4; press++) await browser.keys(['Tab'])
+    await expect($(trigger)).toHaveAttribute('aria-expanded', 'false')
+
+    // A menu opened without taking focus (as assistive tech can) must not pull
+    // an Escape typed in the composer, the first key of the stop gesture.
+    await $('.prompt-input').click()
+    await expect($('.prompt-input')).toBeFocused()
+    await browser.execute((selector) => {
+      document.querySelector<HTMLElement>(selector)?.click()
+    }, trigger)
+    await expect($(trigger)).toHaveAttribute('aria-expanded', 'true')
+    await expect($('.prompt-input')).toBeFocused()
+    await browser.keys(['Escape'])
+    await expect($(trigger)).toHaveAttribute('aria-expanded', 'false')
+    await expect($('.prompt-input')).toBeFocused()
+  })
+
   it('Resend submits the latest prompt again as a new turn', async function () {
     resetUserData()
     seedForkResendFixture(process.cwd())
@@ -165,7 +262,7 @@ describe('fork a thread and resend the last message', function () {
     )
 
     const latestPrompt = at([...(await $$('.messages-list .msg-user').getElements())], 1)
-    await latestPrompt.moveTo()
+    await latestPrompt.$('.msg-actions-trigger').click()
     await installMockScenario({
       title: 'Review the login redirect',
       turns: [

@@ -9,6 +9,7 @@ import { enqueueUserMessage } from '../controller/message-queue.ts'
 import { mountConversation } from './conversation.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { dismissContextMenu } from '../dom/context-menu.ts'
+import { el } from '../dom/helpers.ts'
 
 // Component-level cover for the per-prompt actions on a user bubble. The pure
 // transforms are unit-tested (shared/store/fork-thread.test.ts,
@@ -70,12 +71,113 @@ function userBubbles(): HTMLElement[] {
   return Array.from(document.querySelectorAll<HTMLElement>('.messages-list .msg-user'))
 }
 
+/** Compare focus by class: a failed assert on happy-dom elements never finishes printing. */
+function focusedClass(): string | undefined {
+  return document.activeElement?.className
+}
+
 afterEach(() => {
   dismissContextMenu()
   document.body.replaceChildren()
 })
 
 describe('per-prompt fork + resend actions (component)', () => {
+  it('opens actions on click and closes them on another click, outside click, or Escape', () => {
+    mountConversationWithHistory()
+    const bubble = userBubbles()[1]
+    assert.ok(bubble)
+    const actions = bubble.querySelector<HTMLElement>('.msg-actions')
+    const trigger = bubble.querySelector<HTMLButtonElement>('.msg-actions-trigger')
+    assert.ok(actions)
+    assert.ok(trigger)
+
+    trigger.click()
+    assert.equal(actions.classList.contains('is-open'), true)
+    assert.equal(trigger.getAttribute('aria-expanded'), 'true')
+    trigger.click()
+    assert.equal(actions.classList.contains('is-open'), false)
+
+    trigger.click()
+    document.body.click()
+    assert.equal(actions.classList.contains('is-open'), false)
+
+    trigger.click()
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    assert.equal(actions.classList.contains('is-open'), false)
+    assert.equal(trigger.getAttribute('aria-expanded'), 'false')
+  })
+
+  it('puts the trigger before the actions it controls, so Tab reaches them next', () => {
+    mountConversationWithHistory()
+    const bubble = userBubbles()[1]
+    const trigger = bubble?.querySelector<HTMLButtonElement>('.msg-actions-trigger')
+    assert.ok(trigger)
+    const menuId = trigger.getAttribute('aria-controls')
+    assert.ok(menuId)
+    const menu = document.getElementById(menuId)
+    assert.ok(menu)
+    assert.ok(menu.classList.contains('msg-actions-menu'))
+    assert.ok(trigger.nextElementSibling === menu, 'the menu must follow its trigger')
+    assert.deepEqual(
+      Array.from(menu.children, (child) => child.textContent),
+      ['Fork from here', 'Side chat', 'Resend'],
+    )
+    // Each prompt's trigger names its own menu.
+    assert.notEqual(
+      userBubbles()[0]?.querySelector('.msg-actions-trigger')?.getAttribute('aria-controls'),
+      menuId,
+    )
+  })
+
+  it('returns focus to the trigger only for an Escape pressed inside the menu', () => {
+    mountConversationWithHistory()
+    const bubble = userBubbles()[1]
+    const actions = bubble?.querySelector<HTMLElement>('.msg-actions')
+    const trigger = bubble?.querySelector<HTMLButtonElement>('.msg-actions-trigger')
+    const fork = bubble?.querySelector<HTMLButtonElement>('.msg-fork')
+    assert.ok(actions && trigger && fork)
+    const composer = el('textarea', { class: 'composer' })
+    document.body.append(composer)
+
+    // Opened without moving focus (a click that does not focus, or a screen
+    // reader), the menu must not pull an Escape typed in the composer.
+    trigger.click()
+    composer.focus()
+    composer.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    assert.equal(actions.classList.contains('is-open'), false)
+    assert.equal(focusedClass(), 'composer')
+
+    trigger.focus()
+    trigger.click()
+    fork.focus()
+    fork.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    assert.equal(actions.classList.contains('is-open'), false)
+    assert.equal(focusedClass(), trigger.className)
+  })
+
+  it('closes the menu when focus leaves it, but not when it moves between its buttons', () => {
+    mountConversationWithHistory()
+    const bubble = userBubbles()[1]
+    const actions = bubble?.querySelector<HTMLElement>('.msg-actions')
+    const trigger = bubble?.querySelector<HTMLButtonElement>('.msg-actions-trigger')
+    const fork = bubble?.querySelector<HTMLButtonElement>('.msg-fork')
+    assert.ok(actions && trigger && fork)
+    const composer = el('textarea', { class: 'composer' })
+    document.body.append(composer)
+
+    trigger.focus()
+    trigger.click()
+    fork.focus()
+    assert.equal(actions.classList.contains('is-open'), true)
+
+    composer.focus()
+    assert.equal(actions.classList.contains('is-open'), false)
+    assert.equal(trigger.getAttribute('aria-expanded'), 'false')
+    // The closed menu no longer answers Escape, so the composer keeps focus.
+    composer.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    assert.equal(focusedClass(), 'composer')
+  })
+
   it('offers Fork from here on every prompt and Resend only on the latest', () => {
     mountConversationWithHistory()
 
