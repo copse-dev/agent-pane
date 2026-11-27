@@ -2,9 +2,10 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { crc32 } from 'node:zlib'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import {
   DEMO_CHROME_PIN,
@@ -23,21 +24,46 @@ afterEach(async () => {
   await rm(work, { recursive: true, force: true })
 })
 
-/** A zip holding `<asset>/<binary>`, built with the system `zip` so the test needs no fixture. */
-async function makeZip(asset: string, binary: string): Promise<Buffer> {
-  const src = join(work, 'src', asset)
-  await mkdir(join(src, asset), { recursive: true })
-  await writeFile(join(src, asset, binary), `#!/bin/sh\necho ${VERSION}\n`, { mode: 0o755 })
-  const zip = join(work, `${asset}.zip`)
-  execFileSync('zip', ['-qr', zip, asset], { cwd: src })
-  return readFile(zip)
+/**
+ * A zip holding `<asset>/<binary>` as an executable shell script. Built in
+ * memory (stored, uncompressed) so the test needs neither a fixture file nor
+ * the system `zip`, which some runner images lack.
+ */
+function makeZip(asset: string, binary: string): Buffer {
+  const name = Buffer.from(`${asset}/${binary}`)
+  const data = Buffer.from(`#!/bin/sh\necho ${VERSION}\n`)
+  const crc = crc32(data)
+  const local = Buffer.alloc(30)
+  local.writeUInt32LE(0x04034b50, 0)
+  local.writeUInt16LE(20, 4) // version needed
+  local.writeUInt32LE(crc, 14)
+  local.writeUInt32LE(data.length, 18)
+  local.writeUInt32LE(data.length, 22)
+  local.writeUInt16LE(name.length, 26)
+  const central = Buffer.alloc(46)
+  central.writeUInt32LE(0x02014b50, 0)
+  central.writeUInt16LE((3 << 8) | 20, 4) // made by Unix, so the mode below is honoured
+  central.writeUInt16LE(20, 6)
+  central.writeUInt32LE(crc, 16)
+  central.writeUInt32LE(data.length, 20)
+  central.writeUInt32LE(data.length, 24)
+  central.writeUInt16LE(name.length, 28)
+  central.writeUInt32LE((0o100755 << 16) >>> 0, 38) // regular file, rwxr-xr-x
+  const localSize = local.length + name.length + data.length
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0)
+  end.writeUInt16LE(1, 8)
+  end.writeUInt16LE(1, 10)
+  end.writeUInt32LE(central.length + name.length, 12)
+  end.writeUInt32LE(localSize, 16)
+  return Buffer.concat([local, name, data, central, name, end])
 }
 
 const sha = (bytes: Buffer): string => createHash('sha256').update(bytes).digest('hex')
 
 async function fixture(): Promise<{ zips: Map<string, Buffer>; pin: DemoChromePin }> {
-  const chrome = await makeZip('chrome-linux64', 'chrome')
-  const driver = await makeZip('chromedriver-linux64', 'chromedriver')
+  const chrome = makeZip('chrome-linux64', 'chrome')
+  const driver = makeZip('chromedriver-linux64', 'chromedriver')
   return {
     zips: new Map([
       [demoChromeUrl(VERSION, 'chrome-linux64'), chrome],
