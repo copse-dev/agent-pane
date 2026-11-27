@@ -19,6 +19,7 @@ import {
 } from './services/turn-host/turn-host-launch.ts'
 import type { TurnHostLink } from './services/turn-host/turn-host-link.ts'
 import { setTestScenarioForwarder } from './services/turn-host/turn-host-test-scenarios.ts'
+import { turnNeeds } from './services/turn-host/turn-needs.ts'
 import type { TurnWorkerConnection } from './services/turn-worker/turn-worker-socket.ts'
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
 import { initRemoteInterface } from './services/mobile/remote-interface.ts'
@@ -1416,7 +1417,12 @@ app
         // where their grant is checked.
         const ranInHost =
           !delegation && turnHostLink?.ready === true
-            ? (await turnHostLink.run(projectId, threadId, rawPrompt)) === 'host'
+            ? (await turnHostLink.run(
+                projectId,
+                threadId,
+                rawPrompt,
+                await turnNeeds(projectId, threadId, request.payload.model),
+              )) === 'host'
             : false
         // The host gives the thread's lease back before its last transcript
         // write lands, so the follower's repaint at the release can still read

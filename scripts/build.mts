@@ -22,6 +22,7 @@ import {
   generateApiProtocol,
   serializeApiProtocol,
 } from './lib/api-protocol.mts'
+import { loadWorkerProtocol } from './lib/worker-protocol.mts'
 import { copyOptionalBinaries } from './lib/copy-optional-binaries.mts'
 import { markTreeNoindex } from './lib/noindex.mts'
 import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
@@ -414,6 +415,20 @@ writeFileSync(
   serializeApiProtocol(generateApiProtocol({ version: API_PROTOCOL_VERSION })),
 )
 console.log(`[build] wrote ${API_PROTOCOL_SCHEMA_BUILD_PATH}`)
+
+// The harness worker protocol schema (docs/plans/harness-worker-roadmap.md, R2):
+// what a client and a worker say over a worker line, for a worker elsewhere to
+// code against. Its committed manifest is `schemas/worker-protocol.manifest.json`.
+{
+  const workerProtocol = await loadWorkerProtocol()
+  const out = workerProtocol.WORKER_PROTOCOL_SCHEMA_BUILD_PATH
+  mkdirSync(dirname(out), { recursive: true })
+  writeFileSync(
+    out,
+    workerProtocol.serializeWorkerProtocol(workerProtocol.workerProtocolDocument()),
+  )
+  console.log(`[build] wrote ${out}`)
+}
 
 // Optional — postinstall may be skipped on unsupported platforms.
 await copyOptionalBinaries(

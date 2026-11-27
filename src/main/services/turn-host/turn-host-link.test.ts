@@ -4,6 +4,7 @@ import type { Thread } from '@shared/types/thread.ts'
 import type { HostDispatchRecord } from './host-dispatch-record.ts'
 import type { AppToHost, HostToApp, TurnHostConnection } from './turn-host-protocol.ts'
 import { TurnHostLink, type TurnHostLinkDependencies } from './turn-host-link.ts'
+import type { TurnNeeds, WorkerCapabilities } from '../worker-protocol/worker-capabilities.ts'
 
 const childThread: Thread = {
   id: 'child',
@@ -27,6 +28,12 @@ class FakeHost {
   connections = 0
   reachable = true
   pid = 4242
+  capabilities: WorkerCapabilities | undefined = {
+    roles: ['turns'],
+    models: { chatgptPlan: false, externalAgents: false, remoteAgents: false },
+    pluginRuntimes: false,
+    sandbox: true,
+  }
   respond: (message: AppToHost, reply: (message: HostToApp) => void) => void = () => undefined
   private current: { onClose: () => void; open: boolean } | null = null
   private listener: ((message: HostToApp) => void) | null = null
@@ -43,7 +50,13 @@ class FakeHost {
         this.sent.push(message)
         if (message.t === 'hello') {
           queueMicrotask(() => {
-            onMessage({ t: 'hello', version: VERSION, protocol: 1, pid: this.pid })
+            onMessage({
+              t: 'hello',
+              version: VERSION,
+              protocol: 2,
+              pid: this.pid,
+              capabilities: this.capabilities,
+            })
           })
           return
         }
@@ -113,6 +126,33 @@ describe('TurnHostLink', () => {
     assert.equal(await line.run('p1', 't1', 'Hello'), 'host')
     assert.deepEqual(taken, ['t1'])
     assert.deepEqual(line.runningThreadIds(), [])
+  })
+
+  it('runs a turn in the app when the host said it cannot run what the turn needs', async () => {
+    const host = new FakeHost()
+    host.respond = (message, reply): void => {
+      if (message.t !== 'dispatch') return
+      reply({ t: 'accepted', id: message.id, threadId: message.threadId })
+      reply({ t: 'ended', id: message.id, threadId: message.threadId })
+    }
+    const logged: string[] = []
+    const { link: line } = link(host, { log: (entry) => logged.push(entry) })
+    const plain: TurnNeeds = { model: 'claude-sonnet-4-6', pluginRuntimes: false, sandbox: true }
+    assert.equal(await line.run('p1', 't1', 'Hello', { ...plain, pluginRuntimes: true }), 'app')
+    assert.equal(await line.run('p1', 't1', 'Hello', { ...plain, model: 'acp:codex' }), 'app')
+    assert.equal(dispatched(host), 0)
+    assert.match(logged.join('\n'), /plugin runtimes/)
+    assert.equal(await line.run('p1', 't1', 'Hello', plain), 'host')
+    assert.equal(dispatched(host), 1)
+  })
+
+  it('sends a host that said nothing about itself no turn that names its needs', async () => {
+    const host = new FakeHost()
+    host.capabilities = undefined
+    const { link: line } = link(host)
+    const needs: TurnNeeds = { model: undefined, pluginRuntimes: false, sandbox: false }
+    assert.equal(await line.run('p1', 't1', 'Hello', needs), 'app')
+    assert.equal(dispatched(host), 0)
   })
 
   it('stops host turns for a quit and waits for them to end', async () => {

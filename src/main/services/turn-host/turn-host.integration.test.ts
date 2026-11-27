@@ -125,7 +125,7 @@ describe('the bundled turn host', { skip: !E2E, timeout: 120_000 }, () => {
       changed,
     )
     assert.ok(line, `the host never served:\n${log}`)
-    line.send({ t: 'hello', version: VERSION, protocol: 1 })
+    line.send({ t: 'hello', version: VERSION, protocol: 2 })
     line.send({ t: 'attach' })
     line.send({ t: 'dispatch', id: 'op-a', projectId: 'p1', threadId: 'a', payload: 'One' })
     line.send({ t: 'dispatch', id: 'op-b', projectId: 'p1', threadId: 'b', payload: 'Two' })

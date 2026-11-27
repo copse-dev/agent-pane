@@ -78,6 +78,17 @@ dialect.
 _Exit gate:_ the turn host and the container run host both pass one conformance suite for
 the schema, driven over a plain socket pair.
 
+_State (27 November 2026):_ first slice built. Both hosts open with `hello` and say what
+they can run (`worker-protocol/worker-capabilities.ts`): their roles, the kinds of model
+beyond Copse's own loop, plugin runtimes and the OS sandbox. The app checks a turn's needs
+against what the turn host said before it sends the turn, so a turn that would lose a
+plugin's tools or its sandbox stays in the app. The protocol is generated from the line
+schemas into `dist/schemas/worker-protocol.schema.json`, with a committed manifest
+(`schemas/worker-protocol.manifest.json`, `pnpm run gen:worker-protocol`) that a test pins.
+`worker-conformance.test.ts` drives both hosts over a real local socket with raw lines.
+Still open: the container run host keeps its own messages for progress, rather than the
+turn host's chunk and snapshot stream.
+
 ### R3. A worker on the SSH host
 
 _Unlocks:_ an SSH thread keeps running with the laptop closed or asleep. _Owner:_

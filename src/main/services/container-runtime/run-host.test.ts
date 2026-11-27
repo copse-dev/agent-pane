@@ -366,4 +366,34 @@ describe('container run host', () => {
     )
     assert.equal(kills, 1)
   })
+
+  it('says hello before it attaches, and lets go of something that is not a run host', async () => {
+    const sent: unknown[] = []
+    const follow = followHost(
+      'run.sock',
+      {},
+      {
+        version: '1.2.3',
+        connect: (_path, _schema, onMessage) => {
+          queueMicrotask(() => {
+            onMessage({
+              t: 'hello',
+              version: '1.2.3',
+              protocol: 1,
+              pid: 1,
+              capabilities: {
+                roles: ['turns'],
+                models: { chatgptPlan: false, externalAgents: false, remoteAgents: false },
+                pluginRuntimes: false,
+                sandbox: false,
+              },
+            })
+          })
+          return Promise.resolve({ send: (message) => sent.push(message), close: () => undefined })
+        },
+      },
+    )
+    await assert.rejects(follow, (error: unknown) => error instanceof RunHostLostError)
+    assert.deepEqual(sent, [{ t: 'hello', version: '1.2.3', protocol: 1 }, { t: 'attach' }])
+  })
 })

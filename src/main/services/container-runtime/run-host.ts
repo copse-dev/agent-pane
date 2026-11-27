@@ -19,6 +19,10 @@ import type {
   ThreadContainerRequest,
 } from './thread-container.ts'
 import type { WorkerPhase } from './worker-events.ts'
+import {
+  workerCapabilitiesSchema,
+  type WorkerCapabilities,
+} from '../worker-protocol/worker-capabilities.ts'
 
 /**
  * The host side of one container run, in a process of its own
@@ -65,16 +69,35 @@ export interface ContainerRunHostRequest {
   base: ContainerRunBase
 }
 
-export type AppToRunHost = { t: 'attach' } | { t: 'stop' }
+/**
+ * The run host's line (`harness-worker-roadmap.md`, R2). `hello` exchanges
+ * versions, as on the turn host's line, and the host says what it can run. A
+ * host from before `hello` drops it unread, so an app still follows a run
+ * that an older version started; `attach` and `stop` need no hello first.
+ */
+export const CONTAINER_RUN_HOST_PROTOCOL = 1
+
+export type AppToRunHost =
+  | { t: 'hello'; version: string; protocol: number }
+  | { t: 'attach' }
+  | { t: 'stop' }
 
 export type RunHostToApp =
+  | {
+      t: 'hello'
+      version: string
+      protocol: number
+      pid: number
+      capabilities: WorkerCapabilities
+    }
   | { t: 'state'; phase: WorkerPhase | null; log: string[] }
   | { t: 'log'; line: string }
   | { t: 'phase'; phase: WorkerPhase }
   | { t: 'done'; record: ThreadContainerRecord }
   | { t: 'failed'; error: string }
 
-const appToRunHostSchema = z.discriminatedUnion('t', [
+export const appToRunHostSchema = z.discriminatedUnion('t', [
+  z.object({ t: z.literal('hello'), version: z.string().max(128), protocol: z.number().int() }),
   z.object({ t: z.literal('attach') }),
   z.object({ t: z.literal('stop') }),
 ])
@@ -90,6 +113,13 @@ const doneSchema = z.object({
 const failedSchema = z.object({ t: z.literal('failed'), error: z.string() })
 
 export const runHostToAppSchema = z.discriminatedUnion('t', [
+  z.object({
+    t: z.literal('hello'),
+    version: z.string().max(128),
+    protocol: z.number().int(),
+    pid: z.number().int(),
+    capabilities: workerCapabilitiesSchema,
+  }),
   z.object({ t: z.literal('state'), phase: phaseSchema.nullable(), log: z.array(z.string()) }),
   z.object({ t: z.literal('log'), line: z.string() }),
   z.object({ t: z.literal('phase'), phase: phaseSchema }),
@@ -148,6 +178,18 @@ export function withProvider(
  */
 export function canHostOutsideApp(model: string): boolean {
   return !isChatGptPlanModel(model)
+}
+
+/**
+ * What a run host can run: one container run, whose guest runs Copse's loop or
+ * an external coding agent, with every command inside the container. It never
+ * holds a ChatGPT sign-in (`canHostOutsideApp`) or a plugin runtime.
+ */
+export const CONTAINER_RUN_HOST_CAPABILITIES: WorkerCapabilities = {
+  roles: ['container-run'],
+  models: { chatgptPlan: false, externalAgents: true, remoteAgents: false },
+  pluginRuntimes: false,
+  sandbox: true,
 }
 
 export function runHostSocketPath(userDataPath: string, runtimeId: string): string {
@@ -258,6 +300,8 @@ export interface RunHostDependencies {
   lingerMs?: number
   /** Fires when this process is told to end (SIGTERM, SIGHUP, SIGINT): stop the run. */
   signal?: AbortSignal
+  /** The app version this host was built as, said in its hello. */
+  version?: string
 }
 
 export type RunHostOutcome =
@@ -290,6 +334,16 @@ export async function hostContainerRun(
     deps.socketPath,
     appToRunHostSchema,
     (message, client) => {
+      if (message.t === 'hello') {
+        client.send({
+          t: 'hello',
+          version: deps.version ?? 'unknown',
+          protocol: CONTAINER_RUN_HOST_PROTOCOL,
+          pid: process.pid,
+          capabilities: CONTAINER_RUN_HOST_CAPABILITIES,
+        })
+        return
+      }
       if (message.t === 'stop') {
         deps.log(`${runtimeId}: stop asked for`)
         stop.abort()

@@ -5,6 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import type { ThreadContainerRecord } from '@shared/types/container-run.ts'
 import { connectLocalLine, type LocalLineConnection } from '../local-socket.ts'
 import {
+  CONTAINER_RUN_HOST_PROTOCOL,
   runHostSocketPath,
   runHostToAppSchema,
   type AppToRunHost,
@@ -43,6 +44,8 @@ export interface RunHostClientDependencies {
   connect?: typeof connectLocalLine<RunHostToApp, AppToRunHost>
   /** How long a started host has to start listening. */
   connectTimeoutMs?: number
+  /** This app's version, said in its hello. */
+  version?: string
 }
 
 /** Rejection of a run the app let go of at quit; its host carries on. */
@@ -73,6 +76,7 @@ export async function runThroughHost(
       ...(deps.connect ? { connect: deps.connect } : {}),
       // A host that has just started may not be listening yet.
       waitMs: deps.connectTimeoutMs ?? 30_000,
+      ...(deps.version === undefined ? {} : { version: deps.version }),
       gone: () => host.exited,
     })
   } catch (error) {
@@ -95,6 +99,8 @@ export async function followHost(
     waitMs?: number
     /** Whether the host is known to have exited, so waiting is pointless. */
     gone?: () => boolean
+    /** This app's version, said in its hello. */
+    version?: string
   } = {},
 ): Promise<ThreadContainerRecord> {
   const connect = deps.connect ?? connectLocalLine<RunHostToApp, AppToRunHost>
@@ -113,6 +119,11 @@ export async function followHost(
   }
   const onMessage = (message: RunHostToApp): void => {
     switch (message.t) {
+      case 'hello':
+        // Whatever answers on a run's socket must be a run host.
+        if (!message.capabilities.roles.includes('container-run'))
+          finish(new RunHostLostError('Something other than a run host answered'))
+        return
       case 'state':
         for (const line of message.log) options.onLog?.(line)
         if (message.phase !== null) options.onPhase?.(message.phase)
@@ -151,6 +162,11 @@ export async function followHost(
     await delay(100)
   }
   connection = live
+  live.send({
+    t: 'hello',
+    version: deps.version ?? 'unknown',
+    protocol: CONTAINER_RUN_HOST_PROTOCOL,
+  })
   live.send({ t: 'attach' })
   const askStop = (): void => {
     live.send({ t: 'stop' })
@@ -243,5 +259,6 @@ export function runHostClientDependencies(launch: RunHostLaunchOptions): RunHost
       }
     },
     socketPath: (runtimeId): string => runHostSocketPath(launch.userDataPath, runtimeId),
+    version: launch.appVersion,
   }
 }

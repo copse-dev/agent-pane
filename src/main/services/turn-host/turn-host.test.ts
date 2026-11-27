@@ -137,7 +137,7 @@ describe('TurnHost', { timeout: 30_000 }, () => {
     await saveProjectThread('p1', idleThread('b'))
     const { host: turnHost, broadcast } = host()
     const peer = app()
-    turnHost.handle({ t: 'hello', version: VERSION, protocol: 1 }, peer.client)
+    turnHost.handle({ t: 'hello', version: VERSION, protocol: 2 }, peer.client)
     turnHost.handle({ t: 'attach' }, peer.client)
     turnHost.handle(
       { t: 'dispatch', id: 'd1', projectId: 'p1', threadId: 'a', payload: 'Summarise PLAN.md' },
@@ -193,7 +193,7 @@ describe('TurnHost', { timeout: 30_000 }, () => {
       },
     })
     const first = app()
-    turnHost.handle({ t: 'hello', version: VERSION, protocol: 1 }, first.client)
+    turnHost.handle({ t: 'hello', version: VERSION, protocol: 2 }, first.client)
     turnHost.handle({ t: 'attach' }, first.client)
     turnHost.handle(
       { t: 'dispatch', id: 'd9', projectId: 'p1', threadId: 'q', payload: 'List files' },
@@ -210,7 +210,7 @@ describe('TurnHost', { timeout: 30_000 }, () => {
     // The window closed and another opened: it is asked the same prompt.
     turnHost.left()
     const second = app()
-    turnHost.handle({ t: 'hello', version: VERSION, protocol: 1 }, second.client)
+    turnHost.handle({ t: 'hello', version: VERSION, protocol: 2 }, second.client)
     turnHost.handle({ t: 'attach' }, second.client)
     await until(
       () => second.sent.some((m) => m.t === 'approval' && m.id === prompt.id),
@@ -238,7 +238,7 @@ describe('TurnHost', { timeout: 30_000 }, () => {
     // Nobody to save it: kept in memory only.
     turnHost.storeWrite('settings', [{ key: 'model', value: 'mock' }])
     const peer = app()
-    turnHost.handle({ t: 'hello', version: VERSION, protocol: 1 }, peer.client)
+    turnHost.handle({ t: 'hello', version: VERSION, protocol: 2 }, peer.client)
     turnHost.handle({ t: 'attach' }, peer.client)
     turnHost.storeWrite('settings', [{ key: 'model', value: 'mock' }])
     assert.deepEqual(
@@ -266,7 +266,7 @@ describe('TurnHost', { timeout: 30_000 }, () => {
     await saveProjectThread('p1', idleThread('q'))
     const { host: turnHost } = host()
     const peer = app()
-    turnHost.handle({ t: 'hello', version: VERSION, protocol: 1 }, peer.client)
+    turnHost.handle({ t: 'hello', version: VERSION, protocol: 2 }, peer.client)
     turnHost.handle(
       { t: 'dispatch', id: 'dq', projectId: 'p1', threadId: 'q', payload: 'Hello' },
       peer.client,
@@ -285,7 +285,7 @@ describe('TurnHost', { timeout: 30_000 }, () => {
     await saveProjectThread('p1', idleThread('g'))
     const { host: turnHost } = host()
     const peer = app()
-    turnHost.handle({ t: 'hello', version: VERSION, protocol: 1 }, peer.client)
+    turnHost.handle({ t: 'hello', version: VERSION, protocol: 2 }, peer.client)
     const dispatch = {
       t: 'dispatch' as const,
       id: 'd7',
@@ -316,7 +316,7 @@ describe('TurnHost', { timeout: 30_000 }, () => {
     await saveProjectThread('p1', idleThread('s'))
     const { host: turnHost } = host({ testScenario: runTestScenarioOp })
     const peer = app()
-    turnHost.handle({ t: 'hello', version: VERSION, protocol: 1 }, peer.client)
+    turnHost.handle({ t: 'hello', version: VERSION, protocol: 2 }, peer.client)
     const scenario = {
       title: 'Scripted',
       turns: [{ user: 'Hello scripted', responses: [{ text: 'Scripted reply' }] }],
@@ -359,7 +359,7 @@ describe('TurnHost', { timeout: 30_000 }, () => {
       },
     })
     const peer = app()
-    turnHost.handle({ t: 'hello', version: '9.9.9', protocol: 1 }, peer.client)
+    turnHost.handle({ t: 'hello', version: '9.9.9', protocol: 2 }, peer.client)
     turnHost.handle(
       { t: 'dispatch', id: 'd3', projectId: 'p1', threadId: 'c', payload: 'Hello' },
       peer.client,
@@ -378,7 +378,7 @@ describe('TurnHost', { timeout: 30_000 }, () => {
     await saveProjectThread('p1', idleThread('e'))
     const { host: turnHost } = host()
     const peer = app()
-    turnHost.handle({ t: 'hello', version: VERSION, protocol: 1 }, peer.client)
+    turnHost.handle({ t: 'hello', version: VERSION, protocol: 2 }, peer.client)
     turnHost.handle(
       { t: 'dispatch', id: 'd4', projectId: 'p1', threadId: 'd', payload: 'Hello' },
       peer.client,
@@ -414,7 +414,7 @@ describe('TurnHost', { timeout: 30_000 }, () => {
     assert.equal(held.status, 'acquired')
     const { host: turnHost } = host()
     const peer = app()
-    turnHost.handle({ t: 'hello', version: VERSION, protocol: 1 }, peer.client)
+    turnHost.handle({ t: 'hello', version: VERSION, protocol: 2 }, peer.client)
     turnHost.handle(
       { t: 'dispatch', id: 'd6', projectId: 'p1', threadId: 'f', payload: 'Hello' },
       peer.client,
@@ -436,7 +436,7 @@ describe('TurnHost', { timeout: 30_000 }, () => {
     let idle = 0
     const { host: turnHost } = host({ idleMs: 1_000, onIdle: () => (idle += 1) })
     const peer = app()
-    turnHost.handle({ t: 'hello', version: VERSION, protocol: 1 }, peer.client)
+    turnHost.handle({ t: 'hello', version: VERSION, protocol: 2 }, peer.client)
     turnHost.handle({ t: 'attach' }, peer.client)
     assert.equal(peer.joined(), true)
     context.mock.timers.tick(5_000)
