@@ -32,6 +32,12 @@ const MAX_SLACK = 1
 // `--update` sets the bar this far under the measured figure, so the PR after a
 // bump is not failed by a few lines of unrelated churn.
 const UPDATE_MARGIN = 0.25
+// The slack cap fails only pull requests (and local runs). Two PRs that each
+// pass inside the slack can together push main past it; failing main's own
+// push run, the nightly or every later PR's merge result then would turn the
+// whole repository red until someone bumps the baseline. Elsewhere it warns.
+const eventName = process.env['GITHUB_EVENT_NAME']
+const enforceSlack = eventName === undefined || eventName === '' || eventName === 'pull_request'
 
 const update = process.argv.includes('--update')
 
@@ -91,10 +97,22 @@ if (current + TOLERANCE < required) {
 }
 
 if (delta > MAX_SLACK + TOLERANCE) {
-  console.error(
+  const gap =
     `coverage-gate: line coverage is ${delta.toFixed(2)}% above the baseline, more than the\n` +
-      `${String(MAX_SLACK)}% slack the ratchet allows. Run \`npm run coverage:update\` and commit\n` +
-      `coverage-baseline.json in this PR so a later regression cannot hide in the gap.`,
-  )
-  process.exit(1)
+    `${String(MAX_SLACK)}% slack the ratchet allows.`
+  if (!enforceSlack) {
+    console.warn(
+      `${gap} Not failing a ${eventName} run for it:\n` +
+        `the next PR that runs \`npm run coverage:update\` raises the baseline.`,
+    )
+    if (stepSummary) {
+      await writeFile(stepSummary, `\n> [!WARNING]\n> ${gap.replace(/\n/g, ' ')}\n`, { flag: 'a' })
+    }
+  } else {
+    console.error(
+      `${gap} Run \`npm run coverage:update\` and commit\n` +
+        `coverage-baseline.json in this PR so a later regression cannot hide in the gap.`,
+    )
+    process.exit(1)
+  }
 }
