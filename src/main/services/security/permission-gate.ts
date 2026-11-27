@@ -2397,8 +2397,8 @@ async function decideToolPermitted(
   } else if (toolName === 'ask_classifier') {
     permitted = await checkAskClassifierPermission(args, signal, explicitPolicy)
   } else if (toolName === 'image_gen') {
-    // The configured OpenAI credential is the network authority, as it is for
-    // ordinary model requests. Keep the tool in the explicit network branch so
+    // Runner permissions are handled by the image router; API fallback asks
+    // separately before using a key. Keep this explicit tool branch so
     // a user-level "ask" override still prompts and future policy cannot let it
     // fall through the default-allow tail by accident.
     permitted =

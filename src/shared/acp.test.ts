@@ -359,3 +359,16 @@ describe('ACP session config options', () => {
     assert.equal(agent?.availableConfigOptions?.[0]?.name, 'Thinking effort')
   })
 })
+
+describe('image generation capability', () => {
+  it('defaults only the actual Codex launcher and preserves explicit settings', async () => {
+    const { acpAgentSupportsImageGeneration, parseAcpAgentConfigs } = await import('./acp.ts')
+    const codex = { id: 'codex-acp', title: 'Codex', command: 'codex-acp', enabled: true }
+    assert.equal(acpAgentSupportsImageGeneration(codex), true)
+    assert.equal(acpAgentSupportsImageGeneration({ ...codex, command: 'other-agent' }), false)
+    assert.equal(acpAgentSupportsImageGeneration({ ...codex, imageGeneration: false }), false)
+    const [parsed] = parseAcpAgentConfigs([{ ...codex, id: 'custom', imageGeneration: true }])
+    assert.ok(parsed)
+    assert.equal(acpAgentSupportsImageGeneration(parsed), true)
+  })
+})

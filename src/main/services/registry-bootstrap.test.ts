@@ -466,12 +466,12 @@ describe('syncImageGenerationTools', () => {
     deleteApiKey('openai')
   })
 
-  it('adds image_gen only while an OpenAI key is configured', () => {
+  it('keeps image_gen available without an API key for coding-agent routing', () => {
     const registry = new ToolRegistry()
 
     deleteApiKey('openai')
     syncImageGenerationTools(registry)
-    assert.equal(registry.has(IMAGE_GEN_TOOL_NAME), false)
+    assert.equal(registry.has(IMAGE_GEN_TOOL_NAME), true)
 
     setApiKey('openai', 'test-key')
     syncImageGenerationTools(registry)
@@ -479,7 +479,7 @@ describe('syncImageGenerationTools', () => {
 
     deleteApiKey('openai')
     syncImageGenerationTools(registry)
-    assert.equal(registry.has(IMAGE_GEN_TOOL_NAME), false)
+    assert.equal(registry.has(IMAGE_GEN_TOOL_NAME), true)
   })
 })
 

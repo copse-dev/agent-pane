@@ -151,6 +151,8 @@ export function parseAcpAgentConfigs(value: unknown): AcpAgentConfig[] {
       agent.args = entry['args']
     }
     if (isRecord(entry['env'])) agent.env = stringRecordOrEmpty(entry['env'])
+    if (typeof entry['imageGeneration'] === 'boolean')
+      agent.imageGeneration = entry['imageGeneration']
     if (typeof entry['model'] === 'string') agent.model = entry['model']
     if (Array.isArray(entry['availableModels'])) {
       agent.availableModels = parseChoices(entry['availableModels'], true)
@@ -484,4 +486,11 @@ export function acpModelDisplayLabel(model: string, agents: readonly AcpAgentCon
   if (!selection.model) return title
   const choice = agent?.availableModels?.find((m) => m.value === selection.model)
   return `${title} — ${choice ? acpModelChoiceLabel(choice) : canonicalModelLabel(selection.model)}`
+}
+
+/** Image input support does not imply generation. Only Codex has a catalog default. */
+export function acpAgentSupportsImageGeneration(agent: AcpAgentConfig): boolean {
+  if (agent.imageGeneration !== undefined) return agent.imageGeneration
+  const known = findAcpCatalogEntry(canonicalAcpAgentId(agent.id))
+  return known?.id === 'codex-acp' && launchesAcpCatalogEntry(agent, known)
 }

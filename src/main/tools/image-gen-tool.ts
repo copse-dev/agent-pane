@@ -6,6 +6,16 @@ import { z } from 'zod'
 import { withAppAttribution } from '@copse/llm/app-attribution.ts'
 import { defineTool, type ToolDefinition, type ToolExecuteResult } from '@shared/types'
 import { getElectronUserDataPath } from '../services/electron-app-runtime.ts'
+import { listEnabledAcpAgents } from '../services/acp/acp-agent-registry.ts'
+import {
+  runAcpImageGeneration,
+  ImageGenerationDeclinedError,
+} from '../services/acp/acp-image-generation.ts'
+import { acpAgentSupportsImageGeneration, acpPlanProvider } from '@shared/acp.ts'
+import type { AcpAgentConfig } from '@shared/types/acp.ts'
+import { DeferredApprovalError } from '@shared/threads/deferred-approval.ts'
+import { requestApproval, ApprovalPendingError } from '../services/approval.ts'
+import { errorMessage } from '@shared/errors.ts'
 import { resolveApiKey } from '../services/storage/settings.ts'
 
 export const IMAGE_GEN_TOOL_NAME = 'image_gen'
@@ -37,12 +47,24 @@ export interface ImageGenerationRequest {
   background: 'auto' | 'opaque' | 'transparent'
 }
 
-interface GeneratedImage {
+export interface GeneratedImage {
   base64: string
   revisedPrompt?: string
+  provider?: string
 }
 
-interface ImageGenDependencies {
+export interface ImageGenDependencies {
+  listAgents(): AcpAgentConfig[]
+  requestAgentImage(
+    agent: AcpAgentConfig,
+    request: ImageGenerationRequest,
+    signal: AbortSignal,
+  ): Promise<GeneratedImage>
+  approveApiFallback(
+    failures: readonly string[],
+    request: ImageGenerationRequest,
+    signal: AbortSignal,
+  ): Promise<boolean>
   resolveOpenAiKey(): string | null
   requestImage(
     apiKey: string,
@@ -92,6 +114,33 @@ async function persistGeneratedImage(bytes: Buffer, name: string): Promise<strin
 }
 
 const defaultDependencies: ImageGenDependencies = {
+  listAgents: listEnabledAcpAgents,
+  requestAgentImage: runAcpImageGeneration,
+  approveApiFallback: async (failures, request, signal) => {
+    const decision = await requestApproval(
+      {
+        type: 'mcp',
+        cause: 'mcp-tool',
+        title: 'Use the OpenAI API for this image?',
+        body: [
+          'Image-capable coding agents did not produce an image. This fallback uses your configured OpenAI API key and incurs API charges, separately from your ChatGPT plan.',
+          ...failures,
+          `Prompt: ${request.prompt}`,
+        ].join('\n\n'),
+        approveLabel: 'Use OpenAI API',
+        allowRemember: false,
+        standalone: true,
+      },
+      signal,
+    )
+    signal.throwIfAborted()
+    if (!decision.approved && decision.resolution !== undefined && decision.resolution !== 'user') {
+      throw new ImageGenerationDeclinedError(
+        `The API image fallback was not approved (${decision.resolution}).`,
+      )
+    }
+    return decision.approved
+  },
   resolveOpenAiKey: () => resolveApiKey('openai'),
   requestImage: requestOpenAiImage,
   persistImage: persistGeneratedImage,
@@ -103,23 +152,65 @@ export function createImageGenTool(
   return defineTool({
     name: IMAGE_GEN_TOOL_NAME,
     provenance: 'external',
-    description: `Generate one PNG from a text prompt with ${IMAGE_GEN_MODEL} using the configured OpenAI API key. Returns the generated bitmap as an inline tool-result image and saves a durable copy under Copse's profile.`,
+    description:
+      'Generate one PNG: try enabled Codex first, then other configured image-capable coding agents. If none succeeds, ask the user before using the configured OpenAI API key (separate API charges). Returns an inline bitmap and saves a durable copy. Do not substitute SVG, code, or a screenshot for image generation.',
     parameters: imageGenParameters,
     async execute(request, signal): Promise<ToolExecuteResult> {
-      const apiKey = dependencies.resolveOpenAiKey()
-      if (!apiKey) {
-        throw new Error(
-          'OpenAI image generation is not configured. Add an OpenAI API key in Settings and retry.',
+      signal.throwIfAborted()
+      const agents = dependencies
+        .listAgents()
+        .filter((agent) => agent.enabled && acpAgentSupportsImageGeneration(agent))
+        .sort(
+          (a, b) => Number(acpPlanProvider(b) === 'codex') - Number(acpPlanProvider(a) === 'codex'),
         )
+      const failures: string[] = []
+      let generated: GeneratedImage | undefined
+      for (const agent of agents) {
+        signal.throwIfAborted()
+        try {
+          generated = await dependencies.requestAgentImage(agent, request, signal)
+          if (!generated.base64) throw new Error('The agent returned no generated image data.')
+          generated = { ...generated, provider: agent.title }
+          break
+        } catch (error) {
+          signal.throwIfAborted()
+          if (
+            error instanceof ImageGenerationDeclinedError ||
+            error instanceof DeferredApprovalError ||
+            error instanceof ApprovalPendingError
+          )
+            throw error
+          generated = undefined
+          failures.push(`${agent.title}: ${errorMessage(error).slice(0, 1500)}`)
+        }
       }
-      const generated = await dependencies.requestImage(apiKey, request, signal)
+      if (!generated) {
+        const apiKey = dependencies.resolveOpenAiKey()
+        if (!apiKey) {
+          throw new Error(
+            [
+              'No image-capable coding agent produced an image. Enable an image-capable agent in Settings, or add an OpenAI API key for an approved fallback.',
+              ...failures,
+            ].join('\n'),
+          )
+        }
+        if (!(await dependencies.approveApiFallback(failures, request, signal))) {
+          throw new ImageGenerationDeclinedError('The user declined the OpenAI API image fallback.')
+        }
+        signal.throwIfAborted()
+        generated = {
+          ...(await dependencies.requestImage(apiKey, request, signal)),
+          provider: IMAGE_GEN_MODEL,
+        }
+      }
+      signal.throwIfAborted()
       const bytes = Buffer.from(generated.base64, 'base64')
       if (bytes.length === 0) throw new Error('OpenAI returned an empty generated image.')
       const name = `image-gen-${randomUUID()}.png`
       const path = await dependencies.persistImage(bytes, name)
       const revised = generated.revisedPrompt ? `\nRevised prompt: ${generated.revisedPrompt}` : ''
       return {
-        result: `Generated a PNG with ${IMAGE_GEN_MODEL} and saved it to ${path}.${revised}`,
+        result: `Generated a PNG with ${generated.provider ?? IMAGE_GEN_MODEL} and saved it to ${path}.${revised}`,
         images: [
           {
             dataUrl: `data:image/png;base64,${generated.base64}`,
