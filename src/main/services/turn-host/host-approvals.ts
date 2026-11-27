@@ -3,6 +3,7 @@ import type { ApprovalRequest, ApprovalResponse } from '../approval.ts'
 import type { QueueEntry } from '../diff-queue.ts'
 import type { SshPromptRequest, SshPromptResponse } from '../ssh-workspace/ssh-prompt.ts'
 import type { ThreadPromptResult } from '@shared/thread-prompt.ts'
+import type { HostTaskCall, HostTaskCallResult } from './host-task-supervisor.ts'
 import type {
   HostApprovalAnswer,
   HostThreadPromptCommand,
@@ -13,7 +14,8 @@ import type {
  * The prompts host turns are waiting on (`docs/plans/local-turn-worker.md`,
  * "Every turn in a turn host", H3 and H3b): approvals, staged edits for the diff
  * panel, SSH password and host-key prompts, and prompts to other threads (the
- * window submits those, as it does for an in-process turn).
+ * window submits those, as it does for an in-process turn). Background commands
+ * use the same line for their task records, which are the app's.
  *
  * A host turn asks here instead of a window. Each prompt goes to every attached
  * app, waits for an answer however long none is attached, and is asked again of
@@ -24,7 +26,7 @@ import type {
 
 type PromptMessage = Extract<
   HostToApp,
-  { t: 'approval' | 'review-diff' | 'ssh-prompt' | 'thread-prompt' }
+  { t: 'approval' | 'review-diff' | 'ssh-prompt' | 'thread-prompt' | 'task-call' }
 >
 
 const DENIED: ApprovalResponse = { approved: false, remember: false }
@@ -41,6 +43,7 @@ export class HostApprovals {
   private readonly diffs = new Map<string, OpenPrompt<boolean>>()
   private readonly ssh = new Map<string, OpenPrompt<SshPromptResponse>>()
   private readonly threadPrompts = new Map<string, OpenPrompt<ThreadPromptResult>>()
+  private readonly taskCalls = new Map<string, OpenPrompt<HostTaskCallResult>>()
   /** Every waiting prompt in the order it was raised, for an app that attaches. */
   private readonly raised = new Map<string, PromptMessage>()
   private readonly send: (message: HostToApp) => void
@@ -110,6 +113,26 @@ export class HostApprovals {
       CANCELLED,
       signal,
     )
+  }
+
+  /**
+   * Have the app's task supervisor record a background command's task. Waits
+   * for an app however long none is attached, as the record is the app's.
+   */
+  callTaskSupervisor(
+    projectId: string,
+    threadId: string,
+    call: HostTaskCall,
+  ): Promise<HostTaskCallResult> {
+    return this.prompt(
+      this.taskCalls,
+      { t: 'task-call', id: this.createId(), projectId, threadId, call },
+      { error: 'unanswered' },
+    )
+  }
+
+  answerTaskCall(id: string, result: HostTaskCallResult): void {
+    this.settle(this.taskCalls, id, result)
   }
 
   /** An app answered an approval. A prompt already settled ignores it. */

@@ -2,12 +2,15 @@ import { randomUUID } from 'node:crypto'
 import type { TurnWorkerConnection, WorkerToApp } from '../turn-worker/turn-worker-socket.ts'
 import type { SshPromptResponse } from '../ssh-workspace/ssh-prompt.ts'
 import type { ThreadPromptResult } from '@shared/thread-prompt.ts'
+import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
+import type { HostTaskCall, HostTaskCallResult } from './host-task-supervisor.ts'
 import type { HostDispatchRecord } from './host-dispatch-record.ts'
 import {
   TURN_HOST_PROTOCOL,
   type AppToHost,
   type DispatchState,
   type HostApprovalAnswer,
+  type HostProcessOp,
   type HostThreadPromptCommand,
   type HostToApp,
   type TestScenarioOp,
@@ -74,6 +77,10 @@ export interface TurnHostLinkDependencies {
     command: HostThreadPromptCommand,
     signal: AbortSignal,
   ) => Promise<ThreadPromptResult>
+  /** Record a host turn's background command in the app's task supervisor. */
+  callTaskSupervisor?: (call: HostTaskCall) => Promise<HostTaskCallResult>
+  /** A host thread's chunk that no follower takes: a write after its turn ended. */
+  onUnfollowedChunk?: (message: Extract<HostToApp, { t: 'chunk' }>) => void
   /** A host turn's live command output, for the window's terminal pane. */
   onShellOutput?: (chunk: string, taskId: string | null) => void
   /** Apply a host turn's change to a shared profile store, which the app owns. */
@@ -83,6 +90,13 @@ export interface TurnHostLinkDependencies {
   log?: (line: string) => void
   createId?: () => string
 }
+
+type PromptKinds = {
+  t: 'approval' | 'review-diff' | 'ssh-prompt' | 'thread-prompt' | 'task-call'
+}
+
+/** How many answered prompts the link remembers, to answer a replay the same way. */
+const ANSWERED_LIMIT = 256
 
 interface Pending {
   projectId: string
@@ -113,6 +127,16 @@ export class TurnHostLink {
   private readonly subscribers = new Map<string, Set<Subscriber>>()
   /** Host prompts showing in the window, by the host's prompt id. */
   private readonly prompts = new Map<string, AbortController>()
+  /**
+   * Prompts answered here, by id. A host asks again of an app that attaches
+   * after a dropped line; one this app answered gets the same answer, so a task
+   * call is never carried out twice.
+   */
+  private readonly answered = new Map<string, AppToHost>()
+  private readonly processWaiters = new Map<
+    string,
+    (result: Extract<HostToApp, { t: 'process-result' }> | null) => void
+  >()
 
   constructor(deps: TurnHostLinkDependencies) {
     this.deps = deps
@@ -223,6 +247,31 @@ export class TurnHostLink {
     clearTimeout(timer)
   }
 
+  /**
+   * Ask the host about one of its background commands. Null when no host of
+   * this version is on the line, or the line dropped before it answered.
+   */
+  async process(
+    op: HostProcessOp,
+    processId: string,
+    owner: { projectId: string; threadId: string },
+  ): Promise<Extract<HostToApp, { t: 'process-result' }> | null> {
+    if (!(await this.ensureConnected())) return null
+    const id = (this.deps.createId ?? randomUUID)()
+    return new Promise((resolve) => {
+      this.processWaiters.set(id, (result) => {
+        this.processWaiters.delete(id)
+        resolve(result)
+      })
+      this.send({ t: 'process', id, op, processId, ...owner })
+    })
+  }
+
+  /** The app's supervisor changed a task a host turn's command runs under. */
+  taskChanged(task: SupervisedTaskMeta): void {
+    if (this.ready) this.send({ t: 'task-changed', task })
+  }
+
   /** Stop a thread's turn in the host. */
   stop(threadId: string): void {
     this.send({ t: 'stop', threadId })
@@ -304,11 +353,14 @@ export class TurnHostLink {
         this.scenarioWaiters.get(id)?.(result)
         return
       }
-      case 'chunk':
-        for (const subscriber of this.subscribers.get(message.threadId) ?? []) {
-          subscriber.onMessage(message)
-        }
+      case 'chunk': {
+        const subscribers = this.subscribers.get(message.threadId)
+        // A late write to a turn that has ended, such as a background command's
+        // final stage: the window shows it as it would the app's own.
+        if (!subscribers?.size) this.deps.onUnfollowedChunk?.(message)
+        for (const subscriber of subscribers ?? []) subscriber.onMessage(message)
         return
+      }
       case 'snapshot':
         for (const subscriber of this.subscribers.get(message.snapshot.thread.id) ?? []) {
           subscriber.onMessage(message)
@@ -318,7 +370,15 @@ export class TurnHostLink {
       case 'review-diff':
       case 'ssh-prompt':
       case 'thread-prompt':
+      case 'task-call':
         this.ask(message)
+        return
+      case 'taken':
+        // A turn the host began itself (a background command's wake): follow it.
+        this.deps.onThreadTaken?.(message.projectId, message.threadId)
+        return
+      case 'process-result':
+        this.processWaiters.get(message.id)?.(message)
         return
       case 'shell-output':
         this.deps.onShellOutput?.(message.chunk, message.taskId)
@@ -342,10 +402,13 @@ export class TurnHostLink {
    * showing is left as it is; one answered after it was taken down is dropped.
    * With nothing here to show it, it stays with the host for another app.
    */
-  private ask(
-    prompt: Extract<HostToApp, { t: 'approval' | 'review-diff' | 'ssh-prompt' | 'thread-prompt' }>,
-  ): void {
+  private ask(prompt: Extract<HostToApp, PromptKinds>): void {
     if (this.prompts.has(prompt.id)) return
+    const given = this.answered.get(prompt.id)
+    if (given) {
+      this.send(given)
+      return
+    }
     const controller = new AbortController()
     const answer = this.answer(prompt, controller.signal)
     if (!answer) return
@@ -358,13 +421,18 @@ export class TurnHostLink {
       .then((reply) => {
         if (this.prompts.get(prompt.id) !== controller) return
         this.prompts.delete(prompt.id)
+        this.answered.set(prompt.id, reply)
+        if (this.answered.size > ANSWERED_LIMIT) {
+          const oldest = this.answered.keys().next().value
+          if (oldest !== undefined) this.answered.delete(oldest)
+        }
         this.send(reply)
       })
   }
 
   /** The user's answer to a prompt, as the host's reply; null with nothing to ask. */
   private answer(
-    prompt: Extract<HostToApp, { t: 'approval' | 'review-diff' | 'ssh-prompt' | 'thread-prompt' }>,
+    prompt: Extract<HostToApp, PromptKinds>,
     signal: AbortSignal,
   ): Promise<AppToHost> | null {
     const { id } = prompt
@@ -385,6 +453,12 @@ export class TurnHostLink {
         const ask = this.deps.askSsh
         return ask
           ? ask(prompt, signal).then((response) => ({ t: 'ssh-prompt-answer', id, response }))
+          : null
+      }
+      case 'task-call': {
+        const call = this.deps.callTaskSupervisor
+        return call
+          ? call(prompt.call).then((result) => ({ t: 'task-call-answer', id, result }))
           : null
       }
       case 'thread-prompt': {
@@ -409,6 +483,7 @@ export class TurnHostLink {
     // A status asked on this line will not be answered on it.
     for (const waiter of [...this.statusWaiters.values()]) waiter('unknown')
     for (const waiter of [...this.scenarioWaiters.values()]) waiter(null)
+    for (const waiter of [...this.processWaiters.values()]) waiter(null)
     // The host still waits on them, and asks again once a line is back.
     for (const controller of this.prompts.values()) controller.abort()
     this.prompts.clear()
@@ -493,9 +568,7 @@ export class TurnHostLink {
 }
 
 /** The answer that grants nothing, for a prompt the app could not put to the user. */
-function refusal(
-  prompt: Extract<HostToApp, { t: 'approval' | 'review-diff' | 'ssh-prompt' | 'thread-prompt' }>,
-): AppToHost {
+function refusal(prompt: Extract<HostToApp, PromptKinds>): AppToHost {
   switch (prompt.t) {
     case 'approval':
       return { t: 'approval-answer', id: prompt.id, response: { approved: false, remember: false } }
@@ -503,6 +576,12 @@ function refusal(
       return { t: 'review-diff-answer', id: prompt.id, approved: false }
     case 'ssh-prompt':
       return { t: 'ssh-prompt-answer', id: prompt.id, response: { value: '' } }
+    case 'task-call':
+      return {
+        t: 'task-call-answer',
+        id: prompt.id,
+        result: { error: 'The app could not record the task.' },
+      }
     case 'thread-prompt':
       return {
         t: 'thread-prompt-answer',

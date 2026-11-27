@@ -49,6 +49,8 @@ export interface TurnHostLaunchDependencies {
   /** Paint a host turn's live command output into the window's terminal pane. */
   onShellOutput?: (chunk: string, taskId: string | null) => void
   sendThreadPrompt?: TurnHostLinkDependencies['sendThreadPrompt']
+  callTaskSupervisor?: TurnHostLinkDependencies['callTaskSupervisor']
+  onUnfollowedChunk?: TurnHostLinkDependencies['onUnfollowedChunk']
   /** How long to keep trying to reach a host that is still booting. */
   connectWithinMs?: number
 }
@@ -125,6 +127,8 @@ export function createTurnHostLink(deps: TurnHostLaunchDependencies): TurnHostLi
     onThreadTaken: deps.onThreadTaken,
     ...(deps.onShellOutput ? { onShellOutput: deps.onShellOutput } : {}),
     ...(deps.sendThreadPrompt ? { sendThreadPrompt: deps.sendThreadPrompt } : {}),
+    ...(deps.callTaskSupervisor ? { callTaskSupervisor: deps.callTaskSupervisor } : {}),
+    ...(deps.onUnfollowedChunk ? { onUnfollowedChunk: deps.onUnfollowedChunk } : {}),
     log: deps.log,
   })
 }

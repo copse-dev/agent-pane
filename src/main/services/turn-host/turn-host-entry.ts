@@ -98,6 +98,21 @@ async function main(): Promise<number> {
   forward = (store, changes): void => {
     host.storeWrite(store, changes)
   }
+  // Background commands: their task records are the app's (H7); their
+  // completion wakes run here, where the command's turn ran.
+  const [{ installBackgroundProcessSupervisor }, { setBackgroundCompletionWakeHandler }] =
+    await Promise.all([
+      import('../exec/supervised-background-process.ts'),
+      import('../exec/background-completion-wake.ts'),
+    ])
+  installBackgroundProcessSupervisor(host.tasks)
+  const { setLateCommandPhaseRecorder } = await import('../exec/command-phase.ts')
+  setLateCommandPhaseRecorder((owner, toolCallId, phase) =>
+    host.updateCommandPhase(owner, toolCallId, phase).catch((error: unknown) => {
+      log(`could not record a command stage: ${String(error)}`)
+    }),
+  )
+  setBackgroundCompletionWakeHandler((request) => host.runWake(request))
   // Prompts to other threads (a subthread start), which the app's window submits.
   const { setThreadPromptSender } = await import('../thread-prompts.ts')
   setThreadPromptSender((command, signal) => host.threadPrompt(command, signal))

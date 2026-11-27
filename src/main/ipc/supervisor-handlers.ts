@@ -1,5 +1,5 @@
 import type { BrowserWindow } from 'electron'
-import { peekBackgroundProcessLogs } from '../services/exec/background-process.ts'
+import { peekAnyBackgroundProcessLogs } from '../services/exec/supervised-background-process.ts'
 import { defineHandler } from './define-handler.ts'
 import {
   backgroundTaskLogsArgs,
@@ -54,7 +54,7 @@ export function registerSupervisorHandlers(win: BrowserWindow): void {
     win,
     'background-tasks:logs',
     backgroundTaskLogsArgs,
-    (projectId, threadId, taskId) => peekBackgroundProcessLogs(taskId, { projectId, threadId }),
+    (projectId, threadId, taskId) => peekAnyBackgroundProcessLogs(taskId, { projectId, threadId }),
   )
   defineHandler(
     win,

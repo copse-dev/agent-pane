@@ -9,6 +9,11 @@ import {
 } from '../local-socket.ts'
 import type { StreamChunk, TranscriptSnapshot, TranscriptStamp } from '@shared/types'
 import type { ThreadPromptCommand, ThreadPromptResult } from '@shared/thread-prompt.ts'
+import {
+  supervisedTaskMetaSchema,
+  type SupervisedTaskMeta,
+} from '@shared/supervisor/task-schema.ts'
+import type { HostTaskCall, HostTaskCallResult } from './host-task-supervisor.ts'
 import type { ApprovalRequest, ApprovalResponse } from '../approval.ts'
 import type { QueueEntry } from '../diff-queue.ts'
 import type { ProfileStoreChange } from '../turn-worker/read-only-profile-store.ts'
@@ -70,6 +75,16 @@ export type AppToHost =
   | { t: 'profile-changed' }
   | { t: 'test-scenario'; id: string; op: TestScenarioOp }
   | { t: 'thread-prompt-answer'; id: string; result: ThreadPromptResult }
+  | { t: 'task-call-answer'; id: string; result: HostTaskCallResult }
+  | { t: 'task-changed'; task: SupervisedTaskMeta }
+  | {
+      t: 'process'
+      id: string
+      op: HostProcessOp
+      processId: string
+      projectId: string
+      threadId: string
+    }
 
 /** A scripted model scenario operation, for e2e builds (`mock-script.ts`). */
 export type TestScenarioOp =
@@ -107,6 +122,17 @@ export interface HostApprovalAnswer {
  */
 export type HostThreadPromptCommand = Omit<ThreadPromptCommand, 'id' | 'expiresAt'>
 
+/**
+ * What the app asks of a host turn's background command: stop it, whether it
+ * still runs (at the app's start), or its retained output.
+ */
+export type HostProcessOp = 'stop' | 'alive' | 'logs'
+
+export interface HostProcessLogs {
+  logs: string
+  running: boolean
+}
+
 /** What became of a dispatch, by its operation id. */
 export type DispatchState = 'running' | 'ended' | 'refused' | 'unknown'
 
@@ -134,6 +160,9 @@ export type HostToApp =
       threadId: string
       command: HostThreadPromptCommand
     }
+  | { t: 'task-call'; id: string; projectId: string; threadId: string; call: HostTaskCall }
+  | { t: 'taken'; projectId: string; threadId: string }
+  | { t: 'process-result'; id: string; ok: boolean; logs?: HostProcessLogs | null | undefined }
   | { t: 'approval-cancel'; id: string }
   | { t: 'store-write'; store: string; changes: ProfileStoreChange[] }
   | { t: 'shell-output'; chunk: string; taskId: string | null }
@@ -175,6 +204,23 @@ const appToHostSchema = z.discriminatedUnion('t', [
   }),
   z.object({ t: z.literal('profile-changed') }),
   z.object({
+    t: z.literal('task-call-answer'),
+    id,
+    result: z.union([
+      z.object({ error: z.string().max(4_000) }),
+      z.object({ task: supervisedTaskMetaSchema.nullable() }),
+    ]),
+  }),
+  z.object({ t: z.literal('task-changed'), task: supervisedTaskMetaSchema }),
+  z.object({
+    t: z.literal('process'),
+    id,
+    op: z.enum(['stop', 'alive', 'logs']),
+    processId: id,
+    projectId: id,
+    threadId: id,
+  }),
+  z.object({
     t: z.literal('thread-prompt-answer'),
     id,
     result: z.discriminatedUnion('ok', [
@@ -206,6 +252,18 @@ const appToHostSchema = z.discriminatedUnion('t', [
 
 const objectLike = <T>(): z.ZodType<T> =>
   z.custom<T>((value) => typeof value === 'object' && value !== null)
+
+/** The fields of a host turn's task call the app reads before its supervisor does. */
+const hostTaskCallShape = z.discriminatedUnion('op', [
+  z.looseObject({
+    op: z.literal('adopt'),
+    input: z.looseObject({ projectId: id, threadId: id, handler: id }),
+    processHandle: id,
+  }),
+  z.looseObject({ op: z.literal('complete'), projectId: id, taskId: id }),
+  z.looseObject({ op: z.literal('fail'), projectId: id, taskId: id, reason: z.string() }),
+  z.looseObject({ op: z.literal('cancel'), projectId: id, taskId: id }),
+])
 
 /** The fields of a host turn's thread prompt the app reads before the window does. */
 const threadPromptCommandShape = z.looseObject({
@@ -300,6 +358,25 @@ const hostToAppSchema = z.discriminatedUnion('t', [
       (value) => threadPromptCommandShape.safeParse(value).success,
     ),
   }),
+  z.object({
+    t: z.literal('task-call'),
+    id,
+    projectId: id,
+    threadId: id,
+    // Made by the same supervised-command code as an in-process call; the
+    // app's supervisor checks the record as it writes it.
+    call: z.custom<HostTaskCall>((value) => hostTaskCallShape.safeParse(value).success),
+  }),
+  z.object({
+    t: z.literal('process-result'),
+    id,
+    ok: z.boolean(),
+    logs: z
+      .object({ logs: z.string().max(16_000_000), running: z.boolean() })
+      .nullable()
+      .optional(),
+  }),
+  z.object({ t: z.literal('taken'), projectId: id, threadId: id }),
   z.object({ t: z.literal('approval-cancel'), id }),
   z.object({
     t: z.literal('shell-output'),

@@ -24,6 +24,18 @@ import type { ToolRegistry } from '../tool-registry.ts'
 import { TurnTranscriptWriter } from '../turn-transcript-writer.ts'
 import { modelCannotRunInWorker } from '../turn-worker/turn-worker.ts'
 import { HostApprovals } from './host-approvals.ts'
+import { HostTaskSupervisor, type HostTaskCall } from './host-task-supervisor.ts'
+import {
+  listBackgroundProcessPids,
+  peekBackgroundProcessLogs,
+  stopBackgroundProcess,
+} from '../exec/background-process.ts'
+import type { MachineDispatchResult } from '@shared/types/machine-dispatch.ts'
+import type { CommandPhase } from '@copse/agent/wire-types.ts'
+import {
+  backgroundCompletionPrompt,
+  type BackgroundCompletionWakeRequest,
+} from '../exec/background-completion-wake.ts'
 import { writeHostDispatchRecord } from './host-dispatch-record.ts'
 import type { ProfileStoreChange } from '../turn-worker/read-only-profile-store.ts'
 import {
@@ -106,6 +118,10 @@ export class TurnHost {
   private readonly approvals = new HostApprovals((message) => {
     this.broadcastTo(message)
   })
+  /** Background commands' task records, which the app keeps (H7). */
+  readonly tasks = new HostTaskSupervisor((call) =>
+    this.approvals.callTaskSupervisor(...this.callOwner(call), call),
+  )
 
   constructor(deps: TurnHostDependencies) {
     this.deps = deps
@@ -243,6 +259,15 @@ export class TurnHost {
       case 'thread-prompt-answer':
         this.approvals.answerThreadPrompt(message.id, message.result)
         return
+      case 'task-call-answer':
+        this.approvals.answerTaskCall(message.id, message.result)
+        return
+      case 'task-changed':
+        this.tasks.changed(message.task)
+        return
+      case 'process':
+        client.send(this.processResult(message))
+        return
       case 'profile-changed':
         this.profileStale = true
         return
@@ -280,6 +305,112 @@ export class TurnHost {
       command,
       signal,
     )
+  }
+
+  /**
+   * A host turn's background command finished and its turn asked to be woken.
+   * The wake turn runs here, where the command and its turn ran, and every
+   * attached app follows it; with none attached it still runs.
+   */
+  async runWake(request: BackgroundCompletionWakeRequest): Promise<MachineDispatchResult> {
+    const { projectId, threadId } = request.owner
+    const turnKey = key(projectId, threadId)
+    if (this.running.has(turnKey) || this.claimed.has(turnKey)) return 'stale'
+    const stopped = new AbortController()
+    this.running.set(turnKey, { projectId, threadId, stopped })
+    this.armIdle()
+    this.deps.log(`thread ${threadId}: background command finished, waking its turn`)
+    this.broadcastTo({ t: 'taken', projectId, threadId })
+    try {
+      return await this.withPrompts(projectId, threadId, stopped.signal, () =>
+        this.dispatcher.dispatchMachine({
+          projectId,
+          threadId,
+          operationId: request.operationId,
+          turnTreeId: request.turnTreeId,
+          ...(request.alreadyObserved ? { alreadyObserved: request.alreadyObserved } : {}),
+          payload: {
+            userContent: backgroundCompletionPrompt(request),
+            invokedSkills: [],
+            priorTodos: [],
+          },
+        }),
+      )
+    } finally {
+      await this.transcripts.settled(threadId).catch(() => undefined)
+      this.running.delete(turnKey)
+      this.armIdle()
+      this.deps.log(`thread ${threadId}: wake turn ended`)
+    }
+  }
+
+  /** Run a host turn with its prompts put to the window. */
+  private withPrompts<T>(
+    projectId: string,
+    threadId: string,
+    stopped: AbortSignal,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    return runWithApprovalHandler(
+      (request, signal) => this.approvals.ask(projectId, threadId, request, signal),
+      () =>
+        runWithStagedDiffResolver(
+          (entry) => this.approvals.reviewDiff(projectId, threadId, entry, stopped),
+          () =>
+            runWithSshPromptHandler(
+              // Remembering a secret writes the profile's keyring, which a
+              // host does not own (H4): the window does not offer it.
+              (request) =>
+                this.approvals.askSsh(projectId, threadId, {
+                  ...request,
+                  canRememberOnDevice: false,
+                }),
+              run,
+            ),
+        ),
+    )
+  }
+
+  /**
+   * A command's stage settled after its tool call returned (a background
+   * command's exit): written to the thread here, as the app does for its own.
+   */
+  updateCommandPhase(
+    owner: { projectId: string; threadId: string },
+    toolCallId: string,
+    phase: CommandPhase,
+  ): Promise<void> {
+    return this.transcripts.updateCommandPhase(owner.projectId, owner.threadId, toolCallId, phase)
+  }
+
+  /** Which thread a task call is for, to show with it. */
+  private callOwner(call: HostTaskCall): [string, string] {
+    if (call.op === 'adopt') return [call.input.projectId, call.input.threadId]
+    const threadId = this.tasks.get(call.projectId, call.taskId)?.threadId ?? 'unknown'
+    return [call.projectId, threadId]
+  }
+
+  /** Answer the app about one of this host's background commands. */
+  private processResult(message: Extract<AppToHost, { t: 'process' }>): HostToApp {
+    const owner = { projectId: message.projectId, threadId: message.threadId }
+    switch (message.op) {
+      case 'stop':
+        return {
+          t: 'process-result',
+          id: message.id,
+          ok: stopBackgroundProcess(message.processId, owner),
+        }
+      case 'alive':
+        return {
+          t: 'process-result',
+          id: message.id,
+          ok: peekBackgroundProcessLogs(message.processId, owner)?.running === true,
+        }
+      case 'logs': {
+        const logs = peekBackgroundProcessLogs(message.processId, owner)
+        return { t: 'process-result', id: message.id, ok: logs !== null, logs }
+      }
+    }
   }
 
   /** A host turn's command printed: every attached app's terminal pane shows it. */
@@ -424,23 +555,8 @@ export class TurnHost {
     }
     this.claimed.set(turnKey, { operationId: id, accept })
     try {
-      await runWithApprovalHandler(
-        (request, signal) => this.approvals.ask(projectId, threadId, request, signal),
-        () =>
-          runWithStagedDiffResolver(
-            (entry) => this.approvals.reviewDiff(projectId, threadId, entry, stopped.signal),
-            () =>
-              runWithSshPromptHandler(
-                // Remembering a secret writes the profile's keyring, which a
-                // host does not own (H4): the window does not offer it.
-                (request) =>
-                  this.approvals.askSsh(projectId, threadId, {
-                    ...request,
-                    canRememberOnDevice: false,
-                  }),
-                () => this.dispatcher.dispatch({ projectId, threadId, payload }),
-              ),
-          ),
+      await this.withPrompts(projectId, threadId, stopped.signal, () =>
+        this.dispatcher.dispatch({ projectId, threadId, payload }),
       )
       accept()
       await this.finish(projectId, threadId, id)
@@ -497,7 +613,9 @@ export class TurnHost {
     if (this.joined > 0) return
     this.idleTimer = setTimeout(() => {
       this.idleTimer = null
-      this.deps.onIdle()
+      // A background command a turn left running keeps the host up.
+      if (listBackgroundProcessPids().length > 0) this.armIdle()
+      else this.deps.onIdle()
     }, this.deps.idleMs ?? TURN_HOST_IDLE_MS)
     this.idleTimer.unref()
   }

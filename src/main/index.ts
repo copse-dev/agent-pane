@@ -85,7 +85,7 @@ import {
   shouldQuitDetachedApp,
 } from './windows/window-detach.ts'
 import { isWorktreeDeferralPending } from '@shared/git/worktree-policy.ts'
-import type { LLMMessage, StreamChunk } from '@shared/types'
+import type { LLMMessage, StreamChunk, TranscriptStamp } from '@shared/types'
 import { THEME_BACKGROUND } from '@shared/theme.ts'
 import {
   assertPrimaryMainWindow,
@@ -278,7 +278,10 @@ import {
   cancelAllSupervisedBackgroundProcesses,
   hasBackgroundCompletionWake,
   installBackgroundProcessSupervisor,
+  setForeignBackgroundProcessLogsReader,
+  setForeignBackgroundProcessStopper,
 } from './services/exec/supervised-background-process.ts'
+import type { HostTaskCall, HostTaskCallResult } from './services/turn-host/host-task-supervisor.ts'
 import {
   backgroundCompletionPrompt,
   setBackgroundCompletionWakeHandler,
@@ -362,6 +365,39 @@ function workInFlight(): number {
 let unattendedQuit = false
 /** This quit hands its turns to workers (set once the quit goes ahead). */
 let quitHandsOff = false
+
+/** Tasks whose background command a turn host runs (H7), by project and task id. */
+const hostTaskIds = new Set<string>()
+const hostTaskKey = (task: { projectId: string; taskId: string }): string =>
+  `${task.projectId}\0${task.taskId}`
+const isHostTask = (task: { projectId: string; taskId: string }): boolean =>
+  hostTaskIds.has(hostTaskKey(task))
+
+/** A host turn's call on the app's task supervisor, for a command the host runs. */
+async function runHostTaskCall(call: HostTaskCall): Promise<HostTaskCallResult> {
+  try {
+    await taskSupervisor.start()
+    if (call.op === 'adopt') {
+      const task = await taskSupervisor.adoptRunning(call.input, call.processHandle)
+      hostTaskIds.add(hostTaskKey(task))
+      return { task }
+    }
+    // Only tasks a host adopted: a host does not settle the app's own.
+    if (!isHostTask(call)) return { error: 'The task is not one a turn host runs.' }
+    switch (call.op) {
+      case 'complete':
+        return {
+          task: await taskSupervisor.completeExternal(call.projectId, call.taskId, call.resultRef),
+        }
+      case 'fail':
+        return { task: await taskSupervisor.failExternal(call.projectId, call.taskId, call.reason) }
+      case 'cancel':
+        return { task: await taskSupervisor.cancel(call.projectId, call.taskId) }
+    }
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) }
+  }
+}
 
 /** Quit without asking: a signal or a fault has nobody to answer the prompt. */
 function quitUnattended(): void {
@@ -906,6 +942,19 @@ app
         },
         // A host turn's subthread start or peer prompt: this window submits it.
         sendThreadPrompt,
+        // A host turn's background commands keep their task records here (H7).
+        callTaskSupervisor: runHostTaskCall,
+        onUnfollowedChunk: ({
+          threadId,
+          chunk,
+          stamp,
+        }: {
+          threadId: string
+          chunk: StreamChunk
+          stamp?: TranscriptStamp | undefined
+        }): void => {
+          getMainWindow()?.webContents.send('agent:chunk', threadId, chunk, stamp)
+        },
       }
       const link = createTurnHostLink(launch)
       turnHostLink = link
@@ -1132,10 +1181,30 @@ app
     })
     disposeLongTaskWake = installLongTaskWakeConsumer(taskSupervisor, agentDispatcher)
     disposeCiWatchConsumer = installCiWatchConsumer(taskSupervisor, agentDispatcher)
-    disposeBackgroundProcessSupervisor = installBackgroundProcessSupervisor(taskSupervisor)
+    disposeBackgroundProcessSupervisor = installBackgroundProcessSupervisor(taskSupervisor, {
+      // A host turn's command carries on through a quit that keeps its turns.
+      survivesShutdown: (task) => isHostTask(task) && quitHandsOff && !quitInstallsUpdate(),
+      // After a relaunch, a command a host still runs keeps its task running.
+      isAlive: async (task) => {
+        if (!turnHostLink || task.processHandleId === undefined) return false
+        const answer = await turnHostLink.process('alive', task.processHandleId, task)
+        if (answer?.ok !== true) return false
+        hostTaskIds.add(hostTaskKey(task))
+        return true
+      },
+    })
+    setForeignBackgroundProcessStopper(async (task) => {
+      if (!turnHostLink || !isHostTask(task) || task.processHandleId === undefined) return false
+      return (await turnHostLink.process('stop', task.processHandleId, task))?.ok === true
+    })
+    setForeignBackgroundProcessLogsReader(async (processId, owner) => {
+      if (!turnHostLink?.ready) return null
+      return (await turnHostLink.process('logs', processId, owner))?.logs ?? null
+    })
     disposeContainerRunSupervisor = getContainerRunService().installSupervisor(taskSupervisor)
     disposeDarkFactorySensor = installDarkFactorySensor(taskSupervisor)
     disposeTaskSupervisorEvents = taskSupervisor.subscribe((task) => {
+      if (isHostTask(task)) turnHostLink?.taskChanged(task)
       if (!win.isDestroyed()) win.webContents.send('supervisor:changed', task.projectId)
     })
     void taskSupervisor
@@ -1820,7 +1889,6 @@ async function cleanupBeforeQuit(): Promise<void> {
   stopAllAgentRuns()
   await stopAllForegroundShellProcesses()
   await hostTurnsStopped
-  hostLink?.close()
   // Revoke input and inference synchronously, then await VM deletion within the quit deadline.
   await stopAllIsolatedDesktops().catch((error: unknown) => {
     console.error('[isolated-desktop] Shutdown VM cleanup failed:', error)
@@ -1842,6 +1910,8 @@ async function cleanupBeforeQuit(): Promise<void> {
   await getContainerRunService().stopAll(quitHandsOff && !quitInstallsUpdate())
   await cancelAllSupervisedBackgroundProcesses()
   await taskSupervisor.shutdown()
+  // Open until here, so cancelling a host turn's background commands reached the host.
+  hostLink?.close()
   disposeContainerRunSupervisor?.()
   disposeContainerRunSupervisor = undefined
   disposeBackgroundProcessSupervisor?.()
