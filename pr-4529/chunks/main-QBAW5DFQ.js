@@ -89278,13 +89278,22 @@ function summariseWorkingThreads(titles2) {
   if (listed.length < 2) return listed.join("");
   return `${listed.slice(0, -1).join(", ")} and ${listed[listed.length - 1] ?? ""}`;
 }
-async function confirmClose(store2) {
+async function confirmClose(store2, options = {}) {
   const titles2 = workingThreadTitles(store2);
   if (titles2.length === 0) return true;
   const one = titles2.length === 1;
+  const working = `${summariseWorkingThreads(titles2)} ${one ? "is" : "are"} mid-turn.`;
+  if (options.continuesAfterQuit === true) {
+    return await showConfirmDialog({
+      message: one ? "Close Copse while the agent is still working?" : `Close Copse while ${String(titles2.length)} threads are still working?`,
+      detail: `${working} ${one ? "It keeps" : "They keep"} going in the background after Copse closes, and ${one ? "is" : "are"} here when you open it again.`,
+      confirmLabel: "Close",
+      cancelLabel: "Keep Copse open"
+    });
+  }
   return await showConfirmDialog({
     message: one ? "Close Copse while the agent is still working?" : `Close Copse while ${String(titles2.length)} threads are still working?`,
-    detail: `${summariseWorkingThreads(titles2)} ${one ? "is" : "are"} mid-turn. Closing stops the run \u2014 anything the agent has not already written to your files is lost.`,
+    detail: `${working} Closing stops the run \u2014 anything the agent has not already written to your files is lost.`,
     confirmLabel: "Close anyway",
     cancelLabel: one ? "Keep working" : "Keep them working",
     danger: true
@@ -89292,7 +89301,9 @@ async function confirmClose(store2) {
 }
 function mountCloseConfirm(api2, store2) {
   return api2.closeConfirm.onRequest((req) => {
-    void confirmClose(store2).then((confirmed) => api2.closeConfirm.respond(req.id, confirmed));
+    void confirmClose(store2, {
+      ...req.continuesAfterQuit !== void 0 ? { continuesAfterQuit: req.continuesAfterQuit } : {}
+    }).then((confirmed) => api2.closeConfirm.respond(req.id, confirmed));
   });
 }
 var MAX_LISTED_TITLES;
