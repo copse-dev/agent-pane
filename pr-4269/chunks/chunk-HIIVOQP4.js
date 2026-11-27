@@ -1,7 +1,7 @@
 import {
   el,
   init_helpers
-} from "./chunk-EMIRHVRH.js";
+} from "./chunk-OB2CWITE.js";
 import {
   __esm
 } from "./chunk-WW3EXSJD.js";
@@ -133,6 +133,16 @@ function runningStatusIcon(className = DEFAULT) {
 function checkIcon(className = DEFAULT) {
   return outlineIcon("check", ["M20 6 9 17l-5-5"], className);
 }
+function eyeIcon(className = DEFAULT) {
+  return outlineIcon(
+    "eye",
+    [
+      "M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0",
+      "M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
+    ],
+    className
+  );
+}
 function shieldIcon(className = DEFAULT) {
   return outlineIcon(
     "shield",
@@ -171,6 +181,13 @@ function dotIcon(className = DEFAULT) {
 }
 function circleIcon(className = DEFAULT) {
   return outlineIcon("circle", ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"], className);
+}
+function recordIcon(className = DEFAULT) {
+  return outlineIcon(
+    "circle-dot",
+    ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z", "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"],
+    className
+  );
 }
 function spinnerIcon(className = DEFAULT) {
   return outlineIcon("loader-circle", ["M21 12a9 9 0 1 1-6.219-8.56"], className);
@@ -357,7 +374,7 @@ var init_ipc_error_message = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/config.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/config.js
 function activeConfig() {
   return active;
 }
@@ -381,14 +398,14 @@ function withConfig(config, fn) {
 }
 var baseDefaults, active, scopeDepth;
 var init_config = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/config.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/config.js"() {
     baseDefaults = {};
     active = baseDefaults;
     scopeDepth = 0;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
 function replaceCodePoint(codePoint) {
   if (codePoint >= 55296 && codePoint <= 57343 || codePoint > 1114111)
     return 65533;
@@ -428,7 +445,7 @@ function decodeHtmlEntities(text) {
 }
 var BUILTIN_NAMED_ENTITIES, C1_REMAP, ENTITY_TOKEN_RE, cachedNamedSource, cachedEffective;
 var init_entity_decoder = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
     init_config();
     BUILTIN_NAMED_ENTITIES = Object.freeze({
       aacute: "\xE1",
@@ -719,7 +736,7 @@ var init_entity_decoder = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
 function nextCodeSpan(s, from) {
   let i = from;
   while (i < s.length && s[i] !== "`")
@@ -800,12 +817,12 @@ function renderInlineCode(text) {
 }
 var ANGLE_AUTOLINK_VERBATIM_RE;
 var init_inline_code_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
     ANGLE_AUTOLINK_VERBATIM_RE = /^<(?:[a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^<>\s]*|[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[^<>\s@.]+(?:\.[^<>\s@.]+)+)>/;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
 function isEscapablePunctuation(ch) {
   return /^[!-/:-@[-`{-~]$/.test(ch);
 }
@@ -881,7 +898,7 @@ function canonicalizeEscapedPunctuation(text) {
 }
 var ESCAPED_BASE, ANGLE_AUTOLINK_RE, TAG_NAME, TAG_ATTR, RAW_TAG_LIKE_RE, ENTITY_CANDIDATE_RE, INCOMPLETE_ENTITY_RE, ENCODED_PUNCT_RE, DECODE_HTML_ESCAPES;
 var init_backslash_escapes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
     init_entity_decoder();
     init_inline_code_spans();
     ESCAPED_BASE = 57344;
@@ -902,7 +919,7 @@ var init_backslash_escapes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/link-references.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/link-references.js
 function isLinkReferencesEnabled() {
   return activeConfig().linkReferences !== false;
 }
@@ -1180,7 +1197,7 @@ function parseReferenceLabel(source, openBracketIndex, fallbackLabel) {
 }
 var TITLE_TOKEN_RES, BLANK_LINE_RE;
 var init_link_references = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
     init_entity_decoder();
     init_backslash_escapes();
     init_config();
@@ -1189,7 +1206,7 @@ var init_link_references = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/block-patterns.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/block-patterns.js
 function leadingIndentWidth(line) {
   let col = 0;
   for (let i = 0; i < line.length; i++) {
@@ -1339,7 +1356,7 @@ function parseOpenFenceContent(source) {
 }
 var FENCE_OPEN_RE, FENCE_CLOSE_RE, ATX_HEADING_DETECT_RE, ATX_HEADING_CAPTURE_RE, BLOCKQUOTE_DETECT_RE, FENCE_INFO_BACKSLASH_RE;
 var init_block_patterns = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
     init_entity_decoder();
     FENCE_OPEN_RE = /^ {0,3}(?:(`{3,})([^\n`]*)|(~{3,})([^\n]*?))\s*$/;
     FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})\s*$/;
@@ -1350,17 +1367,17 @@ var init_block_patterns = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/html-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/html-policy.js
 function getHtmlPolicy() {
   return activeConfig().htmlPolicy ?? "passthrough";
 }
 var init_html_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/escape.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/escape.js
 function escapeHtml(text) {
   return text.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch] ?? ch);
 }
@@ -1456,7 +1473,7 @@ function decodeSafeMarkdownEntities(text) {
 }
 var HTML_ESCAPES, SAFE_OUTER_TAG_RE, BENIGN_RAW_INLINE_TAG_RE, BR_TAG_RE, EVENT_HANDLER_ATTR_RE, URL_ATTR_RE, DANGEROUS_HREF_SCHEME_RE, PASSTHROUGH_TAG_RE, SAFE_ANCHOR_ATTR_NAME_RE, TAG_ATTR_RE, ANCHOR_OPEN_TAG_RE, QUOTED_HREF_RE, SAFE_MARKDOWN_ENTITY_SOURCE, SAFE_MARKDOWN_ENTITY_RE, COMPLETE_SAFE_MARKDOWN_ENTITY_RE, KNOWN_SAFE_ENTITIES;
 var init_escape = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/escape.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/escape.js"() {
     init_backslash_escapes();
     init_html_policy();
     init_link_references();
@@ -1492,7 +1509,7 @@ var init_escape = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/math-block.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/math-block.js
 function onelineMathBody(trimmed, delimiter) {
   const [open, close] = delimiter === "dollar" ? ["$$", "$$"] : ["\\[", "\\]"];
   if (!trimmed.startsWith(open) || !trimmed.endsWith(close))
@@ -1587,7 +1604,7 @@ function syncFormingMathBlockDom(container, source, formingClass) {
 }
 var MATH_DOLLAR_LINE_RE, MATH_BRACKET_OPEN_LINE_RE, MATH_BRACKET_CLOSE_LINE_RE, MATH_OPEN_PREFIX_RE, PARTIAL_DOLLAR_CLOSER_RE, PARTIAL_BRACKET_CLOSER_RE, PARTIAL_DOLLAR_CLOSER_LINE_RE, PARTIAL_BRACKET_CLOSER_LINE_RE;
 var init_math_block = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
     init_block_patterns();
     init_escape();
     MATH_DOLLAR_LINE_RE = /^ {0,3}\$\$\s*$/;
@@ -1601,7 +1618,7 @@ var init_math_block = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/footnotes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/footnotes.js
 function isFootnotesEnabled() {
   return activeConfig().footnotes !== false;
 }
@@ -1737,7 +1754,7 @@ function isPendingFootnoteDefLine(pending) {
 }
 var FOOTNOTE_DEF_LINE_RE, FOOTNOTE_REF_RE, activeFootnotes;
 var init_footnotes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
     init_block_patterns();
     init_escape();
     init_link_references();
@@ -1748,17 +1765,17 @@ var init_footnotes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/math-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/math-syntax.js
 function isMathSyntaxEnabled() {
   return activeConfig().mathSyntax ?? false;
 }
 var init_math_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
 function parseOrderedListMarker(line) {
   const m = line.match(ORDERED_LIST_MARKER_RE);
   if (!m?.[1])
@@ -2525,7 +2542,7 @@ function isAmbiguousBlockLine(line) {
 }
 var THEMATIC_BREAK_RE, UNORDERED_LIST_ITEM_RE, ORDERED_LIST_MARKER_RE, LIST_ITEM_RE, EMPTY_LIST_ITEM_RE, BLOCKQUOTE_RE, SETEXT_UNDERLINE_RE, TABLE_SEP_RE;
 var init_block_tokenizer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
     init_link_references();
     init_block_patterns();
     init_math_block();
@@ -2542,7 +2559,7 @@ var init_block_tokenizer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/alerts.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/alerts.js
 function alertTypeFromMarker(bodyLine) {
   const word = ALERT_MARKER_RE.exec(bodyLine.trim())?.[1]?.toLowerCase();
   if (word !== void 0 && word in ALERT_TITLES)
@@ -2563,7 +2580,7 @@ function pendingBlockquoteAlertType(pendingLine) {
 }
 var ALERT_TITLES, ALERT_MARKER_RE;
 var init_alerts = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
     init_block_patterns();
     ALERT_TITLES = {
       note: "Note",
@@ -2576,7 +2593,7 @@ var init_alerts = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
 function normalizeFenceLang(lang) {
   return lang.trim().toLowerCase();
 }
@@ -2602,7 +2619,7 @@ function getFenceHandler(lang) {
 }
 var FORMING_FENCE_PRE_CLASS, mermaidFenceHandler, mathFenceHandler, BUILTIN_FENCE_HANDLERS, cachedOverrideSource, cachedOverrideMap;
 var init_fence_handlers = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
     init_config();
     init_escape();
     init_math_block();
@@ -2654,7 +2671,7 @@ var init_fence_handlers = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/highlight.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/highlight.js
 function lookup(table, key) {
   return Object.hasOwn(table, key) ? table[key] : void 0;
 }
@@ -2692,7 +2709,7 @@ function fenceCodeClass(lang) {
 }
 var KNOWN_LANGUAGES, LANG_SYNONYMS, LANG_FALLBACKS;
 var init_highlight = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
     init_config();
     init_escape();
     KNOWN_LANGUAGES = /* @__PURE__ */ new Set([
@@ -2733,7 +2750,7 @@ var init_highlight = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/indented-html.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/indented-html.js
 function leadingSpaces(line) {
   return line.match(/^ */)?.[0].length ?? 0;
 }
@@ -2755,13 +2772,13 @@ function isIndentedHtmlBlock(content) {
 }
 var HTML_BLOCK_TAGS, HTML_BLOCK_START_RE;
 var init_indented_html = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
     HTML_BLOCK_TAGS = "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul";
     HTML_BLOCK_START_RE = new RegExp(`^</?(?:${HTML_BLOCK_TAGS})(?:[\\s/>]|$)`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/raw-images.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/raw-images.js
 function parseHtmlAttributes(tag) {
   const attrs = {};
   const decodedTag = decodeEscapedHref(tag);
@@ -2794,7 +2811,7 @@ function restoreRawImages(text, images) {
 }
 var RAW_IMAGE_RE, PLACEHOLDER_OPEN, PLACEHOLDER_CLOSE, PLACEHOLDER_RE;
 var init_raw_images = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
     init_config();
     init_escape();
     RAW_IMAGE_RE = /(?:<img\b[\s\S]*?\/?>|&lt;img\b[\s\S]*?\/?&gt;)/gi;
@@ -2804,17 +2821,17 @@ var init_raw_images = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
 function isEmailAutolinksEnabled() {
   return activeConfig().emailAutolinks ?? true;
 }
 var init_autolink_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
 function workspaceLinkTargetFromHref(raw) {
   let pathPart = raw.trim();
   if (pathPart === "" || pathPart.startsWith("#") || pathPart.startsWith("//"))
@@ -2867,13 +2884,13 @@ function isWorkspaceMarkdownLinkHref(raw) {
 }
 var URL_SCHEME_RE, COMMONMARK_FIXTURE_SINGLE_SEGMENTS;
 var init_workspace_link_href = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
     URL_SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
     COMMONMARK_FIXTURE_SINGLE_SEGMENTS = /* @__PURE__ */ new Set(["uri", "url"]);
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-links.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/inline-links.js
 function lookupWithRenderedLabels(refs, label, renderForMatch) {
   const direct = lookupLinkReference(refs, label);
   if (direct || !renderForMatch || !label.includes("<") || !isValidReferenceLabel(label)) {
@@ -3076,7 +3093,7 @@ function rangeAt(index, ranges) {
 }
 var renderedLabelIndexCache, DEFAULT_SAFE_HREF_SCHEMES, HREF_SCHEME_RE, DEFAULT_SAFE_HREF_SCHEMES_SET, cachedSchemesSource, cachedSchemes, neutralLinkDecorator, appLinkDecorator, RENDERED_ANCHOR_RE, INLINE_SHIELD_RE;
 var init_inline_links = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -3105,7 +3122,7 @@ var init_inline_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-passes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/inline-passes.js
 function getInlinePasses(stage) {
   const passes = activeConfig().inlinePasses ?? NO_PASSES;
   if (stage === void 0)
@@ -3124,7 +3141,7 @@ function restoreInlinePassHtml(text) {
 }
 var NO_PASSES, TOKEN_OPEN, TOKEN_CLOSE, TOKEN_RE, TOKEN_CHAR_RE, emitted, nextEmitId, inlinePassContext;
 var init_inline_passes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
     init_config();
     NO_PASSES = [];
     TOKEN_OPEN = "\uE100";
@@ -3143,7 +3160,7 @@ var init_inline_passes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/inline-math.js
 function inlineHtmlMask(text) {
   const mask = new Array(text.length).fill(false);
   for (const match of text.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -3341,7 +3358,7 @@ function mathHoldStart(s, mask) {
 }
 var ESCAPED_LPAREN, ESCAPED_RPAREN;
 var init_inline_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
     init_backslash_escapes();
     init_escape();
     init_inline_emphasis();
@@ -3352,7 +3369,7 @@ var init_inline_math = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
 function inlineHtmlMask2(text) {
   const mask = new Array(text.length).fill(false);
   for (const match of text.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -3447,12 +3464,12 @@ function strikethroughHoldStart(s, mask) {
   return cut;
 }
 var init_inline_strikethrough = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
 function isFlankingWhitespace(ch) {
   return ch === "" || ch === HARD_BREAK_SENTINEL || /\s/.test(ch);
 }
@@ -3749,7 +3766,7 @@ function renderEmphasisOutsideInlineHtml(text, linkRefs = /* @__PURE__ */ new Ma
 }
 var UNICODE_PUNCTUATION_RE, HARD_BREAK_SENTINEL, INLINE_HTML_SHIELD_RE;
 var init_inline_emphasis = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -3766,7 +3783,7 @@ var init_inline_emphasis = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
 function autolinkHref(raw) {
   if (!isAllowedHref(raw))
     return null;
@@ -3816,7 +3833,7 @@ function renderAngleAutolinks(text) {
 }
 var URI_AUTOLINK_RE, EMAIL_AUTOLINK_RE;
 var init_inline_autolinks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
     init_escape();
     init_inline_emphasis();
     init_inline_links();
@@ -3826,7 +3843,7 @@ var init_inline_autolinks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/inline-spans.js
 function applyInlinePasses(t, stage) {
   const passes = getInlinePasses(stage);
   if (passes.length === 0)
@@ -4045,7 +4062,7 @@ function linkifyEmailAutolinks(segment) {
 }
 var URL_SCHEME_RE2, WWW_DOMAIN_RE, AUTOLINK_TRAILING_PUNCTUATION, EMAIL_LOCAL_CHAR_RE;
 var init_inline_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
     init_autolink_syntax();
     init_backslash_escapes();
     init_config();
@@ -4065,7 +4082,7 @@ var init_inline_spans = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
 function stripHtmlComments(text) {
   return text.replace(/<!--[\s\S]*?-->/g, "");
 }
@@ -4161,7 +4178,7 @@ function renderProseBlock(text, linkRefs, softBreak = "newline") {
 }
 var HARD_BREAK;
 var init_render_prose_inline = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
     init_backslash_escapes();
     init_escape();
     init_raw_images();
@@ -4171,7 +4188,7 @@ var init_render_prose_inline = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/table-wrapper.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/table-wrapper.js
 function resolveTableWrapper() {
   const value = activeConfig().tableWrapper;
   if (!value)
@@ -4216,13 +4233,13 @@ function withTableWrapperGate(config, hostAttr = []) {
   };
 }
 var init_table_wrapper = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/table-wrapper.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/table-wrapper.js"() {
     init_config();
     init_escape();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/render-blocks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/render-blocks.js
 function renderFencedBlock(lang, code, forming = false) {
   const handler = getFenceHandler(lang);
   if (handler) {
@@ -4689,7 +4706,7 @@ function renderFootnoteSectionItems(ctx, linkRefs, startIndex = 0) {
 }
 var MAX_BLOCK_NESTING_DEPTH, blockNestingDepth, stripBlockquoteLine, TASK_LIST_MARKER_RE, SETEXT_UNDERLINE_SLICE_RE;
 var init_render_blocks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -4708,7 +4725,7 @@ var init_render_blocks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
 function resolvedPolicy() {
   const source = activeConfig().linkImagePolicy ?? null;
   if (source !== cachedPolicySource) {
@@ -4808,7 +4825,7 @@ function applyLinkImagePolicy(node, tagName) {
 }
 var DEFAULT_BLOCKED_LINK_CLASS, DEFAULT_BLOCKED_IMAGE_CLASS, cachedPolicySource, cachedResolved;
 var init_link_image_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
     init_config();
     DEFAULT_BLOCKED_LINK_CLASS = "blocked-link";
     DEFAULT_BLOCKED_IMAGE_CLASS = "blocked-image";
@@ -4816,16 +4833,16 @@ var init_link_image_policy = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/data-attributes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/data-attributes.js
 var DATA_ATTR_NAME_SOURCE, DATA_ATTR_NAME_RE;
 var init_data_attributes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
     DATA_ATTR_NAME_SOURCE = "data-[a-z0-9-]+";
     DATA_ATTR_NAME_RE = /* @__PURE__ */ new RegExp(`^${DATA_ATTR_NAME_SOURCE}$`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
 function isBrowserSanitizerSupported() {
   return typeof document !== "undefined" && typeof Element.prototype.setHTML === "function";
 }
@@ -4872,7 +4889,7 @@ function sanitizeIntoElement(target, html, config) {
 }
 var DROP_CONTENT_TAGS, browserSanitizerBackend;
 var init_sanitize_browser = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
     init_data_attributes();
     DROP_CONTENT_TAGS = /* @__PURE__ */ new Set(["script", "style", "noscript", "template", "title"]);
     browserSanitizerBackend = {
@@ -4896,7 +4913,7 @@ var init_sanitize_browser = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/sanitize.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/sanitize.js
 function getSanitizerBackend() {
   return activeConfig().sanitizerBackend ?? null;
 }
@@ -4996,7 +5013,7 @@ function sanitizeRenderedMarkdownInto(target, html) {
 }
 var ALLOWED_TAGS, ALLOWED_ATTR, FOOTNOTE_ID_RE, CONTENT_ID_PREFIX, DOUBLE_ENCODED_NBSP_RE, DOUBLE_ENCODED_NBSP_DATA_RE, SHOW_TEXT;
 var init_sanitize = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
     init_config();
     init_link_image_policy();
     init_sanitize_browser();
@@ -5079,7 +5096,7 @@ var init_sanitize = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/renderer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/renderer.js
 function topLevelRenderOpts() {
   return { htmlFromIndent: true, indentedCode: activeConfig().indentedCode !== false };
 }
@@ -5118,7 +5135,7 @@ ${section}`;
   }
 }
 var init_renderer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
     init_block_tokenizer();
     init_footnotes();
     init_config();
@@ -5127,7 +5144,7 @@ var init_renderer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
 function revealFormingLink(text) {
   if (!text.includes("["))
     return text;
@@ -5301,7 +5318,7 @@ function renderPendingLine(pending, options = {}) {
 }
 var COMPLETE_LINK_AT_START_RE, TOP_LEVEL_LIST_MARKER_RE;
 var init_render_pending_line = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -5315,7 +5332,7 @@ var init_render_pending_line = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-split.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/streaming-split.js
 function splitAtLastNewline(content) {
   const lastNl = content.lastIndexOf("\n");
   if (lastNl === -1)
@@ -5446,14 +5463,14 @@ function committedTailContinues(complete, blocks) {
   return continues;
 }
 var init_streaming_split = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
     init_block_tokenizer();
     init_inline_code_spans();
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
 function canExtendAcrossBlank(kind) {
   return kind === "list_item" || kind === "indented_code" || kind === "blockquote" || kind === "footnote_def";
 }
@@ -5505,7 +5522,7 @@ function advanceSafeBoundary(source, tokens, fromIdx, fromOffset, lastNonBlankKi
 }
 var IncrementalSourceScanner;
 var init_incremental_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
     init_block_tokenizer();
     IncrementalSourceScanner = class {
       tokens = [];
@@ -5690,7 +5707,7 @@ var init_incremental_scan = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/dom-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/dom-scan.js
 function childMatches(el2, tagName, cls) {
   return (tagName === null || el2.tagName === tagName) && (cls === null || el2.classList.contains(cls));
 }
@@ -5719,11 +5736,11 @@ function findDescendantByClass(root, cls, tagName) {
   return null;
 }
 var init_dom_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/html-sink.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/html-sink.js
 function resolvePolicy() {
   const hostPolicy = activeConfig().trustedTypesPolicy;
   if (hostPolicy)
@@ -5772,13 +5789,13 @@ function setHostTrustedHtml(el2, html) {
 }
 var defaultPolicy, defaultPolicyFactory;
 var init_html_sink = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
     init_config();
     init_sanitize();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/math.js
 function readMathSource(el2) {
   return (el2.querySelector("pre.math") ?? el2).textContent ?? "";
 }
@@ -5822,13 +5839,13 @@ async function hydratePendingMath(root, options = {}) {
 }
 var PENDING_MATH_SELECTOR;
 var init_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/math.js"() {
     init_html_sink();
     PENDING_MATH_SELECTOR = ".math-block.math-block--pending, .math-inline.math-inline--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
 function decodeMermaidHtmlEntities(text) {
   return text.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 }
@@ -5869,11 +5886,11 @@ function mermaidSourceCandidates(raw) {
   return [...new Set([gentle, aggressive].filter(Boolean))];
 }
 var init_mermaid_source = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/mermaid.js
 function readDiagramSource(container) {
   return container.querySelector("pre.mermaid")?.textContent ?? "";
 }
@@ -5923,14 +5940,14 @@ async function hydratePendingDiagrams(root, options = {}) {
 }
 var PENDING_DIAGRAM_SELECTOR;
 var init_mermaid = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
     init_mermaid_source();
     init_html_sink();
     PENDING_DIAGRAM_SELECTOR = ".mermaid-diagram.mermaid-diagram--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
 function tableLines(source) {
   const trimmed = dropTrailingNewline(source);
   if (trimmed === "")
@@ -6048,7 +6065,7 @@ function removePendingTableRow(table) {
 }
 var FORMING_TABLE_CLASS, PENDING_ROW_CLASS, SEPARATOR_ROW_CLASS;
 var init_streaming_table_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
     init_dom_scan();
     init_block_tokenizer();
     init_block_patterns();
@@ -6062,7 +6079,7 @@ var init_streaming_table_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
 function syncFormingFenceDom(container, source) {
   const parsed = parseOpenFenceContent(source);
   if (!parsed) {
@@ -6099,7 +6116,7 @@ function clearFormingFenceDom(container) {
   container.replaceChildren();
 }
 var init_streaming_fence_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
     init_block_patterns();
     init_fence_handlers();
     init_dom_scan();
@@ -6109,18 +6126,18 @@ var init_streaming_fence_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
 function syncFormingMathDom(container, source) {
   syncFormingMathBlockDom(container, parseOpenMathBlock(source), FORMING_FENCE_PRE_CLASS);
 }
 var init_streaming_math_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
     init_fence_handlers();
     init_math_block();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
 function attributesEqual(a, b) {
   const aAttrs = a.attributes;
   const bAttrs = b.attributes;
@@ -6238,7 +6255,7 @@ function syncAttributes(el2, template) {
 }
 var TEXT_NODE, ELEMENT_NODE, COMMENT_NODE;
 var init_streaming_dom_morph = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
     init_fence_handlers();
     init_html_sink();
     TEXT_NODE = 3;
@@ -6247,7 +6264,7 @@ var init_streaming_dom_morph = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
 function settleClassOf(kind) {
   switch (kind) {
     case "fence":
@@ -6434,7 +6451,7 @@ function detailsBalance(html) {
 }
 var INTRA_LIST_MIN_ITEMS, MAX_LINK_REF_PATCH_PARTS, MAY_HOLD_FENCE_RE, BENIGN_BALANCED_TAGS, VOID_HTML_TAGS, HTML_TAG_SCAN_RE, SAFE_REROOT_TAGS, PROBE_TAG, PROBE_HTML, DETAILS_OPEN_RE, DETAILS_CLOSE_RE, FrozenTailRenderer;
 var init_streaming_frozen_tail = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
     init_block_tokenizer();
     init_render_blocks();
     init_footnotes();
@@ -7705,7 +7722,7 @@ ${section}`;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/streaming.js
 function trailingFootnotesSection(completedEl) {
   const last = completedEl.lastElementChild;
   return last && last.tagName === "SECTION" && last.classList.contains("footnotes") ? last : null;
@@ -8147,7 +8164,7 @@ function clearFormingDom(container) {
 }
 var BLOCK_PENDING_CLASS, LIST_CONTINUATION_CLASS, PARAGRAPH_CONTINUATION_CLASS, PENDING_FAST_PATH_INERT_RE, StreamingMarkdownRenderer;
 var init_streaming = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
     init_alerts();
     init_block_tokenizer();
     init_render_pending_line();
@@ -8519,9 +8536,9 @@ var init_streaming = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/index.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/index.js
 var init_dist = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/index.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/index.js"() {
     init_renderer();
     init_config();
     init_streaming();
@@ -8690,6 +8707,43 @@ var init_unknown_value3 = __esm({
   }
 });
 
+// src/shared/ssh-destination.ts
+function hasAsciiControlCharacter(value) {
+  return ASCII_CONTROL_RE.test(value);
+}
+function readsAsSshOption(value) {
+  return value.startsWith("-");
+}
+function sshDestinationProblem(host, user) {
+  const target = host.trim();
+  const hostname = target.slice(target.lastIndexOf("@") + 1);
+  if (!hostname) return { field: "host", message: "Host is required." };
+  if (/\s/.test(target) || hasAsciiControlCharacter(target)) {
+    return { field: "host", message: "Host cannot contain spaces or control characters." };
+  }
+  if (readsAsSshOption(target) || readsAsSshOption(hostname)) {
+    return { field: "host", message: "Host cannot start with \u201C-\u201D; ssh would read it as an option." };
+  }
+  if (user) {
+    if (readsAsSshOption(user)) {
+      return {
+        field: "user",
+        message: "User cannot start with \u201C-\u201D; ssh would read it as an option."
+      };
+    }
+    if (hasAsciiControlCharacter(user)) {
+      return { field: "user", message: "User cannot contain control characters." };
+    }
+  }
+  return null;
+}
+var ASCII_CONTROL_RE;
+var init_ssh_destination = __esm({
+  "src/shared/ssh-destination.ts"() {
+    ASCII_CONTROL_RE = /[\u0000-\u001f\u007f]/;
+  }
+});
+
 // src/renderer/views/setup/ssh-host-helpers.ts
 function parseSshWorkspaceHosts(value) {
   return recordArrayOrEmpty(value).flatMap((entry) => {
@@ -8758,6 +8812,14 @@ function importSshConfigHosts(existing, aliases) {
   }
   return { hosts, importedHostIds, firstAliasHostId };
 }
+function unsavedSshConfigHosts(saved, aliases) {
+  const targets = new Set(saved.map((host) => host.host.toLowerCase()));
+  return aliases.filter((alias) => !targets.has(alias.host.toLowerCase()));
+}
+function saveSshConfigHost(saved, alias) {
+  const imported = importSshConfigHosts(saved, [alias]);
+  return { hosts: imported.hosts, hostId: imported.firstAliasHostId ?? alias.id };
+}
 function removeHost(list, id) {
   return list.filter((h) => h.id !== id);
 }
@@ -8772,6 +8834,8 @@ function parseSshHostDraft(draft) {
     if (!draft.host.trim()) fields.push("host");
     return { ok: false, error: "Label and host are required.", fields };
   }
+  const destination = sshDestinationProblem(draft.host, draft.user.trim());
+  if (destination) return { ok: false, error: destination.message, fields: [destination.field] };
   const host = {
     id,
     label: draft.label.trim(),
@@ -8794,7 +8858,129 @@ var SSH_HOST_ID_RE;
 var init_ssh_host_helpers = __esm({
   "src/renderer/views/setup/ssh-host-helpers.ts"() {
     init_unknown_value3();
+    init_ssh_destination();
     SSH_HOST_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+  }
+});
+
+// src/renderer/views/setup/ssh-host-fields.ts
+function createSshHostFields(options = {}) {
+  const label = el("input", {
+    type: "text",
+    name: "sshHostLabel",
+    "aria-label": "SSH host label",
+    placeholder: "Production"
+  });
+  const host = el("input", {
+    type: "text",
+    name: "sshHostHost",
+    "aria-label": "SSH hostname",
+    placeholder: "example.com or ~/.ssh/config alias"
+  });
+  const user = el("input", {
+    type: "text",
+    name: "sshHostUser",
+    "aria-label": "SSH user",
+    placeholder: "ubuntu"
+  });
+  const port = el("input", {
+    type: "text",
+    name: "sshHostPort",
+    "aria-label": "SSH port",
+    placeholder: "22",
+    inputmode: "numeric"
+  });
+  const identityFile = el("input", {
+    type: "text",
+    name: "sshHostIdentity",
+    "aria-label": "SSH identity file",
+    placeholder: "~/.ssh/id_ed25519"
+  });
+  const forwardAgent = el("input", { type: "checkbox", name: "sshHostForwardAgent" });
+  const inputs = {
+    label,
+    host,
+    user,
+    port,
+    identityFile
+  };
+  for (const input of Object.values(inputs)) {
+    input.addEventListener("input", () => {
+      input.removeAttribute("aria-invalid");
+    });
+  }
+  const labelAttrs = options.labelClass ? { class: options.labelClass } : {};
+  const fields = [
+    el("label", labelAttrs, "Label ", label),
+    el("label", labelAttrs, "Host ", host),
+    el("label", labelAttrs, "User ", user),
+    el("label", labelAttrs, "Port ", port),
+    el("label", labelAttrs, "Identity file ", identityFile),
+    el("label", { class: "checkbox-label" }, forwardAgent, " Forward SSH agent")
+  ];
+  let editing = null;
+  function markInvalid(names) {
+    for (const [field, input] of Object.entries(inputs)) {
+      if (names.some((name) => name === field)) input.setAttribute("aria-invalid", "true");
+      else input.removeAttribute("aria-invalid");
+    }
+  }
+  function fill(draft) {
+    label.value = draft.label;
+    host.value = draft.host;
+    user.value = draft.user;
+    port.value = draft.port;
+    identityFile.value = draft.identityFile;
+    forwardAgent.checked = draft.forwardAgent;
+  }
+  return {
+    fields,
+    reset() {
+      editing = null;
+      markInvalid([]);
+      fill(emptySshHostDraft());
+    },
+    edit(saved) {
+      editing = saved.id;
+      markInvalid([]);
+      fill({
+        id: saved.id,
+        label: saved.label,
+        host: saved.host,
+        user: saved.user ?? "",
+        port: saved.port === void 0 ? "" : String(saved.port),
+        identityFile: saved.identityFile ?? "",
+        forwardAgent: saved.forwardAgent === true
+      });
+    },
+    editingId: () => editing,
+    parse(existing) {
+      const used = new Set(
+        existing.filter((entry) => entry.id !== editing).map((entry) => entry.id)
+      );
+      const id = editing ?? nextAvailableHostId(slugifyHostId(label.value || host.value), used);
+      const parsed = parseSshHostDraft({
+        id,
+        label: label.value,
+        host: host.value,
+        user: user.value,
+        port: port.value,
+        identityFile: identityFile.value,
+        forwardAgent: forwardAgent.checked
+      });
+      markInvalid(parsed.ok ? [] : parsed.fields);
+      return parsed;
+    },
+    markInvalid,
+    focus() {
+      label.focus();
+    }
+  };
+}
+var init_ssh_host_fields = __esm({
+  "src/renderer/views/setup/ssh-host-fields.ts"() {
+    init_helpers();
+    init_ssh_host_helpers();
   }
 });
 
@@ -8941,11 +9127,13 @@ export {
   moreVerticalIcon,
   runningStatusIcon,
   checkIcon,
+  eyeIcon,
   shieldIcon,
   bellIcon,
   messageQuestionIcon,
   banIcon,
   circleIcon,
+  recordIcon,
   spinnerIcon,
   minusIcon,
   warningIcon,
@@ -9002,13 +9190,14 @@ export {
   init_unknown_value2,
   init_unknown_value3,
   parseSshWorkspaceHosts,
-  emptySshHostDraft,
-  slugifyHostId,
   upsertHost,
   importSshConfigHosts,
+  unsavedSshConfigHosts,
+  saveSshConfigHost,
   removeHost,
-  parseSshHostDraft,
   init_ssh_host_helpers,
+  createSshHostFields,
+  init_ssh_host_fields,
   showToast,
   showErrorToast,
   init_toast

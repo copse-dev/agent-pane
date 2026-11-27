@@ -22,9 +22,10 @@ import {
   init_product_announcement_dialog,
   init_product_announcements,
   init_settings_dialog,
+  init_sleep,
   init_storage_cleanup,
   init_thread_links2 as init_thread_links,
-  init_thread_pr_relations,
+  init_thread_pr_relations2 as init_thread_pr_relations,
   init_token_estimate,
   init_tool_interruption,
   init_working_brief,
@@ -32,10 +33,11 @@ import {
   isReasoningLevel,
   mountProductAnnouncements,
   openSettingsDialog,
+  sleep,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-57HGMO5P.js";
-import "./chunks/chunk-D55J6ZRP.js";
+} from "./chunks/chunk-UHDFXCOH.js";
+import "./chunks/chunk-X6JZSFJR.js";
 import {
   init_icons,
   init_unknown_value,
@@ -44,8 +46,8 @@ import {
   maximizeIcon,
   minimizeIcon,
   stringRecordOrEmpty
-} from "./chunks/chunk-6YY6Y3HG.js";
-import "./chunks/chunk-EMIRHVRH.js";
+} from "./chunks/chunk-HIIVOQP4.js";
+import "./chunks/chunk-OB2CWITE.js";
 import {
   __commonJS,
   __esm
@@ -113,6 +115,7 @@ function parseAgentRunPayload(rawPrompt) {
         ...typeof parsed["workingBrief"] === "string" ? { workingBrief: parsed["workingBrief"] } : {},
         ...typeof parsed["model"] === "string" && parsed["model"] ? { model: parsed["model"] } : {},
         ...isReasoningLevel(parsed["reasoning"]) ? { reasoning: parsed["reasoning"] } : {},
+        ...typeof parsed["profileId"] === "string" && parsed["profileId"] ? { profileId: parsed["profileId"] } : {},
         ...typeof parsed["turnTreeId"] === "string" && parsed["turnTreeId"] ? { turnTreeId: parsed["turnTreeId"] } : {},
         ...typeof parsed["continuationBudgetUsed"] === "number" && Number.isFinite(parsed["continuationBudgetUsed"]) ? { continuationBudgetUsed: parsed["continuationBudgetUsed"] } : {},
         ...reviewContext !== void 0 ? { reviewContext } : {}
@@ -164,9 +167,6 @@ var init_parse_agent_run_payload = __esm({
 });
 
 // src/renderer/demo/trace-player.ts
-function defaultSleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 function sliceForStreaming(text, sliceChars) {
   if (text === "") return [];
   const slices = [];
@@ -189,7 +189,7 @@ async function playTrace(trace, emit, options = {}) {
     stepPauseMs = DEFAULT_STEP_PAUSE_MS,
     instant = false,
     signal,
-    sleep: sleep2 = defaultSleep
+    sleep: sleep2 = sleep
   } = options;
   const pause = async (ms) => {
     if (instant || ms <= 0) return;
@@ -204,7 +204,7 @@ async function playTrace(trace, emit, options = {}) {
     if (chunk.type === "text" || chunk.type === "reasoning") {
       for (const slice of sliceForStreaming(chunk.text, sliceChars)) {
         if (aborted()) return;
-        emit({ type: chunk.type, text: slice });
+        emit({ ...chunk, text: slice });
         await pause(slice.length / charsPerSecond * 1e3);
       }
       continue;
@@ -215,6 +215,7 @@ async function playTrace(trace, emit, options = {}) {
 var DEFAULT_CHARS_PER_SECOND, DEFAULT_SLICE_CHARS, DEFAULT_STEP_PAUSE_MS;
 var init_trace_player = __esm({
   "src/renderer/demo/trace-player.ts"() {
+    init_sleep();
     DEFAULT_CHARS_PER_SECOND = 240;
     DEFAULT_SLICE_CHARS = 12;
     DEFAULT_STEP_PAUSE_MS = 260;
@@ -1807,7 +1808,30 @@ var init_demo_bridged_tools = __esm({
 });
 
 // src/shared/approval-copy.ts
+function projectPortBindingApproval(workspaceRoot, command) {
+  return {
+    title: "Allow this project to bind a local port?",
+    body: command || "(no command given)",
+    bodyAdvice: `The agent wants to start a long-running background task that binds a loopback port and stays alive across turns:
+
+Project: ${workspaceRoot}`,
+    bodyFooter: "One-time approval covers this start. Remembered permission lets future tasks and chats in this project, including its worktrees, bind on localhost until revoked. Other shell permissions still apply. Revoke it in Context \u2192 Permissions \u2192 Project \u2192 Local port binding. Stop running tasks separately.",
+    allowRemember: true,
+    rememberLabel: `Always allow local port binding in this project: ${workspaceRoot}`,
+    approveLabel: "Allow for this project",
+    approveOnceLabel: "Allow once"
+  };
+}
 function threadAccessApproval(access) {
+  if (access === "orchestrate")
+    return {
+      title: "Allow subthread orchestration?",
+      body: "",
+      bodyAdvice: "Allow this thread to start subthreads in isolated checkouts, read their conversations, and send them further instructions. This allows additional model usage. Only subthreads created by this thread are included; their normal permissions and limits still apply.",
+      bodyFooter: "Applies only to this thread until revoked in the thread\u2019s Context panel \u2192 Permissions.",
+      approveLabel: "Allow orchestration",
+      allowRemember: false
+    };
   return {
     title: access === "read" ? "Read your other threads?" : "Send prompts to your other threads?",
     body: "",
@@ -5150,6 +5174,7 @@ var init_demo_scenarios = __esm({
           rightPanelMode: "context",
           threadReadAccess: [SIDE_CHATS_MAIN_ID],
           threadSendAccess: [SIDE_CHATS_MAIN_ID],
+          threadSubthreadAccess: [SIDE_CHATS_MAIN_ID],
           webAllowedOrigins: ["https://example.org:443"],
           toolPermissionOverrides: { "copse:run_shell": "ask" },
           layout: {
@@ -5557,7 +5582,7 @@ var init_demo_scenarios = __esm({
       ...SITE_TOUR_SCENARIOS,
       // Concise thread view in each state a thread can be in (see demo-concise-states.ts).
       ...CONCISE_STATE_SCENARIOS,
-      ...["read", "send"].map(
+      ...["read", "send", "orchestrate"].map(
         (access) => approvalRiskScenario(`approval-thread-${access}`, {
           id: `thread-${access}`,
           type: "mcp",
@@ -5571,6 +5596,28 @@ var init_demo_scenarios = __esm({
           ...gitPushApproval("copse/friendly-action-names-213c32", sha)
         })
       ),
+      {
+        ...approvalRiskScenario("approval-project-preview", {
+          id: "preview-port",
+          type: "shell",
+          ...projectPortBindingApproval("/home/mira/harbor-board", "npm run dev")
+        }),
+        project: project(
+          "demo-approval-project-preview-project",
+          "Harbor Board",
+          "/home/mira/harbor-board"
+        )
+      },
+      approvalRiskScenario("approval-port-binding", {
+        id: "port-binding-pending",
+        threadId: "demo-approval-port-binding-thread",
+        title: "Allow this project to bind a local port?",
+        body: "npm run dev",
+        bodyAdvice: "The agent wants to start a long-running background task that binds a loopback port and stays alive across turns:\n\nProject: /workspace/copse",
+        type: "shell",
+        allowRemember: true,
+        rememberLabel: "Always allow local port binding in this project"
+      }),
       approvalRiskScenario("approval-automation-preparation", {
         id: "automation-preparation",
         title: "Prepare this worktree?",
@@ -5810,6 +5857,13 @@ function createDemoApi(scenario2, options = {}) {
     typeof scenarioModel === "string" ? scenarioModel : void 0
   );
   const api = {
+    remote: {
+      publish: async () => {
+      },
+      watched: () => Promise.resolve([]),
+      onWatchedChanged: () => () => {
+      }
+    },
     clientActions: {
       claim: () => Promise.resolve(false),
       publish: async () => {
@@ -5820,11 +5874,21 @@ function createDemoApi(scenario2, options = {}) {
       }
     },
     threadPrompts: {
+      // Demo scenarios never dispatch native delegated work.
+      canDispatch: () => resolved(false),
+      canSubmit: () => resolved(true),
       onPrompt: () => () => {
       },
       reply: async () => {
       },
-      revokeAccess: async () => {
+      revokeAccess: (threadId, access) => {
+        const key = access === "read" ? "threadReadAccess" : access === "send" ? "threadSendAccess" : "threadSubthreadAccess";
+        const grants = settings.get(key);
+        settings.set(
+          key,
+          Array.isArray(grants) ? grants.filter((id) => id !== threadId) : []
+        );
+        return resolvedVoid();
       }
     },
     mobile: {
@@ -5868,6 +5932,9 @@ function createDemoApi(scenario2, options = {}) {
       registerName: () => resolvedVoid(),
       removeName: () => resolvedVoid(),
       recheckNameDns: () => resolvedVoid(),
+      setRelayEnabled: () => resolvedVoid(),
+      createShellPairing: () => resolvedVoid(),
+      clearShellPairing: () => resolvedVoid(),
       onChat: () => () => {
       },
       reply: async () => {
@@ -6134,6 +6201,7 @@ function createDemoApi(scenario2, options = {}) {
     alerts: { threadFinished: resolvedVoid, onOpenThread: subscribe },
     deepLinks: { ready: resolvedVoid, onOpenThread: subscribe },
     sshPrompt: {
+      onDismissed: subscribe,
       respond: resolvedVoid,
       onRequest: subscribe
     },
@@ -6271,6 +6339,14 @@ function createDemoApi(scenario2, options = {}) {
         thread.updatedAt = Date.now();
         return resolved(true);
       },
+      actionState: () => resolved({
+        entries: [],
+        assessed: 0,
+        total: 0,
+        pending: 0,
+        assessing: false,
+        budgetLimited: false
+      }),
       onAutoArchived: () => () => {
       },
       storageSize: () => resolved({ bytes: 24576, truncated: false }),
@@ -6383,7 +6459,9 @@ function createDemoApi(scenario2, options = {}) {
           prRefs: []
         }))
       ),
-      listOrphans: emptyArray
+      listOrphans: emptyArray,
+      listExternalSessions: () => resolved({ sessions: [], sourcesFound: [] }),
+      importExternalSessions: () => resolved({ imported: [], alreadyImported: [], failed: [] })
     },
     openRouter: { models: emptyArray },
     models: {
@@ -6606,37 +6684,7 @@ function createDemoApi(scenario2, options = {}) {
         });
       },
       getThreadClassifierUse: () => resolved({ calls: 0, rows: [] }),
-      getPlanUsage: () => resolved({ providers: [], checkedAt: DEMO_TIME }),
-      getPlanWorthIt: () => resolved({
-        worthIt: {
-          verdict: "insufficient_history",
-          reason: "Need a couple of completed weekly windows \u2014 keep Copse signed into Claude and reopen Usage after resets.",
-          apiEquivalentBurnPerWeek: null,
-          planFeePerWeek: null,
-          monthlyFeeUsd: null,
-          feeHint: null,
-          completedWeeklyCount: 0,
-          inferenceFrontierNote: null
-        },
-        windowExhaustion: [],
-        historySampleCount: 0,
-        completedWeeklyCount: 0
-      }),
-      setClaudePlanMonthlyFee: () => resolved({
-        worthIt: {
-          verdict: "insufficient_history",
-          reason: "Need a couple of completed weekly windows \u2014 keep Copse signed into Claude and reopen Usage after resets.",
-          apiEquivalentBurnPerWeek: null,
-          planFeePerWeek: null,
-          monthlyFeeUsd: null,
-          feeHint: null,
-          completedWeeklyCount: 0,
-          inferenceFrontierNote: null
-        },
-        windowExhaustion: [],
-        historySampleCount: 0,
-        completedWeeklyCount: 0
-      })
+      getPlanUsage: () => resolved({ providers: [], checkedAt: DEMO_TIME })
     },
     index: {
       query: (pattern) => resolved(
@@ -6899,6 +6947,8 @@ function createDemoApi(scenario2, options = {}) {
         currentBranch = branch;
         return resolvedVoid();
       },
+      setPathStaged: () => resolved({ ok: false, message: "The demo has no git checkout." }),
+      setLinesStaged: () => resolved({ ok: false, message: "The demo has no git checkout." }),
       listBranches: () => resolved([
         { name: currentBranch, lastCommitDate: DEMO_TIME },
         { name: "main", lastCommitDate: DEMO_TIME }
@@ -6933,10 +6983,12 @@ function createDemoApi(scenario2, options = {}) {
       createPrForThread: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
       rerunFailedRuns: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
       approvePr: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
+      replyToReviewThread: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
+      setReviewThreadResolved: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
       markPrReady: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
       enableAutoMerge: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" })
     },
-    shell: { openExternal: resolvedVoid, openWorkspaceFileInBrowser: resolvedVoid },
+    shell: { openExternal: resolvedVoid },
     editors: {
       list: () => resolved({ editors: [], lastUsedId: null }),
       open: resolvedVoid
@@ -7297,9 +7349,6 @@ var init_scenarios = __esm({
 });
 
 // src/renderer/demo/autoplay.ts
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 async function waitForElement(root, selector, timeoutMs, signal) {
   const deadline = Date.now() + timeoutMs;
   for (; ; ) {
@@ -7436,6 +7485,7 @@ async function startAutoplay(doc, options) {
 var COMPOSER_SELECTOR, SUBMIT_SELECTOR, RUNNING_CLASS, MOUNT_TIMEOUT_MS, RUN_TIMEOUT_MS, PREVIEW_TIMEOUT_MS, POLL_MS, DEFAULT_CHARS_PER_SECOND2, DEFAULT_START_DELAY_MS, DEFAULT_LOOP_PAUSE_MS;
 var init_autoplay = __esm({
   "src/renderer/demo/autoplay.ts"() {
+    init_sleep();
     COMPOSER_SELECTOR = ".prompt-input";
     SUBMIT_SELECTOR = ".submit-btn";
     RUNNING_CLASS = "with-stop";
@@ -7479,7 +7529,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-3JE2SFKO.js").then(async (main) => {
+    void import("./chunks/main-HH4FHSFP.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
