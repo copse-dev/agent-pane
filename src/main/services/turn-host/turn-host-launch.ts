@@ -2,10 +2,15 @@ import { spawn, type SpawnOptions } from 'node:child_process'
 import { mkdirSync, openSync } from 'node:fs'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import { requestApproval, runWithApprovalOwner } from '../approval.ts'
 import { isPidAlive } from '../exec/subprocess-kill.ts'
 import { readHostDispatchRecord } from './host-dispatch-record.ts'
 import { TurnHostLink } from './turn-host-link.ts'
-import { connectTurnHost, turnHostSocketPath } from './turn-host-protocol.ts'
+import {
+  connectTurnHost,
+  turnHostSocketPath,
+  type HostApprovalAnswer,
+} from './turn-host-protocol.ts'
 import { threadDirectoryPath, loadProjectThreadMetas, updateMeta } from '../thread-store.ts'
 
 /**
@@ -87,6 +92,18 @@ export function createTurnHostLink(deps: TurnHostLaunchDependencies): TurnHostLi
       const meta = (await loadProjectThreadMetas(projectId)).find((m) => m.id === threadId)
       if (meta?.status !== 'running') return
       await updateMeta(projectId, threadId, { status: 'idle', interruptedTurnAt: Date.now() })
+    },
+    // Filed under the host turn's thread, so it shows on that thread and on
+    // the user's other devices as an in-process turn's prompt does.
+    askUser: async ({ projectId, threadId, request }, signal): Promise<HostApprovalAnswer> => {
+      const response = await runWithApprovalOwner({ projectId, threadId }, () =>
+        requestApproval(request, signal),
+      )
+      return {
+        approved: response.approved,
+        remember: response.remember,
+        grantScope: response.grantScope,
+      }
     },
     onThreadTaken: deps.onThreadTaken,
     log: deps.log,

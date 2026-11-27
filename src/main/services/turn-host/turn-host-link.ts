@@ -5,6 +5,7 @@ import {
   TURN_HOST_PROTOCOL,
   type AppToHost,
   type DispatchState,
+  type HostApprovalAnswer,
   type HostToApp,
   type TurnHostConnection,
 } from './turn-host-protocol.ts'
@@ -45,6 +46,14 @@ export interface TurnHostLinkDependencies {
    * thread interrupted, so Continue is the user's call and nothing runs twice.
    */
   settleUncertain: (projectId: string, threadId: string) => Promise<void>
+  /**
+   * Put a host turn's prompt in front of the user, as an in-process turn's
+   * would be; the signal aborts when the host no longer needs the answer.
+   */
+  askUser?: (
+    prompt: Extract<HostToApp, { t: 'approval' }>,
+    signal: AbortSignal,
+  ) => Promise<HostApprovalAnswer>
   /** A host thread's lease is held: the follower should follow it now. */
   onThreadTaken?: (projectId: string, threadId: string) => void
   log?: (line: string) => void
@@ -75,6 +84,8 @@ export class TurnHostLink {
   private readonly pending = new Map<string, Pending>()
   private readonly statusWaiters = new Map<string, (state: DispatchState) => void>()
   private readonly subscribers = new Map<string, Set<Subscriber>>()
+  /** Host prompts showing in the window, by the host's prompt id. */
+  private readonly prompts = new Map<string, AbortController>()
 
   constructor(deps: TurnHostLinkDependencies) {
     this.deps = deps
@@ -232,7 +243,35 @@ export class TurnHostLink {
           subscriber.onMessage(message)
         }
         return
+      case 'approval':
+        this.ask(message)
+        return
+      case 'approval-cancel':
+        this.prompts.get(message.id)?.abort()
+        this.prompts.delete(message.id)
+        return
     }
+  }
+
+  /**
+   * Show a host prompt. The host asks again on every attach, so a prompt already
+   * showing is left as it is; one answered after it was taken down is dropped.
+   */
+  private ask(prompt: Extract<HostToApp, { t: 'approval' }>): void {
+    const askUser = this.deps.askUser
+    if (!askUser || this.prompts.has(prompt.id)) return
+    const controller = new AbortController()
+    this.prompts.set(prompt.id, controller)
+    void askUser(prompt, controller.signal)
+      .catch((error: unknown): HostApprovalAnswer => {
+        this.deps.log?.(`[turn-host] could not ask about ${prompt.threadId}: ${String(error)}`)
+        return { approved: false, remember: false }
+      })
+      .then((response) => {
+        if (this.prompts.get(prompt.id) !== controller) return
+        this.prompts.delete(prompt.id)
+        this.send({ t: 'approval-answer', id: prompt.id, response })
+      })
   }
 
   /** The line dropped: settle every turn still waiting on it (decision 2). */
@@ -243,6 +282,9 @@ export class TurnHostLink {
     for (const waiter of this.helloWaiters.splice(0)) waiter()
     // A status asked on this line will not be answered on it.
     for (const waiter of [...this.statusWaiters.values()]) waiter('unknown')
+    // The host still waits on them, and asks again once a line is back.
+    for (const controller of this.prompts.values()) controller.abort()
+    this.prompts.clear()
     for (const subscribers of this.subscribers.values()) {
       for (const subscriber of subscribers) subscriber.onClose()
     }

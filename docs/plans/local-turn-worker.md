@@ -291,8 +291,14 @@ in it, and folding container runs into it are separate steps, not part of this o
   window from the host, and Stop ends it. Unit: a line dropped after `accepted`, both with
   the host finishing the turn and with the host killed mid-turn, never runs the turn in
   main.
-- **H3, interactive approvals, staged diffs and SSH prompts** over the socket, with replay
-  on attach. _Exit gate:_ e2e of an approval answered in the window for a host turn.
+- **H3, interactive approvals** over the socket, with replay on attach. A host turn no
+  longer defers its prompts: each one goes to every attached app, waits however long no
+  app is attached, and is asked again of an app that attaches. _Exit gate:_ e2e of an
+  approval answered in the window for a host turn; it needs the mock scenarios in the
+  host, so it lands with H5's harness, and unit tests cover the line until then.
+- **H3b, staged diffs and SSH prompts** for host turns. A staged edit needs the window's
+  diff panel to show the host's queue and the answer applied once, in the host; SSH
+  prompts need the host's own askpass socket, apart from the app's.
 - **H4, shared stores and profile changes** (decision 5). Starts with an audit of which
   shared-store writes a turn makes; each one either moves to the app or becomes per-thread.
 - **H5, crash proof.** e2e that kills the app's main process mid-turn, relaunches and sees

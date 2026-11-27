@@ -8,6 +8,7 @@ import {
   type LocalLineServer,
 } from '../local-socket.ts'
 import type { StreamChunk, TranscriptSnapshot, TranscriptStamp } from '@shared/types'
+import type { ApprovalRequest, ApprovalResponse } from '../approval.ts'
 
 /**
  * The line between the app and the resident turn host
@@ -30,6 +31,10 @@ import type { StreamChunk, TranscriptSnapshot, TranscriptStamp } from '@shared/t
  * - `status` asks what became of a dispatch by its operation id, for an app
  *   that lost the answer. A repeated `dispatch` of an id it has seen gets the
  *   same answer and never runs the turn twice.
+ * - `approval` asks the window to answer a prompt a host turn raised, and
+ *   `approval-answer` carries the user's answer back. A prompt waits for an
+ *   answer however long no app is attached, and is asked again of every app
+ *   that attaches; `approval-cancel` takes it down once it no longer needs one.
  *
  * Written for any transport: nothing here assumes the two ends share a machine
  * beyond the profile path (`harness-worker-roadmap.md` R2).
@@ -43,6 +48,14 @@ export type AppToHost =
   | { t: 'attach' }
   | { t: 'stop'; threadId: string }
   | { t: 'status'; id: string }
+  | { t: 'approval-answer'; id: string; response: HostApprovalAnswer }
+
+/** The part of an approval answer that crosses the line. */
+export interface HostApprovalAnswer {
+  approved: ApprovalResponse['approved']
+  remember: ApprovalResponse['remember']
+  grantScope?: ApprovalResponse['grantScope'] | undefined
+}
 
 /** What became of a dispatch, by its operation id. */
 export type DispatchState = 'running' | 'ended' | 'refused' | 'unknown'
@@ -55,6 +68,8 @@ export type HostToApp =
   | { t: 'status'; id: string; state: DispatchState }
   | { t: 'chunk'; threadId: string; chunk: StreamChunk; stamp?: TranscriptStamp | undefined }
   | { t: 'snapshot'; snapshot: TranscriptSnapshot }
+  | { t: 'approval'; id: string; projectId: string; threadId: string; request: ApprovalRequest }
+  | { t: 'approval-cancel'; id: string }
 
 const id = z.string().min(1).max(256)
 
@@ -71,6 +86,15 @@ const appToHostSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('attach') }),
   z.object({ t: z.literal('stop'), threadId: id }),
   z.object({ t: z.literal('status'), id }),
+  z.object({
+    t: z.literal('approval-answer'),
+    id,
+    response: z.object({
+      approved: z.boolean(),
+      remember: z.boolean(),
+      grantScope: z.enum(['once', 'turn-tree']).optional(),
+    }),
+  }),
 ])
 
 const objectLike = <T>(): z.ZodType<T> =>
@@ -100,6 +124,22 @@ const hostToAppSchema = z.discriminatedUnion('t', [
     stamp: objectLike<TranscriptStamp>().optional(),
   }),
   z.object({ t: z.literal('snapshot'), snapshot: objectLike<TranscriptSnapshot>() }),
+  z.object({
+    t: z.literal('approval'),
+    id,
+    projectId: id,
+    threadId: id,
+    // Raised by the same gate code as an in-process prompt; the fields the
+    // window lays out first are checked, the rest pass as the gate wrote them.
+    request: z
+      .looseObject({
+        title: z.string().max(10_000),
+        body: z.string().max(1_000_000),
+        type: z.enum(['shell', 'mcp', 'web', 'pii', 'review-spend']),
+      })
+      .transform((request) => request as ApprovalRequest),
+  }),
+  z.object({ t: z.literal('approval-cancel'), id }),
 ])
 
 /** The host's socket in this profile. One host serves the whole profile. */

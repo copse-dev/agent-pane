@@ -10,7 +10,6 @@ import {
 import { abortAgent } from '../agent-service.ts'
 import { runWithApprovalHandler } from '../approval.ts'
 import { runWithStagedDiffResolver } from '../diff-queue.ts'
-import { beginDeferralMode, endDeferralMode } from '../security/deferral-mode.ts'
 import { getSetting } from '../storage/settings.ts'
 import {
   appendMessage,
@@ -22,6 +21,7 @@ import type { ThreadWriterClaimResult } from '../thread-writer-lease.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import { TurnTranscriptWriter } from '../turn-transcript-writer.ts'
 import { modelCannotRunInWorker } from '../turn-worker/turn-worker.ts'
+import { HostApprovals } from './host-approvals.ts'
 import { writeHostDispatchRecord } from './host-dispatch-record.ts'
 import {
   TURN_HOST_PROTOCOL,
@@ -42,9 +42,10 @@ import {
  * app's follower (`foreign-turns.ts`) sees the thread held and streams it from
  * here, and a relaunched app follows it rather than starting it again.
  *
- * Until the app answers decisions over the line (H3), the host runs every turn
- * the way an unattended worker does: anything the permission policy would ask
- * about is deferred for review, and a staged edit is refused.
+ * A prompt a turn raises goes to the window over the line (`host-approvals.ts`)
+ * and waits there as it would in-process, asked again of a window that opens
+ * later. A staged edit is still refused: the diff panel cannot show a host
+ * turn's queue yet.
  */
 
 /** How long the host stays up with no turn running and no app attached. */
@@ -82,6 +83,9 @@ export class TurnHost {
   private idleTimer: ReturnType<typeof setTimeout> | null = null
   private retiring = false
   private broadcastTo: (message: HostToApp) => void = () => undefined
+  private readonly approvals = new HostApprovals((message) => {
+    this.broadcastTo(message)
+  })
 
   constructor(deps: TurnHostDependencies) {
     this.deps = deps
@@ -207,7 +211,19 @@ export class TurnHost {
           state: this.operations.get(message.id) ?? 'unknown',
         })
         return
+      case 'approval-answer':
+        this.approvals.answer(message.id, message.response)
+        return
     }
+  }
+
+  /**
+   * Tell the dispatching app, and every attached app: the one that sent the
+   * turn may have lost its line and attached again on a new one.
+   */
+  private tell(client: TurnHostClient, message: HostToApp): void {
+    if (!this.attachedClients.has(client)) client.send(message)
+    this.broadcastTo(message)
   }
 
   /** An attached app's line closed. */
@@ -234,6 +250,9 @@ export class TurnHost {
     for (const [projectId, threadIds] of byProject) {
       void this.transcripts.attach(projectId, threadIds)
     }
+    this.approvals.replay((message) => {
+      client.send(message)
+    })
   }
 
   private stop(threadId: string): void {
@@ -306,10 +325,9 @@ export class TurnHost {
       client.send({ t: 'accepted', id, threadId })
     }
     this.claimed.set(turnKey, { operationId: id, accept })
-    beginDeferralMode(threadId)
     try {
       await runWithApprovalHandler(
-        () => Promise.resolve({ approved: false, remember: false }),
+        (request, signal) => this.approvals.ask(projectId, threadId, request, signal),
         () =>
           // A staged edit would wait for a diff panel no window shows here.
           // Refuse it, so the model is told nothing was written.
@@ -320,7 +338,7 @@ export class TurnHost {
       )
       accept()
       await this.finish(projectId, threadId, id)
-      client.send({ t: 'ended', id, threadId })
+      this.tell(client, { t: 'ended', id, threadId })
       this.deps.log(`thread ${threadId}: turn ended`)
     } catch (error) {
       if (!turn.accepted) {
@@ -332,12 +350,11 @@ export class TurnHost {
         )
       } else {
         await this.finish(projectId, threadId, id)
-        client.send({ t: 'ended', id, threadId, error: String(error) })
+        this.tell(client, { t: 'ended', id, threadId, error: String(error) })
         this.deps.log(`thread ${threadId}: turn failed: ${String(error)}`)
       }
     } finally {
       this.claimed.delete(turnKey)
-      endDeferralMode(threadId)
       this.running.delete(turnKey)
       this.armIdle()
     }

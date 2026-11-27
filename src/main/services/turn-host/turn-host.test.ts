@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
@@ -10,6 +10,9 @@ import {
   type WriterLeaseEnvironment,
 } from '@copse/thread-store/writer-lease.ts'
 import type { Thread } from '@shared/types'
+import { defaultAgentDispatcherDependencies } from '../agent-dispatcher.ts'
+import { requestApproval } from '../approval.ts'
+import { storageSet } from '../storage/storage.ts'
 import { ToolRegistry } from '../tool-registry.ts'
 import {
   loadProjectThreadMetas,
@@ -28,6 +31,10 @@ before(() => {
   root = mkdtempSync(join(tmpdir(), 'turn-host-'))
   process.env['COPSE_DIR'] = root
   process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+  // The project the turns run in, so each runs the mock model to its reply.
+  const checkout = join(root, 'checkout')
+  mkdirSync(checkout)
+  storageSet('projects', [{ id: 'p1', path: checkout }])
 })
 after(() => {
   if (savedDir === undefined) delete process.env['COPSE_DIR']
@@ -139,13 +146,15 @@ describe('TurnHost', { timeout: 30_000 }, () => {
       { t: 'dispatch', id: 'd2', projectId: 'p1', threadId: 'b', payload: 'List the steps' },
       peer.client,
     )
-    await until(() => ended(peer.sent, 'd1') && ended(peer.sent, 'd2'), 'both turns')
+    // An attached app hears it with every other attached app.
+    await until(() => ended(broadcast, 'd1') && ended(broadcast, 'd2'), 'both turns')
 
     assert.equal(peer.sent[0]?.t, 'hello')
+    const heard = [...peer.sent, ...broadcast]
     for (const id of ['d1', 'd2']) {
-      const kinds = peer.sent.filter((m) => 'id' in m && m.id === id).map((m) => m.t)
+      const kinds = heard.filter((m) => 'id' in m && m.id === id).map((m) => m.t)
       assert.deepEqual(kinds, ['accepted', 'ended'], `turn ${id}`)
-      const end = peer.sent.find((m) => m.t === 'ended' && m.id === id)
+      const end = heard.find((m) => m.t === 'ended' && m.id === id)
       assert.equal(end && 'error' in end ? end.error : undefined, undefined)
     }
     for (const threadId of ['a', 'b']) {
@@ -165,6 +174,54 @@ describe('TurnHost', { timeout: 30_000 }, () => {
     const record = await readHostDispatchRecord(threadDirectoryPath('p1', 'a'))
     assert.equal(record?.operationId, 'd1')
     assert.equal(record.state, 'ended')
+    turnHost.dispose()
+  })
+
+  it("asks the window about a turn's prompt, again of a window that opens later", async () => {
+    await saveProjectThread('p1', idleThread('q'))
+    const answers: boolean[] = []
+    const { host: turnHost, broadcast } = host({
+      dispatcher: {
+        ...defaultAgentDispatcherDependencies,
+        // A tool's gate asks before the turn goes on.
+        run: async (...args) => {
+          const response = await requestApproval({ title: 'Run ls?', body: 'ls', type: 'shell' })
+          answers.push(response.approved)
+          return defaultAgentDispatcherDependencies.run(...args)
+        },
+      },
+    })
+    const first = app()
+    turnHost.handle({ t: 'hello', version: VERSION, protocol: 1 }, first.client)
+    turnHost.handle({ t: 'attach' }, first.client)
+    turnHost.handle(
+      { t: 'dispatch', id: 'd9', projectId: 'p1', threadId: 'q', payload: 'List files' },
+      first.client,
+    )
+    await until(() => broadcast.some((m) => m.t === 'approval'), 'the prompt')
+    const prompt = broadcast.find((m) => m.t === 'approval')
+    assert.equal(prompt?.t, 'approval')
+    assert.deepEqual(
+      [prompt.projectId, prompt.threadId, prompt.request.title],
+      ['p1', 'q', 'Run ls?'],
+    )
+
+    // The window closed and another opened: it is asked the same prompt.
+    turnHost.left()
+    const second = app()
+    turnHost.handle({ t: 'hello', version: VERSION, protocol: 1 }, second.client)
+    turnHost.handle({ t: 'attach' }, second.client)
+    await until(
+      () => second.sent.some((m) => m.t === 'approval' && m.id === prompt.id),
+      'the prompt again',
+    )
+    turnHost.handle(
+      { t: 'approval-answer', id: prompt.id, response: { approved: true, remember: false } },
+      second.client,
+    )
+    await until(() => ended(broadcast, 'd9'), 'the turn')
+    assert.deepEqual(answers, [true])
+    assert.ok(broadcast.some((m) => m.t === 'approval-cancel' && m.id === prompt.id))
     turnHost.dispose()
   })
 

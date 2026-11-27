@@ -17,12 +17,14 @@ class FakeHost {
   pid = 4242
   respond: (message: AppToHost, reply: (message: HostToApp) => void) => void = () => undefined
   private current: { onClose: () => void; open: boolean } | null = null
+  private listener: ((message: HostToApp) => void) | null = null
 
   connect: TurnHostLinkDependencies['connect'] = (onMessage, onClose) => {
     if (!this.reachable) return Promise.resolve(null)
     this.connections += 1
     const line = { onClose, open: true }
     this.current = line
+    this.listener = onMessage
     const connection: TurnHostConnection = {
       send: (message) => {
         if (!line.open) return
@@ -44,6 +46,12 @@ class FakeHost {
       },
     }
     return Promise.resolve(connection)
+  }
+
+  /** Say something unprompted, as the host does for a turn's prompt. */
+  say(message: HostToApp): void {
+    const line = this.current
+    if (line?.open) this.listener?.(message)
   }
 
   drop(): void {
@@ -187,5 +195,68 @@ describe('TurnHostLink', () => {
     const { link: line } = link(host, { version: '2.0.0' })
     assert.equal(await line.run('p1', 't1', 'Hello'), 'app')
     assert.equal(dispatched(host), 0)
+  })
+
+  it("puts a host turn's prompt to the user once, and sends the answer back", async () => {
+    const host = new FakeHost()
+    const asked: string[] = []
+    let answer = (_approved: boolean): void => undefined
+    const { link: line } = link(host, {
+      askUser: (prompt) =>
+        new Promise((resolve) => {
+          asked.push(prompt.threadId)
+          answer = (approved): void => {
+            resolve({ approved, remember: false })
+          }
+        }),
+    })
+    assert.ok(await line.ensureConnected())
+    const prompt = {
+      t: 'approval' as const,
+      id: 'a1',
+      projectId: 'p1',
+      threadId: 't1',
+      request: { title: 'Run ls?', body: 'ls', type: 'shell' as const },
+    }
+    host.say(prompt)
+    // Asked again on attach while it still shows: one prompt, not two.
+    host.say(prompt)
+    assert.deepEqual(asked, ['t1'])
+    answer(true)
+    await new Promise<void>((resolve) => {
+      queueMicrotask(resolve)
+    })
+    await Promise.resolve()
+    assert.deepEqual(
+      host.sent.filter((m) => m.t === 'approval-answer'),
+      [{ t: 'approval-answer', id: 'a1', response: { approved: true, remember: false } }],
+    )
+  })
+
+  it('takes a prompt down when the host no longer needs it, and sends nothing', async () => {
+    const host = new FakeHost()
+    let aborted = false
+    const { link: line } = link(host, {
+      askUser: (_prompt, signal) =>
+        new Promise((resolve) => {
+          signal.addEventListener('abort', () => {
+            aborted = true
+            resolve({ approved: false, remember: false })
+          })
+        }),
+    })
+    assert.ok(await line.ensureConnected())
+    host.say({
+      t: 'approval',
+      id: 'a2',
+      projectId: 'p1',
+      threadId: 't1',
+      request: { title: 'Run ls?', body: 'ls', type: 'shell' },
+    })
+    host.say({ t: 'approval-cancel', id: 'a2' })
+    await Promise.resolve()
+    await Promise.resolve()
+    assert.equal(aborted, true)
+    assert.equal(host.sent.filter((m) => m.t === 'approval-answer').length, 0)
   })
 })
