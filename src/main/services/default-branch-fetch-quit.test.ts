@@ -29,6 +29,18 @@ function git(cwd: string, args: string[]): string {
   })
 }
 
+/** Command lines still mentioning `needle` once a short kill grace has passed. */
+async function processesNamingAfterGrace(needle: string): Promise<string[]> {
+  const deadline = Date.now() + 3_000
+  for (;;) {
+    const survivors = execFileSync('ps', ['-A', '-o', 'args='], { encoding: 'utf-8' })
+      .split('\n')
+      .filter((line) => line.includes(needle))
+    if (survivors.length === 0 || Date.now() > deadline) return survivors
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+}
+
 describe('abortScratchFetchesForQuit', () => {
   const cleanups: string[] = []
   let server: Server | undefined
@@ -83,6 +95,9 @@ describe('abortScratchFetchesForQuit', () => {
     )
     assert.notEqual(outcome, 0)
     assert.equal(existsSync(scratch), false)
+    // The whole group goes, not only the `git fetch` leader: its remote
+    // helper must not keep downloading after quit (#4407).
+    assert.deepEqual(await processesNamingAfterGrace(url), [])
 
     const later = await fetchThroughScratchRepository({
       projectRoot: project,

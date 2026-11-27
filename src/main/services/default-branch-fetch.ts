@@ -1,6 +1,7 @@
 import { sha256Hex } from '@copse/std/sha256.ts'
-import { copyFile, mkdir, realpath, rm, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { constants } from 'node:fs'
+import { mkdir, open, realpath, rm, writeFile, type FileHandle } from 'node:fs/promises'
+import { join, relative, resolve, isAbsolute } from 'node:path'
 import { runCommand, type CommandResult } from './exec/command-runner.ts'
 import { copseCacheDir } from './storage/copse-paths.ts'
 import type { GitAuthMode } from './ssh-workspace/git-ssh-env.ts'
@@ -86,6 +87,53 @@ export async function abortScratchFetchesForQuit(
     }),
   ])
   clearTimeout(timer)
+}
+
+/** One 40- or 64-hex object ID per line, each line ending in a newline. */
+const SHALLOW_FILE = /^(?:(?:[0-9a-f]{40}|[0-9a-f]{64})\n)*$/
+
+/** Largest `shallow` file copied: 4096 SHA-256 object IDs. */
+const SHALLOW_MAX_BYTES = 4096 * 65
+
+/**
+ * The project's shallow boundary, validated, or `null` when the project is
+ * not shallow or the file is anything but a regular file of object IDs inside
+ * `gitDir`. Never returns or reports the content of a rejected file: a
+ * sandboxed command can point `shallow` at a file the sandbox denies it.
+ */
+export async function readShallowBoundary(gitDir: string): Promise<string | null> {
+  const path = join(gitDir, 'shallow')
+  let handle: FileHandle
+  try {
+    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+  } catch (error) {
+    const missing = error instanceof Error && Reflect.get(error, 'code') === 'ENOENT'
+    if (!missing) console.warn('[default-branch-fetch] ignoring an unreadable shallow file')
+    return null
+  }
+  try {
+    const stat = await handle.stat()
+    if (!stat.isFile() || stat.nlink !== 1 || stat.size > SHALLOW_MAX_BYTES) {
+      console.warn('[default-branch-fetch] ignoring a shallow file that is not a plain small file')
+      return null
+    }
+    const [realGitDir, realShallow] = await Promise.all([realpath(gitDir), realpath(path)])
+    const inside = relative(realGitDir, realShallow)
+    if (inside !== 'shallow' || isAbsolute(inside)) {
+      console.warn('[default-branch-fetch] ignoring a shallow file outside the Git directory')
+      return null
+    }
+    const text = await handle.readFile({ encoding: 'utf8' })
+    if (text.length === 0 || text.length > SHALLOW_MAX_BYTES || !SHALLOW_FILE.test(text)) {
+      console.warn(
+        '[default-branch-fetch] ignoring a shallow file that is not a list of object IDs',
+      )
+      return null
+    }
+    return text
+  } finally {
+    await handle.close()
+  }
 }
 
 /** Scratch-only ref holding the project's HEAD, offered as a negotiation tip. */
@@ -187,9 +235,13 @@ async function fetchThroughScratchRepositoryOnce(
     // the scratch cannot resolve. The scratch is then itself shallow, so the
     // project-side copy below reads from a shallow repository; Git handles
     // that, and dropping this copy brings back the failing fetch.
-    await copyFile(join(gitDir, 'shallow'), join(scratch, 'shallow')).catch((error: unknown) => {
-      if (!(error instanceof Error && Reflect.get(error, 'code') === 'ENOENT')) throw error
-    })
+    //
+    // The project's `.git` is writable from inside the project sandbox, and
+    // this runs on the host, so the file is untrusted: it is only copied when
+    // it is a plain, small, unlinked file under the common directory holding
+    // nothing but object IDs. Anything else is skipped without echoing it.
+    const shallow = await readShallowBoundary(gitDir)
+    if (shallow !== null) await writeFile(join(scratch, 'shallow'), shallow)
     const fetched = await host([
       'fetch',
       '--quiet',
