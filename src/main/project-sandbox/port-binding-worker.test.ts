@@ -158,135 +158,140 @@ describe('port-binding background host', () => {
     worktree = ''
   })
 
-  it('keeps main deny-all while an older contained task overlaps an approved binder', async () => {
-    if (process.platform === 'win32') return
-    mkdirSync(join(TEST_OUTPUT_DIR, 'port-binding-fixtures'), { recursive: true })
-    fixture = mkdtempSync(join(TEST_OUTPUT_DIR, 'port-binding-fixtures', 'task-'))
-    previousCopseDir = process.env['COPSE_DIR']
-    process.env['COPSE_DIR'] = fixture
-    const repo = join(fixture, 'repo')
-    worktree = join(fixture, 'thread')
-    const skill = join(fixture, 'skill')
-    mkdirSync(repo)
-    mkdirSync(skill)
-    const git = (cwd: string, args: string[]): void => {
-      execFileSync('git', ['-c', 'commit.gpgsign=false', ...args], {
-        cwd,
-        stdio: 'pipe',
-        env: {
-          ...process.env,
-          GIT_AUTHOR_NAME: 'Copse Test',
-          GIT_AUTHOR_EMAIL: 'copse@example.invalid',
-          GIT_COMMITTER_NAME: 'Copse Test',
-          GIT_COMMITTER_EMAIL: 'copse@example.invalid',
-        },
-      })
-    }
-    git(repo, ['init', '-q'])
-    git(repo, ['commit', '--allow-empty', '-m', 'initial'])
-    git(repo, ['worktree', 'add', '-q', '-b', 'thread', worktree])
-    const registration = await registerInternalWorkspaceRoot(worktree)
-    grantThreadReadRoot('network-thread', {
-      path: skill,
-      canonical: realpathSync.native(skill),
-      isDirectory: true,
-      label: 'test skill',
-    })
-    const stub = join(fixture, 'sandbox-runtime-stub.mjs')
-    const marker = join(fixture, 'network.json')
-    const readTarget = join(fixture, 'approved-read')
-    mkdirSync(readTarget)
-    writeFileSync(stub, SANDBOX_RUNTIME_STUB)
-    bundleWorker(stub)
-    const bundle = readFileSync(portBindingWorkerPath(), 'utf8')
-    assert.equal(/require\(["']node-pty["']\)/.test(bundle), false)
-    assert.equal(/require\(["']electron["']\)/.test(bundle), false)
-
-    const mainConfig = baseSandboxConfig()
-    let mainUpdates = 0
-    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
-    mock.method(SandboxManager, 'getConfig', () => mainConfig)
-    mock.method(SandboxManager, 'updateConfig', () => {
-      mainUpdates += 1
-    })
-    mock.method(SandboxManager, 'wrapWithSandboxArgv', async () => ({
-      argv: [
-        process.execPath,
-        '-e',
-        "process.stdout.write('contained-ready\\n'); setInterval(() => {}, 1000)",
-      ],
-      env: { ...process.env },
-    }))
-    mock.method(SandboxManager, 'cleanupAfterCommand', () => {})
-    setProjectSandboxEnabled(true)
-
-    await runWithActiveRunIdentity('network-thread', async () => {
-      const contained = await spawnBackgroundProcess('contained command', { cwd: worktree })
-      let binder: Awaited<ReturnType<typeof spawnBackgroundProcess>> | undefined
-      const denialMarker = networkDenialMarker()
-      try {
-        await outputContaining(contained, 'contained-ready')
-        const binderScript =
-          "process.stdin.resume(); setTimeout(() => process.stdout.write('binding-ready env:' + String(!process.env.COPSE_PORT_BINDING_REQUEST && !process.env.ELECTRON_RUN_AS_NODE && process.env.TEST_SETTING === 'kept') + ' stdin:' + String(!process.stdin.readableEnded) + '\\n'), 100); setInterval(() => {}, 1000)"
-        binder = await spawnBackgroundProcess(
-          formatArgvForShell(process.execPath, ['-e', binderScript]),
-          {
-            cwd: worktree,
-            allowPortBinding: true,
-            env: { TEST_SETTING: 'kept' },
-            readGrantTargets: [readTarget],
-            violationId: 'binding-attempt',
+  it(
+    'keeps main deny-all while an older contained task overlaps an approved binder',
+    { skip: process.platform === 'win32' && 'the port-binding worker is POSIX-only' },
+    async () => {
+      mkdirSync(join(TEST_OUTPUT_DIR, 'port-binding-fixtures'), { recursive: true })
+      fixture = mkdtempSync(join(TEST_OUTPUT_DIR, 'port-binding-fixtures', 'task-'))
+      previousCopseDir = process.env['COPSE_DIR']
+      process.env['COPSE_DIR'] = fixture
+      const repo = join(fixture, 'repo')
+      worktree = join(fixture, 'thread')
+      const skill = join(fixture, 'skill')
+      mkdirSync(repo)
+      mkdirSync(skill)
+      const git = (cwd: string, args: string[]): void => {
+        execFileSync('git', ['-c', 'commit.gpgsign=false', ...args], {
+          cwd,
+          stdio: 'pipe',
+          env: {
+            ...process.env,
+            GIT_AUTHOR_NAME: 'Copse Test',
+            GIT_AUTHOR_EMAIL: 'copse@example.invalid',
+            GIT_COMMITTER_NAME: 'Copse Test',
+            GIT_COMMITTER_EMAIL: 'copse@example.invalid',
           },
-        )
-        assert.match(
-          await outputContaining(binder, 'binding-ready env:true stdin:true\n'),
-          /binding-ready env:true stdin:true/,
-        )
-        const workerNetwork: unknown = JSON.parse(readFileSync(marker, 'utf8'))
-        assert.deepEqual(workerNetwork, {
-          allowedDomains: ['localhost', '127.0.0.1', '::1'],
-          deniedDomains: [],
-          allowLocalBinding: true,
         })
-        const rawOverlay: unknown = JSON.parse(readFileSync(join(fixture, 'overlay.json'), 'utf8'))
-        const request = parsePortBindingRequest(
-          JSON.stringify({
-            command: 'inspect policy',
-            cwd: worktree,
-            tmpDir: worktree,
-            overlay: rawOverlay,
-          }),
-        )
-        assert.ok(request)
-        const filesystem = request.overlay.filesystem
-        assert.ok(filesystem.allowRead.includes(registration.gitDir))
-        assert.ok(filesystem.allowRead.includes(skill))
-        assert.ok(filesystem.allowRead.includes(`${skill}/**`))
-        assert.ok(filesystem.allowRead.includes(readTarget))
-        assert.ok(filesystem.denyWrite.includes(join(registration.commonGitDir, 'config')))
-        assert.deepEqual(mainConfig.network.allowedDomains, [])
-        assert.equal(mainUpdates, 0)
-        assert.deepEqual(activeSandboxNetworkScopeLabels(), [])
-        assert.deepEqual(
-          networkDenialsSince(denialMarker).map((denial) => denial.host),
-          ['blocked.example'],
-        )
-        assert.equal(contained.exitCode, null)
-      } finally {
-        if (binder) {
-          const closed = once(binder, 'close')
-          const cancelEscalation = terminateProcessTree(binder)
+      }
+      git(repo, ['init', '-q'])
+      git(repo, ['commit', '--allow-empty', '-m', 'initial'])
+      git(repo, ['worktree', 'add', '-q', '-b', 'thread', worktree])
+      const registration = await registerInternalWorkspaceRoot(worktree)
+      grantThreadReadRoot('network-thread', {
+        path: skill,
+        canonical: realpathSync.native(skill),
+        isDirectory: true,
+        label: 'test skill',
+      })
+      const stub = join(fixture, 'sandbox-runtime-stub.mjs')
+      const marker = join(fixture, 'network.json')
+      const readTarget = join(fixture, 'approved-read')
+      mkdirSync(readTarget)
+      writeFileSync(stub, SANDBOX_RUNTIME_STUB)
+      bundleWorker(stub)
+      const bundle = readFileSync(portBindingWorkerPath(), 'utf8')
+      assert.equal(/require\(["']node-pty["']\)/.test(bundle), false)
+      assert.equal(/require\(["']electron["']\)/.test(bundle), false)
+
+      const mainConfig = baseSandboxConfig()
+      let mainUpdates = 0
+      mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+      mock.method(SandboxManager, 'getConfig', () => mainConfig)
+      mock.method(SandboxManager, 'updateConfig', () => {
+        mainUpdates += 1
+      })
+      mock.method(SandboxManager, 'wrapWithSandboxArgv', async () => ({
+        argv: [
+          process.execPath,
+          '-e',
+          "process.stdout.write('contained-ready\\n'); setInterval(() => {}, 1000)",
+        ],
+        env: { ...process.env },
+      }))
+      mock.method(SandboxManager, 'cleanupAfterCommand', () => {})
+      setProjectSandboxEnabled(true)
+
+      await runWithActiveRunIdentity('network-thread', async () => {
+        const contained = await spawnBackgroundProcess('contained command', { cwd: worktree })
+        let binder: Awaited<ReturnType<typeof spawnBackgroundProcess>> | undefined
+        const denialMarker = networkDenialMarker()
+        try {
+          await outputContaining(contained, 'contained-ready')
+          const binderScript =
+            "process.stdin.resume(); setTimeout(() => process.stdout.write('binding-ready env:' + String(!process.env.COPSE_PORT_BINDING_REQUEST && !process.env.ELECTRON_RUN_AS_NODE && process.env.TEST_SETTING === 'kept') + ' stdin:' + String(!process.stdin.readableEnded) + '\\n'), 100); setInterval(() => {}, 1000)"
+          binder = await spawnBackgroundProcess(
+            formatArgvForShell(process.execPath, ['-e', binderScript]),
+            {
+              cwd: worktree,
+              allowPortBinding: true,
+              env: { TEST_SETTING: 'kept' },
+              readGrantTargets: [readTarget],
+              violationId: 'binding-attempt',
+            },
+          )
+          assert.match(
+            await outputContaining(binder, 'binding-ready env:true stdin:true\n'),
+            /binding-ready env:true stdin:true/,
+          )
+          const workerNetwork: unknown = JSON.parse(readFileSync(marker, 'utf8'))
+          assert.deepEqual(workerNetwork, {
+            allowedDomains: ['localhost', '127.0.0.1', '::1'],
+            deniedDomains: [],
+            allowLocalBinding: true,
+          })
+          const rawOverlay: unknown = JSON.parse(
+            readFileSync(join(fixture, 'overlay.json'), 'utf8'),
+          )
+          const request = parsePortBindingRequest(
+            JSON.stringify({
+              command: 'inspect policy',
+              cwd: worktree,
+              tmpDir: worktree,
+              overlay: rawOverlay,
+            }),
+          )
+          assert.ok(request)
+          const filesystem = request.overlay.filesystem
+          assert.ok(filesystem.allowRead.includes(registration.gitDir))
+          assert.ok(filesystem.allowRead.includes(skill))
+          assert.ok(filesystem.allowRead.includes(`${skill}/**`))
+          assert.ok(filesystem.allowRead.includes(readTarget))
+          assert.ok(filesystem.denyWrite.includes(join(registration.commonGitDir, 'config')))
+          assert.deepEqual(mainConfig.network.allowedDomains, [])
+          assert.equal(mainUpdates, 0)
+          assert.deepEqual(activeSandboxNetworkScopeLabels(), [])
+          assert.deepEqual(
+            networkDenialsSince(denialMarker).map((denial) => denial.host),
+            ['blocked.example'],
+          )
+          assert.equal(contained.exitCode, null)
+        } finally {
+          if (binder) {
+            const closed = once(binder, 'close')
+            const cancelEscalation = terminateProcessTree(binder)
+            await closed
+            cancelEscalation()
+            assert.equal(sandboxViolationCountForBackgroundProcess(binder, 'binding-attempt'), 2)
+          }
+          const closed = once(contained, 'close')
+          const cancelEscalation = terminateProcessTree(contained)
           await closed
           cancelEscalation()
-          assert.equal(sandboxViolationCountForBackgroundProcess(binder, 'binding-attempt'), 2)
         }
-        const closed = once(contained, 'close')
-        const cancelEscalation = terminateProcessTree(contained)
-        await closed
-        cancelEscalation()
-      }
-    })
-  })
+      })
+    },
+  )
 
   it('does not wrap or spawn a command when ASRT initialization leaves protection disabled', () => {
     mkdirSync(join(TEST_OUTPUT_DIR, 'port-binding-fixtures'), { recursive: true })
