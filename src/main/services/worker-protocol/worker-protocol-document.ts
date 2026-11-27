@@ -32,8 +32,8 @@ import { workerCapabilitiesSchema, type WorkerRole } from './worker-capabilities
  *   inside a field's shape shows only in the full schema.
  *
  * A payload either end passes on unread (a stream chunk, a snapshot, a
- * container record) is `{}` in the schema: a worker on another machine
- * cannot code against those yet.
+ * container record) is `{}` here. The published schema points those at the
+ * API protocol's description of the type (`scripts/lib/worker-protocol-payloads.mts`).
  */
 
 export const WORKER_PROTOCOL_MANIFEST_PATH = 'schemas/worker-protocol.manifest.json'

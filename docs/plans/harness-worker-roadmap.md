@@ -78,7 +78,7 @@ dialect.
 _Exit gate:_ the turn host and the container run host both pass one conformance suite for
 the schema, driven over a plain socket pair.
 
-_State (27 November 2026):_ first slice built. Both hosts open with `hello` and say what
+_State (27 November 2026):_ built. Both hosts open with `hello` and say what
 they can run (`worker-protocol/worker-capabilities.ts`): their roles, the kinds of model
 beyond Copse's own loop, plugin runtimes and the OS sandbox. The app checks a turn's needs
 against what the turn host said before it sends the turn, so a turn that would lose a
@@ -87,10 +87,10 @@ schemas into `dist/schemas/worker-protocol.schema.json`, with a committed manife
 (`schemas/worker-protocol.manifest.json`, `pnpm run gen:worker-protocol`) of each message's
 top-level fields that a test pins.
 `worker-conformance.test.ts` drives both hosts over a real local socket with raw lines.
-Still open: the container run host keeps its own messages for progress, rather than the
-turn host's chunk and snapshot stream, and payloads the ends pass on unread (stream
-chunks, snapshots, container records) have no shape in the schema yet, which a worker off
-this machine (R3) needs.
+The published schema describes the payloads the line passes on unread (stream chunks,
+snapshots, container records) with the API protocol's types, so a worker off this machine
+can write them. R2 is done. The container run host still reports a run's progress as its own
+log and phase lines; it carries the turn stream once it relays the guest's loop (R5).
 
 ### R3. A worker on the SSH host
 

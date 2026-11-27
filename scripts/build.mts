@@ -23,6 +23,7 @@ import {
   serializeApiProtocol,
 } from './lib/api-protocol.mts'
 import { loadWorkerProtocol } from './lib/worker-protocol.mts'
+import { withPayloadTypes } from './lib/worker-protocol-payloads.mts'
 import { copyOptionalBinaries } from './lib/copy-optional-binaries.mts'
 import { markTreeNoindex } from './lib/noindex.mts'
 import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
@@ -409,23 +410,24 @@ buildProcessMemoryHelper()
 // committed manifest carries only channels and arity; the typed schema a
 // transport or external client codes against is regenerated here so it is
 // never stale and never a 500 KB diff.
+const apiProtocol = generateApiProtocol({ version: API_PROTOCOL_VERSION })
 mkdirSync(dirname(API_PROTOCOL_SCHEMA_BUILD_PATH), { recursive: true })
-writeFileSync(
-  API_PROTOCOL_SCHEMA_BUILD_PATH,
-  serializeApiProtocol(generateApiProtocol({ version: API_PROTOCOL_VERSION })),
-)
+writeFileSync(API_PROTOCOL_SCHEMA_BUILD_PATH, serializeApiProtocol(apiProtocol))
 console.log(`[build] wrote ${API_PROTOCOL_SCHEMA_BUILD_PATH}`)
 
 // The harness worker protocol schema (docs/plans/harness-worker-roadmap.md, R2):
 // what a client and a worker say over a worker line, for a worker elsewhere to
-// code against. Its committed manifest is `schemas/worker-protocol.manifest.json`.
+// code against, its pass-through payloads described by the API protocol's types.
+// Its committed manifest is `schemas/worker-protocol.manifest.json`.
 {
   const workerProtocol = await loadWorkerProtocol()
   const out = workerProtocol.WORKER_PROTOCOL_SCHEMA_BUILD_PATH
   mkdirSync(dirname(out), { recursive: true })
   writeFileSync(
     out,
-    workerProtocol.serializeWorkerProtocol(workerProtocol.workerProtocolDocument()),
+    workerProtocol.serializeWorkerProtocol(
+      withPayloadTypes({ ...workerProtocol.workerProtocolDocument() }, apiProtocol.$defs),
+    ),
   )
   console.log(`[build] wrote ${out}`)
 }
