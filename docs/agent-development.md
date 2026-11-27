@@ -118,8 +118,10 @@ third-party native modules. The Corepack `pnpm` shim starts with `#!/usr/bin/env
 directory comes first, pnpm and every install script run on it, and each native step fails with
 `ERR_DLOPEN_FAILED` (`… not valid for use in process: mapping process and mapped file
 (non-platform) have different Team IDs`). The nodejs.org build that nvm and fnm install, and
-Homebrew's Node, load the same files. `scripts/check-node-version.cjs` (`preinstall`, and the first
-postinstall step) catches this on macOS. It loads a native addon from the dependency tree, or,
+Homebrew's Node, load the same files. `scripts/check-node-version.cjs` catches this on macOS. It runs
+as `pnpm:devPreinstall`, because pnpm builds allowed dependencies (electron-chromedriver's install
+loads a native addon) before the root `preinstall`, and again as `preinstall` and the first
+postinstall step. It loads a native addon from the dependency tree, or,
 before one is installed, reads the binary's `codesign` flags, then stops with the binary's path.
 Run `which -a node`, put nvm's or Homebrew's Node first on `PATH` (or drop the app's directory),
 and rerun `pnpm install`. When a postinstall step itself fails to load a native module,

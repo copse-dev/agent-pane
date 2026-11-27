@@ -1,8 +1,10 @@
 'use strict'
 
-// Runs as `preinstall` and as the first postinstall step, before any dependency
-// can be relied on, so it stays plain CommonJS that still parses on the old Node
-// releases whose version it rejects.
+// Runs as `pnpm:devPreinstall`, `preinstall` and the first postinstall step,
+// before any dependency can be relied on, so it stays plain CommonJS that still
+// parses on the old Node releases whose version it rejects. pnpm builds allowed
+// dependencies (electron-chromedriver's install loads extract-zip's native addon)
+// before the root `preinstall`; only `pnpm:devPreinstall` runs ahead of them.
 
 const { spawnSync } = require('node:child_process')
 const { existsSync, realpathSync } = require('node:fs')

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
+import { expectRecord, parseJsonUnknown } from '../src/shared/unknown-value.mts'
 import {
   codesignRefusal,
   diagnoseNativeAddonLoading,
@@ -48,6 +50,18 @@ function codesignOutput(fields: { flags: string; team: string; entitlements?: st
 
 const JIT = 'com.apple.security.cs.allow-jit'
 const DISABLE_LV = 'com.apple.security.cs.disable-library-validation'
+
+describe('install hooks', () => {
+  it('run the check before pnpm builds dependencies', () => {
+    // pnpm builds allowed dependencies before the root `preinstall`, and
+    // electron-chromedriver's install loads a native addon; only
+    // `pnpm:devPreinstall` runs ahead of those builds.
+    const manifest = expectRecord(parseJsonUnknown(readFileSync('package.json', 'utf8')), 'package')
+    const scripts = expectRecord(manifest['scripts'], 'package scripts')
+    assert.equal(scripts['pnpm:devPreinstall'], 'node scripts/check-node-version.cjs')
+    assert.equal(scripts['preinstall'], 'node scripts/check-node-version.cjs')
+  })
+})
 
 describe('isSupportedVersion', () => {
   it('keeps the CVE-2026-111497 minimums', () => {
