@@ -100,6 +100,7 @@ import {
   type ShellRoutingTool,
 } from './command-routing-config.ts'
 import { resolveAutoApproval } from './auto-approval-config.ts'
+import { AUTO_APPROVAL_RANK, type AutoApprovalTier } from '@shared/auto-approval.ts'
 import {
   BROWSER_TOOLS,
   READ_ONLY_BROWSER_TOOLS,
@@ -299,12 +300,15 @@ function commandRunsSandboxed(
  *
  * @param scope where the grant applies, recorded so the log distinguishes a
  *   contained auto-approval from one that dropped containment.
+ * @param maxTier the highest tier this call may approve, below the configured
+ *   level: a command classified above it prompts even when that level allows it.
  */
 function autoApproveShell(
   command: string,
   scope: 'sandbox' | 'external',
   executionRoot?: string | null,
   sandboxEnabled = commandRunsSandboxed(executionRoot ?? getAgentExecutionRoot()),
+  maxTier?: AutoApprovalTier,
 ): boolean {
   const decision = resolveAutoApproval(
     command,
@@ -312,6 +316,9 @@ function autoApproveShell(
     sandboxEnabled,
   )
   if (decision.action !== 'auto-approve') return false
+  if (maxTier !== undefined && AUTO_APPROVAL_RANK[decision.tier] > AUTO_APPROVAL_RANK[maxTier]) {
+    return false
+  }
   recordDecision({
     kind: 'shell',
     actor: 'classifier',
@@ -628,13 +635,24 @@ export async function promptUnsandboxedShell(
      * whose "always allow" would otherwise outlive the failure it answered.
      */
     oneShot?: boolean
+    /**
+     * The highest auto-approval tier that may answer this retry without a
+     * prompt. A network-only sandbox block may be answered for a read-tier
+     * shape (`git fetch origin`), but a local-write shape runs repository
+     * hooks that only the sandbox was containing.
+     */
+    autoApproveUpToTier?: AutoApprovalTier
   } = {},
 ): Promise<boolean> {
   if (signal?.aborted) return false
   const forceAsk =
     opts.requireInteractiveApproval === true || resolveToolPermission('run_shell')?.policy === 'ask'
   const oneShot = opts.oneShot === true
-  if (!forceAsk && autoApproveShell(command, 'external')) return true
+  if (
+    !forceAsk &&
+    autoApproveShell(command, 'external', undefined, undefined, opts.autoApproveUpToTier)
+  )
+    return true
   // An agent rerunning the same demo or harness after each fix is blocked the
   // same way every time. A runner-verified block of bounded opaque local
   // execution may use or offer the outside-sandbox lease `promptExpectedSandboxBlock`

@@ -134,6 +134,7 @@ import type { AcpAgentProbe, AcpAuthStatus, AcpAutoSetupResult } from '@shared/t
 import type { ExternalEditorList } from '@shared/types/editors.ts'
 import type {
   PreparedThreadCheckout,
+  ThreadBaseFallback,
   ThreadCheckoutPreview,
   ThreadWorktree,
   ThreadWorktreeChoice,
@@ -410,6 +411,8 @@ export interface ApiClient {
       model?: string,
       /** Branch the blank-thread footer picker selected to start from. */
       baseBranch?: string,
+      /** Where to start when `baseBranch` is absent; main defaults to `default-branch`. */
+      baseFallback?: ThreadBaseFallback,
     ) => Promise<PreparedThreadCheckout>
     renameCheckoutBranch: (
       projectId: string,

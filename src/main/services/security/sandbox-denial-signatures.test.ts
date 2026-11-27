@@ -9,6 +9,7 @@ import {
   SANDBOX_DENIAL_RETRY_NOTE,
   sandboxDenialRetryClassification,
   sandboxForwardEscalationMaySkipApproval,
+  sandboxRetryEvidence,
   sandboxRetryMaySkipApproval,
 } from './sandbox-denial-signatures.ts'
 
@@ -110,18 +111,29 @@ describe('sandbox retry approval boundary', () => {
     assert.equal(sandboxRetryMaySkipApproval('signature', true, false), false)
   })
 
-  it('preserves Guarded YOLO auto-retry for runner-verified sandbox evidence', () => {
+  it('preserves Guarded YOLO auto-retry when the sandbox wrapper failed to start', () => {
     assert.equal(sandboxRetryMaySkipApproval('runner', true, false), true)
   })
 
-  it('can retry either evidence kind inside the same unattended container', () => {
-    assert.equal(sandboxRetryMaySkipApproval('runner', false, true), true)
-    assert.equal(sandboxRetryMaySkipApproval('signature', false, true), true)
+  it('asks in Guarded YOLO before escaping a block the OS sandbox reported', () => {
+    // A seatbelt denial is real evidence, but of an access the policy refused:
+    // a contained command that read a protected credential must not earn an
+    // unprompted rerun outside with home and network access.
+    const evidence = sandboxRetryEvidence({ likely: true, spawnFailed: false })
+    assert.equal(evidence, 'violation')
+    assert.equal(sandboxRetryMaySkipApproval(evidence, true, false), false)
+    assert.equal(sandboxRetryEvidence({ likely: true, spawnFailed: true }), 'runner')
+    assert.equal(sandboxRetryEvidence({ likely: false, spawnFailed: false }), 'signature')
   })
 
-  it('requires ordinary runs to ask for approval for either evidence kind', () => {
-    assert.equal(sandboxRetryMaySkipApproval('runner', false, false), false)
-    assert.equal(sandboxRetryMaySkipApproval('signature', false, false), false)
+  it('can retry any evidence kind inside the same unattended container', () => {
+    for (const evidence of ['runner', 'violation', 'signature'] as const)
+      assert.equal(sandboxRetryMaySkipApproval(evidence, false, true), true)
+  })
+
+  it('requires ordinary runs to ask for approval for any evidence kind', () => {
+    for (const evidence of ['runner', 'violation', 'signature'] as const)
+      assert.equal(sandboxRetryMaySkipApproval(evidence, false, false), false)
   })
 
   it('does not let Guarded YOLO turn a cached forgeable denial into an automatic escape', () => {
