@@ -134,8 +134,11 @@ Monday. Publishing is the only routine manual step:
    `Unreleased` above it, and drop the previous version's section. The PR
    auto-merges when `CI Passed` is green. The week is skipped, with a notice on
    the run, when the current version has not been published yet or `Unreleased`
-   is empty. A version whose release run failed is never published, so the
-   schedule will not cut past it; see [Failed releases](#failed-releases). To
+   is empty. A skip for an unpublished version also reports how long it can
+   still be published, and raises an issue before it no longer can; see
+   [Publication window](#publication-window). A version whose release run
+   failed is never published, so the schedule will not cut past it; see
+   [Failed releases](#failed-releases). To
    hold a release, disable auto-merge on the PR; to change its notes, edit the
    `## <version>` section on the PR branch.
 2. Let [the daily promotion](../.github/workflows/promote-develop.yml) carry
@@ -157,7 +160,9 @@ Monday. Publishing is the only routine manual step:
    Release.
 5. Review and install-test the artifact for each architecture. When accepted,
    manually dispatch `Publish release artifacts` with the tag and successful
-   `Release (macOS)` run ID. The publisher verifies the source workflow,
+   `Release (macOS)` run ID, within 30 days of that run, before its artifacts
+   expire ([publication window](#publication-window)). The publisher verifies
+   the source workflow,
    successful conclusion, exact tagged SHA, checksums, and public target state,
    then creates a prerelease in `copse-dev/copse-releases`. That is the final
    state for a beta. For a stable version it is a _stable candidate_: beta users
@@ -175,6 +180,59 @@ Monday. Publishing is the only routine manual step:
 From bump to signed artifacts takes about a day: the bump merges on Monday,
 that day's promotion runs the full tier, and the signed build waits for the
 tagged commit's `Full release validation` before its roughly hour-long packaging run.
+
+### Publication window
+
+Publish a version within 30 days of its successful `Release (macOS)` run. That
+run keeps its signed artifacts for 30 days (`retention-days`), and
+`Publish release artifacts` publishes only those exact bytes, from that exact
+run. Once they expire, that build can no longer be published, and the weekly
+bump, which waits for the current version to be published, would skip every
+week for good. This is how `0.1.0-beta.16` stalled the train: it built on
+2026-10-26, nobody published it, four Mondays skipped quietly, and its
+artifacts expired.
+
+When the bump skips for an unpublished version, its `publication-window` job
+finds that version's successful `Release (macOS)` run by the tag's commit and
+reads when the run's artifacts expire
+([`scripts/release-publication-window.mts`](../scripts/release-publication-window.mts)):
+
+| The unpublished version                    | The bump run                                                                                 |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| Is not tagged yet, or its build is running | Notes it.                                                                                    |
+| Has a failed build                         | Warns. Its `Release (macOS) failed for <tag>` issue has the fix.                             |
+| Has a cancelled build, or none at all      | Warns, and opens or comments on `Release unpublished: <tag>`, since nothing else reports it. |
+| Has artifacts lasting more than 14 days    | Notes the run to publish from and the expiry date.                                           |
+| Has artifacts expiring within 14 days      | Warns, and opens or comments on `Release unpublished: <tag>`.                                |
+| Has expired artifacts                      | Fails, and opens or comments on the same issue.                                              |
+
+The threshold is 14 days, not 7, because the bump checks only once a week. A
+7-day threshold could first warn with an hour to spare. Fourteen always warns
+at least a week ahead, and again in the final week. Any lookup failure other
+than a missing tag fails the job rather than reporting the window as fine.
+
+An expired version is abandoned like a failed one: dispatch
+`Bump release version` with the next version, which cuts past it and carries
+its notes forward ([Failed releases](#failed-releases)). Close the issue once a
+later version is published.
+
+The scheduled bump deliberately does not cut past an expired version by
+itself. Releases are forward-fix only ([recovery.md](recovery.md)), and either
+choice respects that. The decision rests on what an unpublished build means:
+
+- The owner's install test is the only gate between the weekly train and
+  users, and an unpublished build cannot be [halted](#halting-a-release). So
+  leaving a build unpublished is how a build that should not ship is held. A
+  schedule that cut past it would queue the next build of the same `main`
+  without anyone deciding to.
+- Cutting past folds the abandoned version's notes into the next release. As
+  with a [failed release](#failed-releases), a person should read those before
+  they ship.
+- If nobody has published for 30 days, nobody is install-testing. An automatic
+  cut would spend another signed macOS build that would most likely expire too.
+
+The stall itself is no longer silent: the job fails every week until someone
+moves on, and the issue names the one dispatch that does.
 
 ### Cutting a release by hand
 
@@ -302,10 +360,17 @@ version never will be. To abandon it once the fix has merged, dispatch
 failed `0.1.0-beta.11`). An explicit version cuts past an unpublished one and
 passes `--carry-forward` to the bump, which folds the abandoned version's notes
 into the new section instead of dropping them, and the bump PR says so. Locally,
-the same is `node scripts/release-bump.mts --carry-forward <version>`.
+the same is `node scripts/release-bump.mts --carry-forward <version>`. A
+version whose build succeeded but whose artifacts expired before publication is
+abandoned the same way; see [Publication window](#publication-window).
 
 A manual dispatch of `Release (macOS)` accepts only an existing matching tag
 reachable from `release`; it does not provide a bypass around those gates.
+Dispatch it from the tag itself (choose the tag under "Use workflow from", or
+`gh workflow run release-mac.yml --ref <tag> -f tag=<tag>`). A dispatch run
+records the commit of the ref it ran from, and `Publish release artifacts`
+accepts only a run of the tag's commit, so a rebuild dispatched from `main`
+can never be published.
 
 Private-repository artifact attestation requires GitHub Enterprise Cloud and
 this organization is on Team. While the source remains private, both workflows
