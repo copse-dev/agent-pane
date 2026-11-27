@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 
@@ -74,22 +75,74 @@ function readProcessTable(): ProcEntry[] {
 }
 
 /**
- * Kill ASRT bridges whose owning process is gone. Best-effort and silent about
- * individual failures: a bridge we cannot signal (another user's) is not our
- * problem, and this must never be able to fail a startup or a shutdown.
+ * ASRT's macOS violation monitor is a `log` child of the app process:
+ *
+ *   log stream --predicate (eventMessage ENDSWITH "_<random>_SBX") --style compact
+ *
+ * `SandboxManager.reset()` stops it, but after a crash or SIGKILL it is
+ * reparented to launchd. No later event can end in that launch's random suffix,
+ * so the orphan never writes, never meets a closed pipe, and never exits.
+ */
+const LOG_MONITOR_COMMAND =
+  /^(?:\/usr\/bin\/)?log stream --predicate \(eventMessage ENDSWITH "_[a-z0-9]+_SBX"\) --style compact$/
+
+/** Whether a process is an ASRT log monitor nobody owns any more (see {@link isOrphanedBridge}). */
+export function isOrphanedLogMonitor(command: string, ppid: number): boolean {
+  return ppid === 1 && LOG_MONITOR_COMMAND.test(command.trim())
+}
+
+/** This user's processes from `ps`, skipping anything unreadable. */
+function readPsTable(): ProcEntry[] {
+  let output: string
+  try {
+    output = execFileSync('ps', ['-x', '-o', 'pid=,ppid=,command='], {
+      encoding: 'utf8',
+      timeout: 5_000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+  } catch {
+    return []
+  }
+  const entries: ProcEntry[] = []
+  for (const line of output.split('\n')) {
+    const match = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line)
+    if (!match) continue
+    entries.push({ pid: Number(match[1]), ppid: Number(match[2]), cmdline: match[3] ?? '' })
+  }
+  return entries
+}
+
+/** The orphans to reclaim on this platform: Linux network bridges, macOS log monitors. */
+function orphanedSandboxProcesses(): number[] {
+  if (process.platform === 'linux') {
+    const prefix = bridgeSocketPrefix()
+    return readProcessTable()
+      .filter((entry) => isOrphanedBridge(entry.cmdline, entry.ppid, prefix))
+      .map((entry) => entry.pid)
+  }
+  if (process.platform === 'darwin') {
+    return readPsTable()
+      .filter((entry) => isOrphanedLogMonitor(entry.cmdline, entry.ppid))
+      .map((entry) => entry.pid)
+  }
+  return []
+}
+
+/**
+ * Kill ASRT helpers (Linux bridges, macOS log monitors) whose owning process
+ * is gone. Best-effort and silent about individual failures: a process we
+ * cannot signal (another user's) is not our problem, and this must never be
+ * able to fail a startup or a shutdown.
  *
  * Returns the pids it signalled, for logging and tests.
  */
 export function reapOrphanedSandboxBridges(): number[] {
-  if (process.platform !== 'linux') return []
-  const prefix = bridgeSocketPrefix()
   const reaped: number[] = []
-  for (const entry of readProcessTable()) {
-    if (entry.pid === process.pid) continue
-    if (!isOrphanedBridge(entry.cmdline, entry.ppid, prefix)) continue
+  for (const pid of orphanedSandboxProcesses()) {
+    if (pid === process.pid) continue
     try {
-      process.kill(entry.pid, 'SIGKILL')
-      reaped.push(entry.pid)
+      process.kill(pid, 'SIGKILL')
+      reaped.push(pid)
     } catch {
       // Already gone, or not ours to signal.
     }
