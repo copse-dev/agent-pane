@@ -14,8 +14,9 @@ import { isWindowDetached } from '../windows/window-detach.ts'
  * Guards closing the app while an agent is still working.
  *
  * Quitting is destructive to a live turn: `cleanupBeforeQuit` disposes every ACP
- * session, terminal and background process, and a run has no resume — whatever
- * the agent had not yet written to disk is gone. So the close is checked with
+ * session, terminal and background process, and whatever the agent had not yet
+ * written to disk is gone. A quit the user chose is also not continued on the
+ * next launch (`last-run.ts`); only a crash or an update relaunch is. So the close is checked with
  * the user *before* teardown starts, on both routes out of the app (the window's
  * own close, and `before-quit` from Cmd+Q / the menu / the updater).
  *
@@ -59,6 +60,15 @@ export function approveClose(): void {
   gate.approve()
 }
 
+export function isCloseApproved(): boolean {
+  return gate.isApproved()
+}
+
+/** Ask again on the next close: the quit `approveClose` was for did not happen. */
+export function revokeCloseApproval(): void {
+  gate.revoke()
+}
+
 /**
  * Intercept the window's own close (traffic light, Alt+F4, Cmd+W) and re-issue
  * it once confirmed. `before-quit` covers the quit routes; this covers the ones
@@ -67,7 +77,7 @@ export function approveClose(): void {
 export function guardWindowClose(win: BrowserWindow, detachInstead?: () => boolean): void {
   win.on('close', (event) => {
     // A running turn no longer needs the window (main writes its transcript),
-    // so on macOS the close detaches it and there is nothing to warn about.
+    // so the close detaches it and there is nothing to warn about.
     if (detachInstead?.()) {
       event.preventDefault()
       return
