@@ -100,6 +100,7 @@ import {
   threadStoreEnvironment,
 } from './environment.ts'
 import { runSerialized } from './write-queue.ts'
+import { isWriterLeasePath } from './writer-lease.ts'
 import { isNonNull } from '@copse/std/nullish.ts'
 import { SqliteThreadIndex, THREAD_INDEX_FILE } from './sqlite-thread-index.ts'
 import {
@@ -475,28 +476,77 @@ function listFilesRecursive(dir: string, base: string = dir): string[] {
  * every call — see #1222. Anything that rewrites or removes the file outside
  * `appendMessage` must invalidate its entry so the next append reseeds.
  */
-const knownMessageIdsByDir = new Map<string, Set<string>>()
+interface KnownMessageIds {
+  ids: Set<string>
+  /** The spine file as this process last saw it, or null when it was absent. */
+  stamp: EventsStamp | null
+}
+
+interface EventsStamp {
+  size: number
+  mtimeMs: number
+}
+
+const knownMessageIdsByDir = new Map<string, KnownMessageIds>()
 
 function invalidateKnownMessageIds(dir: string): void {
   knownMessageIdsByDir.delete(dir)
 }
 
-/** Get (seeding from disk on first use) the known message ids for a thread. */
+async function eventsStamp(dir: string): Promise<EventsStamp | null> {
+  try {
+    const stat = await fsPromises.stat(join(dir, EVENTS_FILE))
+    return { size: stat.size, mtimeMs: stat.mtimeMs }
+  } catch {
+    return null
+  }
+}
+
+/** A stamp no file has: the cache it is on is seeded again on next use. */
+const UNMATCHED_STAMP: EventsStamp = { size: -1, mtimeMs: -1 }
+
+const sameStamp = (a: EventsStamp | null, b: EventsStamp | null): boolean =>
+  a === null || b === null ? a === b : a.size === b.size && a.mtimeMs === b.mtimeMs
+
+/**
+ * This process just wrote the spine and expects it to be \`expectedSize\` bytes.
+ * Keep the cache only when it is: any other size means another process (a turn
+ * host, say) wrote it too, and the next append reseeds.
+ */
+async function noteOwnSpineWrite(dir: string, expectedSize: number): Promise<void> {
+  const cached = knownMessageIdsByDir.get(dir)
+  if (!cached) return
+  const stamp = await eventsStamp(dir)
+  if (stamp?.size === expectedSize) cached.stamp = stamp
+  else knownMessageIdsByDir.delete(dir)
+}
+
+/**
+ * Get (seeding from disk on first use) the known message ids for a thread.
+ * Another process can write the same thread (the app and its turn host), so
+ * a cache whose file changed since this process last saw it is seeded again.
+ */
 async function knownMessageIdsFor(dir: string): Promise<Set<string>> {
   const cached = knownMessageIdsByDir.get(dir)
-  if (cached) return cached
+  if (cached && sameStamp(cached.stamp, await eventsStamp(dir))) return cached.ids
   const eventsPath = join(dir, EVENTS_FILE)
+  // Taken before the read: a write that lands between the two leaves sizes
+  // that differ, and the cache is then seeded again on the next append.
+  const before = await eventsStamp(dir)
   const raw = (await readOrNull(eventsPath)) ?? ''
+  let stamp: EventsStamp | null =
+    before === null || before.size === Buffer.byteLength(raw) ? before : UNMATCHED_STAMP
   if (raw !== '' && !raw.endsWith('\n')) {
     // Normalize a legacy file with no trailing newline before switching to
     // true appends below, which assume one is already there.
     await atomicWriteFileAsync(eventsPath, `${raw}\n`)
+    stamp = await eventsStamp(dir)
   }
   const ids = new Set<string>()
   for (const entry of parseSpineEntries(raw)) {
     if (entry.line?.type === 'message') ids.add(entry.line.id)
   }
-  knownMessageIdsByDir.set(dir, ids)
+  knownMessageIdsByDir.set(dir, { ids, stamp })
   return ids
 }
 
@@ -2374,12 +2424,15 @@ async function appendMessageUnqueued(
   if (!knownIds.has(message.id)) {
     assertStorePath(join(dir, EVENTS_FILE))
     markIndexSourceWrite(join(dir, EVENTS_FILE))
-    await fsPromises.appendFile(join(dir, EVENTS_FILE), `${raw}\n`, {
+    const sizeBefore = knownMessageIdsByDir.get(dir)?.stamp?.size ?? 0
+    const appended = `${raw}\n`
+    await fsPromises.appendFile(join(dir, EVENTS_FILE), appended, {
       flag: constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW,
     })
     // Do not teach the cache about an id until the append is durable enough
     // for Node to resolve it. A rejected append must take this path again.
     knownIds.add(message.id)
+    await noteOwnSpineWrite(dir, sizeBefore + Buffer.byteLength(appended))
   } else {
     const entries = parseSpineEntries((await readOrNull(join(dir, EVENTS_FILE))) ?? '')
     // Replacing an existing spine line has one more await before its write.
@@ -2395,7 +2448,9 @@ async function appendMessageUnqueued(
     const previous = existingIndex >= 0 ? entries[existingIndex]?.line : undefined
     if (existingIndex >= 0) entries[existingIndex] = { raw, line }
     else entries.push({ raw, line })
-    await atomicWriteFileAsync(join(dir, EVENTS_FILE), serializeSpineEntries(entries))
+    const spine = serializeSpineEntries(entries)
+    await atomicWriteFileAsync(join(dir, EVENTS_FILE), spine)
+    await noteOwnSpineWrite(dir, Buffer.byteLength(spine))
     if (previous?.type === 'message') await removeSupersededProse(dir, previous, entries)
   }
   // The sidebar's PR chip is derived from links in message text, which a
@@ -3486,6 +3541,8 @@ export function readThreadDirectory(
     const paths = dirents
       .filter((dirent) => dirent.isFile())
       .map((dirent) => relative(dir, join(dirent.parentPath, dirent.name)).split(sep).join('/'))
+      // The writer lease names this machine's process; an export must not carry it.
+      .filter((path) => !isWriterLeasePath(path))
       .sort()
     const files: ThreadDirectoryFile[] = []
     let total = 0

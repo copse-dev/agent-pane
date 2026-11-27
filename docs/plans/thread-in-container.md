@@ -607,7 +607,8 @@ guarantee, and the record must say so.
   when a reader is slow), its stderr is the run's log, streamed live. The broker keeps its
   allowlist, its resolve map and its log unchanged; only the transport moved. Two
   properties came free: the host dying severs the link, and the worker treats that as a
-  stop, so an orphaned container winds itself down; and there is no host path, socket
+  stop, so an orphaned container winds itself down (the host is the process that owns the
+  link: the app, or a run host of its own, `docs/plans/local-turn-worker.md`); and there is no host path, socket
   length or mountpoint to get wrong. Rejected: keeping the socket and asking macOS users
   to switch Docker Desktop to gRPC FUSE (a setting the run cannot verify, and slower for
   everything else they do).

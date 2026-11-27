@@ -77,6 +77,7 @@ function fixture(overrides: Partial<ThreadCheckoutTransactionDependencies> = {})
     },
     recoverUnpersisted: async () => null,
     branchExists: async () => true,
+    defaultBranchResolves: async () => true,
     checkoutBranch: async (branch, root) => {
       checkouts.push({ branch, root })
     },
@@ -315,11 +316,12 @@ describe('first-message checkout transaction', () => {
     assert.equal(getThread().gitBranch, 'main')
   })
 
-  it('bases an automatic worktree on the live checkout when the picker went untouched', async () => {
+  it('bases a composer worktree on the live checkout when its picker sent no branch', async () => {
     const allocations: Array<{ baseBranch: string; seedFromDirtyProject: boolean }> = []
     const { prepare } = fixture({
-      // No selection was made, so the branch the project checkout is on is the
-      // branch the user sees in the footer when they send the first message.
+      // The composer sends no branch only when its picker could not offer the
+      // default, and then the footer shows the project checkout's branch — so
+      // that is where the user was told the thread would start.
       inspect: async () => ({
         isGitRepository: true,
         currentBranch: 'copse/previous-thread',
@@ -344,6 +346,7 @@ describe('first-message checkout transaction', () => {
       threadId: 'thread-1',
       prompt: 'Something unrelated',
       choice: 'automatic',
+      baseFallback: 'project-branch',
     })
 
     assert.equal(result.checkoutMode, 'worktree')
@@ -354,6 +357,118 @@ describe('first-message checkout transaction', () => {
     assert.deepEqual(allocations, [
       { baseBranch: 'copse/previous-thread', seedFromDirtyProject: false },
     ])
+  })
+
+  it('bases a machine-started worktree on the default branch, not the parked checkout', async () => {
+    // A proposal card, subthread, peer prompt or automation names no branch and
+    // no fallback. The project checkout being parked on an old feature branch
+    // says nothing about where that work should start; allocation fetches the
+    // default branch it is handed, so the thread starts from `origin/main`.
+    const allocations: string[] = []
+    const probed: string[] = []
+    const { prepare } = fixture({
+      inspect: async () => ({
+        isGitRepository: true,
+        currentBranch: 'codex/experimental-plugin-settings',
+        defaultBranch: 'main',
+        isDirty: false,
+      }),
+      branchExists: async (_root, branch) => {
+        probed.push(branch)
+        return true
+      },
+      allocate: async ({ baseBranch }) => {
+        allocations.push(baseBranch)
+        return {
+          path: '/worktrees/thread-1',
+          branch: 'copse/fresh-thread1',
+          baseBranch,
+          baseCommit: 'e'.repeat(40),
+          createdAt: 5,
+          seededFromDirtyProject: false,
+        }
+      },
+    })
+
+    const result = await prepare({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      prompt: 'Proposed follow-up',
+      choice: 'worktree',
+    })
+
+    assert.equal(result.checkoutMode, 'worktree')
+    assert.deepEqual(allocations, ['main'])
+    assert.deepEqual(probed, [])
+  })
+
+  it('bases a machine-started worktree on the live branch when no default resolves', async () => {
+    // A fresh `git init` with no remote has no default to resolve; the
+    // checkout's own branch is still a real start rather than a guessed `main`.
+    const allocations: string[] = []
+    const { prepare } = fixture({
+      inspect: async () => ({
+        isGitRepository: true,
+        currentBranch: 'trunk',
+        defaultBranch: null,
+        isDirty: false,
+      }),
+      branchExists: async (_root, branch) => branch === 'trunk',
+      allocate: async ({ baseBranch }) => {
+        allocations.push(baseBranch)
+        return {
+          path: '/worktrees/thread-1',
+          branch: 'copse/fresh-thread1',
+          baseBranch,
+          baseCommit: 'e'.repeat(40),
+          createdAt: 5,
+          seededFromDirtyProject: false,
+        }
+      },
+    })
+
+    await prepare({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      prompt: 'Proposed follow-up',
+      choice: 'worktree',
+    })
+
+    assert.deepEqual(allocations, ['trunk'])
+  })
+
+  it('honours an explicit base over the default-branch fallback', async () => {
+    const allocations: string[] = []
+    const { prepare } = fixture({
+      inspect: async () => ({
+        isGitRepository: true,
+        currentBranch: 'feature/parked',
+        defaultBranch: 'main',
+        isDirty: false,
+      }),
+      allocate: async ({ baseBranch }) => {
+        allocations.push(baseBranch)
+        return {
+          path: '/worktrees/thread-1',
+          branch: 'copse/fresh-thread1',
+          baseBranch,
+          baseCommit: 'e'.repeat(40),
+          createdAt: 5,
+          seededFromDirtyProject: false,
+        }
+      },
+    })
+
+    await prepare({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      prompt: 'Proposed follow-up',
+      choice: 'worktree',
+      baseBranch: 'release/2026-08',
+      baseFallback: 'default-branch',
+    })
+
+    assert.deepEqual(allocations, ['release/2026-08'])
   })
 
   it('bases an isolated worktree on the picked branch without moving the checkout', async () => {
@@ -651,6 +766,7 @@ describe('first-message checkout transaction', () => {
       threadId: 'thread-1',
       prompt: 'Scheduled review',
       choice: 'worktree',
+      baseFallback: 'project-branch',
     })
 
     assert.equal(result.checkoutMode, 'worktree')
@@ -689,6 +805,110 @@ describe('first-message checkout transaction', () => {
     })
 
     assert.deepEqual(allocations, ['main'])
+  })
+
+  it('never bases on a dangling default, even when a stale local branch still has its name', async () => {
+    // origin renamed its default and a pruning fetch dropped the tracking ref,
+    // so `origin/HEAD` still names `master` while the local `master` is
+    // months stale. The reported branch is no help either: the checkout is
+    // detached, or reports a name (the e2e mock) that is not a ref.
+    for (const currentBranch of [null, 'work']) {
+      for (const baseFallback of ['default-branch', 'project-branch'] as const) {
+        const allocations: string[] = []
+        const { prepare, patches } = fixture({
+          inspect: async () => ({
+            isGitRepository: true,
+            currentBranch,
+            defaultBranch: 'master',
+            isDirty: false,
+          }),
+          branchExists: async (_root, branch) => branch === 'master',
+          defaultBranchResolves: async () => false,
+          allocate: async ({ baseBranch }) => {
+            allocations.push(baseBranch)
+            throw new Error('must not allocate from a refused default')
+          },
+        })
+        const preparing = prepare({
+          projectId: 'project-1',
+          threadId: 'thread-1',
+          prompt: 'Scheduled review',
+          choice: 'worktree',
+          baseFallback,
+        })
+        if (currentBranch === null) {
+          // A detached checkout cannot cut a worktree at all.
+          await assert.rejects(preparing, /detached head/)
+        } else {
+          await assert.rejects(preparing, /default branch "master" no longer exists on origin/)
+        }
+        assert.deepEqual(allocations, [], `${currentBranch ?? 'detached'} / ${baseFallback}`)
+        assert.deepEqual(patches, [])
+      }
+    }
+
+    // Parked on the stale `master` itself: a thread that asked for the default
+    // must not get it back as the checkout's branch, while the composer's
+    // fallback keeps the branch its picker showed.
+    for (const baseFallback of ['default-branch', 'project-branch'] as const) {
+      const allocations: string[] = []
+      const { prepare } = fixture({
+        inspect: async () => ({
+          isGitRepository: true,
+          currentBranch: 'master',
+          defaultBranch: 'master',
+          isDirty: false,
+        }),
+        branchExists: async (_root, branch) => branch === 'master',
+        defaultBranchResolves: async () => false,
+        allocate: async ({ baseBranch }) => {
+          allocations.push(baseBranch)
+          return {
+            path: '/worktrees/thread-1',
+            branch: 'copse/task-thread1',
+            baseBranch,
+            baseCommit: 'b'.repeat(40),
+            createdAt: 8,
+            seededFromDirtyProject: false,
+          }
+        },
+      })
+      const preparing = prepare({
+        projectId: 'project-1',
+        threadId: 'thread-1',
+        prompt: 'Scheduled review',
+        choice: 'worktree',
+        baseFallback,
+      })
+      if (baseFallback === 'default-branch') {
+        await assert.rejects(preparing, /default branch "master" no longer exists on origin/)
+        assert.deepEqual(allocations, [])
+      } else {
+        await preparing
+        assert.deepEqual(allocations, ['master'])
+      }
+    }
+
+    // An automatic choice on the detached checkout shares it instead, so no
+    // base is chosen at all.
+    const automatic = fixture({
+      inspect: async () => ({
+        isGitRepository: true,
+        currentBranch: null,
+        defaultBranch: 'master',
+        isDirty: false,
+      }),
+      branchExists: async (_root, branch) => branch === 'master',
+      defaultBranchResolves: async () => false,
+    })
+    const shared = await automatic.prepare({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      prompt: 'Scheduled review',
+      choice: 'automatic',
+    })
+    assert.equal(shared.checkoutMode, 'shared')
+    assert.deepEqual(automatic.checkouts, [])
   })
 
   it('allocates exactly once under concurrent isolated preparation and reuses metadata', async () => {

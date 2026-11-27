@@ -68,6 +68,14 @@ export async function acceptThreadPrompt(
       (!current.worktreeChoice && current.messages.length === 0) ||
       (command.requireWorktree && (!current.worktree || current.worktree.retiredAt !== undefined))
     ) {
+      // No base branch, so main starts the worktree from the fetched default
+      // branch. A subthread deliberately does not inherit its parent's
+      // branch: it is an independent thread with its own branch and PR, and a
+      // parent's unpublished worktree branch would leave the child's PR stacked
+      // on work that may never merge. Work that must build on the parent's
+      // branch belongs in an isolated worker (`isolated-worker-checkout.ts`),
+      // which cuts from the parent's branch and reports back within the
+      // parent's own turn.
       const prepared = await api.agent.prepareCheckout(
         command.projectId,
         threadId,

@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { dirname, join, normalize } from 'node:path'
 import { describe, it } from 'node:test'
+import ts from 'typescript'
 
 // Benchmarks reach the model through their own bridge rather than the path a
 // user's work takes (#1272), and the first thing blocking a shared path is that
@@ -56,6 +57,32 @@ function staticImports(source: string): StaticImport[] {
   return imports
 }
 
+/** `electron`, or one of the `electron/<subpath>` modules Electron declares (`electron/main`). */
+function isElectronSpecifier(specifier: string): boolean {
+  return specifier === 'electron' || specifier.startsWith('electron/')
+}
+
+/**
+ * Whether `source` holds a runtime `import('electron')`, or a subpath, written as a string or
+ * a placeholder-free template. Deferring the import only moves the failure from load time to
+ * the first call, so a reachable file must not hold one either. Parsed rather than matched as
+ * text, so a comment or string that only mentions the call does not count, and
+ * `typeof import('electron')` is a type node, erased. Other dynamic imports are not followed
+ * as graph edges: they are lazy on purpose, and this pins the eager graph.
+ */
+function hasDynamicElectronImport(file: string, source: string): boolean {
+  if (!source.includes('electron')) return false
+  const visit = (node: ts.Node): boolean | undefined => {
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+      const [specifier] = node.arguments
+      if (specifier && ts.isStringLiteralLike(specifier) && isElectronSpecifier(specifier.text))
+        return true
+    }
+    return ts.forEachChild(node, visit)
+  }
+  return visit(ts.createSourceFile(file, source, ts.ScriptTarget.Latest)) === true
+}
+
 function electronImportPaths(roots: string[]): string[] {
   const seen = new Set(roots)
   const queue = roots.map((file) => ({ file, path: [file] }))
@@ -71,7 +98,11 @@ function electronImportPaths(roots: string[]): string[] {
       continue
     }
     const imports = staticImports(source).filter((entry) => !entry.typeOnly)
-    if (imports.some((entry) => entry.specifier === 'electron')) found.push(path.join(' -> '))
+    if (
+      imports.some((entry) => isElectronSpecifier(entry.specifier)) ||
+      hasDynamicElectronImport(file, source)
+    )
+      found.push(path.join(' -> '))
     for (const entry of imports) {
       const resolved = resolveImport(entry.specifier, file)
       if (resolved !== null && !seen.has(resolved)) {

@@ -21,6 +21,8 @@ export interface ScenarioBridge {
   getErrorToasts(): string[]
   requestSshPrompt(prompt: string, kind: 'confirm' | 'secret'): Promise<unknown>
   requestCloseConfirm(): Promise<boolean>
+  setCloseConfirmContainerRuns(threadIds: string[]): Promise<void>
+  emitContainerRun(progress: unknown): Promise<void>
   createMainWindow(): Promise<void>
   markQuit(): Promise<void>
   openWorkspace(root: string): Promise<unknown>

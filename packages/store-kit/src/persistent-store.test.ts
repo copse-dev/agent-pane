@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
 import { randomUUID } from 'node:crypto'
 import {
+  forgetCachedStoreValues,
   lazyPersistentStore,
+  onPersistentStoreWrite,
   openPersistentStore,
   setPersistentStoreFactory,
   type PersistentStoreFactory,
@@ -80,5 +82,37 @@ describe('persistent-store runtime backend', () => {
     assert.equal(opened, 1)
     assert.equal(values.get('model'), 'mock')
     assert.equal(store.get('model'), 'mock')
+  })
+
+  it('reports each write by store name, and rereads its backing once the cache is dropped', () => {
+    const values = new Map<string, unknown>([['theme', 'dark']])
+    setPersistentStoreFactory(() => ({
+      get: (key): unknown => values.get(key),
+      set: (key, value): void => {
+        values.set(key, value)
+      },
+      delete: (key): void => {
+        values.delete(key)
+      },
+      listKeys: (): string[] => [...values.keys()],
+      deleteKeys: (keys): void => {
+        for (const key of keys) values.delete(key)
+      },
+    }))
+    const wrote: string[] = []
+    const stop = onPersistentStoreWrite((name) => wrote.push(name))
+    const store = openPersistentStore({ name: 'settings' })
+    assert.equal(store.get('theme'), 'dark')
+    store.set('model', 'mock')
+    store.delete('model')
+    stop()
+    store.set('ignored', true)
+    assert.deepEqual(wrote, ['settings', 'settings'])
+
+    // Another process changed the file under this one.
+    values.set('theme', 'light')
+    assert.equal(store.get('theme'), 'dark', 'cached')
+    forgetCachedStoreValues()
+    assert.equal(store.get('theme'), 'light')
   })
 })

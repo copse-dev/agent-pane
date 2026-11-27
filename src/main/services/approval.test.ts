@@ -87,9 +87,13 @@ describe('requestApproval pluggable transport', () => {
     storageSet('activeProjectId', WINDOW_PROJECT)
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     setApprovalHandler(null)
     resetRunDeadlinesForTest()
+    // Decision-log appends are fire-and-forget. Let them land before the root
+    // goes: one still writing makes `rmSync` fail with ENOTEMPTY (#4539), and
+    // one that runs after the env is restored writes outside the temp root.
+    await drainWriteQueue()
     if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
     else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
     rmSync(auditRoot, { recursive: true, force: true })
@@ -805,11 +809,12 @@ describe('abandoned calls (parked prompts and verdict replay)', () => {
     release = undefined
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     setApprovalHandler(null)
     setApprovalClockForTest(null)
     clearAbandonedVerdictsForTest()
     resetRunDeadlinesForTest()
+    await drainWriteQueue()
     if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
     else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
     rmSync(auditRoot, { recursive: true, force: true })

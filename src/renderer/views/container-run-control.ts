@@ -97,6 +97,11 @@ const PHASE_LABEL: Record<ContainerRunProgress['phase'], string> = {
   failed: 'Failed',
 }
 
+/** A run the user stopped reads as stopped, not as a failure. */
+function phaseLabel(run: ContainerRunProgress): string {
+  return run.phase === 'failed' && run.stoppedByUser === true ? 'Stopped' : PHASE_LABEL[run.phase]
+}
+
 function isLive(progress: ContainerRunProgress | null): boolean {
   return progress !== null && progress.phase !== 'finished' && progress.phase !== 'failed'
 }
@@ -321,10 +326,13 @@ export function mountContainerRunControl(
     if (!run) {
       text.textContent = ''
       delete element.dataset['phase']
+      element.removeAttribute('data-stopped')
       onStateChanged()
       return
     }
     element.dataset['phase'] = run.phase
+    // A run the user stopped is not a failure, so it does not wear the danger hue.
+    element.toggleAttribute('data-stopped', run.phase === 'failed' && run.stoppedByUser === true)
     const result = run.record?.result
     const fetched = run.record?.carryOut.ref !== null && run.record?.carryOut.ref !== undefined
     const commits =
@@ -336,10 +344,12 @@ export function mountContainerRunControl(
     const summary =
       run.phase === 'finished' && result
         ? `${commits}, ${String(result.deferrals.length)} waiting for review.`
-        : run.phase === 'failed'
-          ? (run.error ?? 'The run did not complete.')
-          : `${run.model} · limited to the egress allowlist.`
-    text.textContent = `Container run: ${PHASE_LABEL[run.phase].toLowerCase()}. ${summary}`
+        : run.phase === 'failed' && run.stoppedByUser === true
+          ? 'Stopped by you.'
+          : run.phase === 'failed'
+            ? (run.error ?? 'The run did not complete.')
+            : `${run.model} · limited to the egress allowlist.`
+    text.textContent = `Container run: ${phaseLabel(run).toLowerCase()}. ${summary}`
     onStateChanged()
   }
 
@@ -716,7 +726,7 @@ export function mountContainerRunControl(
     const rows: HTMLElement[] = []
     const row = (label: string, value: string): HTMLElement =>
       el('div', { class: 'container-run-row' }, el('dt', {}, label), el('dd', {}, value))
-    rows.push(row('Phase', PHASE_LABEL[run.phase]))
+    rows.push(row('Phase', phaseLabel(run)))
     // What was asked. The dialog no longer holds the task while the run is in
     // flight, and reviewing what an unwatched run did means little without it.
     if (run.prompt) rows.push(row('Task', run.prompt))
@@ -1164,6 +1174,8 @@ export function mountContainerRunControl(
           `Container run finished: ${String(result.commits.length)} commit(s) back, ${String(result.deferrals.length)} waiting for review.`,
           { variant: 'info', durationMs: 10_000 },
         )
+      } else if (progress.stoppedByUser === true) {
+        showToast('Container run stopped.', { variant: 'info', durationMs: 6_000 })
       } else {
         showToast(`Container run failed: ${progress.error ?? 'no result'}`, {
           variant: 'error',

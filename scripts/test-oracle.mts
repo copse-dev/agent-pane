@@ -809,6 +809,7 @@ export function listSourceFiles(tree: OracleFiles = workingTree): string[] {
  */
 const E2E_SPEC = /^tests\/e2e\/.+\.e2e\.ts$/
 const SCREENSHOT_MANIFEST_FILE = /^tests\/e2e\/screenshots\/manifest\.json$/
+const E2E_SCREENSHOT_DIR = 'tests/e2e/screenshots'
 const DISK_READERS: readonly {
   what: string
   tests: readonly string[]
@@ -939,6 +940,23 @@ export function computeSelection(
     }
   }
 
+  // A changed reference hash selects the specs that save that shot, so the
+  // branch renders it and the candidate filter can compare. Without this, a
+  // hash edited in a commit that touches nothing else the spec reaches was
+  // never rendered on its PR and merged unchecked (#4435).
+  const changedShots = new Set(
+    changed
+      .filter((f) => f.startsWith(`${E2E_SCREENSHOT_DIR}/`) && f.endsWith('.png'))
+      .map((f) => f.slice(`${E2E_SCREENSHOT_DIR}/`.length)),
+  )
+  if (changedShots.size > 0)
+    for (const [spec, names] of specScreenshots(tree))
+      for (const name of names)
+        if (changedShots.has(name)) {
+          addReason(e2eReasons, spec, `saves changed reference ${name}`)
+          e2eMappedFiles.add(`${E2E_SCREENSHOT_DIR}/${name}`)
+        }
+
   if (unitReasons.size > 0)
     for (const reader of DISK_READERS) {
       const inputs = changed.filter((f) => reader.inputs.some((re) => re.test(f)))
@@ -980,13 +998,12 @@ export function computeSelection(
 }
 
 // ── Reference-screenshot gate ────────────────────────────────────────────────
-const E2E_SCREENSHOT_DIR = 'tests/e2e/screenshots'
 
 /** spec → the reference-screenshot filenames it (re)generates. */
-export function specScreenshots(): Map<string, string[]> {
+export function specScreenshots(tree: OracleFiles = workingTree): Map<string, string[]> {
   const m = new Map<string, string[]>()
-  for (const s of listSpecs()) {
-    const source = read(s)
+  for (const s of listSpecs(tree)) {
+    const source = tree.read(s)
     const screenshots = extractSpecScreenshots(source)
     // Preserve existing helper discovery and add hash-audited native outputs.
     // Helpers such as saveSettingsSection do not match save*Screenshot calls.
@@ -1140,9 +1157,15 @@ export type ScreenshotGate = {
  * mobile companion demo's.
  */
 export function computeScreenshotGate(changed: string[], labeled: boolean): ScreenshotGate {
+  // A reference screenshot's hash cannot change a pixel. computeSelection maps
+  // a changed reference to its producer spec so the e2e plan renders it, but
+  // here that would make the PR own every sibling shot the spec saves, and
+  // their unrelated drift would reach review as candidates. A hand-committed
+  // shot is owned through the filter's branch check instead.
   const renderAffecting = changed.filter(
     (f) =>
       (f.startsWith('src/') || f.startsWith('packages/') || f.startsWith(`${E2E_DIR}/`)) &&
+      !f.startsWith(`${E2E_SCREENSHOT_DIR}/`) &&
       !f.endsWith('.test.ts'),
   )
   const sel = computeSelection(renderAffecting)
