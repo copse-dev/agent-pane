@@ -923,7 +923,8 @@ app
       turnHostLink?.subscribe(turn.threadId, onMessage, onClose) ??
       null
     const foreignTurns = new ForeignTurnFollower(foreignTurnDependencies)
-    if (getSetting<unknown>('turnsRunInHost', false) === true) {
+    // On unless turned off (H6): every turn runs in the resident turn host.
+    if (getSetting<unknown>('turnsRunInHost', true) !== false) {
       const launch = {
         execPath: process.execPath,
         hostPath: turnHostPath(),
