@@ -119,13 +119,18 @@ function errorCode(error: unknown): unknown {
   return error instanceof Error && 'code' in error ? error.code : undefined
 }
 
-/** The highest epoch with a record file, or 0 when there is none. */
+/**
+ * The highest epoch with a record file, or 0 when there is none. Only a
+ * missing directory means none: any other failure (EMFILE, EACCES) says
+ * nothing about the lease, so it throws rather than read as "taken over".
+ */
 async function highestEpoch(threadDir: string): Promise<number> {
   let names: string[]
   try {
     names = await readdir(threadDir)
-  } catch {
-    return 0
+  } catch (error) {
+    if (errorCode(error) === 'ENOENT') return 0
+    throw error
   }
   let highest = 0
   for (const name of names) {
@@ -143,8 +148,11 @@ async function readEpoch(
   let raw: string
   try {
     raw = await readFile(epochPath(threadDir, epoch), 'utf8')
-  } catch {
-    return null
+  } catch (error) {
+    // Gone: a racing prune removed it. Anything else (EMFILE, EIO) says
+    // nothing about the holder, so it must not read as a free lease.
+    if (errorCode(error) === 'ENOENT') return null
+    throw error
   }
   const record = safeJsonParse(raw, decodeWithSchema(leaseRecordSchema))
   // A lease copied in with the directory belongs to the thread it came from.

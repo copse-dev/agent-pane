@@ -27,6 +27,21 @@ export function continuesTurnsAfterQuit(
   return read(CONTINUE_TURNS_AFTER_QUIT_SETTING, CONTINUE_TURNS_AFTER_QUIT_DEFAULT) === true
 }
 
+/**
+ * Whether a quit now would keep every one of `turns` going in a worker: the
+ * quit hands off (`handsOff`), and the worker runs each turn rather than
+ * leaving it for the next launch (`cannotRun`, `turn-worker.ts`).
+ */
+export async function everyTurnHandsOff(
+  turns: readonly HandOffTarget[],
+  handsOff: boolean,
+  cannotRun: (projectId: string, threadId: string) => Promise<string | null>,
+): Promise<boolean> {
+  if (!handsOff) return false
+  const reasons = await Promise.all(turns.map((turn) => cannotRun(turn.projectId, turn.threadId)))
+  return reasons.every((reason) => reason === null)
+}
+
 export interface HandOffTarget {
   projectId: string
   threadId: string

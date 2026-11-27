@@ -210,7 +210,8 @@ revisiting this document, not silently diverging in an implementation PR.
    With "Continue turns after Copse closes" on, a quit the user confirmed hands each running
    turn to a local turn worker instead (`local-turn-worker.md`), whose dialog says so, and is
    recorded as `hand-off`; the next launch continues whatever no worker took. Signal and fault
-   quits never hand off and stay `quit`.
+   quits, and a close the dialog let through with nobody's answer, never hand off and stay
+   `quit`.
    `last-run.ts` records how each run ended, and only threads the previous run started are
    continued, so a thread cut off further back is never picked up. On the next launch, once tools and MCP servers are
    back, `interrupted-turn-resume.ts` dispatches one `dispatchMachine` continuation per such
