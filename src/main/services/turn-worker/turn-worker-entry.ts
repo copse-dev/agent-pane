@@ -23,6 +23,8 @@ import { setSecretCipher } from '@copse/store-kit/secret-cipher.ts'
 import { setElectronAppRuntime } from '../electron-app-runtime.ts'
 import { setPersistentStoreFactory } from '../storage/persistent-store.ts'
 import { readOnlyProfileStoreFactory, readProfileStores } from './read-only-profile-store.ts'
+import { turnWorkerSocketPath } from './turn-worker-socket.ts'
+import type { TakenOverThread, TurnControl } from './turn-worker.ts'
 
 function log(line: string): void {
   process.stderr.write(`[turn-worker ${new Date().toISOString()}] ${line}\n`)
@@ -65,15 +67,37 @@ async function main(): Promise<number> {
   )
   setSecretCipher(createKeyringCipher(createOsKeyringStore()))
 
-  // Decide before starting the sandbox and MCP servers, which a thread left for
-  // the next launch would start for nothing.
-  const { runTurnWorker, workerCannotRun } = await import('./turn-worker.ts')
-  const reason = await workerCannotRun(projectId, threadId)
+  // Decide before taking the thread or starting the sandbox and MCP servers: a
+  // thread left for the next launch must never be held while the worker boots,
+  // or an app relaunched meanwhile would follow it instead of continuing it.
+  const { openTurnControl, takeOverThread, whyNotContinue } = await import('./turn-worker.ts')
+  const reason = await whyNotContinue(projectId, threadId)
   if (reason !== null) {
     log(`thread ${threadId} stays for the next launch: ${reason}`)
     return 0
   }
 
+  // Take the thread before the slow boot below, so an app relaunched meanwhile
+  // follows this worker instead of continuing the turn itself, and serve it at
+  // once, so a Stop pressed during the boot reaches this worker.
+  const takeOver = await takeOverThread({ projectId, threadId }, { log })
+  if (takeOver.status === 'held') return 2
+  const thread = takeOver.thread
+  const control = await openTurnControl(turnWorkerSocketPath(userDataPath, threadId), log)
+  try {
+    return await bootAndContinue(projectId, threadId, thread, control)
+  } finally {
+    await control.close()
+    await thread.release()
+  }
+}
+
+async function bootAndContinue(
+  projectId: string,
+  threadId: string,
+  takenOver: TakenOverThread,
+  control: TurnControl,
+): Promise<number> {
   const [
     { setExecutionAuditSink },
     { recordExecutionObservation },
@@ -90,6 +114,7 @@ async function main(): Promise<number> {
     { getTaskSupervisor },
     { disposeAllAcpSessions },
     { stopAllBackgroundProcesses },
+    { runTurnWorker },
   ] = await Promise.all([
     import('../execution-runtime/audit.ts'),
     import('../execution-runtime/audit-recorder.ts'),
@@ -106,6 +131,7 @@ async function main(): Promise<number> {
     import('../supervisor/task-supervisor.ts'),
     import('../acp/acp-session-pool.ts'),
     import('../exec/background-process.ts'),
+    import('./turn-worker.ts'),
   ])
 
   setExecutionAuditSink(recordExecutionObservation)
@@ -156,7 +182,10 @@ async function main(): Promise<number> {
   }
 
   try {
-    const outcome = await runTurnWorker({ projectId, threadId }, { registry, log })
+    const outcome = await runTurnWorker(
+      { projectId, threadId },
+      { registry, log, takenOver, control },
+    )
     log(`thread ${threadId}: ${JSON.stringify(outcome)}`)
     return outcome.status === 'held' ? 2 : 0
   } finally {

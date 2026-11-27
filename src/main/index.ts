@@ -838,10 +838,16 @@ app
     })
     interruptTurnTranscripts = (): Promise<void> => transcriptWriter.interruptForShutdown()
     // Turns a worker took over when Copse last quit, still going now: shown as
-    // running and repainted from disk until the worker lets go of them.
+    // running, streamed from the worker (or repainted from disk) until it lets
+    // go of them, and stopped through it.
     const foreignTurns = new ForeignTurnFollower(
-      defaultForeignTurnDependencies((snapshot) => {
-        if (!win.isDestroyed()) win.webContents.send('agent:transcript-snapshot', snapshot)
+      defaultForeignTurnDependencies(app.getPath('userData'), {
+        snapshot: (snapshot) => {
+          if (!win.isDestroyed()) win.webContents.send('agent:transcript-snapshot', snapshot)
+        },
+        chunk: ({ threadId, chunk, stamp }) => {
+          if (!win.isDestroyed()) win.webContents.send('agent:chunk', threadId, chunk, stamp)
+        },
       }),
     )
     stopFollowingForeignTurns = (): void => {
@@ -1331,6 +1337,7 @@ app
         args,
       )
       await transcriptWriter.attach(projectId, threadIds)
+      foreignTurns.reattach(projectId, threadIds)
     })
 
     // A small-model label for a message main wrote. Main merges it into its own
@@ -1360,6 +1367,8 @@ app
       const reason = z.literal('send_now').optional().parse(reasonArg)
       transcriptWriter.noteUserAbort(threadId, reason ?? 'stop')
       abortAgent(threadId, reason)
+      // A turn a worker runs stops there.
+      foreignTurns.requestStop(threadId)
     })
 
     // Thread ids with a live in-process run, so a renderer that's just loaded a
