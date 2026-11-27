@@ -28,7 +28,11 @@ import {
   setPluginClientThreadOpener,
   stopPluginClientApi,
 } from './services/plugins/plugin-client-service.ts'
-import { dispatchSubthreadPrompt, initThreadPrompts } from './services/thread-prompts.ts'
+import {
+  dispatchSubthreadPrompt,
+  initThreadPrompts,
+  sendThreadPrompt,
+} from './services/thread-prompts.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
 import { abortScratchFetchesForQuit } from './services/default-branch-fetch.ts'
 import { removeOrphanedPlanWindowHistory } from './services/storage/plan-window-history-cleanup.ts'
@@ -900,6 +904,8 @@ app
         onShellOutput: (chunk: string, taskId: string | null): void => {
           getMainWindow()?.webContents.send('agent:shell-output', chunk, taskId)
         },
+        // A host turn's subthread start or peer prompt: this window submits it.
+        sendThreadPrompt,
       }
       const link = createTurnHostLink(launch)
       turnHostLink = link

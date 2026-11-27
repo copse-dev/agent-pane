@@ -1,8 +1,20 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import type { Thread } from '@shared/types/thread.ts'
 import type { HostDispatchRecord } from './host-dispatch-record.ts'
 import type { AppToHost, HostToApp, TurnHostConnection } from './turn-host-protocol.ts'
 import { TurnHostLink, type TurnHostLinkDependencies } from './turn-host-link.ts'
+
+const childThread: Thread = {
+  id: 'child',
+  title: 'Build checks',
+  status: 'idle',
+  model: 'claude-sonnet-4-6',
+  messages: [],
+  usage: { inputTokens: 0, outputTokens: 0 },
+  createdAt: 0,
+  updatedAt: 0,
+}
 
 const VERSION = '1.0.0'
 
@@ -348,6 +360,44 @@ describe('TurnHostLink', () => {
     assert.equal(await line.testScenario({ kind: 'clear' }), null)
     host.reachable = false
     assert.equal(await line.testScenario({ kind: 'clear' }), null, 'no host, no answer')
+  })
+
+  it("has this window submit a host turn's prompt to another thread", async () => {
+    const host = new FakeHost()
+    const answered = Promise.withResolvers<AppToHost>()
+    host.respond = (message): void => {
+      if (message.t === 'thread-prompt-answer') answered.resolve(message)
+    }
+    const submitted: string[] = []
+    const { link: line } = link(host, {
+      sendThreadPrompt: (command) => {
+        submitted.push(command.text)
+        return Promise.resolve({ ok: true, queued: true })
+      },
+    })
+    assert.ok(await line.ensureConnected())
+    const command = {
+      sourceThreadId: 't1',
+      projectId: 'p1',
+      thread: childThread,
+      text: 'Check the build.',
+    }
+    const prompt = {
+      t: 'thread-prompt',
+      id: 'q1',
+      projectId: 'p1',
+      threadId: 't1',
+      command,
+    } as const
+    host.say(prompt)
+    // Asked again on a re-attach while the first is still out: submitted once.
+    host.say(prompt)
+    assert.deepEqual(await answered.promise, {
+      t: 'thread-prompt-answer',
+      id: 'q1',
+      result: { ok: true, queued: true },
+    })
+    assert.deepEqual(submitted, ['Check the build.'])
   })
 
   it("mirrors a host turn's live command output to the terminal pane", async () => {

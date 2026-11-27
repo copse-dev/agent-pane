@@ -2,12 +2,18 @@ import { randomUUID } from 'node:crypto'
 import type { ApprovalRequest, ApprovalResponse } from '../approval.ts'
 import type { QueueEntry } from '../diff-queue.ts'
 import type { SshPromptRequest, SshPromptResponse } from '../ssh-workspace/ssh-prompt.ts'
-import type { HostApprovalAnswer, HostToApp } from './turn-host-protocol.ts'
+import type { ThreadPromptResult } from '@shared/thread-prompt.ts'
+import type {
+  HostApprovalAnswer,
+  HostThreadPromptCommand,
+  HostToApp,
+} from './turn-host-protocol.ts'
 
 /**
  * The prompts host turns are waiting on (`docs/plans/local-turn-worker.md`,
  * "Every turn in a turn host", H3 and H3b): approvals, staged edits for the diff
- * panel, and SSH password and host-key prompts.
+ * panel, SSH password and host-key prompts, and prompts to other threads (the
+ * window submits those, as it does for an in-process turn).
  *
  * A host turn asks here instead of a window. Each prompt goes to every attached
  * app, waits for an answer however long none is attached, and is asked again of
@@ -16,9 +22,13 @@ import type { HostApprovalAnswer, HostToApp } from './turn-host-protocol.ts'
  * take it down.
  */
 
-type PromptMessage = Extract<HostToApp, { t: 'approval' | 'review-diff' | 'ssh-prompt' }>
+type PromptMessage = Extract<
+  HostToApp,
+  { t: 'approval' | 'review-diff' | 'ssh-prompt' | 'thread-prompt' }
+>
 
 const DENIED: ApprovalResponse = { approved: false, remember: false }
+const CANCELLED: ThreadPromptResult = { ok: false, error: 'Sending was cancelled.' }
 
 interface OpenPrompt<T> {
   message: PromptMessage
@@ -30,6 +40,7 @@ export class HostApprovals {
   private readonly approvals = new Map<string, OpenPrompt<ApprovalResponse>>()
   private readonly diffs = new Map<string, OpenPrompt<boolean>>()
   private readonly ssh = new Map<string, OpenPrompt<SshPromptResponse>>()
+  private readonly threadPrompts = new Map<string, OpenPrompt<ThreadPromptResult>>()
   /** Every waiting prompt in the order it was raised, for an app that attaches. */
   private readonly raised = new Map<string, PromptMessage>()
   private readonly send: (message: HostToApp) => void
@@ -86,6 +97,21 @@ export class HostApprovals {
     )
   }
 
+  /** Have the window submit a prompt to another thread. A Stop cancels it. */
+  sendThreadPrompt(
+    projectId: string,
+    threadId: string,
+    command: HostThreadPromptCommand,
+    signal?: AbortSignal,
+  ): Promise<ThreadPromptResult> {
+    return this.prompt(
+      this.threadPrompts,
+      { t: 'thread-prompt', id: this.createId(), projectId, threadId, command },
+      CANCELLED,
+      signal,
+    )
+  }
+
   /** An app answered an approval. A prompt already settled ignores it. */
   answer(id: string, answer: HostApprovalAnswer): void {
     this.settle(this.approvals, id, {
@@ -102,6 +128,10 @@ export class HostApprovals {
 
   answerSsh(id: string, response: SshPromptResponse): void {
     this.settle(this.ssh, id, response)
+  }
+
+  answerThreadPrompt(id: string, result: ThreadPromptResult): void {
+    this.settle(this.threadPrompts, id, result)
   }
 
   /** Ask an app that just attached everything still waiting. */

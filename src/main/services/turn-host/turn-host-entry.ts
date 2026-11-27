@@ -98,6 +98,9 @@ async function main(): Promise<number> {
   forward = (store, changes): void => {
     host.storeWrite(store, changes)
   }
+  // Prompts to other threads (a subthread start), which the app's window submits.
+  const { setThreadPromptSender } = await import('../thread-prompts.ts')
+  setThreadPromptSender((command, signal) => host.threadPrompt(command, signal))
   // Live command output, which the app paints into its terminal pane.
   const { setShellOutputSink } = await import('../exec/shell-output-context.ts')
   setShellOutputSink((chunk, taskId) => {

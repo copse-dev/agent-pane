@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
 import type { StreamChunk } from '@shared/types'
+import type { ThreadPromptResult } from '@shared/thread-prompt.ts'
 import { AgentTurnBusyError } from '@shared/agent-turn-busy.ts'
 import {
   AgentDispatcher,
@@ -29,6 +30,7 @@ import {
   TURN_HOST_PROTOCOL,
   type AppToHost,
   type DispatchState,
+  type HostThreadPromptCommand,
   type HostToApp,
   type TestScenarioOp,
   type TestScenarioResult,
@@ -238,6 +240,9 @@ export class TurnHost {
       case 'ssh-prompt-answer':
         this.approvals.answerSsh(message.id, message.response)
         return
+      case 'thread-prompt-answer':
+        this.approvals.answerThreadPrompt(message.id, message.result)
+        return
       case 'profile-changed':
         this.profileStale = true
         return
@@ -256,6 +261,25 @@ export class TurnHost {
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) }
     }
+  }
+
+  /**
+   * A host turn prompts another thread. The window submits it; with no app
+   * attached it fails as it does in-process with no window.
+   */
+  threadPrompt(
+    command: HostThreadPromptCommand,
+    signal?: AbortSignal,
+  ): Promise<ThreadPromptResult> {
+    if (this.joined === 0) {
+      return Promise.resolve({ ok: false, error: 'Open the desktop window to send a prompt.' })
+    }
+    return this.approvals.sendThreadPrompt(
+      command.projectId,
+      command.sourceThreadId,
+      command,
+      signal,
+    )
   }
 
   /** A host turn's command printed: every attached app's terminal pane shows it. */

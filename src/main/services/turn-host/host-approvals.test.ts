@@ -1,7 +1,19 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import type { Thread } from '@shared/types/thread.ts'
 import type { HostToApp } from './turn-host-protocol.ts'
 import { HostApprovals } from './host-approvals.ts'
+
+const childThread: Thread = {
+  id: 'child',
+  title: 'Build checks',
+  status: 'idle',
+  model: 'claude-sonnet-4-6',
+  messages: [],
+  usage: { inputTokens: 0, outputTokens: 0 },
+  createdAt: 0,
+  updatedAt: 0,
+}
 
 const request = { title: 'Run ls?', body: 'ls', type: 'shell' as const }
 
@@ -76,6 +88,29 @@ describe('HostApprovals', () => {
     prompts.answerSsh('a2', { value: 'hunter2' })
     assert.equal(await reviewed, true)
     assert.deepEqual(await asked, { value: 'hunter2' })
+  })
+
+  it("has the window send a host turn's prompt to another thread", async () => {
+    const { approvals: prompts, sent } = approvals()
+    const command = {
+      sourceThreadId: 't1',
+      projectId: 'p1',
+      thread: childThread,
+      text: 'Check the build.',
+      authorizingAccess: 'orchestrate' as const,
+    }
+    const result = prompts.sendThreadPrompt('p1', 't1', command)
+    assert.deepEqual(sent, [
+      { t: 'thread-prompt', id: 'a1', projectId: 'p1', threadId: 't1', command },
+    ])
+    prompts.answer('a1', { approved: true, remember: false })
+    prompts.answerThreadPrompt('a1', { ok: true, queued: false })
+    assert.deepEqual(await result, { ok: true, queued: false })
+
+    const controller = new AbortController()
+    const stopped = prompts.sendThreadPrompt('p1', 't1', command, controller.signal)
+    controller.abort()
+    assert.deepEqual(await stopped, { ok: false, error: 'Sending was cancelled.' })
   })
 
   it('rejects a staged edit whose turn was stopped', async () => {

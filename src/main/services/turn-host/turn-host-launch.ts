@@ -10,7 +10,7 @@ import { storageDelete, storageSet } from '../storage/storage.ts'
 import type { ProfileStoreChange } from '../turn-worker/read-only-profile-store.ts'
 import { isPidAlive } from '../exec/subprocess-kill.ts'
 import { readHostDispatchRecord } from './host-dispatch-record.ts'
-import { TurnHostLink } from './turn-host-link.ts'
+import { TurnHostLink, type TurnHostLinkDependencies } from './turn-host-link.ts'
 import {
   connectTurnHost,
   turnHostSocketPath,
@@ -48,6 +48,7 @@ export interface TurnHostLaunchDependencies {
   onThreadTaken: (projectId: string, threadId: string) => void
   /** Paint a host turn's live command output into the window's terminal pane. */
   onShellOutput?: (chunk: string, taskId: string | null) => void
+  sendThreadPrompt?: TurnHostLinkDependencies['sendThreadPrompt']
   /** How long to keep trying to reach a host that is still booting. */
   connectWithinMs?: number
 }
@@ -123,6 +124,7 @@ export function createTurnHostLink(deps: TurnHostLaunchDependencies): TurnHostLi
     },
     onThreadTaken: deps.onThreadTaken,
     ...(deps.onShellOutput ? { onShellOutput: deps.onShellOutput } : {}),
+    ...(deps.sendThreadPrompt ? { sendThreadPrompt: deps.sendThreadPrompt } : {}),
     log: deps.log,
   })
 }

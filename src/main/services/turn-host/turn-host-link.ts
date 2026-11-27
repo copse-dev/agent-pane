@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import type { TurnWorkerConnection, WorkerToApp } from '../turn-worker/turn-worker-socket.ts'
 import type { SshPromptResponse } from '../ssh-workspace/ssh-prompt.ts'
+import type { ThreadPromptResult } from '@shared/thread-prompt.ts'
 import type { HostDispatchRecord } from './host-dispatch-record.ts'
 import {
   TURN_HOST_PROTOCOL,
   type AppToHost,
   type DispatchState,
   type HostApprovalAnswer,
+  type HostThreadPromptCommand,
   type HostToApp,
   type TestScenarioOp,
   type TestScenarioResult,
@@ -67,6 +69,11 @@ export interface TurnHostLinkDependencies {
     prompt: Extract<HostToApp, { t: 'ssh-prompt' }>,
     signal: AbortSignal,
   ) => Promise<SshPromptResponse>
+  /** Have the window submit a host turn's prompt to another thread. */
+  sendThreadPrompt?: (
+    command: HostThreadPromptCommand,
+    signal: AbortSignal,
+  ) => Promise<ThreadPromptResult>
   /** A host turn's live command output, for the window's terminal pane. */
   onShellOutput?: (chunk: string, taskId: string | null) => void
   /** Apply a host turn's change to a shared profile store, which the app owns. */
@@ -310,6 +317,7 @@ export class TurnHostLink {
       case 'approval':
       case 'review-diff':
       case 'ssh-prompt':
+      case 'thread-prompt':
         this.ask(message)
         return
       case 'shell-output':
@@ -334,7 +342,9 @@ export class TurnHostLink {
    * showing is left as it is; one answered after it was taken down is dropped.
    * With nothing here to show it, it stays with the host for another app.
    */
-  private ask(prompt: Extract<HostToApp, { t: 'approval' | 'review-diff' | 'ssh-prompt' }>): void {
+  private ask(
+    prompt: Extract<HostToApp, { t: 'approval' | 'review-diff' | 'ssh-prompt' | 'thread-prompt' }>,
+  ): void {
     if (this.prompts.has(prompt.id)) return
     const controller = new AbortController()
     const answer = this.answer(prompt, controller.signal)
@@ -354,7 +364,7 @@ export class TurnHostLink {
 
   /** The user's answer to a prompt, as the host's reply; null with nothing to ask. */
   private answer(
-    prompt: Extract<HostToApp, { t: 'approval' | 'review-diff' | 'ssh-prompt' }>,
+    prompt: Extract<HostToApp, { t: 'approval' | 'review-diff' | 'ssh-prompt' | 'thread-prompt' }>,
     signal: AbortSignal,
   ): Promise<AppToHost> | null {
     const { id } = prompt
@@ -375,6 +385,16 @@ export class TurnHostLink {
         const ask = this.deps.askSsh
         return ask
           ? ask(prompt, signal).then((response) => ({ t: 'ssh-prompt-answer', id, response }))
+          : null
+      }
+      case 'thread-prompt': {
+        const send = this.deps.sendThreadPrompt
+        return send
+          ? send(prompt.command, signal).then((result) => ({
+              t: 'thread-prompt-answer',
+              id,
+              result,
+            }))
           : null
       }
     }
@@ -474,7 +494,7 @@ export class TurnHostLink {
 
 /** The answer that grants nothing, for a prompt the app could not put to the user. */
 function refusal(
-  prompt: Extract<HostToApp, { t: 'approval' | 'review-diff' | 'ssh-prompt' }>,
+  prompt: Extract<HostToApp, { t: 'approval' | 'review-diff' | 'ssh-prompt' | 'thread-prompt' }>,
 ): AppToHost {
   switch (prompt.t) {
     case 'approval':
@@ -483,5 +503,11 @@ function refusal(
       return { t: 'review-diff-answer', id: prompt.id, approved: false }
     case 'ssh-prompt':
       return { t: 'ssh-prompt-answer', id: prompt.id, response: { value: '' } }
+    case 'thread-prompt':
+      return {
+        t: 'thread-prompt-answer',
+        id: prompt.id,
+        result: { ok: false, error: 'The prompt could not be sent.' },
+      }
   }
 }

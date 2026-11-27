@@ -8,6 +8,7 @@ import {
   type LocalLineServer,
 } from '../local-socket.ts'
 import type { StreamChunk, TranscriptSnapshot, TranscriptStamp } from '@shared/types'
+import type { ThreadPromptCommand, ThreadPromptResult } from '@shared/thread-prompt.ts'
 import type { ApprovalRequest, ApprovalResponse } from '../approval.ts'
 import type { QueueEntry } from '../diff-queue.ts'
 import type { ProfileStoreChange } from '../turn-worker/read-only-profile-store.ts'
@@ -68,6 +69,7 @@ export type AppToHost =
   | { t: 'ssh-prompt-answer'; id: string; response: SshPromptResponse }
   | { t: 'profile-changed' }
   | { t: 'test-scenario'; id: string; op: TestScenarioOp }
+  | { t: 'thread-prompt-answer'; id: string; result: ThreadPromptResult }
 
 /** A scripted model scenario operation, for e2e builds (`mock-script.ts`). */
 export type TestScenarioOp =
@@ -99,6 +101,12 @@ export interface HostApprovalAnswer {
   grantScope?: ApprovalResponse['grantScope'] | undefined
 }
 
+/**
+ * A host turn's prompt to another thread (\`send_thread_prompt\`, a subthread
+ * start): the window submits it, as for an in-process turn (\`thread-prompts.ts\`).
+ */
+export type HostThreadPromptCommand = Omit<ThreadPromptCommand, 'id' | 'expiresAt'>
+
 /** What became of a dispatch, by its operation id. */
 export type DispatchState = 'running' | 'ended' | 'refused' | 'unknown'
 
@@ -118,6 +126,13 @@ export type HostToApp =
       projectId: string
       threadId: string
       request: SshPromptRequest
+    }
+  | {
+      t: 'thread-prompt'
+      id: string
+      projectId: string
+      threadId: string
+      command: HostThreadPromptCommand
     }
   | { t: 'approval-cancel'; id: string }
   | { t: 'store-write'; store: string; changes: ProfileStoreChange[] }
@@ -160,6 +175,14 @@ const appToHostSchema = z.discriminatedUnion('t', [
   }),
   z.object({ t: z.literal('profile-changed') }),
   z.object({
+    t: z.literal('thread-prompt-answer'),
+    id,
+    result: z.discriminatedUnion('ok', [
+      z.object({ ok: z.literal(true), queued: z.boolean() }),
+      z.object({ ok: z.literal(false), error: z.string().max(2_000) }),
+    ]),
+  }),
+  z.object({
     t: z.literal('test-scenario'),
     id,
     op: z.discriminatedUnion('kind', [
@@ -183,6 +206,14 @@ const appToHostSchema = z.discriminatedUnion('t', [
 
 const objectLike = <T>(): z.ZodType<T> =>
   z.custom<T>((value) => typeof value === 'object' && value !== null)
+
+/** The fields of a host turn's thread prompt the app reads before the window does. */
+const threadPromptCommandShape = z.looseObject({
+  sourceThreadId: id,
+  projectId: id,
+  text: z.string().max(1_000_000),
+  thread: z.looseObject({ id }),
+})
 
 // Chunks and snapshots come from this user's own host, written by the same
 // code that writes them in-process; the envelope is checked, the payload is not.
@@ -257,6 +288,17 @@ const hostToAppSchema = z.discriminatedUnion('t', [
       .transform(({ canRememberOnDevice, ...request }): SshPromptRequest =>
         canRememberOnDevice === undefined ? request : { ...request, canRememberOnDevice },
       ),
+  }),
+  z.object({
+    t: z.literal('thread-prompt'),
+    id,
+    projectId: id,
+    threadId: id,
+    // Built by the same tool code as an in-process prompt; the window checks
+    // the destination and the grant again before it submits.
+    command: z.custom<HostThreadPromptCommand>(
+      (value) => threadPromptCommandShape.safeParse(value).success,
+    ),
   }),
   z.object({ t: z.literal('approval-cancel'), id }),
   z.object({
