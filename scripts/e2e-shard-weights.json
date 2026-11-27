@@ -96,6 +96,7 @@
     "tests/e2e/chat-multi-model-labels.e2e.ts": 5.2,
     "tests/e2e/chats-show-more-align.e2e.ts": 4.4,
     "tests/e2e/checkup-open-files-fault.e2e.ts": 5,
+    "tests/e2e/checkup-window-crashes.e2e.ts": 5,
     "tests/e2e/checkup-skill.e2e.ts": 6.2,
     "tests/e2e/ci-investigator-display.e2e.ts": 5.4,
     "tests/e2e/ci-investigator-follow-up.e2e.ts": 6.6,

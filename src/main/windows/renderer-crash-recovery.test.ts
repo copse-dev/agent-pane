@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  applyCrashLoopChoice,
   RENDERER_CRASH_LOOP_MAX,
   RENDERER_CRASH_LOOP_WINDOW_MS,
   RENDERER_RELOAD_MAX,
@@ -237,5 +238,22 @@ describe('attachRendererCrashRecovery', () => {
     })
     contents.emit('render-process-gone', {}, CRASH)
     assert.equal(contents.reloads, 1)
+  })
+})
+
+describe('applyCrashLoopChoice', () => {
+  it('reloads on Reload Window and destroys the window otherwise, never waiting on close()', () => {
+    for (const [response, expected] of [
+      [0, 'retry'],
+      [1, 'destroy'],
+      [-1, 'destroy'],
+    ] as const) {
+      const calls: string[] = []
+      applyCrashLoopChoice(response, {
+        retry: () => calls.push('retry'),
+        destroy: () => calls.push('destroy'),
+      })
+      assert.deepEqual(calls, [expected], `response ${String(response)}`)
+    }
   })
 })

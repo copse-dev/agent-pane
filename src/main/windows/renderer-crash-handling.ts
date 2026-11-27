@@ -7,6 +7,7 @@ import { dialog, type BrowserWindow } from 'electron'
 import { appendRendererCrash, rendererCrashLogPath } from './renderer-crash-log.ts'
 import {
   RENDERER_CRASH_LOOP_WINDOW_MS,
+  applyCrashLoopChoice,
   attachRendererCrashRecovery,
 } from './renderer-crash-recovery.ts'
 import { largeIpcCalls } from './renderer-large-ipc.ts'
@@ -39,8 +40,7 @@ export function attachAppRendererCrashHandling(
         })
         .then(({ response }) => {
           if (win.isDestroyed()) return
-          if (response === 0) retry()
-          else win.close()
+          applyCrashLoopChoice(response, { retry, destroy: () => { win.destroy(); } })
         })
         .catch((error: unknown) => {
           console.warn('[renderer] could not show the crash-loop notice:', error)

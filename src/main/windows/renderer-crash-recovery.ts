@@ -165,3 +165,19 @@ export function attachRendererCrashRecovery(
     }
   })
 }
+
+/**
+ * Act on the crash-loop notice's button: 0 is Reload Window, anything else
+ * (Close Window, or Escape) closes it. Closing destroys the window instead of
+ * calling `close()`: the primary window's close guard asks the renderer
+ * whether a turn is running, and a dead renderer never answers, so `close()`
+ * left the blank window up until the guard's two-minute timeout. A dead
+ * renderer has no running turn to warn about.
+ */
+export function applyCrashLoopChoice(
+  response: number,
+  actions: { retry: () => void; destroy: () => void },
+): void {
+  if (response === 0) actions.retry()
+  else actions.destroy()
+}

@@ -61,13 +61,15 @@ export function appendRendererCrash(
       const records = parseLines(await fsPromises.readFile(path, 'utf8'))
       if (records.length > CRASH_LOG_MAX_ENTRIES) {
         const kept = records.slice(-CRASH_LOG_MAX_ENTRIES)
+        // Write aside and rename, so an exit mid-trim never leaves the log
+        // empty or partial.
+        const temp = `${path}.${String(process.pid)}.tmp`
         await fsPromises.writeFile(
-          path,
+          temp,
           kept.map((entry) => `${JSON.stringify(entry)}\n`).join(''),
-          {
-            mode: 0o600,
-          },
+          { mode: 0o600 },
         )
+        await fsPromises.rename(temp, path)
       }
     } catch (error) {
       console.warn('[renderer] could not record the crash:', error)
