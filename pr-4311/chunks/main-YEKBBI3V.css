@@ -12871,6 +12871,20 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .approval-details-toggle:hover {
   color: var(--text-primary);
 }
+.approval-trust-offer {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+.approval-trust-offer-text {
+  flex: 1;
+}
+.approval-trust-offer-btn {
+  flex: none;
+}
 .approval-remember {
   display: flex;
   flex-direction: row;
@@ -13505,6 +13519,9 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 .container-run-banner[data-phase=failed] {
   --sev: var(--danger);
+}
+.container-run-banner[data-phase=failed][data-stopped] {
+  --sev: var(--text-muted);
 }
 .container-run-banner[data-phase=finished] {
   --sev: var(--success, var(--accent));
