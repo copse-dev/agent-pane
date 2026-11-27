@@ -64,27 +64,50 @@ The loop, cheapest first:
 
 `.copse/hooks.json`, `.cursor/hooks.json` and `.claude/settings.json` wire
 `scripts/hook-file-check.mts` to the post-edit hook, so **every file you edit is
-already reformatted and lint-checked** before you read the tool result. Don't
-spend a turn running the formatter on a file you just touched — and if the hook said
-nothing at all, it is clean.
+reformatted, then lint-checked**. Don't spend a turn running the formatter on a
+file you just touched. What reaches you, and when, depends on the harness:
 
-**Formatting is auto-applied; ESLint is not.** Formatting is deterministic and
+- **Claude Code:** one hook formats and lints before you read the tool result.
+  Its report, a rewrite included, comes back with that result; silence means clean.
+- **Copse:** the awaited entry only formats (`--no-lint`), so the formatter lands
+  before you continue. Copse reads a hook's `queueMessage` only from an `async`
+  hook, so that entry's rewrite notice never reaches you: re-read a file before
+  an exact-match edit if formatting may have changed it. Lint findings come
+  from the `async` entry, as a queued message shortly after the edit.
+- **Cursor:** the hook only formats (`--no-lint`). Cursor's `afterFileEdit`
+  cannot return data to the agent, and Copse also discovers `.cursor/hooks.json`
+  and runs its hooks as blocking, where a lint would only make the agent wait.
+
+**Formatting is auto-applied; lint fixes are not.** Formatting is deterministic and
 semantically neutral, so fixing it costs an agent turn and buys nothing —
 `afterFileEdit` is the formatter event, and `after-file-edit.ts` awaits blocking
-hooks precisely so a formatter lands before the agent proceeds. `eslint --fix`
+hooks precisely so a formatter lands before the agent proceeds. `oxlint --fix`
 is a different animal: it makes real code changes (`prefer-const`, import
 rewrites), so those are reported with the command to run rather than applied
 behind you.
 
-A rewrite is **always** reported, even when there is nothing else to say, because
-it makes your copy of the file stale — a later edit matching against remembered
-text would fail against content you never saw. Re-read the file when you see it.
+Where a report reaches you, a rewrite is **always** in it, even when there is
+nothing else to say, because it makes your copy of the file stale — a later edit
+matching against remembered text would fail against content you never saw.
+Re-read the file when you see it. A lint that could not run (oxlint not
+installed yet, a crash, a config it rejects) is reported too, as
+`[oxlint] skipped — …` with the fix, rather than left silent.
 
-Coverage is a fast subset by construction: oxfmt plus the **type-unaware**
-ESLint rules (`eslint.hook.config.mjs`). Type-aware rules and `tsc` need the whole
-TypeScript program — ~10s for a single file — which is too slow to run per edit,
-so they stay in `npm run check:local` (and therefore `npm run check`). The hook says so in its own output; treat a
-silent hook as "no cheap problems", never as "verified".
+Coverage is a fast subset by construction: oxfmt plus **oxlint**, type-aware
+rules included, with `.oxlintrc.json` (a port of `eslint.config.mjs`, held to
+it by `scripts/oxlint-config-parity.test.ts`). Typed ESLint needs ~10s per file
+to build the TypeScript program; oxlint's tsgo-based pass does it in ~1–2s, so
+unsafe assertions, floating promises and `??` misses surface per edit. Each run
+still builds the whole program (~0.7–1 GB), so the hook allows one type-aware
+run per checkout at a time; a burst of edits — approving many staged diffs at
+once — lints them in turn. `tsc` still waits for `npm run check:local`, and
+**ESLint stays the lint gate**: the two rule sets are separate implementations,
+so a file the hook passes can still fail `npm run lint`, or the reverse. Two known
+false positives follow a code pattern rather than a file: `no-misused-promises` on
+`.finally(() => promise)` (which does wait for the promise), and, until oxlint
+1.95, `explicit-function-return-type` on an arrow function used as a default
+parameter value. The hook says so in its own output; treat a silent hook as "no
+cheap problems", never as "verified".
 
 ### While iterating: `npm test -- <filter>`
 
@@ -351,16 +374,24 @@ to raise it). The committed baseline may not grow against the base ref; a git re
 count. It is an AST scan of `*.test.ts` and `tests/e2e/**/*.ts`, not an ESLint rule, because
 `eslint-suppressions.json` stays empty. Rules (tracking [#2719](https://github.com/copse-dev/agent-pane/issues/2719)):
 
-| Rule                    | Counts                                                                                                                                                                                                                                       | Prefer                                                                     |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `e2e-fixed-pause`       | `browser.pause(...)` (import aliases, local aliases, destructured `pause`) and any wall-clock sleep counted by the rule below, when not inside a loop in the same function that compares `Date.now()`/`performance.now()` against a deadline | `browser.waitUntil`, element `waitFor*`, or a poll interval in such a loop |
-| `unit-wall-clock-sleep` | awaited `new Promise((r) => setTimeout(r, ms))`, `node:timers/promises` `setTimeout` (any alias), and each call of a local helper that returns or (as its last step) awaits one; a missing or literal `0` delay is a yield, not counted      | `node:test` `mock.timers`, or await the event itself                       |
-| `e2e-checkout-seed`     | a `seed*` helper from `helpers/seed-config.ts` called with `process.cwd()` (or a `const` holding it)                                                                                                                                         | `seedStableWorkspace()` or a temp repo                                     |
-| `e2e-fixed-port`        | `listen(<port>)`, `{ port: <n> }` passed to a `listen`/`serve`/`start*`/`create*` call, and `*_PORT`/`*Port` constants with a non-zero literal                                                                                               | `listen(0)` and read `server.address().port`                               |
+| Rule                         | Counts                                                                                                                                                                                                                                                                           | Prefer                                                                                                                                            |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `e2e-fixed-pause`            | `browser.pause(...)` (import aliases, local aliases, destructured `pause`) and any wall-clock sleep counted by the rule below, when not inside a loop in the same function that compares `Date.now()`/`performance.now()` against a deadline                                     | `browser.waitUntil`, element `waitFor*`, or a poll interval in such a loop                                                                        |
+| `unit-wall-clock-sleep`      | awaited `new Promise((r) => setTimeout(r, ms))`, `node:timers/promises` `setTimeout` (any alias), and each call of a local helper that returns or (as its last step) awaits one; a missing or literal `0` delay is a yield, not counted                                          | `node:test` `mock.timers`, or await the event itself                                                                                              |
+| `e2e-checkout-seed`          | a `seed*` helper from `helpers/seed-config.ts` called with `process.cwd()` (or a `const` holding it)                                                                                                                                                                             | `seedStableWorkspace()` or a temp repo                                                                                                            |
+| `e2e-fixed-port`             | `listen(<port>)`, `{ port: <n> }` passed to a `listen`/`serve`/`start*`/`create*` call, and `*_PORT`/`*Port` constants with a non-zero literal                                                                                                                                   | `listen(0)` and read `server.address().port`                                                                                                      |
+| `unit-platform-early-return` | in a unit test body, `if (<host platform>) { … return }` with no `t.skip()` in that branch, so the test passes on the other host instead of reporting a skip                                                                                                                     | a per-test `{ skip: <platform condition> && 'reason' }`, or inject the platform into the function under test (as `worktree-manager.test.ts` does) |
+| `unit-platform-suite-skip`   | a `describe` skipped on a darwin or linux condition, tests registered inside a platform `if`/`?:`/`&&`, or tests after an `if (<platform>) return` in a suite: they are never registered on that host, so the run reports `skipped 0` (the finding says how many tests it hides) | per-test `{ skip: … && 'reason' }`, through a shared `const` options object if every test needs it                                                |
+
+A host-platform read is `process.platform`, `os.platform()` or an imported `platform()`, directly or through a local `const`. A gate behind an imported predicate (`darwinUserTempDir() === null`) or a capability probe is invisible to the scan.
 
 An attempt-count loop is not a deadline, so a pause inside one still counts. The scan is per file: a sleep helper imported from another module is not followed to its call sites, so an exported helper's own sleep is counted once at its definition instead. A port the product
 itself probes (a well-known local-server port) is still a shared-machine risk and stays in the
 baseline until the probe can be pointed elsewhere.
+
+#### Unit-tier platform inventory
+
+Every required unit job runs on Linux, so a darwin-gated unit test is verified only by the nightly macOS lane ([#4386](https://github.com/copse-dev/agent-pane/issues/4386)). The same check prints, on every run, how many unit tests run on exactly one host (darwin-only, Linux-only, Windows-only) with per-file counts. It counts `{ skip }` options on `it`/`test`/`describe` (including a shared `const` options object) and top-of-body `if (<host platform>) { t.skip(…); return }` guards. The inventory is not ratcheted: more real-Seatbelt tests are welcome, as long as Linux reports them as skipped ([#4404](https://github.com/copse-dev/agent-pane/issues/4404)).
 
 ### Quarantine and admission
 

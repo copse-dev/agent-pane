@@ -6,13 +6,12 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { hasParentTraversalSegment } from '@copse/shell-guard/read-outside-project.ts'
 import { isPathWithin, relativeWithin } from '@copse/std/path-containment.ts'
-import { getApplySeccompBinaryPath } from '@anthropic-ai/sandbox-runtime/dist/sandbox/generate-seccomp-filter.js'
 import { expandScratchPath } from '@shared/acp-scratch-paths.ts'
 import type { AcpAgentSandboxConfig } from '@shared/types/acp.ts'
 import { getSetting } from '../services/storage/settings.ts'
 import { copseManagedPreparationCacheDirs } from '../services/storage/copse-paths.ts'
 import { sanctionedAgentScratchEntries } from './agent-scratch-roots.ts'
-import { linuxSandboxBinaryPaths } from './sandbox-binaries.ts'
+import { applySeccompBinaryPath, linuxSandboxBinaryPaths } from './sandbox-binaries.ts'
 import { canonicalizePathCached } from './canonical-path-cache.ts'
 import { createToolchainReadGuard, toolchainReadExceptions } from './toolchain-read-guard.ts'
 import { ensureWorkspaceTmpDir } from './workspace-tmp.ts'
@@ -793,7 +792,7 @@ export function resolveInterpreterToolchainAllowRead(
 
 /** ASRT native helpers that must remain executable inside a denied home tree. */
 export function sandboxRuntimeHelperAllowReadPaths(
-  seccompPath: string | null = process.platform === 'linux' ? getApplySeccompBinaryPath() : null,
+  seccompPath: string | null = applySeccompBinaryPath(),
 ): string[] {
   if (!seccompPath) return []
   const helper = resolve(seccompPath)
@@ -806,7 +805,7 @@ export function sandboxRuntimeHelperAllowReadPaths(
 /** Paths bundled workers and ASRT itself must read from inside a denied home tree. */
 export function electronRuntimeAllowReadPaths(
   execPath: string = process.execPath,
-  seccompPath: string | null = process.platform === 'linux' ? getApplySeccompBinaryPath() : null,
+  seccompPath: string | null = applySeccompBinaryPath(),
 ): string[] {
   const invokedExec = resolve(execPath)
   let canonicalExec = invokedExec
@@ -1124,6 +1123,13 @@ export function acpAgentSandboxOverlay(
      * nothing in it becomes writable.
      */
     executables?: readonly string[]
+    /**
+     * The stdio relay an agent without http MCP spawns to reach the native-tool
+     * bridge (`acp-bridge-stdio-relay.ts`). The agent runs it under Copse's own
+     * executable, so the Electron runtime and the relay script become readable,
+     * nothing writable. Only meaningful together with `allowLocalhost`.
+     */
+    nativeToolRelay?: { scriptPath: string }
   },
 ): Partial<SandboxRuntimeConfig> {
   const overlay = acpAgentSandboxOverlayWithCheckoutWrites(workspaceRoot, sandbox, opts)
@@ -1139,6 +1145,7 @@ function acpAgentSandboxOverlayWithCheckoutWrites(
         chatReadRoots?: readonly string[]
         stateDirs?: readonly string[]
         executables?: readonly string[]
+        nativeToolRelay?: { scriptPath: string }
       }
     | undefined,
 ): Partial<SandboxRuntimeConfig> {
@@ -1193,7 +1200,22 @@ function acpAgentSandboxOverlayWithCheckoutWrites(
         return []
       }
     })
-  const homeReadPaths = [...keychainReadPaths, ...configuredHomePaths, ...executables]
+  // The relay's script and the `package.json` beside it, which stops Node's
+  // ancestor walk inside the grant (see `StandaloneMainBundle.manifest`).
+  const relayReadPaths =
+    opts?.allowLocalhost === true && opts.nativeToolRelay
+      ? [
+          ...electronRuntimeAllowReadPaths(),
+          opts.nativeToolRelay.scriptPath,
+          join(dirname(opts.nativeToolRelay.scriptPath), 'package.json'),
+        ]
+      : []
+  const homeReadPaths = [
+    ...keychainReadPaths,
+    ...configuredHomePaths,
+    ...executables,
+    ...relayReadPaths,
+  ]
   const localDomains = opts?.allowLocalhost ? ['localhost', '127.0.0.1', '::1'] : []
   return {
     ...base,

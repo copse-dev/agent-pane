@@ -48,6 +48,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     stagedDiffs: [],
     filesPaneOpen: false,
     rightPanelMode: 'explorer',
+    rightPanelSplitMode: null,
     rightPanelMaximized: false,
     projectsPaneOpen: true,
     layout: { ...DEFAULT_LAYOUT },

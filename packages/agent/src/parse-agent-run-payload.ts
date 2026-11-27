@@ -59,6 +59,8 @@ export function parseAgentRunPayload(rawPrompt: string): {
   model?: string
   /** Per-chat reasoning dial, overriding the level saved on the model. */
   reasoning?: ReasoningLevel
+  /** Named agent profile the thread uses. */
+  profileId?: string
   turnTreeId?: string
   continuationBudgetUsed?: number
   /** Summary of reviews the user ran since the model's last reply, capped. */
@@ -99,6 +101,9 @@ export function parseAgentRunPayload(rawPrompt: string): {
           ? { model: parsed['model'] }
           : {}),
         ...(isReasoningLevel(parsed['reasoning']) ? { reasoning: parsed['reasoning'] } : {}),
+        ...(typeof parsed['profileId'] === 'string' && parsed['profileId']
+          ? { profileId: parsed['profileId'] }
+          : {}),
         ...(typeof parsed['turnTreeId'] === 'string' && parsed['turnTreeId']
           ? { turnTreeId: parsed['turnTreeId'] }
           : {}),

@@ -140,6 +140,7 @@ export const SandboxManager = {
   async reset() { config = null },
 }
 export function getApplySeccompBinaryPath() { return null }
+export function getJavaProxyAgentJarPath() { return null }
 `,
   )
   buildSync({
@@ -153,6 +154,7 @@ export function getApplySeccompBinaryPath() { return null }
       '@shared': resolve('src/shared'),
       '@anthropic-ai/sandbox-runtime': stub,
       '@anthropic-ai/sandbox-runtime/dist/sandbox/generate-seccomp-filter.js': stub,
+      '@anthropic-ai/sandbox-runtime/dist/sandbox/java-proxy-agent.js': stub,
     },
     external: [
       'electron',
@@ -344,6 +346,17 @@ describe('ACP native bridge mount (#4144)', () => {
     assert.doesNotMatch(second.shown.replace(/prompt:[\s\S]*/, ''), UNAVAILABLE)
     assert.ok(!UNAVAILABLE_NOTE.test(second.prompt))
     assert.doesNotMatch(second.prompt, /Prefer the tools of Copse's MCP server/)
+  })
+
+  it('says nothing in the thread when an agent without http MCP ignores the stdio offer', async () => {
+    await useFixtureAgent(['--ignore-mcp'])
+    const first = await turn('ignores-stdio', registryWithOneBridgedTool())
+    assert.doesNotMatch(first.shown.replace(/prompt:[\s\S]*/, ''), UNAVAILABLE)
+    assert.ok(
+      UNAVAILABLE_NOTE.test(first.prompt),
+      'the agent is still told the tools are not there',
+    )
+    assert.doesNotMatch(first.prompt, /Prefer the tools of Copse's MCP server/)
   })
 
   it('keeps claiming the tools for an agent that lists them', async () => {

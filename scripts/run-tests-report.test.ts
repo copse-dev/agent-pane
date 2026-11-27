@@ -12,6 +12,7 @@ it('publishes the completed coverage-phase report after nested runners finish', 
     await mkdir(join(fixture, 'src'))
     for (const file of [
       'scripts/run-tests.mts',
+      'scripts/lib/root-container-userns.mts',
       'scripts/lib/test-filter.mts',
       'scripts/lib/module-relative-test-paths.mts',
       'scripts/lib/tracked-test-tree.mts',

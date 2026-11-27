@@ -251,6 +251,8 @@ describe('workspace package resolution', () => {
         'scripts/lib/screenshot-hydration.mts',
         // Stable promotion and release halting run in workflows without an install.
         'scripts/release-promotion.mts',
+        // The bump's publication-window check runs without an install too.
+        'scripts/release-publication-window.mts',
       ].map((file) => resolve(file)),
     )
     for (const file of sourceFiles('scripts')) {
