@@ -109,6 +109,46 @@ describe('redactSecrets — secret patterns (#518)', () => {
   })
 })
 
+describe('redactSecrets — workspace credential files', () => {
+  it('redacts kubeconfig credentials from a raw config view, keeping the structure', () => {
+    const keyData = 'LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlFb3dJQkFBS0NB'
+    const token = 'kube-bearer-0123456789abcdef0123456789'
+    const raw = [
+      'users:',
+      '- name: deployer',
+      '  user:',
+      `    client-key-data: ${keyData}`,
+      `    token: ${token}`,
+    ].join('\n')
+    const out = redactSecrets(raw)
+    assert.ok(!out.includes(keyData))
+    assert.ok(!out.includes(token))
+    assert.match(out, /^ {4}client-key-data: \[REDACTED_KUBECONFIG_CREDENTIAL\]$/m)
+    assert.match(out, /^ {4}token: \[REDACTED_KUBECONFIG_CREDENTIAL\]$/m)
+    assert.match(out, /^- name: deployer$/m)
+  })
+
+  it('redacts a JWT such as a service-account token', () => {
+    const jwt = `eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJzeXN0ZW06c2EifQ.${'s'.repeat(40)}`
+    assert.equal(redactSecrets(`Bearer ${jwt}`), 'Bearer [REDACTED_JWT]')
+  })
+
+  it('redacts .npmrc registry auth but keeps the registry', () => {
+    const out = redactSecrets('//registry.npmjs.org/:_authToken=npm_abcdefghijklmnop1234')
+    assert.equal(out, '//registry.npmjs.org/:_authToken=[REDACTED_NPM_TOKEN]')
+  })
+
+  it('leaves short or templated values alone', () => {
+    for (const text of [
+      'token: ${{ secrets.GITHUB_TOKEN }}',
+      'token: short',
+      '//registry.npmjs.org/:_authToken=${NPM_TOKEN}',
+    ]) {
+      assert.equal(redactSecrets(text), text)
+    }
+  })
+})
+
 describe('redactSecrets — false-positive safety', () => {
   const proseSamples = [
     'The quick brown fox jumps over the lazy dog.',

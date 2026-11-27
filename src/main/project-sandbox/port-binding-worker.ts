@@ -9,7 +9,10 @@
 import { spawn } from 'node:child_process'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { errorMessage } from '@shared/errors.ts'
-import { envForRendererChildProcess } from '../services/exec/child-process-env.ts'
+import {
+  envForContainedChildProcess,
+  envForRendererChildProcess,
+} from '../services/exec/child-process-env.ts'
 import { baseSandboxConfig } from './config.ts'
 import { acquireSandboxNetworkScope } from './network-scope.ts'
 import { isSpawnableWorkingDirectory } from './spawn-cwd.ts'
@@ -99,7 +102,13 @@ async function main(): Promise<void> {
     const child = spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
       cwd: request.cwd,
       env: withSandboxShellPath(
-        withSandboxTmpEnv({ ...envForRendererChildProcess(baseEnv), ...request.env }, tmpDir),
+        withSandboxTmpEnv(
+          envForContainedChildProcess(
+            { ...envForRendererChildProcess(baseEnv), ...request.env },
+            request.keepCredentialEnv,
+          ),
+          tmpDir,
+        ),
       ),
       // Keep stdin open for watchers such as esbuild that exit on EOF. The
       // worker never forwards user input; this pipe carries no data.

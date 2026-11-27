@@ -18,7 +18,10 @@ import type {
   RuntimeExecRequest,
   RuntimeExecution,
 } from '../services/execution-runtime/runtime.ts'
-import { envForRendererChildProcess } from '../services/exec/child-process-env.ts'
+import {
+  envForContainedChildProcess,
+  envForRendererChildProcess,
+} from '../services/exec/child-process-env.ts'
 import { ensureWorkspaceTmpDir } from './config.ts'
 import { isProjectSandboxEnabled } from './enabled.ts'
 import {
@@ -181,8 +184,16 @@ export function createLocalExecutionRuntime(
           cwd: request.cwd,
           // The workspace tmp dir goes last: ASRT's baked-in TMPDIR beats the
           // spawn env, so a caller's TMP or TEMP could only disagree with it.
+          // Inherited tool and cloud credentials are dropped from the merged
+          // env, overlay included: callers pass a copy of `process.env` there.
           env: withSandboxShellPath(
-            withSandboxTmpEnv(mergeSpawnEnv(strippedBaseEnv(env), request.env), tmpDir),
+            withSandboxTmpEnv(
+              envForContainedChildProcess(
+                mergeSpawnEnv(strippedBaseEnv(env), request.env),
+                local.keepCredentialEnv,
+              ),
+              tmpDir,
+            ),
           ),
           stdio: request.stdio,
           signal: request.signal,

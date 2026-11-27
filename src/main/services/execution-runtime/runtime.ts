@@ -53,6 +53,12 @@ export interface LocalContainmentRequest {
   readonly sandbox: boolean
   /** Refuse with this message rather than run outside the sandbox. */
   readonly requireSandbox?: string
+  /**
+   * Credentials this contained run was deliberately given, such as a scoped
+   * network plan's `GH_TOKEN`. Every other tool or cloud credential is removed
+   * from a contained command's env (`envForContainedChildProcess`).
+   */
+  readonly keepCredentialEnv?: readonly string[]
   readonly plan: () => LocalSandboxPlan
 }
 

@@ -105,6 +105,29 @@ const SECRET_PATTERNS: readonly SecretPattern[] = [
     regex:
       /-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY(?: BLOCK)?-----[\s\S]*?-----END (?:[A-Z0-9]+ )?PRIVATE KEY(?: BLOCK)?-----/g,
   },
+  // JSON Web Tokens (Kubernetes service-account and OIDC id tokens, most cloud
+  // session tokens): three base64url segments, the first two always opening with
+  // `eyJ` (`{"`). Distinctive enough that ordinary text never matches.
+  {
+    label: 'JWT',
+    regex: /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
+  },
+  // kubeconfig credentials (`kubectl config view --raw`, a checked-out
+  // `kubeconfig.staging`): a YAML key that only ever holds a secret, followed by
+  // a long value. The key and indentation are kept so the structure still reads.
+  {
+    label: 'KUBECONFIG_CREDENTIAL',
+    regex:
+      /^(\s*(?:-\s+)?(?:client-key-data|token|id-token|refresh-token|access-token)\s*:\s*["']?)([A-Za-z0-9._~+/=-]{16,})/gm,
+    replace: (_match, prefix: string): string => `${prefix}${placeholder('KUBECONFIG_CREDENTIAL')}`,
+  },
+  // npm/pnpm/yarn registry auth in an `.npmrc`: `//registry/:_authToken=…`,
+  // `_auth=…`, `_password=…`. The registry prefix is kept.
+  {
+    label: 'NPM_TOKEN',
+    regex: /((?:^|[\s:])_(?:authToken|auth|password)\s*=\s*["']?)([A-Za-z0-9._~+/=-]{8,})/gm,
+    replace: (_match, prefix: string): string => `${prefix}${placeholder('NPM_TOKEN')}`,
+  },
   // Generic `Authorization: Bearer <token>` / `Authorization: Basic <token>`
   // headers. Preserve the header name + scheme, redact only the credential.
   // Require a token of reasonable length so ordinary "bearer of bad news" prose
