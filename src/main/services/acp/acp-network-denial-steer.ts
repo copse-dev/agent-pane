@@ -39,7 +39,18 @@ export function denialHostLabels(denied: readonly DeniedDestination[]): string[]
   ]
 }
 
-const GITHUB_DENIAL_HOSTS = new Set(['github.com', 'api.github.com', 'githubusercontent.com'])
+const GITHUB_DENIAL_HOSTS = new Set([
+  'github.com',
+  'api.github.com',
+  'githubusercontent.com',
+  // GitHub's hosted MCP server (`api.githubcopilot.com/mcp/`), which a GitHub
+  // plugin of the agent's own may call from inside the sandbox (#4148). Only
+  // this exact host: a denial carries no path, and the other
+  // `*.githubcopilot.com` hosts (`api.individual.…`, `api.business.…`) are the
+  // Copilot agent's own model endpoints, which the bridged gh_* tools can't
+  // stand in for.
+  'api.githubcopilot.com',
+])
 
 /**
  * True for GitHub destinations, where the bridged `gh_*` and CI tools are a real
@@ -131,6 +142,29 @@ const GH_OWN_SHELL_DENIAL =
   "for access to ~/.config/gh. Adding GitHub to this agent's sandbox.allowedDomains " +
   'does not fix it either.'
 
+/**
+ * A GitHub MCP server or plugin from the agent's own config, such as Claude
+ * Code's `plugin:github-connector:github`, runs as a child of the agent, so it
+ * is sandboxed too (#4148). A stdio server that reads gh's login dies on the
+ * same denial before it answers, which the agent reports as `CONNECTION_CLOSED`;
+ * a hosted one is refused by the network allowlist. Claude Code then skips the
+ * server by name for 15 minutes. Copse deliberately leaves that cache entry
+ * alone: the next start would fail the same way.
+ */
+/**
+ * Worded as a condition: some of these servers do connect, for example a
+ * hosted one under the Copilot CLI preset's allowlist or a widened
+ * `sandbox.allowedDomains`, or a stdio one that never reads gh's config.
+ */
+function githubOwnMcpServerDenial(hasRoute: boolean): string {
+  return (
+    'A GitHub MCP server or plugin of your own (for example plugin:github-connector:github) ' +
+    'also runs inside this sandbox. If it fails to connect here, often as CONNECTION_CLOSED, ' +
+    'this sandbox is the cause, not a login. Do not wait for it to retry; ' +
+    (hasRoute ? 'use the route above.' : 'tell the user, as above.')
+  )
+}
+
 const GITHUB_NO_DIRECT_EGRESS =
   'Do not call github.com or api.github.com from this process, for example with curl, ' +
   "unless the user has added it to this agent's sandbox.allowedDomains."
@@ -158,7 +192,8 @@ export function acpSandboxGithubSteer(
 ): string {
   if (opts.contained) return GITHUB_UNREACHABLE_IN_CONTAINER
   const route = githubRoute(bridgeToolNames)
-  return `${route} ${GH_OWN_SHELL_DENIAL} ${GITHUB_NO_DIRECT_EGRESS}`
+  const hasRoute = bridgeToolNames.some(isGithubBridgeTool) || bridgeToolNames.includes('run_shell')
+  return `${route} ${GH_OWN_SHELL_DENIAL} ${githubOwnMcpServerDenial(hasRoute)} ${GITHUB_NO_DIRECT_EGRESS}`
 }
 
 /**
