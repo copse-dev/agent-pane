@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { dirname, join, normalize } from 'node:path'
 import { describe, it } from 'node:test'
+import ts from 'typescript'
 
 // Benchmarks reach the model through their own bridge rather than the path a
 // user's work takes (#1272), and the first thing blocking a shared path is that
@@ -62,13 +63,25 @@ function isElectronSpecifier(specifier: string): boolean {
 }
 
 /**
- * A runtime `import('electron')`, or a subpath, quoted or as a placeholder-free template.
- * Deferring the import only moves the failure from load time to the first call, so a
- * reachable file must not hold one either. `typeof import('electron')` is a type position
- * and is erased. Other dynamic imports are not followed as graph edges: they are lazy on
- * purpose, and this pins the eager graph.
+ * Whether `source` holds a runtime `import('electron')`, or a subpath, written as a string or
+ * a placeholder-free template. Deferring the import only moves the failure from load time to
+ * the first call, so a reachable file must not hold one either. Parsed rather than matched as
+ * text, so a comment or string that only mentions the call does not count, and
+ * `typeof import('electron')` is a type node, erased. Other dynamic imports are not followed
+ * as graph edges: they are lazy on purpose, and this pins the eager graph.
  */
-const DYNAMIC_ELECTRON_IMPORT = /(?<!typeof\s+)\bimport\(\s*(['"`])electron(?:\/[^'"`$]*)?\1\s*\)/
+function hasDynamicElectronImport(file: string, source: string): boolean {
+  if (!source.includes('electron')) return false
+  const visit = (node: ts.Node): boolean | undefined => {
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+      const [specifier] = node.arguments
+      if (specifier && ts.isStringLiteralLike(specifier) && isElectronSpecifier(specifier.text))
+        return true
+    }
+    return ts.forEachChild(node, visit)
+  }
+  return visit(ts.createSourceFile(file, source, ts.ScriptTarget.Latest)) === true
+}
 
 function electronImportPaths(roots: string[]): string[] {
   const seen = new Set(roots)
@@ -87,7 +100,7 @@ function electronImportPaths(roots: string[]): string[] {
     const imports = staticImports(source).filter((entry) => !entry.typeOnly)
     if (
       imports.some((entry) => isElectronSpecifier(entry.specifier)) ||
-      DYNAMIC_ELECTRON_IMPORT.test(source)
+      hasDynamicElectronImport(file, source)
     )
       found.push(path.join(' -> '))
     for (const entry of imports) {
