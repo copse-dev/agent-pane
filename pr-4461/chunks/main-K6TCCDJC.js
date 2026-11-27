@@ -498,7 +498,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-HFS6GO5U.js";
+} from "./chunk-UHDFXCOH.js";
 import "./chunk-X6JZSFJR.js";
 import {
   createSshWorkspaceConsent,
@@ -15856,6 +15856,7 @@ function containerRunSummary(progress) {
   if (isLive(progress)) return null;
   const result = progress.record?.result ?? null;
   const ref = progress.record?.carryOut.ref ?? null;
+  if (progress.phase === "failed" && progress.stoppedByUser === true) return "Stopped by you";
   if (progress.phase === "failed") return `Failed: ${progress.error ?? "the run did not complete"}`;
   if (!result) return "Finished without a result";
   const commits = result.commits.length === 0 ? "no commits" : `${plural2(result.commits.length, "commit")} ${ref ? `on ${ref}` : "made but not fetched"}`;
@@ -57629,6 +57630,9 @@ var init_container_acp_agents = __esm({
 });
 
 // src/renderer/views/container-run-control.ts
+function phaseLabel2(run4) {
+  return run4.phase === "failed" && run4.stoppedByUser === true ? "Stopped" : PHASE_LABEL[run4.phase];
+}
 function isLive2(progress) {
   return progress !== null && progress.phase !== "finished" && progress.phase !== "failed";
 }
@@ -57734,15 +57738,17 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     if (!run4) {
       text.textContent = "";
       delete element.dataset["phase"];
+      element.removeAttribute("data-stopped");
       onStateChanged();
       return;
     }
     element.dataset["phase"] = run4.phase;
+    element.toggleAttribute("data-stopped", run4.phase === "failed" && run4.stoppedByUser === true);
     const result = run4.record?.result;
     const fetched = run4.record?.carryOut.ref !== null && run4.record?.carryOut.ref !== void 0;
     const commits = result === void 0 || result === null ? "" : result.commits.length === 0 ? "no commits" : `${String(result.commits.length)} commit${result.commits.length === 1 ? "" : "s"} ${fetched ? "back" : "made but NOT fetched"}`;
-    const summary = run4.phase === "finished" && result ? `${commits}, ${String(result.deferrals.length)} waiting for review.` : run4.phase === "failed" ? run4.error ?? "The run did not complete." : `${run4.model} \xB7 limited to the egress allowlist.`;
-    text.textContent = `Container run: ${PHASE_LABEL[run4.phase].toLowerCase()}. ${summary}`;
+    const summary = run4.phase === "finished" && result ? `${commits}, ${String(result.deferrals.length)} waiting for review.` : run4.phase === "failed" && run4.stoppedByUser === true ? "Stopped by you." : run4.phase === "failed" ? run4.error ?? "The run did not complete." : `${run4.model} \xB7 limited to the egress allowlist.`;
+    text.textContent = `Container run: ${phaseLabel2(run4).toLowerCase()}. ${summary}`;
     onStateChanged();
   }
   function ensureDialog3() {
@@ -58035,7 +58041,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     const result = run4.record?.result ?? null;
     const rows = [];
     const row2 = (label, value) => el("div", { class: "container-run-row" }, el("dt", {}, label), el("dd", {}, value));
-    rows.push(row2("Phase", PHASE_LABEL[run4.phase]));
+    rows.push(row2("Phase", phaseLabel2(run4)));
     if (run4.prompt) rows.push(row2("Task", run4.prompt));
     rows.push(row2("Model", run4.model));
     if (run4.checkout) {
@@ -58395,6 +58401,8 @@ function mountContainerRunControl(api2, context, onStateChanged) {
           `Container run finished: ${String(result.commits.length)} commit(s) back, ${String(result.deferrals.length)} waiting for review.`,
           { variant: "info", durationMs: 1e4 }
         );
+      } else if (progress.stoppedByUser === true) {
+        showToast("Container run stopped.", { variant: "info", durationMs: 6e3 });
       } else {
         showToast(`Container run failed: ${progress.error ?? "no result"}`, {
           variant: "error",
@@ -60313,7 +60321,12 @@ ${description}
           model,
           // The footer picker only names a branch; this is where that selection
           // becomes the worktree's base, or the shared checkout's branch.
-          baseBranch
+          baseBranch,
+          // With no selection to send (no listed default, or a detached
+          // checkout), the picker is showing the project checkout's branch,
+          // so start there — unlike machine-started threads, which main cuts
+          // from the fetched default branch.
+          "project-branch"
         );
         if (!getThreadById(store2, id)) return false;
         preparedPromptState = prepared.promptState;
@@ -89262,13 +89275,42 @@ function summariseWorkingThreads(titles2) {
   if (listed.length < 2) return listed.join("");
   return `${listed.slice(0, -1).join(", ")} and ${listed[listed.length - 1] ?? ""}`;
 }
-async function confirmClose(store2) {
-  const titles2 = workingThreadTitles(store2);
-  if (titles2.length === 0) return true;
+function containerRunTitles(store2, threadIds) {
+  const threads = store2.getState().threads;
+  return threadIds.map((id) => threadLabel(threads.find((thread) => thread.id === id)?.title ?? ""));
+}
+function containerRunSentence(titles2, continuesAfterQuit) {
   const one = titles2.length === 1;
+  const going = `${summariseWorkingThreads(titles2)} ${one ? "has a container run" : "have container runs"} going.`;
+  return continuesAfterQuit ? `${going} ${one ? "It keeps" : "They keep"} going outside Copse, and you can stop ${one ? "it" : "them"} from Copse when you open it again.` : `${going} Closing stops ${one ? "it" : "them"}.`;
+}
+async function confirmClose(store2, options = {}) {
+  const titles2 = workingThreadTitles(store2);
+  const runs = containerRunTitles(store2, options.containerRunThreads ?? []);
+  const continues = options.continuesAfterQuit === true;
+  if (titles2.length === 0 && runs.length === 0) return true;
+  if (titles2.length === 0) {
+    const one2 = runs.length === 1;
+    return await showConfirmDialog({
+      message: one2 ? "Close Copse while a container run is going?" : `Close Copse while ${String(runs.length)} container runs are going?`,
+      detail: containerRunSentence(runs, continues),
+      ...continues ? { confirmLabel: "Close", cancelLabel: "Keep Copse open" } : { confirmLabel: "Close anyway", cancelLabel: "Keep Copse open", danger: true }
+    });
+  }
+  const one = titles2.length === 1;
+  const working = `${summariseWorkingThreads(titles2)} ${one ? "is" : "are"} mid-turn.`;
+  const containers = runs.length > 0 ? ` ${containerRunSentence(runs, continues)}` : "";
+  if (continues) {
+    return await showConfirmDialog({
+      message: one ? "Close Copse while the agent is still working?" : `Close Copse while ${String(titles2.length)} threads are still working?`,
+      detail: `${working} ${one ? "It keeps" : "They keep"} going in the background after Copse closes, and ${one ? "is" : "are"} here when you open it again.${containers}`,
+      confirmLabel: "Close",
+      cancelLabel: "Keep Copse open"
+    });
+  }
   return await showConfirmDialog({
     message: one ? "Close Copse while the agent is still working?" : `Close Copse while ${String(titles2.length)} threads are still working?`,
-    detail: `${summariseWorkingThreads(titles2)} ${one ? "is" : "are"} mid-turn. Closing stops the run \u2014 anything the agent has not already written to your files is lost.`,
+    detail: `${working} Closing stops the run \u2014 anything the agent has not already written to your files is lost.${containers}`,
     confirmLabel: "Close anyway",
     cancelLabel: one ? "Keep working" : "Keep them working",
     danger: true
@@ -89276,7 +89318,10 @@ async function confirmClose(store2) {
 }
 function mountCloseConfirm(api2, store2) {
   return api2.closeConfirm.onRequest((req) => {
-    void confirmClose(store2).then((confirmed) => api2.closeConfirm.respond(req.id, confirmed));
+    void confirmClose(store2, {
+      ...req.continuesAfterQuit !== void 0 ? { continuesAfterQuit: req.continuesAfterQuit } : {},
+      ...req.containerRunThreads ? { containerRunThreads: req.containerRunThreads } : {}
+    }).then((confirmed) => api2.closeConfirm.respond(req.id, confirmed));
   });
 }
 var MAX_LISTED_TITLES;
