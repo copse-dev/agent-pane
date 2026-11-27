@@ -21,13 +21,14 @@ const SETTING_FIELDSET = '[data-testid="continue-after-quit-settings"]'
 
 let threadId = ''
 
-/** A thread to hang the run on: start a held turn, note its id, stop it. */
+/**
+ * A thread to hang the run on: start a held turn, note its id, then let the
+ * turn finish so the scenario is complete before any test's checks run.
+ */
 async function createThread(): Promise<string> {
-  await prepareMockTurn(
-    'Clear the lint backlog.',
-    [{ waitFor: 'visuals-hold', text: 'Done.' }],
-    true,
-  )
+  const scenario = await prepareMockTurn('Clear the lint backlog.', [
+    { waitFor: 'visuals-hold', text: 'Done.' },
+  ])
   await submitComposer()
   let id = ''
   await browser.waitUntil(
@@ -38,9 +39,9 @@ async function createThread(): Promise<string> {
     },
     { timeout: 30_000, timeoutMsg: 'expected the turn to start' },
   )
-  await browser.execute(async (target) => {
-    await window.api.agent.abort(target)
-  }, id)
+  await scenario.release('visuals-hold')
+  await scenario.waitForComplete()
+  await scenario.assertComplete()
   await $('.stop-btn').waitForDisplayed({ reverse: true, timeout: 15_000 })
   return id
 }
