@@ -889,7 +889,13 @@ export function createPluginService(registry: PluginRegistry): PluginService {
         const controller = selected ? getPluginToolRuntimeController() : null
         if (selected && enabled) {
           if (!controller) continue
-          await controller.enable(selected)
+          // One runtime that fails to start must not keep the rest unapplied.
+          try {
+            await controller.enable(selected)
+          } catch (error) {
+            console.error(`[plugins] could not start "${plugin.id}":`, error)
+            continue
+          }
         }
         if (enabled) registry.enable(plugin.id)
         else registry.disable(plugin.id)
