@@ -36,6 +36,8 @@ import {
   getGitWorkingFileDiff,
   isInsideGitWorkTree,
   resetDefaultBranchCache,
+  setGitLinesStaged,
+  setGitPathStaged,
 } from '../services/github/git-service.ts'
 import { createThreadChangeSummaryReader } from '../services/github/thread-change-summary.ts'
 import {
@@ -178,6 +180,38 @@ export function registerGitHandlers(
       rawArgs,
     )
     await checkoutThreadGitBranch(projectId, threadId, targetBranch)
+  })
+  // Staging writes the index of the checkout the thread runs in, like a branch switch.
+  ipcMain.handle('git:set-path-staged', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId, filePath, staged] = parseIpcArgs(
+      z.tuple([zProjectId, zThreadId, zPathString, z.boolean()]),
+      rawArgs,
+    )
+    return setGitPathStaged(
+      filePath,
+      staged,
+      await resolveWatchedGitExecutionRoot(projectId, threadId),
+    )
+  })
+  ipcMain.handle('git:set-lines-staged', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId, filePath, staged, selection] = parseIpcArgs(
+      z.tuple([
+        zProjectId,
+        zThreadId,
+        zPathString,
+        z.boolean(),
+        z.strictObject({
+          side: z.enum(['old', 'new']),
+          startLine: z.number().int().min(1).max(10_000_000),
+          endLine: z.number().int().min(1).max(10_000_000),
+        }),
+      ]),
+      rawArgs,
+    )
+    const root = await resolveWatchedGitExecutionRoot(projectId, threadId)
+    return setGitLinesStaged(filePath, staged, selection, root)
   })
   ipcMain.handle('git:list-branches', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)

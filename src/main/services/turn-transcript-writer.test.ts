@@ -161,6 +161,31 @@ describe('TurnTranscriptWriter', () => {
     assert.equal((await stored()).status, 'idle')
   })
 
+  it('writes nothing more once the turn is fenced, not even its closing status', async () => {
+    await updateMeta(PROJECT, THREAD, { status: 'idle' })
+    const forwarded: Delivery[] = []
+    const { writer } = harness(
+      () => [],
+      (delivery) => forwarded.push(delivery),
+    )
+    const transcript = writer.begin(PROJECT, THREAD)
+    transcript.fence()
+    transcript.emit({ type: 'text', text: 'Written by a turn that lost its lease.' })
+    transcript.emit({ type: 'done' })
+    transcript.end()
+    await writer.settled(THREAD)
+    const thread = await stored()
+    assert.equal(thread.status, 'idle')
+    assert.deepEqual(
+      thread.messages.map((message) => message.id),
+      ['u1'],
+    )
+    assert.deepEqual(
+      forwarded.filter((delivery) => delivery.chunk.type === 'text'),
+      [],
+    )
+  })
+
   it('does not restore an old interruption in an ordinary human turn snapshot', async () => {
     // The renderer clears its marker after its user-message save has already
     // captured the old metadata. Main must not echo that stale disk marker.
@@ -448,6 +473,28 @@ describe('TurnTranscriptWriter', () => {
     assert.deepEqual(snapshots.at(-1)?.checkpoint, { stream: null, pendingTurn: null })
     transcript.end()
     await turn.writer.settled(THREAD)
+  })
+
+  it('attaches a running turn the window did not list, and no other project', async () => {
+    const snapshots: TranscriptSnapshot[] = []
+    const turn = harness(
+      () => [],
+      () => {},
+      (snapshot) => snapshots.push(snapshot),
+    )
+    const transcript = turn.writer.begin(PROJECT, THREAD)
+    // The window may not know yet that this turn is running, so it lists only
+    // the threads it holds stale; the running one is attached anyway.
+    await turn.writer.attach(PROJECT, [])
+    const forThread = snapshots.filter((snapshot) => snapshot.thread.id === THREAD)
+    assert.equal(forThread.at(-1)?.source, 'runtime')
+    const count = snapshots.length
+    await turn.writer.attach('project-2', [])
+    assert.equal(snapshots.length, count, 'a running turn is attached only to its own project')
+    transcript.end()
+    await turn.writer.settled(THREAD)
+    await turn.writer.attach(PROJECT, [])
+    assert.equal(snapshots.length, count, 'a finished turn is not attached unless listed')
   })
 
   it('persists interruption removal after a hidden main-owned continuation', async () => {

@@ -121,7 +121,8 @@ revisiting this document, not silently diverging in an implementation PR.
    follow-ups, bounded background-task completion wakes (including explicit `run_shell`
    foreground yields), change-acceptance wakes, durable CI status-change wakes,
    long-horizon task wakes (`long-task-wake.ts`, dispatched through `dispatchMachine` on the
-   originating turn tree), ACP agent self-resumes (below), ACP unfinished-turn recovery, post-turn remediation cycles,
+   originating turn tree), ACP agent self-resumes (below), ACP unfinished-turn recovery, restart resumes
+   of turns an update relaunch or crash cut off and local turn worker continuations (below), post-turn remediation cycles,
    pre-review todo attempts, and todo-closeout turns. Agent-managed external-agent
    turns leave unfinished-turn recovery to the agent, so they spend no recovery
    continuation. **In-loop nudges do not count**
@@ -195,6 +196,34 @@ revisiting this document, not silently diverging in an implementation PR.
    (decision 4), so the agent's own exact retry can use them. Saved
    results remain inspectable when delivery is stale or budget-exhausted.
    This does not introduce automatic recovery after app restart.
+   Turns themselves are the one thing that does resume after a restart (amended 25 November
+   2026). A quit, update relaunch or crash ends the process that runs a turn and leaves its
+   thread `running` on disk with no outcome. Only an update relaunch or a crash is continued: a
+   quit the user chose (the menu, a confirmed close, a signal) stops the run, as the close dialog
+   says, so it is a refusal under this decision and its threads keep the manual Continue card.
+   Two edge cases follow the same record on purpose. A quit after an uncaught exception or lost
+   stdio goes through the orderly quit path and counts as a quit, so a turn that may have caused
+   the fault is not rerun unattended. A Windows shutdown or logoff skips `before-quit`, leaves
+   no ending and is continued like a crash; on Linux the same shutdown arrives as SIGTERM and
+   counts as a quit. "Restart now" for an update marks its own quit as an update relaunch, and
+   the mark is cleared again if the updater fails, so a later quit is still the user's.
+   With "Continue turns after Copse closes" on, a quit the user confirmed hands each running
+   turn to a local turn worker instead (`local-turn-worker.md`), whose dialog says so, and is
+   recorded as `hand-off`; the next launch continues whatever no worker took. Signal and fault
+   quits, and a close the dialog let through with nobody's answer, never hand off and stay
+   `quit`.
+   `last-run.ts` records how each run ended, and only threads the previous run started are
+   continued, so a thread cut off further back is never picked up. On the next launch, once tools and MCP servers are
+   back, `interrupted-turn-resume.ts` dispatches one `dispatchMachine` continuation per such
+   thread with the fixed `INTERRUPTED_TURN_CONTINUATION` prompt the manual Continue button
+   sends, on the thread's persisted turn tree, so the stale-epoch and budget checks above apply
+   and a resume costs one unit. It resumes once per interruption: a thread whose newest prompt is
+   already a restart continuation (`restart-resume:` operation id on its machine origin) is left
+   for the human, so a turn that crashes the app cannot relaunch itself in a loop. Each continuation
+   carries the thread's own model, reasoning level and execution mode. Archived
+   threads, side chats, scheduled automations (their own run recovery), threads with queued
+   follow-ups (the window's drain continues them) and `/name` invocations are never resumed.
+   No tool call is replayed; the prompt tells the agent to inspect state first.
    Each in-run grant carries its bounded mechanism reason
    (`todo-closeout`, `pre-review-todo`, or `post-review-remediation`) for reporting;
    the reason does not change first-come ordering or the shared count. When the limit
@@ -208,6 +237,11 @@ revisiting this document, not silently diverging in an implementation PR.
    never an automatic budget reset. Deadline stops use the same checkpoint action
    with a time-limit explanation. These outcomes do not raise any run or continuation
    allowance or replay a completed tool call.
+   The run-limit notice, like the loop's other fixed notices (incomplete run,
+   reasoning give-up, refusal fallback, context overflow, still-open plan), streams
+   as `{ type: 'text', author: 'loop' }`: it renders and persists like the model's
+   text, but a host that reports what the model said (a headless review's reviewer
+   summary) leaves it out rather than presenting the loop's words as the model's.
    Existing bounded pre-review reconciliation may still close the primary plan before
    the host's terminal outcome. A successful reconciliation with a closed plan clears
    the primary loop's stale `max_steps`; an unfinished continuation retains it.
@@ -1154,8 +1188,9 @@ Collected from design review — each of these was _almost_ a bug in the plan it
   streams a **reasoning-suppressed, tool-enabled** recovery turn — `LLMStreamOptions.suppressReasoning`
   (a best-effort provider hint: `OpenAIProvider` sends its `reasoningSuppressionBody`, set only by
   `createLocalOpenAIProvider` and the Terminal-Bench providers as `reasoning_effort: 'none'` +
-  `chat_template_kwargs.enable_thinking: false`; the native LM Studio SDK, Anthropic and hosted
-  OpenAI ignore it) under `reasoningRunawaySuppressedOutputTokens` (default 1K; tool calls are
+  `chat_template_kwargs.enable_thinking: false`; `LMStudioProvider`, whose native SDK has no such
+  field, sends that one call through the `createLocalOpenAIProvider` route `createLMStudioProvider`
+  gives it; Anthropic and hosted OpenAI ignore it) under `reasoningRunawaySuppressedOutputTokens` (default 1K; tool calls are
   exempt, so a bare tool call always lands) and a checkpoint hard max clamped to match; cut 3 ends
   the run with the give-up message and `done.stopReason = 'reasoning_runaway_exhausted'`
   (`REASONING_RUNAWAY_EXHAUSTED_STOP_REASON`), which the bench harness records as its stop reason.
@@ -1213,6 +1248,35 @@ Collected from design review — each of these was _almost_ a bug in the plan it
   streak/give-up path apply. It is disarmed while a runaway streak is active and never replaces
   the runaway path (a cross-turn circle still wins). Opt-in: the product policy does not set it;
   Terminal-Bench reports it as an explicit runtime override (`COPSE_TERMINAL_REASONING_SOFT_*`, default 768 tokens); the immutable baseline profile continues to declare no soft budget.
+- **A measured request size does not include what came after it.** The provider's input count
+  for a request covers that request only; the model's reply, the tool results and any nudge the
+  loop appends afterwards were never measured. Sizing by that count alone let the soft trim, the
+  `TRIM_CRITICAL_FILL` deferral check and the pressure signals the `stepBoundary` nudges read lag
+  one step, so a step's tool results went out untrimmed (a code review on a 65K LM Studio load
+  sent 58,757 tokens against a 49,152-token trim line). The loop therefore records each
+  measurement with the last history message its request carried (`InputMeasurement`), and
+  sizing adds the estimates of every message after it; when that message is no longer in the
+  history (trimmed, or the measurement came from a concurrent subagent's loop) sizing falls back
+  to the estimate. Pressure therefore reads one step earlier than before — it was undercounting
+  by exactly that step — so `loop-nudge` and `stuck-finalize` may fire a step sooner under real
+  pressure. Thresholds, the deferral rule and the once-per-run flags are unchanged. The
+  stuck-finalize forced turn still runs before the soft trim, so that one request can exceed the
+  trim line by a step's results.
+- **A context window given for trimming also turns on the pressure nudges.** `maxContextTokens`
+  does two things: it trims history, and it makes the pre-stream `stepBoundary` carry the
+  escalation signals `loop-nudge` and `stuck-finalize` select on. Some of their thresholds count
+  tool steps alone, whatever the fill. When headless review turns started passing a local model's
+  loaded context, so the server would not cut an oversized request from the middle, every
+  reviewer, challenger and reproducer began to get the chat agent's "Exploration is over" after
+  about 12 tool steps and a forced tool-free turn after about 18 (at a 65K load). That ended a lens
+  partway through its 20–24 steps. A Mac Studio review showed the first nudge quoted in a lens's
+  reasoning, and the trimming test sent both without failing. A host that wants the trimming
+  without the nudges passes `conversationPressureNudges: false`. The pre-stream `stepBoundary`
+  then carries no `escalation`, exactly as for a host without a window: `loop-nudge` can still
+  fire on its explore-without-read signal, `stuck-finalize` never fires, and trimming is
+  unchanged. The review's turns (`packages/review/src/turn.ts`) pass it, because each role's step
+  budget is its own. The default is unchanged for every other host, and nothing here touches the
+  continuation budget (decision 5).
 
 ## Codebase impact
 

@@ -9,9 +9,14 @@ import {
   recordLaunchResult,
   sealAttemptArtifacts,
 } from './lib/e2e-attempt-diagnostics.mts'
+import { reexecOutsideRootIfNeeded } from './lib/root-container-userns.mts'
 
 const [, , configFile, ...args] = process.argv
 if (!configFile) throw new Error('Usage: run-e2e.mts <wdio-config> [...wdio args]')
+
+// Root Linux containers: run as an ordinary user so the project sandbox works,
+// or stop before any spec when it cannot (specs would capture fallback copy).
+reexecOutsideRootIfNeeded('run-e2e', { requireSandbox: true })
 
 const forwardedArgs = args[0] === '--' ? args.slice(1) : args
 const wdioBinary = join(

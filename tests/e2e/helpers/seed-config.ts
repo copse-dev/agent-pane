@@ -1,3 +1,4 @@
+import type { AgentProfile } from '../../../src/shared/agent-profiles.ts'
 import {
   mkdirSync,
   mkdtempSync,
@@ -43,6 +44,7 @@ const CONFIG_PATH = join(USER_DATA, 'config.json')
 const PENDING_CONFIG_PATH = join(USER_DATA, '.e2e-pending-config.json')
 const SETTINGS_PATH = join(USER_DATA, 'settings.json')
 const PENDING_SETTINGS_PATH = join(USER_DATA, '.e2e-pending-settings.json')
+const PENDING_LAST_RUN_PATH = join(USER_DATA, '.e2e-pending-last-run.json')
 // A developer may have LM Studio listening on the product's default port. E2E
 // must not discover or query that real service unless a fixture explicitly
 // supplies its own localServerUrl through the supported settings surface.
@@ -265,9 +267,20 @@ export function writeSeedConfig(
   }
 }
 
+/**
+ * Seed how the previous run ended (`src/main/services/last-run.ts`), which
+ * decides whether the launch continues turns left running. Applied by the e2e
+ * launcher after the outgoing app has written its own record.
+ */
+export function seedLastRun(record: { startedAt: number; ended?: 'quit' | 'update' }): void {
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(PENDING_LAST_RUN_PATH, JSON.stringify(record), 'utf8')
+}
+
 export function resetUserData(): void {
   rmSync(PENDING_CONFIG_PATH, { force: true })
   rmSync(PENDING_SETTINGS_PATH, { force: true })
+  rmSync(PENDING_LAST_RUN_PATH, { force: true })
   rmSync(CONFIG_PATH, { force: true })
   rmSync(SETTINGS_PATH, { force: true })
   removeE2eTree(USAGE_EVENTS_PATH)
@@ -573,6 +586,8 @@ export function seedEmptyProject(
     nextStepSuggestionEnabled?: boolean
     /** Opt into the experimental unattended container runs (off by default). */
     containerRunsEnabled?: boolean
+    /** Hand running turns to background workers at quit (on by default in the app). */
+    continueTurnsAfterQuit?: boolean
     /** Opt into the experimental "Start planning" composer control (off by default). */
     planModeEnabled?: boolean
     model?: string
@@ -620,6 +635,8 @@ export function seedEmptyProject(
      * is shown.
      */
     autoRunSandboxCommands?: boolean
+    /** Saved named agent profiles (Settings > Agent > Profiles). */
+    agentProfiles?: AgentProfile[]
     registeredAcpAgents?: AcpAgentConfig[]
     windowBounds?: { width: number; height: number }
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
@@ -710,6 +727,9 @@ export function seedEmptyProject(
   if (options?.nextStepSuggestionEnabled !== undefined) {
     settings['nextStepSuggestionEnabled'] = options.nextStepSuggestionEnabled
   }
+  if (options?.continueTurnsAfterQuit !== undefined) {
+    settings['continueTurnsAfterQuit'] = options.continueTurnsAfterQuit
+  }
   if (options?.containerRunsEnabled !== undefined) {
     settings['containerRunsEnabled'] = options.containerRunsEnabled
   }
@@ -767,6 +787,9 @@ export function seedEmptyProject(
   }
   if (options?.autoRunSandboxCommands !== undefined) {
     settings['autoRunSandboxCommands'] = options.autoRunSandboxCommands
+  }
+  if (options?.agentProfiles !== undefined) {
+    settings['agentProfiles'] = options.agentProfiles
   }
   if (options?.registeredAcpAgents !== undefined) {
     settings['registeredAcpAgents'] = options.registeredAcpAgents

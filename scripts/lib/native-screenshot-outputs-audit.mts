@@ -41,11 +41,11 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['footer-branch-picker-compact-220.png', 'footer-branch-picker-compact-320.png'],
   },
   'tests/e2e/git-changes-thread-retention.e2e.ts': {
-    sourceSha256: '242dbcc494236a37f2452dfd721e6314d41a91bf1680e5a8d990ad3e0806b6e6',
+    sourceSha256: '07a051b7cbe250d79e34650ac7d89306775918fc92d5820180ac2cb035c6f01c',
     filenames: ['git-changes-thread-retention.png'],
   },
   'tests/e2e/light-contrast-controls.e2e.ts': {
-    sourceSha256: '091f450cc1519b580790f9f7292d7a705bea55e0fa9c65a0d0e99ad75a25d0ae',
+    sourceSha256: '240a52b0880ea99752298904df4adb0f5961829f4485ca2b9d8cb904c8517188',
     filenames: [
       'light-contrast-changes-badge-dark.png',
       'light-contrast-changes-badge-light.png',
@@ -83,20 +83,26 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/paired-browser-chat.e2e.ts': {
-    sourceSha256: 'b9e38f816bbea857c192bcd603bf2cf55bd5ce331d73102450535fd2973f0558',
-    filenames: ['paired-browser-approval-dark.png', 'paired-browser-approval-light.png'],
+    sourceSha256: '8f8c363a1ff461e644263bc5097fad85396c6f422f3e00009fc9da9257c24fe6',
+    filenames: [
+      'paired-browser-approval-dark.png',
+      'paired-browser-approval-light.png',
+      'paired-browser-companion-live.png',
+      'paired-browser-companion-saved-view.png',
+    ],
   },
   'tests/e2e/pane-loading.e2e.ts': {
-    sourceSha256: 'a4a2f58f9e9e8414b419dea33171f14aa0ae084874dcfb12beeeefd0a3f123f9',
+    sourceSha256: '2189e7a8f25e6e8216028032d10db5e0da277b10ae9421b951b65296ea79ac5d',
     filenames: [
       'pane-loading-changes.png',
       'pane-loading-memories.png',
       'pane-loading-pull-requests.png',
+      'pane-loading-review-picker.png',
       'pane-loading-roadmap.png',
     ],
   },
   'tests/e2e/pane-popout.e2e.ts': {
-    sourceSha256: 'ba67a5755045e4cb287caf6b99ec736641758ceeb0ebf0ea55870200d4caff23',
+    sourceSha256: '13623cc1a63b30f090ba91eb25cb2b04a4d3dbaf2af9b285fe1d4493741def1e',
     filenames: [
       'pane-popout-browser.png',
       'pane-popout-changes.png',
@@ -106,11 +112,11 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/pr-provenance.e2e.ts': {
-    sourceSha256: 'bd40ca6d2e5af5f3b5caa8ab826973ef3b36342debedd0db2d0f9ad69b9585b3',
+    sourceSha256: 'ef6ecd28d715d5bc5be6fe2a3ff3d98189178422983e6878f16a49510a140a9a',
     filenames: ['pr-native-provenance-offline-restart.png', 'pr-native-provenance.png'],
   },
   'tests/e2e/queued-held.e2e.ts': {
-    sourceSha256: '8baf3b531458e0f0cc6306eea841f5f75f5f7c266c83b1d18486608011b19945',
+    sourceSha256: '4f7b16097a84eed88186f62f3193953ab752450e90f68b72fda0534815a3c061',
     filenames: ['queued-held-contrast-dark.png', 'queued-held-contrast-light.png'],
   },
   'tests/e2e/queued-message-delete.e2e.ts': {

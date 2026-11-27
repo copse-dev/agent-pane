@@ -1,6 +1,11 @@
 import { ipcRenderer } from 'electron'
 import { assertNever } from '@copse/std/assert-never.ts'
-import { remoteReadAllowed, remoteReadSchema, type RemoteRead } from '../shared/remote-interface.ts'
+import {
+  remoteReadAllowed,
+  remoteReadSchema,
+  type RemoteRead,
+  type RemoteReply,
+} from '../shared/remote-interface.ts'
 
 function invokeRead(request: RemoteRead): Promise<unknown> {
   const { channel, args } = request
@@ -52,25 +57,46 @@ function invokeRead(request: RemoteRead): Promise<unknown> {
   }
 }
 
+/**
+ * Send the outcome of one remote read back to main. A reply that cannot be
+ * sent, such as a result too large for one request, is reported as a failure,
+ * so the remote gets that reason instead of a timeout.
+ *
+ * The reply is typed by the schema main parses `remote:reply` with, so the
+ * relay cannot drift from what main accepts.
+ */
+export function replyToRemoteRead(
+  sendReply: (reply: RemoteReply) => Promise<unknown>,
+  id: string,
+  read: Promise<unknown>,
+): Promise<void> {
+  return read
+    .then((result: unknown) => sendReply({ id, ok: true, value: result }))
+    .catch((error: unknown) =>
+      sendReply({
+        id,
+        ok: false,
+        error: (error instanceof Error ? error.message : 'Desktop request failed').slice(0, 2000),
+      }),
+    )
+    .then(
+      () => undefined,
+      () => undefined,
+    )
+}
+
 /** Actual preload invokes preserve ordinary sender guards and argument validation. */
 export function installRemoteReadRelay(): void {
   ipcRenderer.on('remote:read', (_event, id: unknown, value: unknown) => {
     if (typeof id !== 'string') return
     const parsed = remoteReadSchema.safeParse(value)
     if (!parsed.success || !remoteReadAllowed(parsed.data)) return
-    void invokeRead(parsed.data)
-      .then(
-        (result: unknown) => ipcRenderer.invoke('remote:reply', { id, ok: true, value: result }),
-        (error: unknown) =>
-          ipcRenderer.invoke('remote:reply', {
-            id,
-            ok: false,
-            error: (error instanceof Error ? error.message : 'Desktop request failed').slice(
-              0,
-              2000,
-            ),
-          }),
-      )
-      .catch(() => {})
+    void replyToRemoteRead(
+      // The channel stays a literal: the bridge build derives its allowlist
+      // from the literal channels in this directory and rejects any other.
+      (reply) => ipcRenderer.invoke('remote:reply', reply),
+      id,
+      invokeRead(parsed.data),
+    )
   })
 }

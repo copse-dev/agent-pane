@@ -19,6 +19,7 @@ import { MainWindowStateRepository } from './main-window-state.ts'
 import { registerTrustedAppFrame, unregisterTrustedAppFrame } from './app-frames.ts'
 import { registerAppWindow } from './app-window-broadcast.ts'
 import { attachRendererCrashRecovery } from './renderer-crash-recovery.ts'
+import { largeIpcCalls } from './renderer-large-ipc.ts'
 import { attachVisualPinchZoom } from './visual-pinch-zoom.ts'
 import { shouldShowNativeWindows } from './native-window-visibility.ts'
 
@@ -80,6 +81,11 @@ export function getRestorableMainWindowRecords(): MainWindowRecord[] {
 
 export function beginMainWindowQuit(): void {
   quitting = true
+}
+
+/** A quit that was begun ahead of time (the updater's) did not happen. */
+export function cancelMainWindowQuit(): void {
+  quitting = false
 }
 
 /** Whether window closes are part of quitting rather than a user closing a window. */
@@ -313,7 +319,11 @@ export function createMainWindow(restoredRecord?: MainWindowRecord): BrowserWind
   })
 
   attachWebContentsLockdown(win.webContents)
-  attachRendererCrashRecovery(win.webContents)
+  // Read once: Electron throws on `win.webContents` after the window is destroyed.
+  const webContentsId = win.webContents.id
+  attachRendererCrashRecovery(win.webContents, {
+    context: () => largeIpcCalls.describeRecent(webContentsId),
+  })
   attachVisualPinchZoom(win.webContents)
   win.on('unresponsive', () => {
     console.warn('[renderer] main window became unresponsive')

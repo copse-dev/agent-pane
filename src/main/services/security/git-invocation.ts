@@ -6,6 +6,10 @@
 const INTERNAL_GIT_COMMANDS = new Set([
   '--version',
   'add',
+  // Changes pane hunk staging. Only the shape `assertIndexApply` admits: the
+  // patch comes on stdin and is applied to the index alone (`--cached`), so no
+  // working-tree file is written and no smudge/clean filter or hook runs.
+  'apply',
   'branch',
   // Carry-in/carry-out and hosted transfer bundles; `assertBundle` admits
   // create, verify and list-heads. Packing and reading a bundle consult no
@@ -137,6 +141,7 @@ export function withGitInvocationArgs(
   if (command === 'clone') assertLocalSubmoduleClone(rest)
   if (command === 'check-attr') assertAttributeRead(rest)
   if (command === 'cherry-pick') assertCherryPick(rest)
+  if (command === 'apply') assertIndexApply(rest)
   if (command === 'bundle') assertBundle(rest)
   if (command === 'grep') assertGrep(rest)
   // A caller cannot prepend -c/--config-env to undo the policy. Diff flags go
@@ -256,6 +261,20 @@ function assertGrep(args: string[]): void {
     throw new Error('Unsupported internal Git grep')
 }
 
+/**
+ * Admit exactly `apply --cached --unidiff-zero --whitespace=nowarn [--reverse] -`.
+ * Every other option is refused rather than enumerated: none of these reads a
+ * patch from a path or writes outside the index.
+ */
+function assertIndexApply(args: string[]): void {
+  const expected = ['--cached', '--unidiff-zero', '--whitespace=nowarn']
+  const reverse = args[3] === '--reverse'
+  const tail = args.slice(reverse ? 4 : 3)
+  if (expected.some((flag, i) => args[i] !== flag) || tail.length !== 1 || tail[0] !== '-') {
+    throw new Error('Unsupported internal Git apply')
+  }
+}
+
 /** Admit `bundle create|verify|list-heads`; `unbundle` and future subcommands are refused. */
 function assertBundle(args: string[]): void {
   const [subcommand] = args
@@ -296,6 +315,9 @@ export function internalGitEnv(
         'GIT_DIR',
         'GIT_COMMON_DIR',
         'GIT_WORK_TREE',
+        'GIT_NAMESPACE',
+        'GIT_OBJECT_DIRECTORY',
+        'GIT_ALTERNATE_OBJECT_DIRECTORIES',
       ].includes(key)
     ) {
       // Spawn merges this overlay over its inherited base. An explicit unset

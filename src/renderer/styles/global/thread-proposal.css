@@ -174,15 +174,13 @@
 .thread-proposal-prompt-summary:hover {
   color: var(--text-primary);
 }
+/* The prompt a proposed thread would start with is a sentence someone reads,
+   not code: body face, no code box. The disclosure above it says what it is. */
 .thread-proposal-prompt-text {
   margin: var(--spacing-xs) 0 0;
-  padding: var(--spacing-sm);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-base);
   color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: var(--font-size-xs);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
   line-height: var(--line-height-base);
   white-space: pre-wrap;
   overflow-wrap: anywhere;

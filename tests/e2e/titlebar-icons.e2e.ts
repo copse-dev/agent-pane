@@ -35,8 +35,7 @@ describe('titlebar panel icons', () => {
       { label: 'Toggle right panel', icon: 'panel', text: 'Panel' },
       { label: 'Open thread context', icon: 'context', text: 'Context' },
       { label: 'Open terminal', icon: 'terminal', text: 'Terminal' },
-      { label: 'Open changes', icon: 'changes', text: 'Changes' },
-      { label: 'Open pull requests', icon: 'prs', text: 'PRs' },
+      { label: 'Open review', icon: 'changes', text: 'Review' },
       { label: 'Open browser', icon: 'browser', text: 'Browser' },
     ]
 
@@ -78,7 +77,7 @@ describe('titlebar panel icons', () => {
       expect(styles.strokeLinecap).toBe('round')
       expect(styles.strokeLinejoin).toBe('round')
     }
-    // Eleven outline-icon buttons: the six checked above, Side chat (hidden until
+    // Ten outline-icon buttons: the five checked above, Side chat (hidden until
     // the open thread has a side chat), the experimental
     // Memories and Roadmap buttons (rendered up front but hidden until their
     // flags are on), Desktop (hidden until vncEnabled), and the "Open in
@@ -88,7 +87,7 @@ describe('titlebar panel icons', () => {
     // this set. Portrait-bar duplicates are excluded by the #titlebar scope.
     await expect(
       await $$('#titlebar .titlebar-text-btn svg.titlebar-btn-icon'),
-    ).toBeElementsArrayOfSize(11)
+    ).toBeElementsArrayOfSize(10)
     await browser.execute(() => {
       const dragRegion = document.querySelector<HTMLElement>('.titlebar-drag')
       if (!dragRegion) throw new Error('Missing titlebar drag region')

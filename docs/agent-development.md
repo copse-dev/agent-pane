@@ -128,6 +128,50 @@ and rerun `pnpm install`. When a postinstall step itself fails to load a native 
 `prepare-native-artifacts.mts` restates dyld's full reason on short lines, because pnpm's reporter
 cuts long lines at the terminal width.
 
+### Claude Code cloud sessions
+
+Claude Code cloud containers run as root on Linux, default to Node 22, and lack the packages CI
+installs. `.claude/cloud-setup.sh` makes a fresh container ready: it links `/opt/node24/bin`
+into `~/.local/bin` (ahead of Node 22 on the image's `PATH`), activates the pinned pnpm,
+installs `bubblewrap`, `socat`, `openssh-client` and CI's Noto fonts with apt, then runs `pnpm install`,
+`check-prepared-worktree.mts` and `pnpm run build`. It is idempotent: about a minute cold and
+15 seconds again. Call it from the cloud environment's setup script, which runs from the
+directory holding the checkout:
+
+```bash
+[ -f agent-pane/.claude/cloud-setup.sh ] && (cd agent-pane && bash .claude/cloud-setup.sh)
+```
+
+or run `bash .claude/cloud-setup.sh` from the repository root in a session that started without it.
+
+As root, the project sandbox's bubblewrap invocation starts and then fails every command with
+`apply-seccomp: write /proc/self/uid_map: Operation not permitted`. `pnpm test` and the
+`run-e2e.mts` launchers therefore re-execute themselves as uid 1000 in a user namespace
+(`unshare -U --map-user=1000 --map-group=1000`) when they start as root on Linux, which maps that
+user back to root, so the checkout stays writable. Nothing else changes: CI runners and developer
+machines are not root and never re-execute. `COPSE_ROOT_USERNS=0` keeps a run as root. The e2e
+launchers stop before any spec when `bwrap` or `socat` is missing, naming the package, because
+approval specs would otherwise pass or fail on the "No project sandbox is available" copy. Unit
+runs carry on, and the sandbox tests skip or fail naming the missing dependency.
+
+Network limits that still apply:
+
+- `pnpm run test:e2e*` and `test:demo` first download the reference screenshots from the public
+  R2 bucket (`pub-7ec931b58a7b480ba1cd3e535dc12f3c.r2.dev`). An environment on the default
+  network allowlist refuses that host, and the launcher stops with `fetch failed`. Add the host to
+  the environment's allowed domains. Node's `fetch` reaches the egress proxy only with
+  `NODE_USE_ENV_PROXY=1` exported. To run specs for their assertions without the baselines,
+  start wdio directly:
+  `unshare -U --map-user=1000 --map-group=1000 -- xvfb-run --auto-servernum -- node_modules/.bin/wdio run wdio.ci.conf.ts --spec tests/e2e/<name>.e2e.ts`.
+- GitHub's GraphQL API and Actions artifact storage are unreachable: `gh api repos/...` and
+  `gh run view --log` work, `gh pr view` and `gh run download` do not.
+- Until #4409 is fixed, an IPv6-disabled container needs a `socat -4` shim for tests that use the
+  sandbox's network bridge.
+
+The image's global git config signs commits (`commit.gpgsign=true`) through a loopback signer.
+Leave it on for your own commits; tests that commit should isolate themselves from global git
+config rather than rely on it being off.
+
 ## Container engines on macOS
 
 Container-backed development scripts use a small engine boundary instead of assuming
@@ -139,6 +183,11 @@ the Docker CLI. `COPSE_CONTAINER_ENGINE` accepts `auto`, `apple`, or `docker`:
   [Apple container](https://apple.github.io/container/documentation/) package, and a
   running service (`container system start`). It never silently falls back.
 - `docker` requires a reachable Docker daemon and preserves the previous commands.
+
+Copse Reviewer's validation cells (`copse-review pr`, `--backend container`) read the same
+variable; `auto` there tries Docker, Podman, then Apple container. Choose Podman for the reviewer
+with `copse-review pr --engine podman`, not with the variable, which the app rejects as `podman`. See
+[`packages/review/README.md`](../packages/review/README.md#reviewing-a-pull-request-on-this-machine-copse-review-pr).
 
 The autonomy regression is portable across those engines:
 
@@ -202,6 +251,27 @@ Known environment behavior:
   ```bash
   while true; do DISPLAY=:1 xdotool key F15; sleep 0.5; done
   ```
+
+## Linux packages
+
+Linux is not a supported release target yet (#1382), but the app packages and runs there, which is
+how a cloud container can run a real build:
+
+- `pnpm run pack:linux` writes `release/linux-unpacked/copse`; `pnpm run dist:linux` also writes an
+  x64 AppImage, `.deb` and `tar.gz`. Neither publishes. The advisory `linux-package.yml` workflow
+  builds the same three, installs the `.deb` and uploads them.
+- Both skip electron-builder's native rebuild (`-c.npmRebuild=false`). Every native addon is
+  Node-API, and the rebuild deletes node-pty's `build/` before fetching Electron headers, so an
+  offline or proxied fetch leaves an app that cannot load `pty.node`. If that already happened,
+  `pnpm rebuild node-pty` restores it; `scripts/after-pack.cjs` refuses to package without it.
+- `copse --release-smoke-test` checks a PTY and thread persistence without opening a window. Run
+  it under `xvfb-run -a`, with `--no-sandbox` when running as root, and with `COPSE_DIR` set to a
+  scratch profile. The `.deb` depends on `bubblewrap` and `socat`, so an installed package runs
+  project commands inside the Linux sandbox; a container that forbids nested user namespaces
+  reports `apply-seccomp: write /proc/self/uid_map: Operation not permitted` for packaged and
+  development builds alike.
+- The main window has no minimize, maximize or close controls on Linux yet, and auto-update is
+  macOS-only; upgrade by installing a newer package.
 
 ## Launching Copse from a Copse agent session
 
@@ -333,9 +403,9 @@ the session) before deleting a project the app is still writing.
 ## Focused validation
 
 The post-edit hook runs `scripts/hook-file-check.mts` through the Copse, Cursor, and Claude hook
-configs. It auto-applies oxfmt and reports type-unaware ESLint findings. A reported rewrite makes
-the agent's prior view stale, so re-read that file. Type-aware rules and `tsc` remain part of
-`npm run check:local` and the full `npm run check`.
+configs. It auto-applies oxfmt and reports oxlint findings, type-aware rules included. A reported
+rewrite makes the agent's prior view stale, so re-read that file. `tsc` and ESLint, which stays the
+lint gate, remain part of `npm run check:local` and the full `npm run check`.
 
 While iterating, use a path/base-name/glob filter or the test oracle:
 

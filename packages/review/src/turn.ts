@@ -61,6 +61,25 @@ export interface TurnTiming {
   readonly modelAndOverheadMs: number
 }
 
+/**
+ * Headroom for the review tools' JSON schemas in each request, as the app
+ * reserves for an LM Studio model (`toolSchemaReserveForModel`).
+ */
+const REVIEW_TOOL_SCHEMA_RESERVE_TOKENS = 2_500
+
+/**
+ * The share of a model's context the loop may fill. It sizes each request as
+ * the previous request's measured size plus an estimate of what was added since,
+ * at four characters per token, which undercounts code; the rest is headroom for
+ * that error, so the request a local server receives still fits its window.
+ */
+export const REVIEW_CONTEXT_FILL = 0.75
+
+/** Whether the loop wrote this text itself (a run limit, a give-up), not the model. */
+function writtenByLoop(chunk: AgentStreamChunk): boolean {
+  return 'author' in chunk
+}
+
 export interface TurnOptions {
   readonly provider: LLMProvider
   /** Model id, for usage attribution. */
@@ -77,6 +96,13 @@ export interface TurnOptions {
   readonly threadId: string
   readonly turnId: string
   readonly maxSteps: number
+  /**
+   * The model's context window, in tokens, when its server says so (a local
+   * model's loaded context). The loop then drops the oldest investigation steps
+   * itself before a request would overflow it, never the review request; left
+   * to the server, an overflowing request is cut from the middle unnoticed.
+   */
+  readonly contextTokens?: number | undefined
   /** A role-specific completion invariant, checked before the terminal event is emitted. */
   readonly completionError?: (() => string | undefined) | undefined
   /**
@@ -152,7 +178,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
   }
   // Text and reasoning stream as deltas; coalesce each run into one item so a
   // message is one event, not one per token, before projecting it.
-  let pending: { type: 'text' | 'reasoning'; text: string } | null = null
+  let pending: Extract<AgentStreamChunk, { type: 'text' | 'reasoning' }> | null = null
   const flushPending = (): void => {
     if (pending === null) return
     for (const event of projectStreamChunk(pending, projectionContext)) {
@@ -193,6 +219,16 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
       },
       ...(options.signal ? { signal: options.signal } : {}),
       maxSteps,
+      ...(options.contextTokens === undefined
+        ? {}
+        : {
+            maxContextTokens: Math.floor(options.contextTokens * REVIEW_CONTEXT_FILL),
+            toolSchemaReserveTokens: REVIEW_TOOL_SCHEMA_RESERVE_TOKENS,
+            // The window is for trimming only. A role's step budget is its own,
+            // so the chat agent's "Exploration is over" and forced tool-free
+            // turns, which count tool steps, would end a lens partway through.
+            conversationPressureNudges: false,
+          }),
       ...(settings.maxLlmCalls !== undefined ? { maxLlmCalls: settings.maxLlmCalls } : {}),
       ...(settings.initialToolChoice ? { initialToolChoice: settings.initialToolChoice } : {}),
       adaptiveExtensions: false,
@@ -201,9 +237,16 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
       getLastUsage: () => (hasLastUsage(options.provider) ? options.provider.lastUsage : null),
       onChunk: (chunk: AgentStreamChunk) => {
         if (chunk.type === 'text' || chunk.type === 'reasoning') {
-          if (pending !== null && pending.type !== chunk.type) flushPending()
-          pending = { type: chunk.type, text: (pending?.text ?? '') + chunk.text }
-          if (chunk.type === 'text') summary += chunk.text
+          // The loop's own notices stay apart from the model's text.
+          if (
+            pending !== null &&
+            (pending.type !== chunk.type || writtenByLoop(pending) !== writtenByLoop(chunk))
+          ) {
+            flushPending()
+          }
+          pending = pending === null ? chunk : { ...pending, text: pending.text + chunk.text }
+          // The loop's own notices (a run limit, a give-up) are not the reviewer's words.
+          if (chunk.type === 'text' && !writtenByLoop(chunk)) summary += chunk.text
           return
         }
         flushPending()

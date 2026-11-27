@@ -74,6 +74,27 @@ async function waitForDiffOf(path: string): Promise<void> {
   )
 }
 
+/**
+ * Opens local review on the fixture's changes unless it is already showing, so
+ * each test that reads the list also passes when it runs alone. Refreshes only
+ * when it had to open the pane, so an open list is not re-rendered under a test.
+ */
+async function showLocalChanges(): Promise<void> {
+  if (!(await $('#git-changes-host').isDisplayed())) {
+    const openReview = $('.titlebar-btn[aria-label="Open review"]')
+    await openReview.waitForExist({ timeout: 30_000 })
+    await openReview.click()
+    await $('#git-changes-host').waitForDisplayed({ timeout: 30_000 })
+    await $(
+      '.review-header .git-changes-header .git-changes-refresh-btn[aria-label="Refresh changes"]',
+    ).click()
+  }
+  await browser.waitUntil(async () => (await $$('.git-change-row').length) >= 3, {
+    timeout: 30_000,
+    timeoutMsg: 'expected the fixture changes in local review',
+  })
+}
+
 describe('git changes viewer', function () {
   this.timeout(120_000)
 
@@ -97,8 +118,8 @@ describe('git changes viewer', function () {
   it('lists staged and unstaged changes and shows a diff', async () => {
     // The titlebar "Changes" shortcut opens the right panel and switches to the
     // Changes tab in one click.
-    await $('.titlebar-btn[aria-label="Open changes"]').waitForExist({ timeout: 30_000 })
-    const titlebarChangesBtn = await $('.titlebar-btn[aria-label="Open changes"]').getElement()
+    await $('.titlebar-btn[aria-label="Open review"]').waitForExist({ timeout: 30_000 })
+    const titlebarChangesBtn = await $('.titlebar-btn[aria-label="Open review"]').getElement()
     await titlebarChangesBtn.click()
 
     await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
@@ -110,7 +131,7 @@ describe('git changes viewer', function () {
 
     await (
       await $(
-        '#git-changes-host .git-changes-refresh-btn[aria-label="Refresh changes"]',
+        '.review-header .git-changes-header .git-changes-refresh-btn[aria-label="Refresh changes"]',
       ).getElement()
     ).click()
 
@@ -128,7 +149,7 @@ describe('git changes viewer', function () {
     // sections; the pane header sits on the shared header band.
     const chrome = await browser.execute(() => {
       const title = document.querySelector<HTMLElement>('.git-changes-section-title')
-      const header = document.querySelector<HTMLElement>('#git-changes-host .pane-header')
+      const header = document.querySelector<HTMLElement>('.review-header')
       if (!title || !header) return null
       const probe = document.createElement('div')
       probe.style.cssText =
@@ -303,6 +324,7 @@ describe('git changes viewer', function () {
   })
 
   it('opens the diff of a file that was committed rather than left dirty', async () => {
+    await showLocalChanges()
     const committedRow = await $('.git-change-row-committed').getElement()
     await committedRow.waitForDisplayed({ timeout: 30_000 })
     await expect(committedRow.$('.git-change-path')).toHaveText('committed.ts')
@@ -333,6 +355,7 @@ describe('git changes viewer', function () {
   })
 
   it('paints change letters and diff washes from the status tokens in both themes', async () => {
+    await showLocalChanges()
     // Add the two statuses the fixture lacks: a staged rename and a deletion.
     // `after` resets the fixture (`checkout -f HEAD` + `clean -fd`), undoing both.
     execFileSync('git', ['mv', 'staged.ts', 'staged-moved.ts'], { cwd: repoRoot, stdio: 'pipe' })
@@ -341,7 +364,7 @@ describe('git changes viewer', function () {
     rmSync(join(repoRoot, 'committed.ts'))
     await (
       await $(
-        '#git-changes-host .git-changes-refresh-btn[aria-label="Refresh changes"]',
+        '.review-header .git-changes-header .git-changes-refresh-btn[aria-label="Refresh changes"]',
       ).getElement()
     ).click()
     await browser.waitUntil(

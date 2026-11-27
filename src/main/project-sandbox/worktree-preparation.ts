@@ -19,7 +19,7 @@ import {
 } from './config.ts'
 import { isProjectSandboxEnabled } from './enabled.ts'
 import { formatArgvForShell, withSandboxShellPath } from './sandbox-argv.ts'
-import { linuxSandboxBinaryPaths } from './sandbox-binaries.ts'
+import { linuxWrapperBinaryPaths } from './sandbox-binaries.ts'
 import { withSandboxTmpEnv } from './tmp-env.ts'
 import {
   linkPreparationNodeToolchain,
@@ -310,81 +310,90 @@ async function runContainedPreparationProcess(
     ),
     ...sandboxRuntimeHelperAllowReadPaths(),
   ]
-  const params = {
-    // ASRT's proxy environment overrides spawn.env (including TMPDIR). Set
-    // scratch after those assignments, inside the confined command.
-    command: formatArgvForShell('/usr/bin/env', [
-      `TMPDIR=${scratch}`,
-      `TMP=${scratch}`,
-      `TEMP=${scratch}`,
-      `TMPPREFIX=${join(scratch, 'zsh')}`,
-      command,
-      ...args,
-    ]),
-    binShell: '/bin/bash',
-    needsNetworkRestriction: options.offline || !preparing,
-    allowAllUnixSockets: false,
-    allowGitConfig: false,
-    readConfig: {
-      denyOnly: deniedRead,
-      allowWithinDeny: [
-        ...existingRead,
-        ...toolchainReadExceptions(
-          preparationNodeToolchainReadPaths(env),
-          deniedRead,
-          existingRead,
-        ),
-      ],
-    },
-    writeConfig: {
-      allowOnly: preparing
-        ? ['/dev/null', scratch, ...caches, ...(projectWritable ? [root] : [])]
-        : ['/dev/null', scratch],
-      denyWithinAllow: [],
-      // Package tarballs contain inert .idea/.vscode metadata. Protect the
-      // checkout's configuration rather than denying those names in every
-      // dependency directory. This override is private to this approved runner.
-      // The whole .git path also covers hooks. Emitting both .git/hooks and an
-      // absent .git makes bwrap create a directory and then try to mask it as a
-      // file, aborting before execution on a fresh Linux project.
-      mandatoryDenyPaths: projectWritable
-        ? [
-            ...workspaceMandatoryWriteDenyPaths(root).filter(
-              (path) => !path.includes('*') && !path.startsWith(`${join(root, '.git')}/`),
-            ),
-            join(root, '.git'),
-          ]
-        : [],
-    },
-  }
-  let wrapped: string
-  if (process.platform === 'darwin') {
-    wrapped = wrapCommandWithSandboxMacOS({
-      ...params,
-      allowLocalBinding: preparing && !options.offline,
-    })
-  } else {
-    wrapped = await wrapCommandWithSandboxLinux({
-      ...params,
-      // This wrap bypasses SandboxManager, so it takes the launcher paths itself.
-      ...linuxSandboxBinaryPaths(),
-      ...(options.signal ? { abortSignal: options.signal } : {}),
-    })
-  }
-  let toolchainLinks: string | undefined
+  // Neither bwrap nor Seatbelt can start fnm's own PATH symlinks, so run the
+  // Node toolchain through private links in granted scratch to the canonical
+  // executables the read grants below already cover. Scratch is writable by the
+  // contained process, so only the confined command gets the links on PATH: the
+  // outer wrapper shell resolves ASRT's bare `env` launcher on spawn's PATH
+  // before Seatbelt applies, and must never find a planted one there.
+  const toolchainLinks = mkdtempSync(join(scratch, 'node-toolchain-'))
+  let bwrapWrapped = false
   try {
+    const confinedPath = linkPreparationNodeToolchain(env, toolchainLinks)
+    const params = {
+      // ASRT's proxy environment overrides spawn.env (including TMPDIR). Set
+      // scratch after those assignments, inside the confined command.
+      command: formatArgvForShell('/usr/bin/env', [
+        `TMPDIR=${scratch}`,
+        `TMP=${scratch}`,
+        `TEMP=${scratch}`,
+        `TMPPREFIX=${join(scratch, 'zsh')}`,
+        ...(confinedPath === null ? [] : [`PATH=${confinedPath}`]),
+        command,
+        ...args,
+      ]),
+      binShell: '/bin/bash',
+      needsNetworkRestriction: options.offline || !preparing,
+      allowAllUnixSockets: false,
+      allowGitConfig: false,
+      readConfig: {
+        denyOnly: deniedRead,
+        allowWithinDeny: [
+          ...existingRead,
+          ...toolchainReadExceptions(
+            preparationNodeToolchainReadPaths(env),
+            deniedRead,
+            existingRead,
+          ),
+        ],
+      },
+      writeConfig: {
+        allowOnly: preparing
+          ? ['/dev/null', scratch, ...caches, ...(projectWritable ? [root] : [])]
+          : ['/dev/null', scratch],
+        denyWithinAllow: [],
+        // Package tarballs contain inert .idea/.vscode metadata. Protect the
+        // checkout's configuration rather than denying those names in every
+        // dependency directory. This override is private to this approved runner.
+        // The whole .git path also covers hooks. Emitting both .git/hooks and an
+        // absent .git makes bwrap create a directory and then try to mask it as a
+        // file, aborting before execution on a fresh Linux project.
+        mandatoryDenyPaths: projectWritable
+          ? [
+              ...workspaceMandatoryWriteDenyPaths(root).filter(
+                (path) => !path.includes('*') && !path.startsWith(`${join(root, '.git')}/`),
+              ),
+              join(root, '.git'),
+            ]
+          : [],
+      },
+    }
+    let wrapped: string
+    if (process.platform === 'darwin') {
+      wrapped = wrapCommandWithSandboxMacOS({
+        ...params,
+        allowLocalBinding: preparing && !options.offline,
+      })
+    } else {
+      // This wrap bypasses SandboxManager, so it takes the launcher paths
+      // itself. Naming seccompConfig makes a SandboxRuntimeConfig-shaped
+      // source (whose key is `seccomp`) a type error, not a silently dropped key.
+      const { seccompConfig, ...launchers } = linuxWrapperBinaryPaths()
+      wrapped = await wrapCommandWithSandboxLinux({
+        ...params,
+        ...launchers,
+        ...(seccompConfig === undefined ? {} : { seccompConfig }),
+        ...(options.signal ? { abortSignal: options.signal } : {}),
+      })
+      // Only a completed wrap holds a mount-point reference to release.
+      bwrapWrapped = true
+    }
     // Recheck after an asynchronous wrap: a disabled sandbox never earns fallback.
     requirePreparationSandbox()
     options.signal?.throwIfAborted()
-    // bwrap flattens granted PATH symlinks into copies of their targets. Run the
-    // toolchain through private symlinks in scratch (a directory bind keeps
-    // them) to the canonical executables the read grants above already cover.
-    if (process.platform === 'linux') {
-      toolchainLinks = mkdtempSync(join(scratch, 'node-toolchain-'))
-    }
     const child = spawn('/bin/bash', ['-c', wrapped], {
       cwd: root,
-      env: toolchainLinks ? linkPreparationNodeToolchain(env, toolchainLinks) : env,
+      env,
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -419,7 +428,7 @@ async function runContainedPreparationProcess(
       })
     })
   } finally {
-    if (toolchainLinks) rmSync(toolchainLinks, { recursive: true, force: true })
-    if (process.platform === 'linux') cleanupBwrapMountPoints()
+    rmSync(toolchainLinks, { recursive: true, force: true })
+    if (bwrapWrapped) cleanupBwrapMountPoints()
   }
 }

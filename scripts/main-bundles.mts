@@ -86,6 +86,14 @@ export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
     outfile: 'dist/main/package-firewall.js',
     manifest: { type: 'commonjs' },
   },
+  // Continues a turn the app handed off when it quit
+  // (docs/plans/local-turn-worker.md). Run with the app's own binary under
+  // ELECTRON_RUN_AS_NODE, detached, so it outlives the app; must bundle free of
+  // electron for the same reason as the probe worker below.
+  {
+    entry: 'src/main/services/turn-worker/turn-worker-entry.ts',
+    outfile: 'dist/main/turn-worker.js',
+  },
   // Runs the ACP model/mode probe under its OWN SandboxManager so a background
   // probe cannot widen the app's process-global network allowlist (see
   // docs/plans/sandbox-network-scope-isolation.md). Must bundle free of electron
@@ -100,6 +108,14 @@ export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
   {
     entry: 'src/main/services/acp/acp-session-host-worker.ts',
     outfile: 'dist/main/acp-session-host-worker.js',
+  },
+  // The stdio MCP server an ACP agent without http MCP spawns to reach Copse's
+  // native-tool bridge. The agent may run sandboxed, so it gets the manifest
+  // that stops Node's package.json walk at its own directory.
+  {
+    entry: 'src/main/services/acp/acp-bridge-stdio-relay.ts',
+    outfile: 'dist/main/acp-bridge-relay.js',
+    manifest: { type: 'commonjs' },
   },
   // Owns ASRT for one approved loopback-binding background task. ASRT's
   // process-global proxy config must never widen an already-running contained

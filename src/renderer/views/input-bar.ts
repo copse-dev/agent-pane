@@ -132,6 +132,7 @@ import { LOCAL_MODEL_SUFFIX } from '@shared/model-display.ts'
 import { contextFitAdvice } from '@shared/context-window-advice.ts'
 import { isLocalModel } from '@copse/llm/estimate-cost.ts'
 import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
+import { agentProfilesSchema, findAgentProfile, type AgentProfile } from '@shared/agent-profiles.ts'
 import { commitThreadModelSelection } from '../controller/model-selection.ts'
 import { mark as perfMark } from '../perf.ts'
 import type { GitPromptState } from '@shared/types/git.ts'
@@ -576,7 +577,27 @@ export function mountInputBar(
     )
   }
 
+  // Saved named profiles, refreshed whenever the picker loads. Kept so the
+  // trigger can name the chat's profile without waiting for a fetch.
+  let agentProfiles: readonly AgentProfile[] = []
+  async function loadAgentProfiles(): Promise<readonly AgentProfile[]> {
+    const raw = await api.settings.get('agentProfiles').catch(() => undefined)
+    const parsed = agentProfilesSchema.safeParse(raw ?? [])
+    agentProfiles = parsed.success ? parsed.data : []
+    return agentProfiles
+  }
+
+  function activeProfile(): AgentProfile | undefined {
+    return findAgentProfile(agentProfiles, getActiveThread(store)?.profileId)
+  }
+
   function footerModelDisplayLabel(current: string): string | undefined {
+    const profile = activeProfile()
+    const label = footerModelBaseLabel(current)
+    return profile ? `${profile.name} · ${label ?? modelDisplayLabel(current)}` : label
+  }
+
+  function footerModelBaseLabel(current: string): string | undefined {
     const resolved = footerResolvedModel(current)
     if (current === MATCH_PROMPT_MODEL_SELECTOR) {
       return resolved ? `Auto — ${modelDisplayLabel(resolved)}` : 'Match task'
@@ -641,6 +662,41 @@ export function mountInputBar(
     modelPicker.refresh()
   }
 
+  // A profile sets the chat's model and effort as the pickers would, and is
+  // remembered on the thread so main adds its instructions to every turn.
+  // Choosing "None" only drops the instructions; the model and effort stay.
+  function selectProfile(profileId: string | undefined): void {
+    const thread = getActiveThread(store)
+    if (!thread) return
+    const profile = findAgentProfile(agentProfiles, profileId)
+    if (profileId !== undefined && !profile) return
+    if (profile?.model && !isBestValueChatModel(profile.model)) {
+      commitThreadModelSelection(
+        store,
+        api,
+        thread.id,
+        'user',
+        thread.model ?? store.getState().settings?.model,
+        profile.model,
+      )
+    }
+    const threads = store.getState().threads.map((t) => {
+      if (t.id !== thread.id) return t
+      const { profileId: _previous, ...rest } = t
+      const next = { ...rest, ...(profile ? { profileId: profile.id } : {}), updatedAt: Date.now() }
+      if (!profile) return next
+      const { reasoning: _reasoning, ...withoutReasoning } = next
+      return profile.reasoning
+        ? { ...withoutReasoning, reasoning: profile.reasoning }
+        : withoutReasoning
+    })
+    store.setState({ threads })
+    store.emit('threads_changed')
+    updateFooter()
+    void refreshImageCompatibilityWarning()
+    void runContextEstimate()
+  }
+
   const modelPicker = mountFooterModelPicker(modelHost, api, footerChatModel, selectChatModel, {
     formatCurrentLabel: footerModelDisplayLabel,
     getCurrentRoute: footerResolvedModel,
@@ -656,7 +712,18 @@ export function mountInputBar(
     getRecentModels: footerRecentModels,
     getReasoning: () => getActiveThread(store)?.reasoning,
     onSelectReasoning: selectReasoning,
+    loadProfiles: loadAgentProfiles,
+    getProfileId: () => getActiveThread(store)?.profileId,
+    onSelectProfile: selectProfile,
   })
+  // Name the chat's profile on the trigger from the first paint; the
+  // settings_changed handler below reloads it with the rest of the picker.
+  const syncProfileLabel = (): void => {
+    void loadAgentProfiles().then(() => {
+      modelPicker.sync()
+    })
+  }
+  syncProfileLabel()
   // Re-sync the picker whenever the active thread changes (new thread,
   // thread switch, or thread deletion that shifts the active pointer), and when
   // the project changes so ACP options hide/show with SSH workspaces.
@@ -2131,12 +2198,14 @@ export function mountInputBar(
     void submit()
   })
 
-  async function submit(sendNow = false): Promise<void> {
+  /** Whether the prompt was recorded (sent, or queued behind a running turn). */
+  async function submit(sendNow = false): Promise<boolean> {
     const id = getActiveThreadId()
-    if (!id || imageDescriptionInProgress || !beginThreadSubmission(store, id)) return
+    if (!id || imageDescriptionInProgress || !beginThreadSubmission(store, id)) return false
     updateState()
+    let recorded = false
     try {
-      await performSubmit(id, sendNow)
+      recorded = await performSubmit(id, sendNow)
     } catch (error) {
       console.error('Could not send prompt', { threadId: id, error })
       checkoutErrors.set(id, error instanceof Error ? error.message : 'Could not send message')
@@ -2145,9 +2214,10 @@ export function mountInputBar(
       updateState()
       updateCheckoutControl()
     }
+    return recorded
   }
 
-  async function performSubmit(id: string, sendNow: boolean): Promise<void> {
+  async function performSubmit(id: string, sendNow: boolean): Promise<boolean> {
     perfMark('ttft:composer-submit')
     followUps.clearSuggestions()
     nextStepHint.clear()
@@ -2196,20 +2266,20 @@ export function mountInputBar(
         )
         if (target) sendQueuedMessageNow(store, api, id, target.messageId)
       }
-      return
+      return false
     }
     const projectId = store.getState().activeProjectId
     const thread = getThreadById(store, id)
-    if (!projectId || !thread) return
+    if (!projectId || !thread) return false
     const choice = checkoutChoice(id)
     const model = thread.model ?? store.getState().settings?.model
     // A follow-up to the container (A14): a continuation run, not a turn of
     // the thread's own agent. Prose only — the guest gets no attachments.
     if (!targetSelect.hidden && targetSelect.value === 'container') {
-      if (!rawText) return
+      if (!rawText) return false
       const started = await containerRun.followUp(rawText)
       if (started) updateState()
-      return
+      return started
     }
     const requiresCheckoutPreparation = thread.messages.length === 0 && !thread.worktreeChoice
     // The footer refresh is supplementary and may still be loading. Capture this
@@ -2225,7 +2295,7 @@ export function mountInputBar(
       const incompatibility = await incompatibleImageModel()
       if (incompatibility) {
         if (getActiveThreadId() === id) await refreshImageCompatibilityWarning()
-        return
+        return false
       }
     }
     // A genuinely new thread has no branch contract to validate yet. Its
@@ -2261,7 +2331,7 @@ export function mountInputBar(
       threadGitBranchMismatch(threadBranch, currentBranch, { isolatedWorktree })
     ) {
       if (getActiveThreadId() === id) showBranchMismatch(threadBranch)
-      return
+      return false
     }
     if (getActiveThreadId() === id) hideBranchMismatch()
 
@@ -2293,9 +2363,9 @@ export function mountInputBar(
             activeComposerThreadId !== id ||
             store.getState().activeProjectId !== projectId
           )
-            return
+            return false
           showDirtyWarning(id)
-          return
+          return false
         }
       }
     }
@@ -2337,7 +2407,7 @@ export function mountInputBar(
     // it as prose would silently do the wrong work.
     if (invocation && invocation.kind === null) {
       showToast(`Unknown skill or agent: /${invocation.name}`, { variant: 'error' })
-      return
+      return false
     }
 
     // Warn up front when the invoked skill points the agent at external hosts.
@@ -2411,7 +2481,7 @@ export function mountInputBar(
           // becomes the worktree's base, or the shared checkout's branch.
           baseBranch,
         )
-        if (!getThreadById(store, id)) return
+        if (!getThreadById(store, id)) return false
         preparedPromptState = prepared.promptState
         applyPreparedThreadCheckout(store, id, prepared)
       } catch (error) {
@@ -2419,7 +2489,7 @@ export function mountInputBar(
         // renamed branch); drop the cache so Retry re-reads it.
         await api.agent.resetDefaultBranchCache().catch(() => undefined)
         checkoutErrors.set(id, checkoutErrorMessage(error))
-        return
+        return false
       } finally {
         checkoutPreparations.delete(id)
         updateCheckoutControl()
@@ -2439,7 +2509,7 @@ export function mountInputBar(
         : await api.git.promptState(projectId, id))
 
     // Deletion cancels a pending send; navigation does not.
-    if (!getThreadById(store, id)) return
+    if (!getThreadById(store, id)) return false
     const priorTodos = thread.todos ?? []
     const workingBrief = nextWorkingBrief(thread.workingBrief, fullContent)
     if (workingBrief && workingBrief !== thread.workingBrief) {
@@ -2561,6 +2631,7 @@ export function mountInputBar(
       draftAttachmentsByThread.delete(id)
       setThreadDraftPrompt(store, id, '')
     }
+    return true
   }
 
   function addChip(file: { path: string; content: string }): void {
@@ -2835,6 +2906,17 @@ export function mountInputBar(
       composer.value = content
       await submit()
       return true
+    },
+    sendText: async (content: string): Promise<boolean> => {
+      if (!getActiveThreadId() || imageDescriptionInProgress) return false
+      // After whatever the user already had in the composer, as plain text: a
+      // paste chip would reach the agent fenced as a code block. When the send
+      // stops short (a checkout prompt, a branch mismatch) the text stays in the
+      // composer for the user to finish, and false says nothing went out yet.
+      const end = composer.value.length
+      composer.setSelectionRange(end, end)
+      composer.insertText(`${composer.value.trim() ? '\n\n' : ''}${content}`)
+      return submit()
     },
     attachImage: addImageChip,
     attachVideo: addVideoChip,
@@ -3133,6 +3215,7 @@ export function mountInputBar(
       void refreshContainerRunsSetting()
       void refreshPlanModeSetting()
       modelPicker.refresh()
+      syncProfileLabel()
       void refreshImageCompatibilityWarning()
       // An added/edited provider (e.g. a freshly fetched HF list) changes pricing.
       refreshModelPricing()

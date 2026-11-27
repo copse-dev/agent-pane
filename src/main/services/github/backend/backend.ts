@@ -98,6 +98,20 @@ export interface GitHubBackend {
   approvePr: (root: string | null, ref: PrRef) => Promise<PrActionResult>
   markPrReady: (root: string | null, ref: PrRef) => Promise<PrActionResult>
   enableAutoMerge: (root: string | null, ref: PrRef) => Promise<PrActionResult>
+  /** Reply to an inline review thread on `ref`; the thread must belong to that PR. */
+  replyToReviewThread: (
+    root: string | null,
+    ref: PrRef,
+    threadId: string,
+    body: string,
+  ) => Promise<PrActionResult>
+  /** Resolve (`true`) or reopen (`false`) an inline review thread on `ref`. */
+  setReviewThreadResolved: (
+    root: string | null,
+    ref: PrRef,
+    threadId: string,
+    resolved: boolean,
+  ) => Promise<PrActionResult>
 }
 
 /** Settings key controlling which backend the PR panel talks to. */
