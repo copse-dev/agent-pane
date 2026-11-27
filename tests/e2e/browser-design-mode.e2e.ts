@@ -75,8 +75,8 @@ async function clickInGuest(selector: string): Promise<void> {
   // WebDriver offsets are from the element's centre.
   const x = Math.round(point.x - size.width / 2)
   const y = Math.round(point.y - size.height / 2)
+  // Pointer input reaches the guest in order, so the hover lands before the click.
   await host.moveTo({ xOffset: x, yOffset: y })
-  await browser.pause(150)
   await host.click({ x, y })
 }
 
@@ -198,7 +198,6 @@ describe('browser design mode', function () {
       xOffset: Math.round(point.x - size.width / 2),
       yOffset: Math.round(point.y - size.height / 2),
     })
-    await browser.pause(150)
     await browser.keys('ArrowUp')
     await browser.keys('Enter')
     await $('.browser-design-item').waitForDisplayed({ timeout: 10_000 })
