@@ -5,6 +5,7 @@ import {
   alertClickOwner,
   shouldNotifyForAlert,
   openUserAlertTarget,
+  setDetachedWindowReviver,
   shouldSendSystemNotification,
   startWindowAttention,
   type AlertClickWindow,
@@ -223,6 +224,29 @@ describe('openUserAlertTarget', () => {
     ])
     assert.deepEqual(looked, ['thread-1'])
     assert.deepEqual(other.sent, [], 'another window never receives the thread')
+  })
+
+  it('hands a window detached mid-turn to the reviver instead of showing its blank page', async () => {
+    const owner = clickWindow('owner', { visible: false })
+    const revived: unknown[] = []
+    setDetachedWindowReviver((win, threadId) => {
+      revived.push([win, threadId])
+      return true
+    })
+    try {
+      const used = await openUserAlertTarget(
+        owner,
+        () => null,
+        'thread-1',
+        async () => 'p',
+      )
+      assert.equal(used, owner)
+      assert.deepEqual(revived, [[owner, 'thread-1']])
+      assert.deepEqual(owner.calls, [], 'the reviver shows the window once it has reloaded')
+      assert.deepEqual(owner.sent, [])
+    } finally {
+      setDetachedWindowReviver(() => false)
+    }
   })
 
   it('restores and shows a minimized, hidden owner before focusing it', async () => {

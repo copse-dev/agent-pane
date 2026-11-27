@@ -99,7 +99,8 @@ import {
   routeShellCommand,
   type ShellRoutingTool,
 } from './command-routing-config.ts'
-import { resolveAutoApproval } from './auto-approval-config.ts'
+import { resolveAutoApproval, workspaceTrustWouldAutoApprove } from './auto-approval-config.ts'
+import { AUTO_APPROVAL_RANK, type AutoApprovalTier } from '@shared/auto-approval.ts'
 import {
   BROWSER_TOOLS,
   READ_ONLY_BROWSER_TOOLS,
@@ -300,12 +301,15 @@ function commandRunsSandboxed(
  *
  * @param scope where the grant applies, recorded so the log distinguishes a
  *   contained auto-approval from one that dropped containment.
+ * @param maxTier the highest tier this call may approve, below the configured
+ *   level: a command classified above it prompts even when that level allows it.
  */
 function autoApproveShell(
   command: string,
   scope: 'sandbox' | 'external',
   executionRoot?: string | null,
   sandboxEnabled = commandRunsSandboxed(executionRoot ?? getAgentExecutionRoot()),
+  maxTier?: AutoApprovalTier,
 ): boolean {
   const decision = resolveAutoApproval(
     command,
@@ -313,6 +317,9 @@ function autoApproveShell(
     sandboxEnabled,
   )
   if (decision.action !== 'auto-approve') return false
+  if (maxTier !== undefined && AUTO_APPROVAL_RANK[decision.tier] > AUTO_APPROVAL_RANK[maxTier]) {
+    return false
+  }
   recordDecision({
     kind: 'shell',
     actor: 'classifier',
@@ -323,6 +330,25 @@ function autoApproveShell(
     source: 'auto-approval',
   })
   return true
+}
+
+/**
+ * The trust offer a shell prompt carries when trusting the run's project is the
+ * only thing between `command` and the deterministic tiers. Same roots and
+ * sandbox state as {@link autoApproveShell}, so the prompt never claims trust
+ * would help where another gate would still ask.
+ */
+function shellWorkspaceTrustOffer(
+  command: string,
+  executionRoot?: string | null,
+  sandboxEnabled = commandRunsSandboxed(executionRoot ?? getAgentExecutionRoot()),
+): Pick<ApprovalRequest, 'workspaceTrustOffer'> {
+  const root = workspaceTrustWouldAutoApprove(
+    command,
+    { projectRoot: getAgentProjectRoot(), executionRoot: executionRoot ?? getAgentExecutionRoot() },
+    sandboxEnabled,
+  )
+  return root === null ? {} : { workspaceTrustOffer: { root } }
 }
 
 /** Observation only: no commands, credential values or grant contents are copied. */
@@ -350,7 +376,7 @@ async function requestEscalationApproval(
   cause: PromptCause,
   signal?: AbortSignal,
   leaseIdentity?: ShellReplayLeaseIdentity,
-  opts: { offerTrustedCommand?: boolean } = {},
+  opts: { offerTrustedCommand?: boolean } & Pick<ApprovalRequest, 'workspaceTrustOffer'> = {},
 ): Promise<boolean> {
   if (signal?.aborted) return false
   const trustable =
@@ -368,6 +394,7 @@ async function requestEscalationApproval(
       cause,
       reasons,
       shellContext: shellApprovalAuditContext(),
+      ...(opts.workspaceTrustOffer ? { workspaceTrustOffer: opts.workspaceTrustOffer } : {}),
       allowRemember: trustable !== null,
       ...(trustable ? { rememberLabel: `Always allow \`${trustable}\` in trusted projects` } : {}),
       ...(leaseIdentity
@@ -514,6 +541,7 @@ async function promptShell(
   containedCause: PromptCause,
   signal?: AbortSignal,
   leaseIdentity?: ShellReplayLeaseIdentity,
+  trustOffer: Pick<ApprovalRequest, 'workspaceTrustOffer'> = {},
 ): Promise<boolean> {
   if (signal?.aborted) return false
   // The trusted-command tick box only makes sense on an escalation to OUTSIDE the
@@ -527,6 +555,8 @@ async function promptShell(
       reasons,
       'shell-sandbox-escalation',
       signal,
+      undefined,
+      trustOffer,
     )
   }
   const sandboxed =
@@ -544,6 +574,7 @@ async function promptShell(
       cause: containedCause,
       reasons,
       shellContext: shellApprovalAuditContext(),
+      ...trustOffer,
       // A sandboxed approval includes a bounded replay lease by default. The
       // prompt names the 10-retry/15-minute bound; outside-sandbox grants remain
       // explicit because they weaken containment.
@@ -629,13 +660,24 @@ export async function promptUnsandboxedShell(
      * whose "always allow" would otherwise outlive the failure it answered.
      */
     oneShot?: boolean
+    /**
+     * The highest auto-approval tier that may answer this retry without a
+     * prompt. A network-only sandbox block may be answered for a read-tier
+     * shape (`git fetch origin`), but a local-write shape runs repository
+     * hooks that only the sandbox was containing.
+     */
+    autoApproveUpToTier?: AutoApprovalTier
   } = {},
 ): Promise<boolean> {
   if (signal?.aborted) return false
   const forceAsk =
     opts.requireInteractiveApproval === true || resolveToolPermission('run_shell')?.policy === 'ask'
   const oneShot = opts.oneShot === true
-  if (!forceAsk && autoApproveShell(command, 'external')) return true
+  if (
+    !forceAsk &&
+    autoApproveShell(command, 'external', undefined, undefined, opts.autoApproveUpToTier)
+  )
+    return true
   // An agent rerunning the same demo or harness after each fix is blocked the
   // same way every time. A runner-verified block of bounded opaque local
   // execution may use or offer the outside-sandbox lease `promptExpectedSandboxBlock`
@@ -658,7 +700,7 @@ export async function promptUnsandboxedShell(
     'shell-sandbox-retry',
     signal,
     leaseIdentity ?? undefined,
-    { offerTrustedCommand: !oneShot },
+    { offerTrustedCommand: !oneShot, ...(forceAsk ? {} : shellWorkspaceTrustOffer(command)) },
   )
 }
 
@@ -1872,6 +1914,7 @@ export async function ensureShellCommandPermitted(
     sandboxEnabled ? 'shell-in-sandbox' : 'shell-no-containment',
     opts.signal,
     (forceAsk ? undefined : leaseOfferIdentity) ?? undefined,
+    forceAsk ? {} : shellWorkspaceTrustOffer(command, workspaceRoot, sandboxEnabled),
   )
 }
 

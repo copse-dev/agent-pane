@@ -116,13 +116,9 @@ describe('browser-hosted Activity home', () => {
   })
 
   it('keeps the selected approval and its heading visible when the list stacks', async () => {
-    // setWindowSize measures the outer window; the reported bug used a renderer
-    // viewport of1280x800, so account for Chromium's toolbar before reproducing.
-    const frame = await browser.execute(() => ({
-      width: window.outerWidth - window.innerWidth,
-      height: window.outerHeight - window.innerHeight,
-    }))
-    await browser.setWindowSize(1280 + frame.width, 800 + frame.height)
+    // The reported bug used a renderer viewport of 1280x800; this tier's
+    // setWindowSize sizes the page (tests/demo/helpers/page-viewport.ts).
+    await browser.setWindowSize(1280, 800)
     await browser.url('about:blank')
     await browser.url('/?scenario=activity-home')
     await $(
@@ -388,10 +384,6 @@ describe('browser-hosted Activity home', () => {
 
   it('never clips the action bar at the widths the pane divider leaves the chat pane', async () => {
     const before = await browser.getWindowSize()
-    const frame = await browser.execute(() => ({
-      width: window.outerWidth - window.innerWidth,
-      height: window.outerHeight - window.innerHeight,
-    }))
     await $('.titlebar-btn[aria-label="Toggle right panel"]').click()
     await $('#pane-files').waitForDisplayed()
     const paneWidth = async (): Promise<number> =>
@@ -435,7 +427,7 @@ describe('browser-hosted Activity home', () => {
       // genuine two-column width needs a wider window first; 345px, the
       // narrowest the divider allows, needs the default width back; a wider
       // window raises the divider's own floor well past it.
-      await browser.setWindowSize(1780 + frame.width, 800 + frame.height)
+      await browser.setWindowSize(1780, 800)
       for (const target of [900, 761, 700]) {
         const probe = await probeAt(target)
         widths.push(probe.pane)

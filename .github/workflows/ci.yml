@@ -371,6 +371,22 @@ jobs:
       - run: npm run format:check
       - run: npm run check:dead-code
       - run: npm run check:e2e-exclusions
+      - run: npm run check:e2e-syntax
+      - run: npm run demo:site:check
+      # Type coverage builds a whole TypeScript program per project, like
+      # typecheck; the script sets its own 4 GB heap (the node project aborts
+      # at V8's default). Same retry-on-137 as typecheck for the fleet cgroup.
+      - name: Type coverage
+        run: |
+          set +e
+          npm run type-coverage
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then exit 0; fi
+          if [ "$status" -ne 137 ]; then exit "$status"; fi
+          echo "::warning::type-coverage OOM-killed (137); retrying once"
+          sleep 10
+          npm run type-coverage
       # Burn-in admission (docs/testing-strategy.md): select the e2e specs this
       # PR adds, modifies or restores. An over-cap plan is not a precheck
       # failure; the `e2e-burn-in` job reports it. An unreadable registry or a
@@ -1557,6 +1573,14 @@ jobs:
       # this tier and attached its immutable render evidence.
       - name: Build browser reference app
         run: npm run build:demo
+        if: needs.precheck.outputs.mode != 'skip'
+      # Install the pinned Chrome for Testing build from zips checked against the
+      # sha256 values in scripts/lib/demo-chrome.mts, and export
+      # COPSE_DEMO_CHROME_BINARY / COPSE_DEMO_CHROMEDRIVER_BINARY for the render
+      # steps. WebdriverIO's own install verifies no hash, and a self-hosted
+      # runner could otherwise reuse a browser an earlier job left in its tmpdir.
+      - name: Install checksum-verified browser tier Chrome
+        run: node scripts/install-demo-chrome.mts
         if: needs.precheck.outputs.mode != 'skip'
       # Keep the frame-by-frame motion eval off the other Chrome workers: CPU
       # contention delays RAF callbacks and creates catch-up scroll steps that

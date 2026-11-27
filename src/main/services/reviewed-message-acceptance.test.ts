@@ -246,6 +246,7 @@ test('real Delete between optimistic validation and queued acceptance emits noth
   const emitted: StreamChunk[] = []
   const dependencies: AgentDispatcherDependencies = {
     loadPlan: async () => null,
+    loadThreadSelection: async () => null,
     loadHistory: async () => [],
     saveHistory: async () => {},
     recoverHistory: async () => [],

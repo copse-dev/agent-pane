@@ -57,6 +57,10 @@ describe('quit during an owned foreground command', function () {
     seedEmptyProject(root, 'e2e-foreground-shell-quit', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
+      // This spec covers a quit that stops the turn. With the hand-off on, a
+      // background worker would take the turn instead and the quit dialog
+      // would offer "Close".
+      continueTurnsAfterQuit: false,
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -185,6 +189,8 @@ describe('quit during an owned foreground command', function () {
       false,
       'quit must interrupt the owning turn before a queued edit can run',
     )
+    // A quit the user chose (a signal here) stops the run: the next launch does
+    // not continue it by itself (`last-run.ts`), so the Retry card is the way on.
     await expect($('[data-turn-recovery-card]')).toBeDisplayed()
     await parkPointer()
     await saveAppScreenshot('foreground-shell-recovery-after-quit.png')

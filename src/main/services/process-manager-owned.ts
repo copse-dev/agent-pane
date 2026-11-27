@@ -13,6 +13,17 @@ import { gortexDaemonPidPath } from './search/semantic-index.ts'
 
 const execFileAsync = promisify(execFile)
 
+let foreignRoots: () => Promise<readonly OwnedProcessRoot[]> = () => Promise.resolve([])
+
+/**
+ * Where the Process Manager finds commands another Copse process started for
+ * this profile's threads (the turn host's), so they show under their thread
+ * rather than as unowned processes.
+ */
+export function setForeignProcessRoots(list: () => Promise<readonly OwnedProcessRoot[]>): void {
+  foreignRoots = list
+}
+
 export interface OwnedProcessRoot {
   pid: number
   label: string
@@ -241,6 +252,8 @@ export async function readOwnedProcessRows(
   managingOwnerId: number,
   appPids: ReadonlySet<number>,
 ): Promise<ProcessManagerRow[]> {
+  // Asked first and awaited last: a slow host must not hold up the sample.
+  const foreign = foreignRoots().catch((): readonly OwnedProcessRoot[] => [])
   const roots: OwnedProcessRoot[] = [
     ...listAcpSessionProcesses().map((session): OwnedProcessRoot => ({
       ...session,
@@ -278,21 +291,25 @@ export async function readOwnedProcessRows(
     ),
     ...sandboxFsServerRoots(listSandboxFsServerProcesses(), threadWorktreeOwner),
   ]
-  if (process.platform === 'win32') return ownedProcessRows(roots, [])
+  if (process.platform === 'win32') return ownedProcessRows([...roots, ...(await foreign)], [])
   const gortex = await readGortexDaemonRoot()
   if (gortex) roots.push(gortex)
+  let hostRootsAdded = false
   try {
     const table = execFileAsync('ps', ['-Ao', 'pid=,ppid=,%cpu=,rss=,comm='], {
       timeout: 1_500,
       maxBuffer: 4 * 1024 * 1024,
     })
-    const { stdout } = await table
+    const [{ stdout }, hostRoots] = await Promise.all([table, foreign])
+    roots.push(...hostRoots)
+    hostRootsAdded = true
     const samples = parseProcessTable(stdout)
     // The sampling `ps` is itself a child of main; don't report it.
     const claimed = new Set([...roots.map((root) => root.pid), table.child.pid ?? 0])
     const helpers = await labelSelfHelpers(copseChildRoots(samples, process.pid, appPids, claimed))
     return ownedProcessRows([...roots, ...helpers], samples)
   } catch {
+    if (!hostRootsAdded) roots.push(...(await foreign))
     return ownedProcessRows(roots, [])
   }
 }
