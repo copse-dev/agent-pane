@@ -486,7 +486,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-PM733O5B.js";
+} from "./chunk-REJYMKFY.js";
 import "./chunk-X6JZSFJR.js";
 import {
   init_actions,
@@ -60329,7 +60329,12 @@ ${description}
           model,
           // The footer picker only names a branch; this is where that selection
           // becomes the worktree's base, or the shared checkout's branch.
-          baseBranch
+          baseBranch,
+          // With no selection to send (no listed default, or a detached
+          // checkout), the picker is showing the project checkout's branch,
+          // so start there — unlike machine-started threads, which main cuts
+          // from the fetched default branch.
+          "project-branch"
         );
         if (!getThreadById(store2, id)) return false;
         preparedPromptState = prepared.promptState;
