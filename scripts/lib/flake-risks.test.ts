@@ -11,6 +11,7 @@ import {
   formatFlakeRiskBaseline,
   isE2ePath,
   isUnitTestPath,
+  rulesMissingFrom,
   scanFlakeRisks,
   type FlakeRiskBaseline,
   type FlakeRule,
@@ -34,6 +35,8 @@ function baseline(rules: Partial<Record<FlakeRule, Record<string, number>>>): Fl
       'unit-wall-clock-sleep': rules['unit-wall-clock-sleep'] ?? {},
       'e2e-checkout-seed': rules['e2e-checkout-seed'] ?? {},
       'e2e-fixed-port': rules['e2e-fixed-port'] ?? {},
+      'unit-platform-early-return': rules['unit-platform-early-return'] ?? {},
+      'unit-platform-suite-skip': rules['unit-platform-suite-skip'] ?? {},
     },
   }
 }
@@ -340,6 +343,34 @@ describe('flakeBaselineGrowth', () => {
       ).length,
       1,
     )
+  })
+})
+
+describe('a base baseline that predates a rule', () => {
+  const {
+    'unit-platform-early-return': _earlyReturn,
+    'unit-platform-suite-skip': _suiteSkip,
+    ...predating
+  } = baseline({}).rules
+  const old = JSON.stringify({ version: 1, rules: predating })
+
+  it('parses with the rule empty', () => {
+    const parsed = safeJsonParse(old, decodeWithSchema(flakeRiskBaselineSchema))
+    assert.ok(parsed)
+    assert.deepEqual(parsed.rules['unit-platform-suite-skip'], {})
+  })
+
+  it('does not count the first recording of that rule as growth', () => {
+    const parsed = safeJsonParse(old, decodeWithSchema(flakeRiskBaselineSchema))
+    assert.ok(parsed)
+    const head = baseline({ 'unit-platform-early-return': { [unit]: 2 } })
+    assert.deepEqual([...rulesMissingFrom(old)].sort(), [
+      'unit-platform-early-return',
+      'unit-platform-suite-skip',
+    ])
+    assert.equal(flakeBaselineGrowth(parsed, head).length, 1)
+    assert.deepEqual(flakeBaselineGrowth(parsed, head, new Map(), rulesMissingFrom(old)), [])
+    assert.deepEqual([...rulesMissingFrom(formatFlakeRiskBaseline(head))], [])
   })
 })
 
