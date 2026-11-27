@@ -1,3 +1,9 @@
 {
-  "lines": 73.04
+  "lines": 92.17,
+  "areas": {
+    "src/main/ipc": 31.63,
+    "src/main/services": 94.71,
+    "src/main/windows": 82.35,
+    "src/renderer/views": 94.72
+  }
 }

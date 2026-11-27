@@ -54,7 +54,58 @@ function headlessBacking(options: PersistentStoreOptions): BackingStore {
  * future backend replacement do not require changes throughout the app.
  */
 export function openPersistentStore(options: PersistentStoreOptions = {}): CachedStore {
-  return createCachedStore(factory?.(options) ?? headlessBacking(options))
+  const backing = factory?.(options) ?? headlessBacking(options)
+  const name = options.name ?? 'config'
+  const opened = { cache: createCachedStore(backing), backing }
+  openedStores.add(opened)
+  const wrote = (): void => {
+    for (const listener of writeListeners) listener(name)
+  }
+  return {
+    get: (key): unknown => opened.cache.get(key),
+    set: (key, value): void => {
+      opened.cache.set(key, value)
+      wrote()
+    },
+    setMany: (values): void => {
+      opened.cache.setMany(values)
+      wrote()
+    },
+    delete: (key): void => {
+      opened.cache.delete(key)
+      wrote()
+    },
+    listKeys: (): string[] => opened.cache.listKeys(),
+    deleteKeys: (keys): void => {
+      opened.cache.deleteKeys(keys)
+      wrote()
+    },
+    backingReads: (): number => opened.cache.backingReads(),
+    backingWrites: (): number => opened.cache.backingWrites(),
+  }
+}
+
+const openedStores = new Set<{ cache: CachedStore; backing: BackingStore }>()
+const writeListeners = new Set<(store: string) => void>()
+
+/**
+ * Hear every write this process makes to a store, by store name. The turn host
+ * (`docs/plans/local-turn-worker.md`, decision 5 of "Every turn in a turn host")
+ * is told the app changed the profile from this.
+ */
+export function onPersistentStoreWrite(listener: (store: string) => void): () => void {
+  writeListeners.add(listener)
+  return (): void => {
+    writeListeners.delete(listener)
+  }
+}
+
+/**
+ * Drop every cached value, so the next read of each key reaches its backing
+ * store. For a process whose backing was refreshed from disk under it.
+ */
+export function forgetCachedStoreValues(): void {
+  for (const opened of openedStores) opened.cache = createCachedStore(opened.backing)
 }
 
 /**

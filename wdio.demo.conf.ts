@@ -13,6 +13,8 @@ import { MOBILE_CONTENT_SECURITY_POLICY } from './src/shared/mobile-content-secu
 import { mobileAssetRoutes } from './src/shared/mobile-asset-routes.ts'
 import { loadRemoteAssets } from './src/main/services/mobile/remote-assets.ts'
 import { createRemoteChatFixture } from './tests/demo/helpers/remote-chat-fixture.ts'
+import { installPageViewport } from './tests/demo/helpers/page-viewport.ts'
+import { DEMO_CHROME_PIN } from './scripts/lib/demo-chrome.mts'
 
 /** Cap how long afterTest may talk to a possibly-dead Chrome session. */
 const AFTER_TEST_SESSION_BUDGET_MS = 5_000
@@ -32,6 +34,22 @@ const MARKETING_ROOT = resolve('site')
 const MARKETING_MOUNT = '/marketing'
 const MARKETING_DEMO_MOUNT = `${MARKETING_MOUNT}/demo/main`
 let server: Server | undefined
+
+/**
+ * The pinned Chrome for Testing build, its sha256 values and the bump steps
+ * live in `scripts/lib/demo-chrome.mts`: a bump changes the version and both
+ * hashes together. CI installs it with `scripts/install-demo-chrome.mts` and
+ * passes the verified binaries in through COPSE_DEMO_CHROME_BINARY /
+ * COPSE_DEMO_CHROMEDRIVER_BINARY, so WebdriverIO's own unverified download is
+ * never used there.
+ */
+const DEMO_CHROME_VERSION = DEMO_CHROME_PIN.version
+if (process.env['CI'] && !process.env['COPSE_DEMO_CHROME_BINARY']) {
+  throw new Error(
+    'CI must run the browser tier on the checksum-verified Chrome: run ' +
+      '`node scripts/install-demo-chrome.mts` before `test:demo`.',
+  )
+}
 
 const contentTypes: Readonly<Record<string, string>> = {
   '.css': 'text/css; charset=utf-8',
@@ -357,6 +375,8 @@ export const config: WebdriverIO.Config = {
   capabilities: [
     {
       browserName: 'chrome',
+      // A local Chromium override brings its own version.
+      ...(process.env['COPSE_DEMO_CHROME_BINARY'] ? {} : { browserVersion: DEMO_CHROME_VERSION }),
       'wdio:enforceWebDriverClassic': true,
       'goog:chromeOptions': {
         args: [
@@ -389,11 +409,14 @@ export const config: WebdriverIO.Config = {
   mochaOpts: { ui: 'bdd', timeout: 90_000 },
   onPrepare: startDemoServer,
   onComplete: stopDemoServer,
-  before() {
+  async before() {
     // Demo Chrome can wedge on session DELETE the same way Electron e2e does
     // (#1134 tip b21d7f73 / markdown-list-indent.demo.ts). Cap + swallow so
     // teardown cannot flip a green demo suite red.
     installDeleteSessionSafety(browser)
+    // Chrome for Testing's headless window is taller than its page, so window
+    // sizes are page sizes in this tier, starting at 1280x800.
+    await installPageViewport(browser)
   },
   afterTest: async (_test, _context, result) => {
     if (!result.passed) {

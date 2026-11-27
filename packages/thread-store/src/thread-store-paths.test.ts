@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import assert from 'node:assert/strict'
+import { acquireWriterLease } from './writer-lease.ts'
 import {
   existsSync,
   mkdirSync,
@@ -401,6 +402,20 @@ describe('thread-store paths', () => {
       assert.ok(exported.every((file) => !file.path.startsWith(contentDir + '/')))
     })
   }
+
+  it('leaves the writer lease out of a thread folder export', async () => {
+    await saveProjectThread('proj', thread('t1', [messageWithIds('a1', 'tc', 'sub')]))
+    const dir = join(workspace, 'proj', 't1')
+    assert.equal((await acquireWriterLease(dir, 't1')).status, 'acquired')
+    mkdirSync(join(dir, 'writer.lease.lock'))
+    writeFileSync(join(dir, 'writer.lease.lock', 'stray'), '')
+    const exported = (await readThreadDirectory('proj', 't1')).map((file) => file.path)
+    assert.ok(exported.includes('meta.json'))
+    assert.deepEqual(
+      exported.filter((path) => path.startsWith('writer.lease')),
+      [],
+    )
+  })
 
   it('rejects symlink file leaves and project/thread directories', async () => {
     await saveProjectThread('proj', thread('t1', [messageWithIds('a1', 'tc', 'sub')]))

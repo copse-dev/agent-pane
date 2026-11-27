@@ -87,6 +87,7 @@ export interface SettingsValues {
   openRouterFreeMode: boolean
   localSubagentsEnabled: boolean
   localTodoItemsEnabled: boolean
+  continueTurnsAfterQuit: boolean
   postTurnReviewMinChangedLines: number
   bundledCursorSkillsEnabled: boolean
   bundledSkillPluginOverrides: Record<string, boolean>
@@ -162,6 +163,7 @@ export interface SettingsValues {
   conciseThreadsEnabled: boolean
   deferredWorktreesEnabled: boolean
   containerRunsEnabled: boolean
+  turnsRunInHost: boolean
   planModeEnabled: boolean
   advisorModel: string
   orchestrationStrategyEnabled: boolean

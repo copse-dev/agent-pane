@@ -93,6 +93,15 @@ type Send = (
 ) => Promise<ThreadPromptResult>
 let send: Send | null = null
 
+/**
+ * Where prompts to other threads go in a process with no window: the turn host
+ * sends them to the app's window (\`turn-host.ts\`). The window's own sender
+ * replaces it in the app.
+ */
+export function setThreadPromptSender(next: Send | null): void {
+  send = next
+}
+
 export function sendThreadPrompt(
   command: Omit<ThreadPromptCommand, 'id' | 'expiresAt'>,
   signal?: AbortSignal,

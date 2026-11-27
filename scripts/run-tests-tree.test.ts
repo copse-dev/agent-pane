@@ -12,6 +12,7 @@ async function fixture(run: (root: string) => Promise<void>): Promise<void> {
     await mkdir(join(root, 'src'))
     for (const file of [
       'scripts/run-tests.mts',
+      'scripts/lib/root-container-userns.mts',
       'scripts/lib/test-filter.mts',
       'scripts/lib/module-relative-test-paths.mts',
       'scripts/lib/tracked-test-tree.mts',

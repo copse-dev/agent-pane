@@ -97,6 +97,7 @@ function harness(
     prepareExecutionContext: async () => context,
     isScheduledAutomationRun: () => false,
     transcriptLength: async () => 0,
+    loadThreadSelection: async () => null,
     run: async (threadId, userContent, priorMessages, host) => {
       for (const chunk of chunks()) host.emit(threadId, chunk)
       return {
@@ -210,6 +211,31 @@ describe('TurnTranscriptWriter', () => {
         ['note', 'user'],
         ['msg-2', 'assistant'],
       ],
+    )
+  })
+
+  it('writes nothing more once the turn is fenced, not even its closing status', async () => {
+    await updateMeta(PROJECT, THREAD, { status: 'idle' })
+    const forwarded: Delivery[] = []
+    const { writer } = harness(
+      () => [],
+      (delivery) => forwarded.push(delivery),
+    )
+    const transcript = writer.begin(PROJECT, THREAD)
+    transcript.fence()
+    transcript.emit({ type: 'text', text: 'Written by a turn that lost its lease.' })
+    transcript.emit({ type: 'done' })
+    transcript.end()
+    await writer.settled(THREAD)
+    const thread = await stored()
+    assert.equal(thread.status, 'idle')
+    assert.deepEqual(
+      thread.messages.map((message) => message.id),
+      ['u1'],
+    )
+    assert.deepEqual(
+      forwarded.filter((delivery) => delivery.chunk.type === 'text'),
+      [],
     )
   })
 
@@ -458,6 +484,22 @@ describe('TurnTranscriptWriter', () => {
     assert.equal(thread.status, 'running', 'restart must detect an interrupted turn')
     assert.equal(thread.messages.at(-1)?.content, 'Saved checkpoint.')
     assert.throws(() => turn.writer.begin(PROJECT, 'late-thread'), /closing/)
+  })
+
+  it("keeps one thread's turn recoverable when a quit stops it in the host", async () => {
+    const turn = harness(() => [])
+    const transcript = turn.writer.begin(PROJECT, THREAD)
+    transcript.emit({ type: 'text', text: 'Saved checkpoint.' })
+    turn.writer.interruptThreadForShutdown(THREAD)
+    transcript.emit({ type: 'text', text: 'Late output must not complete the turn.' })
+    transcript.emit({ type: 'done', stopReason: 'cancelled' })
+    transcript.end()
+    await turn.writer.settled(THREAD)
+    const thread = await stored()
+    assert.equal(thread.status, 'running', 'restart must detect an interrupted turn')
+    assert.equal(thread.messages.at(-1)?.content, 'Saved checkpoint.')
+    // The host stays up: the thread's next turn ends as usual.
+    assert.doesNotThrow(() => turn.writer.begin(PROJECT, 'next-thread'))
   })
 
   it('labels a user Stop the way the window does, on disk and on the wire', async () => {

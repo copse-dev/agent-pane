@@ -11,8 +11,13 @@ export const AGENT_TURN_BUSY_ERROR_NAME = 'AgentTurnBusyError'
 export class AgentTurnBusyError extends Error {
   override readonly name = AGENT_TURN_BUSY_ERROR_NAME
 
-  constructor(threadId: string) {
-    super(`An agent turn is already running for thread "${threadId}"`)
+  /** `elsewhere` names the other Copse process that holds the thread's writer lease. */
+  constructor(threadId: string, elsewhere?: string) {
+    super(
+      elsewhere === undefined
+        ? `An agent turn is already running for thread "${threadId}"`
+        : `Thread "${threadId}" is being run by another Copse process (${elsewhere})`,
+    )
   }
 }
 

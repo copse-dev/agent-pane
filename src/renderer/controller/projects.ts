@@ -1118,9 +1118,7 @@ export async function addProjectFromPath(
     id = existing.id
   } else {
     id = uuid()
-    store.setState({
-      projects: [...store.getState().projects, { id, path, name: basename(path) }],
-    })
+    store.setState({ projects: [...store.getState().projects, { id, path, name: basename(path) }] })
   }
   return activateAndWait(store, api, id, path)
 }
@@ -1322,7 +1320,43 @@ export async function createNewProject(store: AppStore, api: ApiClient): Promise
   const state = store.getState()
   const threadId = state.activeThreadId ?? createThread(store)
   setThreadDraftPrompt(store, threadId, NEW_PROJECT_STARTER_PROMPT)
+  void offerProjectTrust(api, root)
   return true
+}
+
+/**
+ * Offer, once, to trust a local project the user just added themselves (Open
+ * folder or New project). Trust stays off by default and is never granted without
+ * this explicit yes: it is the gate for repo-shipped MCP servers, hooks and
+ * instructions and for the shell auto-approval tiers, so an untrusted project
+ * asks before every command. Declining leaves the project untrusted, and it is
+ * not asked again on later opens. Settings → Sources can still trust it.
+ */
+async function offerProjectTrust(api: ApiClient, root: string): Promise<void> {
+  try {
+    if (await api.workspace.isTrusted()) return
+    // Hooks are read from `root` itself, so a workspace switch while they load
+    // cannot put another project's hooks in this consent. The re-check after the
+    // dialog makes sure `setTrusted` (window workspace) still means `root`.
+    const unsandboxedHooks = await api.workspace.unsandboxedProjectHooks(root).catch(() => [])
+    const { confirmProjectTrust } = await import('../views/workspace-trust-consent.ts')
+    const confirmed = await confirmProjectTrust({
+      projectName: basename(root),
+      unsandboxedHooks,
+      lead: 'Copse keeps new projects untrusted and asks before running their commands. Only trust a folder whose contents you wrote or have reviewed.',
+      cancelLabel: 'Not now',
+      // Nobody asked for this dialog, so Enter must not grant trust.
+      focusCancel: true,
+    })
+    // Trust applies to the window's workspace. If the user switched projects
+    // while the dialog was open, the yes was about a project no longer shown.
+    if (!confirmed || (await api.workspace.get()) !== root) return
+    // Main re-checks the root at the moment it trusts, closing the gap between
+    // the check above and this call.
+    await api.workspace.setTrusted(true, root)
+  } catch (err: unknown) {
+    showErrorToast('Could not trust project', err)
+  }
 }
 
 /** Parent directory of the most recently created/opened local project, else home. */
@@ -1339,7 +1373,9 @@ function lastProjectDirectory(store: AppStore): string {
 export async function addProject(store: AppStore, api: ApiClient): Promise<boolean> {
   const path = await api.workspace.open()
   if (!path) return false
+  const isNew = !findProjectByKey(store.getState().projects, undefined, path)
   await addProjectFromPath(store, api, path)
+  if (isNew) void offerProjectTrust(api, path)
   return true
 }
 

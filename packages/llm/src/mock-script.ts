@@ -448,7 +448,7 @@ function validatePendingToolResults(
       )
         throw recordError(
           state,
-          `tool result from ${JSON.stringify(expectedResult.name)} did not include ${JSON.stringify(expectedResult.includes)}`,
+          `tool result from ${JSON.stringify(expectedResult.name)} did not include ${JSON.stringify(expectedResult.includes)}; it was ${JSON.stringify(actualResult.result.slice(0, 400))}`,
         )
     }
   }

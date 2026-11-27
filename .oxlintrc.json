@@ -269,7 +269,25 @@
                 "allowTypeImports": true,
                 "message": "Importing Electron here couples the agent path to the desktop runtime. Inject the capability from an Electron entry point instead (see the handler seams in approval.ts / ask-user.ts), or `import type` if you only need its types. If this file genuinely IS a desktop entry point, add it to the allow-list in eslint.config.mjs \u2014 deliberately, and visibly in review."
               }
+            ],
+            "patterns": [
+              {
+                "group": ["electron/*"],
+                "allowTypeImports": true,
+                "message": "Importing Electron here couples the agent path to the desktop runtime. Inject the capability from an Electron entry point instead (see the handler seams in approval.ts / ask-user.ts), or `import type` if you only need its types. If this file genuinely IS a desktop entry point, add it to the allow-list in eslint.config.mjs \u2014 deliberately, and visibly in review."
+              }
             ]
+          }
+        ],
+        "copse/restricted-syntax": [
+          "error",
+          {
+            "selector": "BinaryExpression[operator='in'][left.type!='Literal']",
+            "message": "A dynamic key with `in` also matches inherited members (toString, constructor, __proto__, and five more). Use Object.hasOwn(record, key) \u2014 or keyOf(record) from @copse/std when you want a type predicate. A literal key (`'kind' in value`) is fine and is not restricted."
+          },
+          {
+            "selector": "ImportExpression:matches([source.value=/^electron(\\u002F|$)/], [source.type='TemplateLiteral'][source.expressions.length=0][source.quasis.0.value.cooked=/^electron(\\u002F|$)/])",
+            "message": "A runtime `import('electron')` is still an Electron import: deferring it only moves the failure from load time to first call. Importing Electron here couples the agent path to the desktop runtime. Inject the capability from an Electron entry point instead (see the handler seams in approval.ts / ask-user.ts), or `import type` if you only need its types. If this file genuinely IS a desktop entry point, add it to the allow-list in eslint.config.mjs \u2014 deliberately, and visibly in review."
           }
         ]
       }
@@ -296,6 +314,13 @@
                 "importNames": ["readFileSync"],
                 "message": "Settings plan-usage discovery runs on the main thread; use node:fs/promises readFile instead."
               }
+            ],
+            "patterns": [
+              {
+                "group": ["electron/*"],
+                "allowTypeImports": true,
+                "message": "Importing Electron here couples the agent path to the desktop runtime. Inject the capability from an Electron entry point instead (see the handler seams in approval.ts / ask-user.ts), or `import type` if you only need its types. If this file genuinely IS a desktop entry point, add it to the allow-list in eslint.config.mjs \u2014 deliberately, and visibly in review."
+              }
             ]
           }
         ],
@@ -304,6 +329,10 @@
           {
             "selector": "BinaryExpression[operator='in'][left.type!='Literal']",
             "message": "A dynamic key with `in` also matches inherited members (toString, constructor, __proto__, and five more). Use Object.hasOwn(record, key) \u2014 or keyOf(record) from @copse/std when you want a type predicate. A literal key (`'kind' in value`) is fine and is not restricted."
+          },
+          {
+            "selector": "ImportExpression:matches([source.value=/^electron(\\u002F|$)/], [source.type='TemplateLiteral'][source.expressions.length=0][source.quasis.0.value.cooked=/^electron(\\u002F|$)/])",
+            "message": "A runtime `import('electron')` is still an Electron import: deferring it only moves the failure from load time to first call. Importing Electron here couples the agent path to the desktop runtime. Inject the capability from an Electron entry point instead (see the handler seams in approval.ts / ask-user.ts), or `import type` if you only need its types. If this file genuinely IS a desktop entry point, add it to the allow-list in eslint.config.mjs \u2014 deliberately, and visibly in review."
           },
           {
             "selector": "CallExpression[callee.type='MemberExpression'][callee.property.name='readFileSync']",
@@ -339,6 +368,11 @@
             ],
             "patterns": [
               {
+                "group": ["electron/*"],
+                "allowTypeImports": true,
+                "message": "Importing Electron here couples the agent path to the desktop runtime. Inject the capability from an Electron entry point instead (see the handler seams in approval.ts / ask-user.ts), or `import type` if you only need its types. If this file genuinely IS a desktop entry point, add it to the allow-list in eslint.config.mjs \u2014 deliberately, and visibly in review."
+              },
+              {
                 "group": ["node:*"],
                 "allowTypeImports": true,
                 "message": "The renderer is a browser context and has no Node builtins at runtime. Reach the filesystem, processes, or the network through the preload bridge (`preload/api.d.ts`), or move the logic to src/shared if it is pure."
@@ -351,6 +385,10 @@
           {
             "selector": "BinaryExpression[operator='in'][left.type!='Literal']",
             "message": "A dynamic key with `in` also matches inherited members (toString, constructor, __proto__, and five more). Use Object.hasOwn(record, key) \u2014 or keyOf(record) from @copse/std when you want a type predicate. A literal key (`'kind' in value`) is fine and is not restricted."
+          },
+          {
+            "selector": "ImportExpression:matches([source.value=/^electron(\\u002F|$)/], [source.type='TemplateLiteral'][source.expressions.length=0][source.quasis.0.value.cooked=/^electron(\\u002F|$)/])",
+            "message": "A runtime `import('electron')` is still an Electron import: deferring it only moves the failure from load time to first call. Importing Electron here couples the agent path to the desktop runtime. Inject the capability from an Electron entry point instead (see the handler seams in approval.ts / ask-user.ts), or `import type` if you only need its types. If this file genuinely IS a desktop entry point, add it to the allow-list in eslint.config.mjs \u2014 deliberately, and visibly in review."
           },
           {
             "selector": "CallExpression[callee.type='MemberExpression'][callee.object.name=/^(window|globalThis)$/][callee.property.name=/^(confirm|alert)$/]",
@@ -377,7 +415,14 @@
         "src/main/services/diagnostics/perf-ipc.ts"
       ],
       "rules": {
-        "no-restricted-imports": "off"
+        "no-restricted-imports": "off",
+        "copse/restricted-syntax": [
+          "error",
+          {
+            "selector": "BinaryExpression[operator='in'][left.type!='Literal']",
+            "message": "A dynamic key with `in` also matches inherited members (toString, constructor, __proto__, and five more). Use Object.hasOwn(record, key) \u2014 or keyOf(record) from @copse/std when you want a type predicate. A literal key (`'kind' in value`) is fine and is not restricted."
+          }
+        ]
       }
     },
     {
@@ -393,6 +438,34 @@
         "typescript/no-explicit-any": "off",
         "typescript/consistent-type-assertions": "off",
         "copse/restricted-syntax": "off"
+      }
+    },
+    {
+      "files": ["src/**/*.test.ts", "packages/*/src/**/*.test.ts"],
+      "excludeFiles": [
+        "src/preload/**/*.ts",
+        "src/main/index.ts",
+        "src/main/app-init.ts",
+        "src/main/app-icon.ts",
+        "src/main/windows/**/*.ts",
+        "src/main/ipc/**/*.ts",
+        "src/main/services/auto-update.ts",
+        "src/main/services/close-confirm.ts",
+        "src/main/services/update-prompt.ts",
+        "src/main/services/user-alerts-electron.ts",
+        "src/main/services/native-human-confirmation.ts",
+        "src/main/services/plugins/plugin-browser-panel.ts",
+        "src/main/services/ssh-workspace/ssh-workspace-ipc.ts",
+        "src/main/services/diagnostics/perf-ipc.ts"
+      ],
+      "rules": {
+        "copse/restricted-syntax": [
+          "error",
+          {
+            "selector": "ImportExpression:matches([source.value=/^electron(\\u002F|$)/], [source.type='TemplateLiteral'][source.expressions.length=0][source.quasis.0.value.cooked=/^electron(\\u002F|$)/])",
+            "message": "A runtime `import('electron')` is still an Electron import: deferring it only moves the failure from load time to first call. Importing Electron here couples the agent path to the desktop runtime. Inject the capability from an Electron entry point instead (see the handler seams in approval.ts / ask-user.ts), or `import type` if you only need its types. If this file genuinely IS a desktop entry point, add it to the allow-list in eslint.config.mjs \u2014 deliberately, and visibly in review."
+          }
+        ]
       }
     },
     {

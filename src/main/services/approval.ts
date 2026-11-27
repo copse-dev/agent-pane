@@ -196,6 +196,14 @@ export interface ApprovalRequest {
    * it secret-free at the call site anyway.
    */
   reasons?: string[]
+  /**
+   * Set only when workspace trust is the one closed gate: the command would have
+   * run without this prompt in a trusted project. The renderer says so on the
+   * prompt and offers to trust; trusting goes through
+   * {@link pendingWorkspaceTrustOffer}, which reads this root from the main-held
+   * request, never from the renderer. Trusting does not answer the prompt.
+   */
+  workspaceTrustOffer?: { root: string }
   /** Audit-only permission facts captured when the shell prompt opens. */
   shellContext?: {
     sandboxAvailable: boolean
@@ -319,6 +327,7 @@ export function approvalDedupeKey(req: ApprovalRequest): string {
     turnTreeLeaseLabel: req.turnTreeLeaseLabel ?? '',
     turnTreeLeaseDefault: req.turnTreeLeaseDefault ?? false,
     turnTreeLeaseSubject: req.turnTreeLeaseSubject ?? '',
+    workspaceTrustOffer: req.workspaceTrustOffer?.root ?? '',
   })
 }
 
@@ -340,6 +349,31 @@ interface ScopedApprovalHandler {
 }
 
 const scopedHandler = new AsyncLocalStorage<ScopedApprovalHandler>()
+
+/** The turn a prompt asked on behalf of, when it runs in another process. */
+interface ApprovalOwner {
+  readonly projectId: string
+  readonly threadId: string
+}
+const approvalOwner = new AsyncLocalStorage<ApprovalOwner>()
+
+/**
+ * Ask on behalf of a turn that runs in another process (the turn host,
+ * `docs/plans/local-turn-worker.md`): the prompt is filed under that thread and
+ * project exactly as an in-process turn's would be, though no run of this
+ * process owns it.
+ */
+export function runWithApprovalOwner<T>(owner: ApprovalOwner, fn: () => T): T {
+  return approvalOwner.run(owner, fn)
+}
+
+function promptThreadId(): string | null {
+  return approvalOwner.getStore()?.threadId ?? getActiveRunThread()
+}
+
+function promptProjectId(): string | undefined {
+  return approvalOwner.getStore()?.projectId ?? getThreadExecutionContext()?.projectId
+}
 let nextScopedHandlerId = 0
 
 /** Scope non-interactive approvals to one headless run without replacing the desktop handler. */
@@ -461,7 +495,7 @@ export function parkedApprovalCount(): number {
 
 /** A stored verdict handed to an identical retry: the user's answer, replayed. */
 function recordReplayedDecision(req: ApprovalRequest, response: ApprovalResponse): void {
-  const projectId = response.device ? getThreadExecutionContext()?.projectId : undefined
+  const projectId = response.device ? promptProjectId() : undefined
   recordDecision({
     kind: req.type,
     ...(projectId ? { projectId } : {}),
@@ -501,7 +535,7 @@ function recordApprovalDecision(
         : undefined
   // Phone decisions belong to the run even when another project is selected.
   // Preserve other hosts' existing audit routing, including headless isolation.
-  const projectId = response.device ? getThreadExecutionContext()?.projectId : undefined
+  const projectId = response.device ? promptProjectId() : undefined
   recordDecision({
     kind: req.type,
     ...(projectId ? { projectId } : {}),
@@ -827,8 +861,8 @@ function requestApprovalUnobserved(
   // The turn's own project. Outside a turn there is none: the request is
   // audited only if a turn's thread later records it, and it can never defer
   // (deferral needs a run thread, and every run thread runs inside a turn).
-  const projectId = getThreadExecutionContext()?.projectId ?? null
-  const threadId = getActiveRunThread()
+  const projectId = promptProjectId() ?? null
+  const threadId = promptThreadId()
   approvalAuditIdentities.set(req, {
     ...(projectId ? { projectId } : {}),
     ...(threadId ? { threadId } : {}),
@@ -853,7 +887,7 @@ function requestApprovalUnobserved(
   // is the one choke point every gate already funnels through, so intercepting
   // here covers shell, MCP, web, browser, PII, ACP and the rest without any of
   // them growing a second code path — and without a gate being able to forget.
-  const deferringThread = getActiveRunThread()
+  const deferringThread = promptThreadId()
   if (deferringThread !== null && isDeferralModeActive(deferringThread)) {
     // The same project the audit identity above resolved: the turn's, else
     // the no-project bucket. Never the window's active project.
@@ -882,7 +916,7 @@ function requestApprovalInteractive(
     return Promise.resolve(unavailable)
   }
 
-  const threadId = getActiveRunThread() ?? undefined
+  const threadId = promptThreadId() ?? undefined
   return withRunDeadlinePaused(threadId, () =>
     requestApprovalUnpaused(
       req,
@@ -916,7 +950,7 @@ function requestApprovalUnpaused(
   const key = JSON.stringify([
     dedupePrefix,
     threadId,
-    getThreadExecutionContext()?.projectId ?? null,
+    promptProjectId() ?? null,
     getAgentExecutionRoot(),
     getActiveRunTurnTreeId(),
     getApprovalOperationKey() ?? null,
@@ -1168,6 +1202,18 @@ export function releaseParkedApprovalsForThread(threadId: string): void {
   }
 }
 
+/** Open desktop prompts that offer to trust their run's project, by prompt id. */
+const workspaceTrustOffers = new Map<string, string>()
+
+/**
+ * The project root a still-open prompt offered to trust, or null. The renderer
+ * names only the prompt; the root comes from the request main built, so a
+ * renderer cannot trust a folder no prompt offered.
+ */
+export function pendingWorkspaceTrustOffer(id: string): string | null {
+  return workspaceTrustOffers.get(id) ?? null
+}
+
 export function initApproval(
   win: BrowserWindow,
   ipcMain: IpcMain,
@@ -1245,7 +1291,7 @@ export function initApproval(
         // approval must not pop a modal over whichever project is focused, it
         // shows a sidebar attention indicator instead (issue: cross-project
         // prompt leakage). Null when no run owns it (e.g. headless paths).
-        const threadId = getActiveRunThread() ?? undefined
+        const threadId = promptThreadId() ?? undefined
         // Default is the window `initApproval` captured (the main window). A
         // pop-out that triggered this prompt scopes a different target so the
         // dialog appears where the user is looking, not behind it
@@ -1259,6 +1305,7 @@ export function initApproval(
           if (!dest.isDestroyed()) dest.send('agent:approval-request', { id, threadId, ...req })
         }
         replay.set(id, { target: dest, send })
+        if (req.workspaceTrustOffer) workspaceTrustOffers.set(id, req.workspaceTrustOffer.root)
         send()
         // Deliver the user's configured native alert channels. A repeating
         // Dock/taskbar animation stops on focus and also when this approval
@@ -1276,7 +1323,7 @@ export function initApproval(
         signal?.addEventListener('abort', onAbort, { once: true })
         // The asking turn's project; outside a turn the prompt stays on the
         // desktop, never filed under whichever project the window shows.
-        const projectId = getThreadExecutionContext()?.projectId
+        const projectId = promptProjectId()
         const removeDecision =
           projectId && threadId
             ? humanDecisions.register(
@@ -1312,6 +1359,7 @@ export function initApproval(
           request: req,
           abort: new AbortController(),
           resolve: (response) => {
+            workspaceTrustOffers.delete(id)
             removeDecision()
             if (!dest.isDestroyed()) dest.send('agent:approval-cancelled', { id })
             signal?.removeEventListener('abort', onAbort)

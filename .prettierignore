@@ -49,6 +49,9 @@ schemas/headless-contract.schema.json
 # and the preload bindings by `pnpm run gen:api-protocol` and drift-checked by
 # scripts/lib/api-protocol.test.ts; the formatter must not reformat it.
 schemas/api-protocol.manifest.json
+# Harness worker protocol manifest (harness-worker-roadmap.md R2) — generated
+# byte-exact from the worker line schemas; the drift test compares bytes.
+schemas/worker-protocol.manifest.json
 # ESLint bulk-suppressions baseline (#508) — an ESLint-managed artifact written in
 # ESLint's own JSON shape by `--suppress-rule` / `--prune-suppressions`. Leave it
 # untouched so prettier and ESLint don't fight over its formatting on every prune.

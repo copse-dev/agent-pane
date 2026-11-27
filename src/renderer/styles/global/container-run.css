@@ -22,6 +22,9 @@
 .container-run-banner[data-phase='failed'] {
   --sev: var(--danger);
 }
+.container-run-banner[data-phase='failed'][data-stopped] {
+  --sev: var(--text-muted);
+}
 .container-run-banner[data-phase='finished'] {
   --sev: var(--success, var(--accent));
 }

@@ -70,6 +70,10 @@ export async function runInIsolatedWorkerCheckout(
     withThreadResourceFence(childOwner, async () => {
       signal.throwIfAborted()
       const detachedHooksAtStart = dependencies.detachedHooksEnabled()
+      // Deliberately the parent's branch, not the fetched default that proposed
+      // threads and subthreads start from: a worker does part of the parent's
+      // current turn and reports back into it, so it must see the code the
+      // parent is working on.
       const baseBranch = parent.branch ?? (await dependencies.branch(parent.root))
       if (!baseBranch) throw new Error('Isolated workers require a local Git branch.')
       await dependencies.save(parent.projectId, {

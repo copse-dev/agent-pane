@@ -88,6 +88,19 @@ export interface TaskSupervisorDependencies {
 export type SupervisedEventSourceStart = (emit: (event: string) => void) => (() => void) | undefined
 export type SupervisedTaskListener = (task: SupervisedTaskMeta) => void
 export type SupervisedExternalTaskCanceller = (task: SupervisedTaskMeta) => void | Promise<void>
+
+/**
+ * How an external task's process relates to the app's lifetime. An external
+ * process that can outlive the app (a container run's host) says so here: the
+ * app's shutdown then leaves its task running instead of cancelling it, and a
+ * restart keeps the task running while the process is still alive.
+ */
+export interface SupervisedExternalTaskLifetime {
+  /** Leave the task running through this shutdown. */
+  survivesShutdown?: (task: SupervisedTaskMeta) => boolean
+  /** At start-up, whether the task's process is still running. */
+  isAlive?: (task: SupervisedTaskMeta) => Promise<boolean>
+}
 export const DEFAULT_TERMINAL_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000
 const MAX_TIMER_DELAY_MS = 2_147_000_000
 const CLOCK_RECHECK_MS = 60_000
@@ -146,6 +159,7 @@ export class TaskSupervisor {
   private readonly reapprovalHandlers = new Set<string>()
   private readonly approvedWakes = new Set<string>()
   private readonly externalCancellers = new Map<string, SupervisedExternalTaskCanceller>()
+  private readonly externalLifetimes = new Map<string, SupervisedExternalTaskLifetime>()
   private readonly timers = new Map<string, ReturnType<typeof setTimeout> | number>()
   private readonly eventWaiters = new Map<string, Set<string>>()
   private readonly eventSources = new Map<string, { references: number; dispose: () => void }>()
@@ -215,15 +229,21 @@ export class TaskSupervisor {
     }
   }
 
-  registerExternalCanceller(kind: string, canceller: SupervisedExternalTaskCanceller): () => void {
+  registerExternalCanceller(
+    kind: string,
+    canceller: SupervisedExternalTaskCanceller,
+    lifetime: SupervisedExternalTaskLifetime = {},
+  ): () => void {
     if (kind.trim() === '') throw new Error('Supervised external task kind is required')
     if (this.externalCancellers.has(kind)) {
       throw new Error(`Supervised external task canceller "${kind}" is registered`)
     }
     this.externalCancellers.set(kind, canceller)
+    this.externalLifetimes.set(kind, lifetime)
     return () => {
       if (this.externalCancellers.get(kind) === canceller) {
         this.externalCancellers.delete(kind)
+        this.externalLifetimes.delete(kind)
       }
     }
   }
@@ -607,10 +627,28 @@ export class TaskSupervisor {
     }
     for (const task of this.tasks.values()) {
       if (task.state === 'running' && task.processHandleId) {
+        if (this.externalLifetimes.get(task.handler)?.survivesShutdown?.(task) === true) continue
         await this.cancel(task.projectId, task.taskId)
       }
     }
     await this.waitForIdle()
+  }
+
+  /** Running external tasks whose process outlived the last app session. */
+  private async liveExternalHandles(
+    tasks: readonly SupervisedTaskMeta[],
+  ): Promise<ReadonlyMap<string, boolean>> {
+    const live = new Map<string, boolean>()
+    for (const task of tasks) {
+      const isAlive = this.externalLifetimes.get(task.handler)?.isAlive
+      if (task.state !== 'running' || !task.processHandleId || !isAlive) continue
+      try {
+        if (await isAlive(task)) live.set(task.processHandleId, true)
+      } catch (error) {
+        this.onError(error)
+      }
+    }
+    return live
   }
 
   private async startInternal(): Promise<void> {
@@ -621,6 +659,7 @@ export class TaskSupervisor {
     const reconciled = reconcileSupervisedTasks({
       tasks: loaded.tasks,
       now: this.clock.now(),
+      processHandles: await this.liveExternalHandles(loaded.tasks),
     })
     for (const patch of reconciled.patches) {
       await this.store.saveTransition(patch.next, patch.audit)

@@ -206,6 +206,12 @@ export async function spawnShellInProjectSandbox(
      * contained way to honour that request, so it fails instead.
      */
     readonlyCheckout?: boolean
+    /**
+     * Unique host-owned attempt id for runner-side violation attribution. Without
+     * it violations are keyed by the command text, so an earlier run of the same
+     * command would count toward this one.
+     */
+    violationId?: string
     executionTarget?: ExecutionTarget
   } & Pick<SpawnOptions, 'stdio'>,
 ): Promise<ChildProcess> {
@@ -234,6 +240,8 @@ export async function spawnShellInProjectSandbox(
             : workspaceSandboxOverlay(opts.cwd)
         return {
           config: opts.readonlyCheckout ? withoutCheckoutWrites(baseConfig, opts.cwd) : baseConfig,
+          // Attributes each denial to this attempt, for the verified-block retry.
+          ...(opts.violationId ? { violationId: opts.violationId } : {}),
         }
       },
     },
@@ -366,22 +374,173 @@ export function sandboxViolationCountForBackgroundProcess(
   )
 }
 
+/** Each `deny(<n>) <operation>` or `deny <operation>` a violation line holds. */
+const DENIAL_CLAUSE = /\bdeny(\(\d+\))? ([a-z][a-z-]*)/g
+
 /**
- * Number of sandbox policy violations the runner (ASRT) recorded for a command.
- * This is a runner/kernel-side signal — it is NOT derived from the command's own
- * stdout/stderr, so a command cannot forge it by echoing "operation not permitted"
- * to trick the user into an unsandboxed re-run (issue #104).
+ * The one denial a violation line reports: its operation, and whether it is a
+ * seatbelt line (`deny(1) …`) or the proxy's (`deny network-outbound …` at the
+ * start). Undefined when the line holds no denial clause or more than one: a
+ * denied path or a process name is chosen inside the sandbox and can spell a
+ * clause of its own, so a line it could have shaped is judged in neither
+ * direction and every caller fails closed.
+ */
+function denialOf(line: string | undefined): { operation: string; seatbelt: boolean } | undefined {
+  // A store entry can arrive without its line (a test double's does).
+  const clauses = [...(line ?? '').matchAll(DENIAL_CLAUSE)]
+  if (clauses.length !== 1) return undefined
+  const [clause] = clauses
+  if (!clause) return undefined
+  const operation = clause[2] ?? ''
+  const seatbelt = clause[1] !== undefined
+  if (!seatbelt && clause.index !== 0) return undefined
+  return { operation, seatbelt }
+}
+
+/**
+ * A seatbelt denial that cannot be what made a command fail. The runtime itself
+ * trips some on every command (`sysctl-read kern.iossupportversion` from each
+ * process that starts), and toolchains read optional files under home on every
+ * run (`~/.npmrc`, `$CARGO_HOME/config.toml`, Python's user site), which the
+ * contained profile refuses. Counting either would make any ordinary failure, a
+ * red test run or a `grep` with no match, look like a sandbox block and offer
+ * to run it outside. Only refused writes and network connections count; a line
+ * in another shape (the proxy's `deny network-outbound …`), or one that is
+ * ambiguous, counts too.
+ */
+function isIncidentalDenial(line: string): boolean {
+  const denial = denialOf(line)
+  return (
+    denial !== undefined &&
+    denial.seatbelt &&
+    !denial.operation.startsWith('file-write-') &&
+    !denial.operation.startsWith('network-')
+  )
+}
+
+function blockingViolations<T extends { line: string }>(violations: readonly T[]): T[] {
+  return violations.filter((violation) => !isIncidentalDenial(violation.line))
+}
+
+/** Violations that can be what made a sandboxed command fail. */
+export function countBlockingViolations(violations: readonly { line: string }[]): number {
+  return blockingViolations(violations).length
+}
+
+/** A seatbelt denial of neither a file nor a network operation (`sysctl-read`, `mach-lookup`). */
+function isNonFileSeatbeltDenial(line: string): boolean {
+  const denial = denialOf(line)
+  return (
+    denial !== undefined &&
+    denial.seatbelt &&
+    !denial.operation.startsWith('file-') &&
+    !denial.operation.startsWith('network-')
+  )
+}
+
+/**
+ * A refused network connection: a seatbelt `deny(1) network-outbound …` from
+ * the log monitor, or the network proxy's own `deny network-outbound host:port`.
+ */
+function isNetworkDenial(line: string): boolean {
+  return denialOf(line)?.operation.startsWith('network-') === true
+}
+
+/**
+ * Whether the denials of a blocked command were only refused network
+ * connections. False when there were none, or when any was a file denial of
+ * any kind, a line in another shape, or an ambiguous line. A refused read does
+ * not block a command on its own, but it spoils this: a read-tier shape that
+ * tried a protected credential and the network is not one whose reach its
+ * shape describes.
+ */
+export function blockingViolationsAreNetworkOnly(violations: readonly { line: string }[]): boolean {
+  const relevant = violations.filter((violation) => !isNonFileSeatbeltDenial(violation.line))
+  return relevant.length > 0 && relevant.every((violation) => isNetworkDenial(violation.line))
+}
+
+/**
+ * {@link blockingViolationsAreNetworkOnly} for the violations the runner
+ * recorded against `attribution` (see {@link sandboxViolationCountForCommand}).
+ * False when the sandbox is inactive or no violation log is available.
+ */
+export function sandboxViolationsAreNetworkOnlyForCommand(attribution: string): boolean {
+  if (!isProjectSandboxEnabled()) return false
+  try {
+    const store = SandboxManager.getSandboxViolationStore()
+    return blockingViolationsAreNetworkOnly(store.getViolationsForCommand(attribution))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Number of sandbox policy violations the runner (ASRT) recorded for a command
+ * that can have blocked it (see {@link countBlockingViolations}). `attribution`
+ * is the per-attempt `violationId` the spawn was given, or else the command
+ * text. This is a runner/kernel-side signal — it is NOT derived from the
+ * command's own stdout/stderr, so a command cannot forge it by echoing
+ * "operation not permitted" to trick the user into an unsandboxed re-run
+ * (issue #104).
  *
  * Returns 0 when the sandbox is inactive or no violation log is available.
  */
-export function sandboxViolationCountForCommand(command: string): number {
+export function sandboxViolationCountForCommand(attribution: string): number {
   if (!isProjectSandboxEnabled()) return 0
   try {
     const store = SandboxManager.getSandboxViolationStore()
-    return store.getViolationsForCommand(command).length
+    return countBlockingViolations(store.getViolationsForCommand(attribution))
   } catch {
     return 0
   }
+}
+
+/**
+ * Whether ASRT's violation monitor runs with the project sandbox. Only the macOS
+ * log monitor is started; Linux's seccomp observer is a separate path not yet
+ * validated here.
+ */
+export const SANDBOX_VIOLATION_MONITOR = process.platform === 'darwin'
+
+/**
+ * The log monitor delivers a denial asynchronously: in 250 refused `git init`
+ * runs, 14 denials arrived after the process closed, all within 5 ms. A failed
+ * attempt with no blocking violation yet waits at most this long for one.
+ */
+const LATE_VIOLATION_WAIT_MS = 200
+
+/**
+ * {@link sandboxViolationCountForCommand} for an attempt that has just exited
+ * non-zero, once a late denial has had time to arrive. Resolves as soon as one
+ * does, and at once when one already has or no monitor runs.
+ */
+export async function settledSandboxViolationCount(attribution: string): Promise<number> {
+  const now = sandboxViolationCountForCommand(attribution)
+  if (now > 0 || !SANDBOX_VIOLATION_MONITOR || !isProjectSandboxEnabled()) return now
+  let store: ReturnType<typeof SandboxManager.getSandboxViolationStore>
+  try {
+    store = SandboxManager.getSandboxViolationStore()
+  } catch {
+    return now
+  }
+  return new Promise((resolve) => {
+    let done = false
+    const timer = setTimeout(() => {
+      finish()
+    }, LATE_VIOLATION_WAIT_MS)
+    // `subscribe` calls the listener once before returning, with the same store
+    // the count above just read as 0, so `finish` never runs before this binds.
+    const unsubscribe = store.subscribe(() => {
+      if (sandboxViolationCountForCommand(attribution) > 0) finish()
+    })
+    function finish(): void {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      unsubscribe()
+      resolve(sandboxViolationCountForCommand(attribution))
+    }
+  })
 }
 
 export interface SpawnPtyOptions {

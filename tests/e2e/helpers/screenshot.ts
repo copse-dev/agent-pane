@@ -583,6 +583,12 @@ export async function saveElementScreenshot(
   filename: string,
   options: {
     frame?: 'app' | 'document'
+    /**
+     * The app frame to pin, when it is not the default 1280x800. A spec that
+     * sized the page for a phone passes the same size, or the capture is
+     * clipped to 800 px while fixed overlays stay placed on the taller page.
+     */
+    frameSize?: { width: number; height: number }
     beforeCapture?: () => Promise<void>
     captureFromViewport?: boolean
   } = {},
@@ -590,7 +596,7 @@ export async function saveElementScreenshot(
   await withCaptureFrame(async () => {
     // Scrolling web documents cannot reach subjects below an app-sized clip.
     // Their owning spec frames the subject in the natural document viewport.
-    if (options.frame !== 'document') await prepareE2eScreenshot()
+    if (options.frame !== 'document') await prepareE2eScreenshot(options.frameSize)
     const el = await browser.$(selector).getElement()
     await el.waitForDisplayed({ timeout: 15_000 })
     // Resolve inside the page: a transcript update can replace `el` between

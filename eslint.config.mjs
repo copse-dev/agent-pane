@@ -22,10 +22,21 @@ const NO_ELECTRON = {
     'eslint.config.mjs — deliberately, and visibly in review.',
 }
 
+// Electron also answers to `electron/main`, `electron/common`, `electron/renderer` and
+// `electron/utility` (declared in electron.d.ts). They resolve only inside the app, so
+// they are the same runtime dependency, but a `paths` entry matches the bare name
+// exactly. Repeated beside NO_ELECTRON wherever a block restates the rule. The glob does
+// not match `electron-updater` or `electron-store`, which are separate packages.
+const NO_ELECTRON_SUBPATHS = {
+  group: ['electron/*'],
+  allowTypeImports: true,
+  message: NO_ELECTRON.message,
+}
+
 // Hoisted for the same reason as NO_ELECTRON above: ESLint replaces a rule's array
-// options wholesale rather than merging them, so the renderer-specific
-// `no-restricted-syntax` block below must repeat this selector or it would silently
-// reopen the `in`-with-a-dynamic-key hole for the whole renderer.
+// options wholesale rather than merging them, so every block below that sets
+// `no-restricted-syntax` must repeat this selector or it would silently reopen the
+// `in`-with-a-dynamic-key hole for every file that block matches.
 const NO_DYNAMIC_IN = {
   selector: "BinaryExpression[operator='in'][left.type!='Literal']",
   message:
@@ -34,6 +45,73 @@ const NO_DYNAMIC_IN = {
     "@copse/std when you want a type predicate. A literal key (`'kind' in value`) is " +
     'fine and is not restricted.',
 }
+
+// The dynamic half of the NO_ELECTRON boundary. `no-restricted-imports` inspects only
+// static `import` / `export … from` declarations, so `await import('electron')` passed
+// it, though it is the same runtime dependency with the failure deferred to first call.
+// The selector has to live in `no-restricted-syntax`, so it shares NO_DYNAMIC_IN's
+// constraint: every block that sets that rule for a file under the boundary repeats
+// both. `typeof import('electron')` parses as a TSImportType, not an ImportExpression,
+// so type positions stay allowed, matching `allowTypeImports`.
+//
+// It matches `electron` and `electron/<subpath>`, written as a string or as a template
+// literal with no placeholders. esquery ends a regex at its first `/`, hence `\u002F`.
+// What a syntax rule cannot see: a computed specifier (`import(spec)`, or the
+// `new Function` loader in `custom-tools-registry.ts`) and
+// `createRequire(import.meta.url)('electron')`. This catches the honest mistake, not
+// every route to Electron.
+const ELECTRON_SPECIFIER = '/^electron(\\u002F|$)/'
+const NO_DYNAMIC_ELECTRON = {
+  selector:
+    `ImportExpression:matches([source.value=${ELECTRON_SPECIFIER}], ` +
+    `[source.type='TemplateLiteral'][source.expressions.length=0]` +
+    `[source.quasis.0.value.cooked=${ELECTRON_SPECIFIER}])`,
+  message:
+    "A runtime `import('electron')` is still an Electron import: deferring it only " +
+    'moves the failure from load time to first call. ' +
+    NO_ELECTRON.message,
+}
+
+// The Electron surface: every file that may hold a runtime `electron` import. Kept as an
+// explicit list rather than a glob over `src/main/**` because the point of the rule is
+// that `src/main` is NOT the boundary — 18 of its ~400 files need Electron, and the rest
+// are a portable agent runtime that merely lives beside them.
+//
+// `windows/` and `ipc/` are wholesale: both directories exist to own the desktop shell
+// and IPC surface. `preload/` bridges the renderer and cannot work without it. The
+// six services below are the leaky ones — each is a desktop capability behind a seam
+// (auto-update, dialogs, tray/menu prompts, the browser panel, SSH IPC), and each is a
+// candidate for the `*-electron.ts` suffix convention if that is ever adopted.
+//
+// The renderer is deliberately absent: it reaches Electron only through the preload
+// bridge, and today imports it nowhere. So are `browser/session-manager.ts` and
+// `providers/chatgpt-plan-service.ts`, though both need Electron at runtime: they are
+// reachable from the agent construction roots, so `index.ts` and
+// `chat-gpt-plan-handlers.ts` inject `nativeImage` and `shell` through their seams.
+//
+// Hoisted because two blocks read it: the one that lifts the ban, and the test block
+// that must restore the dynamic ban for every test file that is NOT on this list.
+const ELECTRON_SURFACE = [
+  'src/preload/**/*.ts',
+  'src/main/index.ts',
+  'src/main/app-init.ts',
+  'src/main/app-icon.ts',
+  'src/main/windows/**/*.ts',
+  'src/main/ipc/**/*.ts',
+  'src/main/services/auto-update.ts',
+  'src/main/services/close-confirm.ts',
+  'src/main/services/update-prompt.ts',
+  'src/main/services/user-alerts-electron.ts',
+  // Native permission confirmation is a desktop-only OS dialog adapter.
+  'src/main/services/native-human-confirmation.ts',
+  'src/main/services/plugins/plugin-browser-panel.ts',
+  'src/main/services/ssh-workspace/ssh-workspace-ipc.ts',
+  // DEBUG BRANCH: patches `ipcMain.handle` to time every channel. It is by
+  // definition part of the IPC surface — instrumenting IPC without importing
+  // Electron is not a thing — so it belongs on this list rather than behind
+  // an injected seam that would need threading through every caller.
+  'src/main/services/diagnostics/perf-ipc.ts',
+]
 
 export default ts.config(
   {
@@ -176,15 +254,17 @@ export default ts.config(
     // by walking the import graph from three named roots — so a file that is not yet
     // reachable can take a runtime Electron dependency freely, and only turns some later,
     // unrelated PR red once something imports it. This rule enforces the same boundary at
-    // every file, and reports it where the mistake is made.
+    // every file, and reports it where the mistake is made. NO_DYNAMIC_ELECTRON extends it
+    // to `await import('electron')`, which `no-restricted-imports` does not inspect.
     //
     // Type-only imports stay allowed everywhere (`allowTypeImports`): TypeScript erases
     // them, so Node never resolves Electron, and several pure modules legitimately type
     // their injected handles as `BrowserWindow` / `IpcMain`.
     //
-    // Only the bare `electron` module is restricted. `electron-updater` and
-    // `electron-store` are separate packages and do not match a `paths` entry; bringing
-    // them under the boundary is a follow-up, not a silent side effect of this rule.
+    // Only `electron` and its declared `electron/*` subpaths are restricted.
+    // `electron-updater` and `electron-store` are separate packages and match neither the
+    // `paths` entry nor the `electron/*` pattern; bringing them under the boundary is a
+    // follow-up, not a silent side effect of this rule.
     // `.mts` is listed alongside `.ts` because `src/shared` has two of them, and shared
     // code is exactly where an Electron import would do the most damage.
     files: ['src/**/*.ts', 'src/**/*.mts', 'packages/*/src/**/*.ts', 'packages/*/src/**/*.mts'],
@@ -193,8 +273,10 @@ export default ts.config(
         'error',
         {
           paths: [NO_ELECTRON],
+          patterns: [NO_ELECTRON_SUBPATHS],
         },
       ],
+      'no-restricted-syntax': ['error', NO_DYNAMIC_IN, NO_DYNAMIC_ELECTRON],
     },
   },
   {
@@ -223,18 +305,13 @@ export default ts.config(
                 'Settings plan-usage discovery runs on the main thread; use node:fs/promises readFile instead.',
             },
           ],
+          patterns: [NO_ELECTRON_SUBPATHS],
         },
       ],
       'no-restricted-syntax': [
         'error',
-        {
-          selector: "BinaryExpression[operator='in'][left.type!='Literal']",
-          message:
-            'A dynamic key with `in` also matches inherited members (toString, constructor, ' +
-            '__proto__, and five more). Use Object.hasOwn(record, key) — or keyOf(record) from ' +
-            "@copse/std when you want a type predicate. A literal key (`'kind' in value`) is " +
-            'fine and is not restricted.',
-        },
+        NO_DYNAMIC_IN,
+        NO_DYNAMIC_ELECTRON,
         {
           selector:
             "CallExpression[callee.type='MemberExpression'][callee.property.name='readFileSync']",
@@ -251,9 +328,9 @@ export default ts.config(
     // A `node:fs` import here fails at runtime rather than at build, so the current
     // guarantee is "nobody has tried yet".
     //
-    // Repeating NO_ELECTRON is required, not redundant: ESLint replaces a rule's options
-    // rather than merging them, so omitting it here would turn the Electron boundary off
-    // across the whole renderer.
+    // Repeating NO_ELECTRON and NO_ELECTRON_SUBPATHS is required, not redundant: ESLint
+    // replaces a rule's options rather than merging them, so omitting them here would turn
+    // the Electron boundary off across the whole renderer.
     //
     // The three direction rules that cannot be expressed as specifier globs
     // (renderer -> main, shared -> main/renderer, packages -> src) live in
@@ -276,6 +353,7 @@ export default ts.config(
         {
           paths: [NO_ELECTRON],
           patterns: [
+            NO_ELECTRON_SUBPATHS,
             {
               group: ['node:*'],
               allowTypeImports: true,
@@ -290,7 +368,6 @@ export default ts.config(
       // #2497 — native `confirm()`/`alert()` render as a blocking OS-native dialog in
       // Electron, not the in-app UI the rest of the renderer uses (PR #1030). Route
       // through `showConfirmDialog` (src/renderer/views/confirm-dialog.ts) instead.
-      // Repeating NO_DYNAMIC_IN is required, not redundant — see its definition above.
       'no-restricted-globals': [
         'error',
         {
@@ -307,9 +384,12 @@ export default ts.config(
             'from ./confirm-dialog.ts).',
         },
       ],
+      // Repeating NO_DYNAMIC_IN and NO_DYNAMIC_ELECTRON is required, not redundant — see
+      // their definitions above.
       'no-restricted-syntax': [
         'error',
         NO_DYNAMIC_IN,
+        NO_DYNAMIC_ELECTRON,
         {
           selector:
             "CallExpression[callee.type='MemberExpression'][callee.object.name=/^(window|globalThis)$/][callee.property.name=/^(confirm|alert)$/]",
@@ -321,42 +401,13 @@ export default ts.config(
     },
   },
   {
-    // The Electron surface: every file that may hold a runtime `electron` import. Kept as an
-    // explicit list rather than a glob over `src/main/**` because the point of the rule is
-    // that `src/main` is NOT the boundary — 18 of its ~400 files need Electron, and the rest
-    // are a portable agent runtime that merely lives beside them.
-    //
-    // `windows/` and `ipc/` are wholesale: both directories exist to own the desktop shell
-    // and IPC surface. `preload/` bridges the renderer and cannot work without it. The
-    // six services below are the leaky ones — each is a desktop capability behind a seam
-    // (auto-update, dialogs, tray/menu prompts, the browser panel, SSH IPC), and each is a
-    // candidate for the `*-electron.ts` suffix convention if that is ever adopted.
-    //
-    // The renderer is deliberately absent: it reaches Electron only through the preload
-    // bridge, and today imports it nowhere.
-    files: [
-      'src/preload/**/*.ts',
-      'src/main/index.ts',
-      'src/main/app-init.ts',
-      'src/main/app-icon.ts',
-      'src/main/windows/**/*.ts',
-      'src/main/ipc/**/*.ts',
-      'src/main/services/auto-update.ts',
-      'src/main/services/close-confirm.ts',
-      'src/main/services/update-prompt.ts',
-      'src/main/services/user-alerts-electron.ts',
-      // Native permission confirmation is a desktop-only OS dialog adapter.
-      'src/main/services/native-human-confirmation.ts',
-      'src/main/services/plugins/plugin-browser-panel.ts',
-      'src/main/services/ssh-workspace/ssh-workspace-ipc.ts',
-      // DEBUG BRANCH: patches `ipcMain.handle` to time every channel. It is by
-      // definition part of the IPC surface — instrumenting IPC without importing
-      // Electron is not a thing — so it belongs on this list rather than behind
-      // an injected seam that would need threading through every caller.
-      'src/main/services/diagnostics/perf-ipc.ts',
-    ],
+    // Lift the Electron ban, static and dynamic, for the surface listed at ELECTRON_SURFACE.
+    // `no-restricted-syntax` cannot simply be `off` here: that would drop NO_DYNAMIC_IN
+    // for these files too, so restate the rule without NO_DYNAMIC_ELECTRON instead.
+    files: ELECTRON_SURFACE,
     rules: {
       '@typescript-eslint/no-restricted-imports': 'off',
+      'no-restricted-syntax': ['error', NO_DYNAMIC_IN],
     },
   },
   {
@@ -381,6 +432,16 @@ export default ts.config(
       // accepts prototype keys — the behaviour the production rule forbids. A
       // test that cannot state the wrong answer cannot pin the right one.
       'no-restricted-syntax': 'off',
+    },
+  },
+  {
+    // The static Electron ban still reaches tests outside the surface (the block above
+    // lifts `no-restricted-syntax` but not `no-restricted-imports`), so restore the
+    // dynamic half for the same files. Surface tests keep both lifted, like their source.
+    files: ['src/**/*.test.ts', 'packages/*/src/**/*.test.ts'],
+    ignores: ELECTRON_SURFACE,
+    rules: {
+      'no-restricted-syntax': ['error', NO_DYNAMIC_ELECTRON],
     },
   },
   {

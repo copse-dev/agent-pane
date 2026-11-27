@@ -27,6 +27,11 @@ export interface AskUserRequest {
    * not offered to interactive clients.
    */
   projectId?: string
+  /**
+   * The thread asking, for a question a turn in another process raised (the
+   * turn host's). A running turn's thread is used otherwise.
+   */
+  threadId?: string
 }
 
 export interface AskUserResult {
@@ -46,6 +51,8 @@ export interface AskUserResult {
   timedOut?: true
   /** No person is waiting on this run; the caller must preserve any reviewable question. */
   deferred?: true
+  /** The window asking closed before anyone answered. */
+  windowClosed?: true
 }
 
 /**
@@ -101,12 +108,17 @@ function timedOutAnswers(req: AskUserRequest): AskUserResult {
   return { ...blankAnswers(req), timedOut: true }
 }
 
+/** Whether anything here can put a question to the user. */
+export function canAskUser(): boolean {
+  return handler !== null
+}
+
 export function requestUserAnswers(
   req: AskUserRequest,
   signal?: AbortSignal,
 ): Promise<AskUserResult> {
   if (signal?.aborted) return Promise.resolve(cancelledAnswers(req))
-  const threadId = getActiveRunThread() ?? undefined
+  const threadId = req.threadId ?? getActiveRunThread() ?? undefined
   if (isDeferralModeActive(threadId)) {
     return Promise.resolve({ ...blankAnswers(req), deferred: true })
   }
@@ -197,7 +209,7 @@ export function initAskUser(
       pending.delete(id)
       replay.delete(id)
       pendingQuestionThreads.delete(id)
-      resolve({ answers: [] })
+      resolve({ answers: [], windowClosed: true })
     }
   })
 
@@ -259,7 +271,7 @@ export function createWindowAskUserHandler(deps: WindowAskUserDeps): AskUserHand
       // Attribute to the running thread so a background thread's question
       // surfaces as a sidebar attention indicator instead of interrupting
       // whichever thread the user is currently focused on.
-      const threadId = getActiveRunThread() ?? undefined
+      const threadId = req.threadId ?? getActiveRunThread() ?? undefined
       const stopAlert = deps.alertUser('interaction', 'An agent has a question.', threadId)
       const withdraw = (result: AskUserResult): void => {
         deps.settle(id, result)

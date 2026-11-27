@@ -213,6 +213,9 @@ describe('browser_show', () => {
         throw new Error('not used')
       },
       showArtefact: (identity) => shown.push(identity),
+      decodeImage: () => {
+        throw new Error('not used')
+      },
     })
 
     const out = browserShowTool.execute({ title: 'Sales Dashboard', url: undefined }, signal)
@@ -243,6 +246,9 @@ describe('browser_show', () => {
         throw new Error('not used')
       },
       showArtefact: () => {},
+      decodeImage: () => {
+        throw new Error('not used')
+      },
     })
 
     const out = browserShowTool.execute({ title: 'Sales Dashboard', url: undefined }, signal)

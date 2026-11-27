@@ -65,6 +65,8 @@ const ALLOWED_SUPPORT_ONLY: Record<string, string> = {
     'container integration-test fixture',
   'src/main/services/providers/test-response.ts': 'shared provider test response fixture',
   'src/main/services/ssh-workspace/fake-ssh-transport.ts': 'SSH integration-test transport',
+  'src/main/services/worker-protocol/worker-protocol-document.ts':
+    'generates the worker protocol schema and manifest at build time (scripts/gen-worker-protocol.mts, build.mts)',
   'src/shared/agent/doctrine-compliance.ts': 'nightly and local doctrine evaluation support',
   'src/shared/types/cursor-hooks.ts': 'documented compatibility re-export for hook dialect types',
 }

@@ -16,19 +16,15 @@ import {
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import { approveRemoteWatcherInstall } from '../services/ssh-workspace/remote-watcher-install-approval.ts'
 import { formatRemoteWatcherInstallApproval } from '../services/ssh-workspace/remote-native-watcher.ts'
-import { requestCloseConfirmation } from '../services/close-confirm.ts'
+import {
+  requestCloseConfirmation,
+  setCloseConfirmContainerRuns,
+} from '../services/close-confirm.ts'
 import { setSeededVncNearbyServersForTests } from '../services/vnc/vnc-service.ts'
 import { setSeededSimulatorDesktopForTests } from '../services/simulator-desktop/simulator-desktop-service.ts'
 import { showSimulatorDesktop } from '../services/simulator-desktop/simulator-desktop-panel.ts'
 import { setSeededPortRows } from '../services/ports/ports-registry.ts'
-import {
-  setMockScenario,
-  clearMockScenarios,
-  releaseMockScenario,
-  assertMockScenarioComplete,
-  mockScenarioStatus,
-  parseMockScenario,
-} from '@copse/llm/mock-script.ts'
+import { runTestScenarioEverywhere } from '../services/turn-host/turn-host-test-scenarios.ts'
 import { createMainWindow, freezeMainWindowStateForQuit } from '../windows/create-main-window.ts'
 
 export function registerTestScenarioHandlers(win: BrowserWindow): void {
@@ -72,30 +68,44 @@ export function registerTestScenarioHandlers(win: BrowserWindow): void {
         z.tuple([z.string().min(1).max(200), z.string().min(1).max(200).optional()]),
         [id, scope],
       )
-      setMockScenario(scenarioId, parseMockScenario(raw), threadId)
-      return mockScenarioStatus(scenarioId)
+      // Set in the turn host too, when turns run there (`turn-host-test-scenarios.ts`).
+      return runTestScenarioEverywhere({
+        kind: 'set',
+        scenarioId,
+        scenario: raw,
+        ...(threadId === undefined ? {} : { scope: threadId }),
+      })
     })
     ipcMain.handle('test:mockScenarioStatus', (event, id: unknown) => {
       assertMainFrameSender(event, win)
       const scenarioId = parseIpcArgs(z.string().min(1).max(200), [id])
-      return mockScenarioStatus(scenarioId)
+      return runTestScenarioEverywhere({ kind: 'status', scenarioId })
     })
-    ipcMain.handle('test:releaseMockScenario', (event, id: unknown, hold: unknown) => {
+    ipcMain.handle('test:releaseMockScenario', async (event, id: unknown, hold: unknown) => {
       assertMainFrameSender(event, win)
       const [scenarioId, holdName] = parseIpcArgs(
         z.tuple([z.string().min(1).max(200), z.string().min(1).max(200)]),
         [id, hold],
       )
-      releaseMockScenario(scenarioId, holdName)
+      await runTestScenarioEverywhere({ kind: 'release', scenarioId, hold: holdName })
     })
-    ipcMain.handle('test:assertMockScenarioComplete', (event, id: unknown) => {
+    ipcMain.handle('test:assertMockScenarioComplete', async (event, id: unknown) => {
       assertMainFrameSender(event, win)
       const scenarioId = parseIpcArgs(z.string().min(1).max(200), [id])
-      assertMockScenarioComplete(scenarioId)
+      const status = await runTestScenarioEverywhere({ kind: 'status', scenarioId })
+      if (status === undefined) return
+      if (status.errors.length > 0)
+        throw new Error(
+          `Mock scenario ${JSON.stringify(scenarioId)} failed: ${status.errors.join('; ')}`,
+        )
+      if (!status.complete)
+        throw new Error(
+          `Mock scenario ${JSON.stringify(scenarioId)} is incomplete at turn ${String(status.turn)}, response ${String(status.response)}`,
+        )
     })
-    ipcMain.handle('test:clearMockScenarios', (event) => {
+    ipcMain.handle('test:clearMockScenarios', async (event) => {
       assertMainFrameSender(event, win)
-      clearMockScenarios()
+      await runTestScenarioEverywhere({ kind: 'clear' })
     })
     ipcMain.handle('test:emitAgentChunks', (event, rawThreadId: unknown, rawChunks: unknown) => {
       assertMainFrameSender(event, win)
@@ -128,6 +138,21 @@ export function registerTestScenarioHandlers(win: BrowserWindow): void {
     ipcMain.handle('test:requestCloseConfirm', (event) => {
       assertMainFrameSender(event, win)
       return requestCloseConfirmation()
+    })
+    // Which threads the close question names as having a container run going.
+    // A real run needs Docker, so the screenshot spec names them directly. It
+    // replaces the live source for the rest of this e2e process.
+    ipcMain.handle('test:setCloseConfirmContainerRuns', (event, rawIds: unknown) => {
+      assertMainFrameSender(event, win)
+      const ids = parseIpcArgs(z.array(z.string().min(1).max(256)).max(16), [rawIds])
+      setCloseConfirmContainerRuns(() => ids)
+    })
+    // A container run snapshot as main pushes it, so the renderer's run states
+    // (the Stopped banner and toast) can be shown without Docker.
+    ipcMain.handle('test:emitContainerRun', (event, raw: unknown) => {
+      assertMainFrameSender(event, win)
+      const progress = parseIpcArgs(z.looseObject({ threadId: z.string().min(1).max(256) }), [raw])
+      win.webContents.send('container:run-changed', progress)
     })
     ipcMain.handle('test:createMainWindow', (event) => {
       assertMainFrameSender(event, win)

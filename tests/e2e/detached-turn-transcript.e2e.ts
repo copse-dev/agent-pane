@@ -140,8 +140,9 @@ async function windowUrl(): Promise<string> {
 
 describe('a turn outlives its window', function () {
   beforeEach(async function () {
-    // Detaching on close follows the macOS app model; elsewhere closing the
-    // last window still quits.
+    // Every platform detaches mid-turn, but outside macOS the detached app
+    // quits on its own seconds after its turns end, which races this spec's
+    // reopen-after-completion step. The decision is unit-tested everywhere.
     if (process.platform !== 'darwin') this.skip()
     // resetUserData clears config, not the native thread store. Each case
     // needs its own project so a completed prior case cannot be restored.
@@ -291,9 +292,12 @@ describe('a turn outlives its window', function () {
 
   it('reattaches during an answer with its prefix and runtime identity intact', async function () {
     this.timeout(120_000)
+    // The mock streams one character per delay, so the answer takes about 19s:
+    // long enough to close and relaunch mid-answer, and inside the runner's
+    // 30s test timeout, which the line above does not reliably lift under WDIO.
     const scenario = await installMockScenario({
       title: 'Reattach to a streaming answer',
-      turns: [{ user: PROMPT, responses: [{ text: ANSWER, chunkDelayMs: 500 }] }],
+      turns: [{ user: PROMPT, responses: [{ text: ANSWER, chunkDelayMs: 200 }] }],
     })
     await setComposerValue(PROMPT)
     await submitComposer()
