@@ -1,7 +1,12 @@
 import { ACP_RETENTION_NOTICE } from '@shared/acp-retention.ts'
 import type { ApiClient } from '../../../preload/api.d.ts'
 import type { AcpAgentConfig, AcpModeChoice, AcpModelChoice } from '@shared/types/acp.ts'
-import { acpModelChoiceLabel, launchesAcpCatalogEntry, parseAcpAgentConfigs } from '@shared/acp.ts'
+import {
+  acpAgentSupportsImageGeneration,
+  acpModelChoiceLabel,
+  launchesAcpCatalogEntry,
+  parseAcpAgentConfigs,
+} from '@shared/acp.ts'
 import {
   findAcpCatalogEntry,
   KNOWN_ACP_AGENTS,
@@ -410,6 +415,10 @@ export function createAcpAgentsSection(
       placeholder: 'KEY=value per line',
     })
     const enabledBox = el('input', { type: 'checkbox', checked: true })
+    const imageGenerationBox = el('input', {
+      type: 'checkbox',
+      'data-testid': 'acp-image-generation',
+    })
     const status = el('span', { class: 'key-status' })
 
     // Model picker: starts with just "Agent default"; "Detect models" probes the
@@ -456,6 +465,7 @@ export function createAcpAgentsSection(
       argsArea.value = formatArgsText(values.args)
       envArea.value = formatEnvText(values.env)
       enabledBox.checked = values.enabled
+      imageGenerationBox.checked = acpAgentSupportsImageGeneration(values)
     }
     // Discovery cannot activate metadata. Enabling is a separate saved-config action.
     if (options.draft) enabledBox.disabled = true
@@ -598,6 +608,13 @@ export function createAcpAgentsSection(
           : {}),
         ...(permissionMode ? { permissionMode } : {}),
         ...(detectedModes.length ? { availablePermissionModes: detectedModes } : {}),
+        // Changing image routing must retain the agent's existing confines and selectors.
+        ...(values?.sandbox !== undefined ? { sandbox: values.sandbox } : {}),
+        ...(values?.configOptions ? { configOptions: values.configOptions } : {}),
+        ...(values?.availableConfigOptions
+          ? { availableConfigOptions: values.availableConfigOptions }
+          : {}),
+        imageGeneration: imageGenerationBox.checked,
         enabled: options.draft ? false : enabledBox.checked,
       })
     })
@@ -625,6 +642,16 @@ export function createAcpAgentsSection(
         ),
       ),
       el('label', { class: 'checkbox-label' }, enabledBox, ' Enabled (shown in the model picker)'),
+      el(
+        'div',
+        { class: 'acp-image-generation-field' },
+        el('label', { class: 'checkbox-label' }, imageGenerationBox, ' Use for image generation'),
+        el(
+          'p',
+          { class: 'field-hint' },
+          'Enable only if this agent can generate bitmap images. Copse tries Codex first, then other enabled image agents. Their own usage limits apply. API fallback asks before using your key.',
+        ),
+      ),
       ...(options.initial?.id.startsWith('registry-')
         ? [
             el(

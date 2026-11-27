@@ -116,6 +116,8 @@ export interface AcpAgentConfig {
    * unsandboxed); an object = custom confines; `false` = explicitly opt out.
    */
   sandbox?: AcpAgentSandboxConfig | false
+  /** Native bitmap generation, independent of accepting image prompts. */
+  imageGeneration?: boolean
   enabled: boolean
 }
 

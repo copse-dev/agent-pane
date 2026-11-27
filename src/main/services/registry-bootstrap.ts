@@ -257,8 +257,8 @@ export function createRegistry(): ToolRegistry {
   // returns a report; the agent proposes any fixes for the user to approve.
   registry.register(runCheckupTool)
   // A portable Codex imagegen skill may be present in ~/.codex/skills. Offer its
-  // expected host tool only when Copse can actually execute it with a configured
-  // OpenAI credential; live key changes call the same sync from the IPC handler.
+  // expected host tool even without an API key: execution resolves coding-agent
+  // routes first and asks before using the API fallback.
   syncImageGenerationTools(registry)
   if (getSetting<boolean>(BROWSER_TOOLS_ENABLED_SETTING, BROWSER_TOOLS_DEFAULT_ENABLED)) {
     registerBrowserTools(registry)
@@ -266,13 +266,10 @@ export function createRegistry(): ToolRegistry {
   return registry
 }
 
-/** Keep the OpenAI-backed image tool aligned with live credential changes. */
+/** Keep image routing available independently of the conversation provider. */
 export function syncImageGenerationTools(registry: ToolRegistry): void {
-  if (resolveApiKey('openai')) {
-    if (!registry.has(IMAGE_GEN_TOOL_NAME)) registry.register(imageGenTool)
-  } else {
-    registry.unregister(IMAGE_GEN_TOOL_NAME)
-  }
+  // Resolve enabled runners at execution time, including live settings changes.
+  if (!registry.has(IMAGE_GEN_TOOL_NAME)) registry.register(imageGenTool)
 }
 
 /**

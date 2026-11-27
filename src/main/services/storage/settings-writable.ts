@@ -53,6 +53,7 @@ export const acpAgentConfigSchema = z.object({
     )
     .max(256)
     .optional(),
+  imageGeneration: z.boolean().optional(),
   // Epoch-ms timestamp of the probe that produced `availableModels`, used by the
   // background staleness check to re-probe aged caches (see acp-auto-setup.ts).
   modelsProbedAt: z.number().int().nonnegative().optional(),
