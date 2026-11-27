@@ -370,6 +370,17 @@ load unchanged, and their next whole-thread rewrite moves them to the new names
 (pruning the old ones). Every ref the store writes or prefetches must resolve
 inside the thread directory; one that would escape it is not followed.
 
+A window never receives a stored tool image inside a transcript. When main
+sends a folded transcript (`threads:load-messages`, transcript snapshots), each
+`images[]` entry it read from the thread's own `blobs/`, and the ACP `content`
+image block that repeats it, carries a `copse-stored-image:` reference (thread,
+spine ref and sha256) in `dataUrl` instead. The window reads one image at a
+time with `threads:stored-tool-image` as it nears the viewport, and main
+resolves any reference a window sends back before writing, so the on-disk
+format never holds one. A thread of about a hundred generated images folds to
+roughly 600 MB of data URLs; in one IPC message that hung the main process
+([`stored-tool-image.ts`](../src/shared/threads/stored-tool-image.ts)).
+
 `commandPhase` is the last stage a `run_shell` or `run_background` command
 reached (#3956): `queued`, `awaiting_approval`, `starting`, `running`, or a
 terminal `exited` (with `exitCode`), `timed_out`, `cancelled` or

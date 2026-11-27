@@ -14,6 +14,8 @@ export const REMOTE_READ_CHANNELS = [
   'settings:model-pricing',
   'threads:load-project',
   'threads:load-messages',
+  // The tool images `threads:load-messages` sends as references, one at a time.
+  'threads:stored-tool-image',
   'agent:running-thread-ids',
   'agent:suggest-next-step',
   'agent:suggest-follow-ups',

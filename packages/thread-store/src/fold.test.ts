@@ -10,6 +10,7 @@ import {
   idPathSegment,
   isToolArgsBlobRef,
   refsOfLine,
+  storedToolImageRef,
   type FileToWrite,
   type RefResolver,
 } from './fold.ts'
@@ -442,6 +443,75 @@ test('round-trips tool-result images through referenced blobs', () => {
     'the spine must not inline base64 data',
   )
   deepStrictEqual(foldThread(meta(), spine, resolverFor(files), { hash }).messages, messages)
+})
+
+test('records the blob a folded tool image came from, for top-level calls only', () => {
+  const dataUrl = 'data:image/png;base64,c3RvcmVkLWltYWdl'
+  const nestedUrl = 'data:image/png;base64,bmVzdGVkLWltYWdl'
+  const messages: Message[] = [
+    {
+      id: 'a1',
+      role: 'assistant',
+      content: '',
+      toolCalls: [
+        {
+          id: 'tc-image',
+          name: 'Generate image',
+          args: {},
+          status: 'done',
+          result: 'Created the image.',
+          images: [{ dataUrl, kind: 'screenshot' }],
+        },
+        {
+          id: 'tc-sub',
+          name: 'explore',
+          args: {},
+          status: 'done',
+          result: 'summary',
+          subagent: {
+            id: 'sub1',
+            kind: 'explore',
+            status: 'done',
+            prompt: 'p',
+            summary: 'found',
+            messages: [
+              {
+                id: 'sm1',
+                role: 'assistant',
+                content: '',
+                toolCalls: [
+                  {
+                    id: 'call_0',
+                    name: 'screenshot',
+                    args: {},
+                    status: 'done',
+                    result: 'ok',
+                    images: [{ dataUrl: nestedUrl }],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+      createdAt: 5,
+    },
+  ]
+  const { spine, files } = explodeThread(messages, hash)
+  const folded = foldThread(meta(), spine, resolverFor(files), { hash })
+  const [imageCall, subagentCall] = folded.messages[0]?.toolCalls ?? []
+  const image = imageCall?.images?.[0]
+  ok(image)
+  deepStrictEqual(storedToolImageRef(image), {
+    ref: 'blobs/a1.tool-0-img-0.dataurl',
+    sha256: hash(dataUrl),
+  })
+  // A subagent's refs are relative to its own directory, not the thread's blobs.
+  const nested = subagentCall?.subagent?.messages[0]?.toolCalls[0]?.images?.[0]
+  ok(nested)
+  strictEqual(storedToolImageRef(nested), undefined)
+  // A copy, like a live turn's image, is not the folded object.
+  strictEqual(storedToolImageRef({ ...image }), undefined)
 })
 
 test('round-trips visual evidence through content-addressed blobs', () => {

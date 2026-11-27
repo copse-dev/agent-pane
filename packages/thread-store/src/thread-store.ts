@@ -2629,6 +2629,34 @@ export function readHookRun(
   })
 }
 
+/**
+ * One tool image the thread stored, by the spine ref a fold read it from
+ * (`storedToolImageRef` in `fold.ts`), or null when it is gone or no longer matches.
+ *
+ * The ref comes back from a window, so it is checked like a ref read off disk:
+ * a `.dataurl` file directly in the thread's own `blobs/`, whose content still
+ * hashes to what the spine recorded and is an image data URL. It reads off the
+ * project's write queue: a blob that is mid-rewrite fails the hash check, and
+ * the window shows it unavailable rather than wait behind a turn's writes.
+ */
+export async function readStoredToolImage(
+  projectId: string,
+  threadId: string,
+  ref: ContentRef,
+): Promise<string | null> {
+  const [top, name, ...rest] = ref.ref.split('/')
+  if (top !== 'blobs' || name === undefined || rest.length > 0 || !name.endsWith('.dataurl')) {
+    return null
+  }
+  const path = contentFilePath(threadDir(projectId, threadId), ref.ref)
+  if (path === null) return null
+  const body = await readOrNull(path)
+  if (body === null || !body.startsWith('data:image/') || sha256Hex(body) !== ref.sha256) {
+    return null
+  }
+  return body
+}
+
 /** Append one control-plane decision (and optional detail blob) to the thread spine. */
 export function appendSpineDecision(
   projectId: string,

@@ -111,7 +111,32 @@ describe('ACP tool-result images', () => {
     await expect(thumbnail).toHaveAttribute('alt', 'tool-rollup-options.png')
     await expect(thumbnail).toHaveAttribute('role', 'button')
     await expect(thumbnail).toHaveAttribute('aria-label', 'Expand tool-rollup-options.png')
+    // The stored image reaches the window as a reference and is read back on
+    // its own once it is near the viewport, never inside the transcript.
+    const sent = await browser.execute(
+      async (projectId, threadId) => {
+        const json = JSON.stringify(await window.api.threads.loadMessages(projectId, threadId))
+        return {
+          references: json.split('copse-stored-image:').length - 1,
+          inlineImages: json.split('data:image/').length - 1,
+        }
+      },
+      PROJECT_ID,
+      THREAD_ID,
+    )
+    assert.deepEqual(sent, { references: 1, inlineImages: 0 })
+    await expect(thumbnail).toHaveAttribute('data-stored-image-state', 'loaded')
     assert.match((await thumbnail.getAttribute('src')) ?? '', /^data:image\/png;base64,/)
+    await browser.waitUntil(
+      () =>
+        browser.execute((messageId) => {
+          const img = document.querySelector(
+            `[data-message-id="${messageId}"] .tool-result-preview-image`,
+          )
+          return img instanceof HTMLImageElement && img.complete && img.naturalWidth > 0
+        }, TOOL_MESSAGE_ID),
+      { timeout: 5_000, timeoutMsg: 'the stored image did not finish decoding' },
+    )
     const previewHeight = await thumbnail.getSize('height')
     assert.ok(
       previewHeight > 240,

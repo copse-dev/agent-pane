@@ -608,6 +608,30 @@ export interface FoldOptions {
   onIntegrityFailure?: (ref: string) => void
 }
 
+/** What a fold threads through its reads: a subagent's refs are relative to its own directory. */
+interface FoldContext extends FoldOptions {
+  readonly nested?: true
+}
+
+type FoldedToolImage = NonNullable<ToolCall['images']>[number]
+
+const storedToolImages = new WeakMap<FoldedToolImage, ContentRef>()
+
+/**
+ * The thread blob a folded tool image was read from: set only for an image this
+ * fold read from a thread's own top-level `blobs/`, so a live turn's image, a
+ * subagent's, or a copy of the object has none.
+ *
+ * A thread that generated a hundred screenshots holds them as data URLs of
+ * several megabytes each. The boundary that sends a transcript to a window uses
+ * this ref to send a short reference instead, which the window reads back one
+ * image at a time; a whole transcript of them in one IPC message is what hung
+ * the main process (see `stored-tool-image.ts`).
+ */
+export function storedToolImageRef(image: FoldedToolImage): ContentRef | undefined {
+  return storedToolImages.get(image)
+}
+
 function verify(ref: ContentRef, body: string, hash: HashFn | undefined): void {
   if (hash && hash(body) !== ref.sha256) {
     throw new Error(`Thread content hash mismatch for ${ref.ref}`)
@@ -680,7 +704,7 @@ function foldToolCall(
   spine: SpineToolCall,
   slot: ToolCallSlot,
   resolve: RefResolver,
-  ctx: FoldOptions,
+  ctx: FoldContext,
 ): ToolCall {
   // Each tool-call blob that fails its hash check degrades just its own field.
   let result: string | null = null
@@ -702,13 +726,13 @@ function foldToolCall(
   const images = spine.images?.flatMap((image) => {
     const dataUrl = resolveToolBlob(image.dataUrl, resolve, ctx)
     if (dataUrl === undefined) return []
-    return [
-      {
-        dataUrl,
-        ...(image.name !== undefined ? { name: image.name } : {}),
-        ...(image.kind !== undefined ? { kind: image.kind } : {}),
-      },
-    ]
+    const folded: FoldedToolImage = {
+      dataUrl,
+      ...(image.name !== undefined ? { name: image.name } : {}),
+      ...(image.kind !== undefined ? { kind: image.kind } : {}),
+    }
+    if (ctx.nested !== true) storedToolImages.set(folded, image.dataUrl)
+    return [folded]
   })
 
   // Tool-call entries are not field-checked by the spine parser, and this one
@@ -760,15 +784,16 @@ function foldToolCall(
 function foldSubagent(
   ref: SpineSubagentRef,
   resolve: RefResolver,
-  ctx: FoldOptions,
+  ctx: FoldContext,
 ): SubagentSession {
   const nested: RefResolver = (r) => resolve(ref.ref + r)
   const report = ctx.onIntegrityFailure
-  const nestedCtx: FoldOptions =
+  const nestedCtx: FoldContext =
     report === undefined
-      ? ctx
+      ? { ...ctx, nested: true }
       : {
           ...ctx,
+          nested: true,
           onIntegrityFailure: (r: string): void => {
             report(ref.ref + r)
           },
@@ -802,7 +827,7 @@ function foldSubagent(
   }
 }
 
-function foldOne(line: SpineMessageLine, resolve: RefResolver, ctx: FoldOptions): MessageLike {
+function foldOne(line: SpineMessageLine, resolve: RefResolver, ctx: FoldContext): MessageLike {
   const hash = ctx.hash
   const content = readBody(line.content.ref, resolve)
   verify(line.content, content, hash)

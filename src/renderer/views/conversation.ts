@@ -203,6 +203,7 @@ import { createThreadProposalToolCard, isThreadProposalCall } from './thread-pro
 import { createReviewerInputToolCard } from './reviewer-input.ts'
 import { isReviewerInputCall } from '@shared/threads/reviewer-input.ts'
 import { renderSignature } from './render-signature.ts'
+import { setTranscriptImageSource } from './stored-tool-image-source.ts'
 import {
   cardStatus,
   createToolCardRefresher,
@@ -1651,10 +1652,10 @@ function createAcpContentBlock(
     if (context === 'tool' && previewImageDataUrls?.has(block.dataUrl)) {
       const img = el('img', {
         class: 'tool-result-preview-image',
-        src: block.dataUrl,
         alt: label,
         loading: 'lazy',
       })
+      setTranscriptImageSource(img, block.dataUrl)
       attachImageExpand(img, label)
       return el(
         'figure',
@@ -1665,10 +1666,10 @@ function createAcpContentBlock(
     }
     const img = el('img', {
       class: `message-image acp-content-image${context === 'tool' ? ' tool-result-image' : ''}`,
-      src: block.dataUrl,
       alt: label,
       loading: 'lazy',
     })
+    setTranscriptImageSource(img, block.dataUrl)
     attachImageExpand(img, label, imageGallery?.items, imageGallery?.index)
     return img
   }

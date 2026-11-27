@@ -38,6 +38,13 @@ import {
 } from '../services/thread-store.ts'
 import { deleteThreadResourcesAndStore } from '../services/thread-deletion.ts'
 import {
+  hasStoredToolImageRefs,
+  readStoredToolImageUrl,
+  threadWithStoredToolImagesResolved,
+  withStoredToolImageRefs,
+  withStoredToolImagesResolved,
+} from '../services/stored-tool-images.ts'
+import {
   importExternalSessions,
   listExternalSessions,
 } from '../services/external-sessions/external-session-import.ts'
@@ -162,7 +169,13 @@ export function registerThreadHandlers(
   ipcMain.handle('threads:load-messages', (event, projectId: unknown, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const [id, thread] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
-    return loadThreadMessages(id, thread)
+    return loadThreadMessages(id, thread).then((messages) =>
+      withStoredToolImageRefs(id, thread, messages),
+    )
+  })
+  ipcMain.handle('threads:stored-tool-image', (event, url: unknown) => {
+    assertMainFrameSender(event, win)
+    return readStoredToolImageUrl(parseIpcArgs(z.string().max(4096), [url]))
   })
   // Canvas artefacts saved by earlier sessions. The renderer holds artefacts
   // only as live tabs and an in-memory thumbnail map, so after a restart these
@@ -207,7 +220,9 @@ export function registerThreadHandlers(
     ])
     const parsed = parseThreadValue(withoutMainOwnedThreadFields(payload))
     if (parsed === null) throw new IpcValidationError('Invalid thread payload')
-    return createThread(id, parsed)
+    // A copied transcript can carry the source thread's image references.
+    if (!parsed.messages.some(hasStoredToolImageRefs)) return createThread(id, parsed)
+    return threadWithStoredToolImagesResolved(parsed).then((resolved) => createThread(id, resolved))
   })
   ipcMain.handle(
     'threads:append-message',
@@ -219,7 +234,11 @@ export function registerThreadHandlers(
       )
       const parsed = parseMessageValue(payload)
       if (parsed === null) throw new IpcValidationError('Invalid message payload')
-      return appendMessage(pid, tid, parsed)
+      // The window holds stored tool images as references: write the images.
+      if (!hasStoredToolImageRefs(parsed)) return appendMessage(pid, tid, parsed)
+      return withStoredToolImagesResolved(parsed).then((resolved) =>
+        appendMessage(pid, tid, resolved),
+      )
     },
   )
   ipcMain.handle(
