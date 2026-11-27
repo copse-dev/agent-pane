@@ -2,13 +2,15 @@ import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { link, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   fetchThroughScratchRepository,
   isNetworkRemoteUrl,
   originBranchRef,
+  readShallowBoundary,
+  type ProjectGit,
 } from './default-branch-fetch.ts'
 import { runWorktreeGit } from './worktree-manager.ts'
 
@@ -30,6 +32,19 @@ async function commit(repo: string, file: string, message: string): Promise<void
   await writeFile(join(repo, file), `${message}\n`)
   git(repo, ['add', '.'])
   git(repo, ['commit', '-q', '-m', message])
+}
+
+function objectCount(repo: string): number {
+  const stats = new Map(
+    git(repo, ['count-objects', '-v'])
+      .trim()
+      .split('\n')
+      .map((line) => {
+        const [key = '', value = ''] = line.split(': ')
+        return [key, Number(value)] as const
+      }),
+  )
+  return (stats.get('count') ?? 0) + (stats.get('in-pack') ?? 0)
 }
 
 describe('isNetworkRemoteUrl', () => {
@@ -125,6 +140,89 @@ describe('fetchThroughScratchRepository', () => {
 
     assert.equal(result.code, 0, result.stderr)
     assert.equal(git(project, ['rev-parse', 'refs/remotes/origin/main']).trim(), remoteTip)
+  })
+
+  it('fetches only new objects into a shallow project that never fetched the branch', async () => {
+    // A CI checkout: one commit, deep history upstream, no origin/<branch>.
+    const { temp, project: seeded, remote } = await fixture()
+    for (let index = 0; index < 40; index++) {
+      await commit(seeded, `file-${String(index)}.txt`, `c${String(index)}`)
+    }
+    git(seeded, ['push', '-q', 'origin', 'main'])
+    const project = join(temp, 'shallow')
+    git(temp, ['clone', '-q', '--depth=1', `file://${remote}`, project])
+    git(project, ['update-ref', '-d', 'refs/remotes/origin/main'])
+    const remoteTip = await advanceRemote(temp, remote)
+    const scratch = join(temp, 'scratch.git')
+    // What the network step downloaded, counted before the scratch is removed.
+    let downloaded: number | undefined
+    const projectGit: ProjectGit = (cwd, args, ...rest) => {
+      if (args[0] === 'fetch') downloaded = objectCount(scratch)
+      return runWorktreeGit(cwd, args, ...rest)
+    }
+
+    const result = await fetchThroughScratchRepository({
+      projectRoot: project,
+      url: `file://${remote}`,
+      refs: [originBranchRef('main')],
+      scratch,
+      projectGit,
+    })
+
+    assert.equal(result.code, 0, result.stderr)
+    assert.equal(git(project, ['rev-parse', 'refs/remotes/origin/main']).trim(), remoteTip)
+    // One commit, its tree and one blob; the full history is over 120 objects.
+    assert.ok(downloaded !== undefined && downloaded <= 5, `downloaded ${String(downloaded)}`)
+  })
+
+  it('never copies or echoes a shallow file that is not a list of object IDs', async () => {
+    // `.git` is writable from inside the project sandbox; this runs on the host.
+    const { temp, project, remote } = await fixture()
+    await advanceRemote(temp, remote)
+    const secret = join(temp, 'outside-secret.txt')
+    await writeFile(secret, 'TOP-SECRET-TOKEN\n')
+    const shallow = join(project, '.git', 'shallow')
+    const plants: [name: string, plant: () => Promise<void>][] = [
+      ['symlink', (): Promise<void> => symlink(secret, shallow)],
+      ['hard link', (): Promise<void> => link(secret, shallow)],
+      ['malformed file', (): Promise<void> => writeFile(shallow, 'TOP-SECRET-TOKEN\n')],
+    ]
+    for (const [name, plant] of plants) {
+      await rm(shallow, { force: true })
+      await plant()
+      const scratch = join(temp, 'scratch.git')
+      let copied: string | null = null
+      // The project-side copy runs inside the project sandbox, which denies
+      // the read; stub it so only the host-side steps are under test.
+      const projectGit: ProjectGit = async (cwd, args, ...rest) => {
+        if (args[0] !== 'fetch') return runWorktreeGit(cwd, args, ...rest)
+        copied = await readFile(join(scratch, 'shallow'), 'utf8').catch(() => null)
+        return { stdout: '', stderr: '', code: 0, stdoutTruncated: false }
+      }
+      const result = await fetchThroughScratchRepository({
+        projectRoot: project,
+        url: `file://${remote}`,
+        refs: [originBranchRef('main')],
+        scratch,
+        projectGit,
+      })
+      assert.equal(result.code, 0, `${name}: ${result.stderr}`)
+      assert.equal(copied, null, `${name}: copied into the scratch`)
+      assert.doesNotMatch(`${result.stdout}${result.stderr}`, /TOP-SECRET/, name)
+    }
+  })
+
+  it('reads a well-formed shallow boundary', async () => {
+    const temp = await realpath(await mkdtemp(join(tmpdir(), 'copse-shallow-read-')))
+    cleanups.push(temp)
+    assert.equal(await readShallowBoundary(temp), null)
+    const boundary = `${'a'.repeat(40)}\n${'b'.repeat(64)}\n`
+    await writeFile(join(temp, 'shallow'), boundary)
+    assert.equal(await readShallowBoundary(temp), boundary)
+    await writeFile(join(temp, 'shallow'), `${'a'.repeat(39)}\n`)
+    assert.equal(await readShallowBoundary(temp), null)
+    await writeFile(join(temp, 'shallow'), '')
+    assert.equal(await readShallowBoundary(temp), null)
   })
 
   it('reports an unreachable remote and still removes the scratch', async () => {
