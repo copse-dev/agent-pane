@@ -83,6 +83,8 @@ export interface TurnHostLinkDependencies {
   onUnfollowedChunk?: (message: Extract<HostToApp, { t: 'chunk' }>) => void
   /** A host turn's live command output, for the window's terminal pane. */
   onShellOutput?: (chunk: string, taskId: string | null) => void
+  /** A host turn activated nested instruction files. */
+  onInstructionActivation?: (projectKey: string, threadId: string, names: string[]) => void
   /** Apply a host turn's change to a shared profile store, which the app owns. */
   applyStoreWrite?: (message: Extract<HostToApp, { t: 'store-write' }>) => void
   /** A host thread's lease is held: the follower should follow it now. */
@@ -385,6 +387,9 @@ export class TurnHostLink {
         return
       case 'shell-output':
         this.deps.onShellOutput?.(message.chunk, message.taskId)
+        return
+      case 'instruction-activation':
+        this.deps.onInstructionActivation?.(message.projectKey, message.threadId, message.names)
         return
       case 'store-write':
         try {

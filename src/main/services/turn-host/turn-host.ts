@@ -413,6 +413,11 @@ export class TurnHost {
     }
   }
 
+  /** A host turn activated nested instruction files: every attached app's Sources shows it. */
+  instructionActivation(projectKey: string, threadId: string, names: string[]): void {
+    this.broadcastTo({ t: 'instruction-activation', projectKey, threadId, names })
+  }
+
   /** A host turn's command printed: every attached app's terminal pane shows it. */
   shellOutput(chunk: string, taskId: string | null): void {
     this.broadcastTo({ t: 'shell-output', chunk, taskId })

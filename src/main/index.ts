@@ -33,6 +33,7 @@ import {
   initThreadPrompts,
   sendThreadPrompt,
 } from './services/thread-prompts.ts'
+import { recordForeignNestedActivation } from './services/project-instructions.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
 import { abortScratchFetchesForQuit } from './services/default-branch-fetch.ts'
 import { removeOrphanedPlanWindowHistory } from './services/storage/plan-window-history-cleanup.ts'
@@ -941,6 +942,8 @@ app
         onShellOutput: (chunk: string, taskId: string | null): void => {
           getMainWindow()?.webContents.send('agent:shell-output', chunk, taskId)
         },
+        // Settings → Sources shows which nested instructions a host turn activated.
+        onInstructionActivation: recordForeignNestedActivation,
         // A host turn's subthread start or peer prompt: this window submits it.
         sendThreadPrompt,
         // A host turn's background commands keep their task records here (H7).

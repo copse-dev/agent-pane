@@ -147,6 +147,11 @@ async function main(): Promise<number> {
   // Prompts to other threads (a subthread start), which the app's window submits.
   const { setThreadPromptSender } = await import('../thread-prompts.ts')
   setThreadPromptSender((command, signal) => host.threadPrompt(command, signal))
+  // Nested instruction activations, which the app's Settings → Sources shows.
+  const { setNestedActivationSink } = await import('../project-instructions.ts')
+  setNestedActivationSink((projectKey, threadId, names) => {
+    host.instructionActivation(projectKey, threadId, names)
+  })
   // Live command output, which the app paints into its terminal pane.
   const { setShellOutputSink } = await import('../exec/shell-output-context.ts')
   setShellOutputSink((chunk, taskId) => {
