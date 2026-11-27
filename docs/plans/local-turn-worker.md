@@ -158,6 +158,26 @@ without Electron.
 - Not covered by e2e yet: a live attach needs a worker turn slow enough to outlast a
   relaunch, and mock scenarios live in the app process.
 
+### SSH hosts
+
+A turn on an SSH project needs nothing new to be handed off: its tools already reach the host
+through the OpenSSH transport, which connects on first use. The worker reads the saved hosts
+from the read-only profile and opens the connection itself, on the same per-host control
+socket the app uses (`ssh-paths.ts`), so whichever process comes second reuses the master
+instead of authenticating again. `turn-worker-ssh.test.ts` pins this with the e2e suite's stub
+`ssh`: a cut-off turn on an SSH project lists the remote directory from the worker.
+
+- **Password and passphrase prompts fail closed.** The askpass bridge lives in the app, and
+  the worker serves none. The worker also drops the user's own `SSH_ASKPASS` and sets
+  `SSH_ASKPASS_REQUIRE=never` before anything connects (`worker-environment.ts`), so a host
+  that needs a typed secret fails the turn's first remote command instead of opening a system
+  password dialog nobody expects. Key, agent and a still-live master all work.
+- **The master outlives the worker,** as it outlives the app today (`ControlPersist`, four
+  hours), so the relaunched app picks it up without a new handshake.
+- **Remote commands do not.** Before it exits the worker runs the app's quit teardown, which
+  kills the remote process groups of the background commands it started while the master is
+  still up, so nothing it started keeps running on the host unseen.
+
 ### Later
 
 - Start every turn in a worker, so a crash of the app never interrupts a turn (dispatch via

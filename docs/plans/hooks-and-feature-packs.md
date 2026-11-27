@@ -138,7 +138,10 @@ revisiting this document, not silently diverging in an implementation PR.
    `min(loop_limit, global remaining)`; `loop_limit: null` (unlimited) is clamped to the
    global cap with a warning — human-in-the-loop is the floor. Continuations are granted
    first-come in completion order. Each granted turn is a fresh run with its own
-   step/LLM-call caps and deadline, as today. **The budget is enforced at dispatch
+   step/LLM-call caps and deadline, as today. A turn main starts runs on the thread's own
+   model, reasoning dial and execution mode, read from its metadata at dispatch the way a
+   renderer send reads them from the chat; it never falls through to the global default
+   while the chat names a model. **The budget is enforced at dispatch
    time**: plain queued messages auto-drain once the thread idles (`drainMessageQueue`),
    so a hook-originated message consumes budget when it _drains_, not when it enqueues.
    A drain that the main process turns away because another turn still owns the thread
