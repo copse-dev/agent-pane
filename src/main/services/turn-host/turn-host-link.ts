@@ -84,6 +84,8 @@ interface Pending {
   settle: (placement: TurnPlacement) => void
   /** The host said the turn ended, or it was placed in the app. */
   ended: () => void
+  /** Settles when \`ended\` is called. */
+  done: Promise<undefined>
 }
 
 interface Subscriber {
@@ -162,6 +164,7 @@ export class TurnHostLink {
       ended: () => {
         ended.resolve(undefined)
       },
+      done: ended.promise,
     })
     this.send({ t: 'dispatch', id, projectId, threadId, payload })
     const placement = await placed.promise
@@ -194,6 +197,23 @@ export class TurnHostLink {
       })
       this.send({ t: 'test-scenario', id, op })
     })
+  }
+
+  /**
+   * Stop every turn this app sent the host, for a quit that keeps no turns,
+   * and wait for each to end (its commands drained) or for \`timeoutMs\`. The
+   * turns end recoverable, so the next launch offers Retry.
+   */
+  async stopAllForQuit(timeoutMs: number): Promise<void> {
+    const turns = [...this.pending.values()]
+    if (turns.length === 0) return
+    for (const turn of turns) this.send({ t: 'stop', threadId: turn.threadId, reason: 'quit' })
+    let timer: NodeJS.Timeout | undefined
+    const deadline = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, timeoutMs)
+    })
+    await Promise.race([Promise.all(turns.map((turn) => turn.done)), deadline])
+    clearTimeout(timer)
   }
 
   /** Stop a thread's turn in the host. */

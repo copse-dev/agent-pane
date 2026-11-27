@@ -103,6 +103,32 @@ describe('TurnHostLink', () => {
     assert.deepEqual(line.runningThreadIds(), [])
   })
 
+  it('stops host turns for a quit and waits for them to end', async () => {
+    const host = new FakeHost()
+    let endTurn = (): void => undefined
+    const dispatchedTurn = Promise.withResolvers<undefined>()
+    host.respond = (message, reply): void => {
+      if (message.t === 'dispatch') {
+        reply({ t: 'accepted', id: message.id, threadId: message.threadId })
+        dispatchedTurn.resolve(undefined)
+        endTurn = (): void => {
+          reply({ t: 'ended', id: message.id, threadId: message.threadId })
+        }
+      }
+      if (message.t === 'stop') endTurn()
+    }
+    const { link: line } = link(host)
+    const placed = line.run('p1', 't1', 'Hello')
+    await dispatchedTurn.promise
+    await line.stopAllForQuit(60_000)
+    assert.deepEqual(
+      host.sent.filter((m) => m.t === 'stop'),
+      [{ t: 'stop', threadId: 't1', reason: 'quit' }],
+    )
+    assert.equal(await placed, 'host')
+    assert.deepEqual(line.runningThreadIds(), [])
+  })
+
   it('hands a refused turn back to the app', async () => {
     const host = new FakeHost()
     host.respond = (message, reply): void => {

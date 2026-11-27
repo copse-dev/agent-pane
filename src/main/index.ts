@@ -1750,6 +1750,8 @@ let quitCleanupFinished = false
  * data, and did so silently.
  */
 const QUIT_CLEANUP_DEADLINE_MS = 30_000
+/** How long a quit waits for stopped host turns to end, within the deadline above. */
+const HOST_TURN_QUIT_DRAIN_MS = 10_000
 let disposeTerminal: (() => void) | undefined
 let disposeVnc: (() => Promise<void>) | undefined
 let disposeSimulatorDesktop: (() => Promise<void>) | undefined
@@ -1796,12 +1798,13 @@ async function cleanupBeforeQuit(): Promise<void> {
   // Turns in the resident host carry on through a quit that hands off, as a
   // detach. Any other quit (the setting off, a signal or fault, an unanswered
   // close, an update install) stops them as it stops in-process turns.
-  if (turnHostLink) {
-    if (!quitHandsOff || quitInstallsUpdate()) {
-      for (const threadId of turnHostLink.runningThreadIds()) turnHostLink.stop(threadId)
-    }
-    turnHostLink.close()
-  }
+  // A stopped host turn ends as a quit-interrupted one (Retry on the next
+  // launch); the quit waits for its commands to drain, as for in-process turns.
+  const hostLink = turnHostLink
+  const hostTurnsStopped =
+    hostLink && (!quitHandsOff || quitInstallsUpdate())
+      ? hostLink.stopAllForQuit(HOST_TURN_QUIT_DRAIN_MS)
+      : Promise.resolve()
   stopFollowingForeignTurns?.()
   const transcriptDrain = interruptTurnTranscripts?.()
   // Host-side default-branch fetches run in their own process group and would
@@ -1810,6 +1813,8 @@ async function cleanupBeforeQuit(): Promise<void> {
   setAgentInitiatedTurnAuthority(null)
   stopAllAgentRuns()
   await stopAllForegroundShellProcesses()
+  await hostTurnsStopped
+  hostLink?.close()
   // Revoke input and inference synchronously, then await VM deletion within the quit deadline.
   await stopAllIsolatedDesktops().catch((error: unknown) => {
     console.error('[isolated-desktop] Shutdown VM cleanup failed:', error)

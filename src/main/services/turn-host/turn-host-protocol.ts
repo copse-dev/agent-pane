@@ -61,7 +61,7 @@ export type AppToHost =
   | { t: 'hello'; version: string; protocol: number }
   | { t: 'dispatch'; id: string; projectId: string; threadId: string; payload: string }
   | { t: 'attach' }
-  | { t: 'stop'; threadId: string }
+  | { t: 'stop'; threadId: string; reason?: 'quit' | undefined }
   | { t: 'status'; id: string }
   | { t: 'approval-answer'; id: string; response: HostApprovalAnswer }
   | { t: 'review-diff-answer'; id: string; approved: boolean }
@@ -137,7 +137,7 @@ const appToHostSchema = z.discriminatedUnion('t', [
     payload: z.string(),
   }),
   z.object({ t: z.literal('attach') }),
-  z.object({ t: z.literal('stop'), threadId: id }),
+  z.object({ t: z.literal('stop'), threadId: id, reason: z.literal('quit').optional() }),
   z.object({ t: z.literal('status'), id }),
   z.object({
     t: z.literal('approval-answer'),

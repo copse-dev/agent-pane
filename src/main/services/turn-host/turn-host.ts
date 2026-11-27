@@ -209,7 +209,7 @@ export class TurnHost {
         this.attach(client)
         return
       case 'stop':
-        this.stop(message.threadId)
+        this.stop(message.threadId, message.reason)
         return
       case 'dispatch': {
         // A repeat of an id gets what became of it, never a second run.
@@ -313,11 +313,17 @@ export class TurnHost {
     })
   }
 
-  private stop(threadId: string): void {
+  /**
+   * Stop a thread's turn. A user Stop ends it idle. A quit that keeps no turns
+   * (\`reason: 'quit'\`) ends it as the app's own quit ends an in-process turn:
+   * still \`running\` on disk, so the next launch offers Retry.
+   */
+  private stop(threadId: string, reason: 'quit' | undefined): void {
     for (const turn of this.running.values()) {
       if (turn.threadId !== threadId) continue
-      this.deps.log(`stop requested for thread ${threadId}`)
-      this.transcripts.noteUserAbort(threadId, 'stop')
+      this.deps.log(`stop requested for thread ${threadId}${reason ? ` (${reason})` : ''}`)
+      if (reason === 'quit') this.transcripts.interruptThreadForShutdown(threadId)
+      else this.transcripts.noteUserAbort(threadId, 'stop')
       // A staged edit waiting on the diff panel has no signal of its own.
       turn.stopped.abort()
       abortAgent(threadId)
