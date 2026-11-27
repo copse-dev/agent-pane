@@ -22,8 +22,12 @@ import { copseUserDataDir } from '../services/storage/copse-paths.ts'
 export const CRASH_LOG_FILE = 'renderer-crashes.jsonl'
 export const CRASH_LOG_MAX_ENTRIES = 100
 
+// The largest time a Date can hold. A record past it (or NaN) would make
+// `/checkup` throw when it formats the time, so such a line is skipped.
+const MAX_DATE_MS = 8.64e15
+
 const recordSchema = z.object({
-  at: z.number(),
+  at: z.number().int().min(0).max(MAX_DATE_MS),
   window: z.string(),
   reason: z.string(),
   exitCode: z.number(),

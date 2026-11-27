@@ -61,6 +61,13 @@ describe('renderer crash log', () => {
     assert.deepEqual(await readRendererCrashes(0, path), [crash(1_000)])
   })
 
+  it('skips a record whose time a Date cannot hold', async () => {
+    await appendRendererCrash(crash(1_000), path)
+    const outOfRange = JSON.stringify({ ...crash(1_000), at: 1e300 })
+    writeFileSync(path, `${readFileSync(path, 'utf8')}${outOfRange}\n`)
+    assert.deepEqual(await readRendererCrashes(0, path), [crash(1_000)])
+  })
+
   it('never rejects when the record cannot be written', async () => {
     const warn = mock.method(console, 'warn', () => undefined)
     try {
