@@ -12,14 +12,6 @@ import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
  */
 const VIEWPORT = { width: 1280, height: 900 }
 
-async function setViewport(width: number, height: number): Promise<void> {
-  const frame = await browser.execute(() => ({
-    width: window.outerWidth - window.innerWidth,
-    height: window.outerHeight - window.innerHeight,
-  }))
-  await browser.setWindowSize(width + frame.width, height + frame.height)
-}
-
 /**
  * Bring the section into view and fail if any of it lies outside the viewport
  * or a clipping ancestor: a capture would then miss that part.
@@ -46,7 +38,7 @@ async function showWholeSection(): Promise<void> {
 
 describe('Apple container storage accounting', () => {
   before(async () => {
-    await setViewport(VIEWPORT.width, VIEWPORT.height)
+    await browser.setWindowSize(VIEWPORT.width, VIEWPORT.height)
     await build({
       entryPoints: ['tests/demo/helpers/container-storage-fixture.ts'],
       outfile: 'dist/demo/container-storage-fixture.js',
