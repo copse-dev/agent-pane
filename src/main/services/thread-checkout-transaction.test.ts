@@ -847,6 +847,48 @@ describe('first-message checkout transaction', () => {
       }
     }
 
+    // Parked on the stale `master` itself: a thread that asked for the default
+    // must not get it back as the checkout's branch, while the composer's
+    // fallback keeps the branch its picker showed.
+    for (const baseFallback of ['default-branch', 'project-branch'] as const) {
+      const allocations: string[] = []
+      const { prepare } = fixture({
+        inspect: async () => ({
+          isGitRepository: true,
+          currentBranch: 'master',
+          defaultBranch: 'master',
+          isDirty: false,
+        }),
+        branchExists: async (_root, branch) => branch === 'master',
+        defaultBranchResolves: async () => false,
+        allocate: async ({ baseBranch }) => {
+          allocations.push(baseBranch)
+          return {
+            path: '/worktrees/thread-1',
+            branch: 'copse/task-thread1',
+            baseBranch,
+            baseCommit: 'b'.repeat(40),
+            createdAt: 8,
+            seededFromDirtyProject: false,
+          }
+        },
+      })
+      const preparing = prepare({
+        projectId: 'project-1',
+        threadId: 'thread-1',
+        prompt: 'Scheduled review',
+        choice: 'worktree',
+        baseFallback,
+      })
+      if (baseFallback === 'default-branch') {
+        await assert.rejects(preparing, /default branch "master" no longer exists on origin/)
+        assert.deepEqual(allocations, [])
+      } else {
+        await preparing
+        assert.deepEqual(allocations, ['master'])
+      }
+    }
+
     // An automatic choice on the detached checkout shares it instead, so no
     // base is chosen at all.
     const automatic = fixture({

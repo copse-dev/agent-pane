@@ -142,8 +142,15 @@ async function checkoutBaseBranch(
     const verified = await usableDefault()
     if (verified) return verified
   }
-  if (inspection.currentBranch && (await refs.branchExists(inspection.currentBranch))) {
-    return inspection.currentBranch
+  // A thread that asked for the default must not get it back through the
+  // checkout: a project parked on the stale local branch the dangling default
+  // names would hand over the very base just refused. The composer's
+  // `project-branch` keeps the checkout's branch, since that is what its picker
+  // showed the user.
+  const current = inspection.currentBranch
+  const currentIsRefusedDefault = fallback === 'default-branch' && current === reportedDefault
+  if (current && !currentIsRefusedDefault && (await refs.branchExists(current))) {
+    return current
   }
   const verified = await usableDefault()
   if (verified) return verified
