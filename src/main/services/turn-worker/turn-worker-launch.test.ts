@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import type { SpawnOptions } from 'node:child_process'
 import { describe, it } from 'node:test'
-import { handOffTurns, type TurnWorkerLaunchDependencies } from './turn-worker-launch.ts'
+import {
+  everyTurnHandsOff,
+  handOffTurns,
+  type TurnWorkerLaunchDependencies,
+} from './turn-worker-launch.ts'
 
 interface Call {
   command: string
@@ -95,5 +99,21 @@ describe('handOffTurns', () => {
     assert.deepEqual(started, [{ projectId: 'p', threadId: 'good' }])
     assert.equal(calls[0]?.args.includes('--packaged'), false)
     assert.ok(lines.some((line) => line.includes('could not hand off bad')))
+  })
+})
+
+describe('everyTurnHandsOff', () => {
+  const turns = [
+    { projectId: 'p1', threadId: 'local' },
+    { projectId: 'p1', threadId: 'acp' },
+  ]
+  const cannotRun = (_projectId: string, threadId: string): Promise<string | null> =>
+    Promise.resolve(threadId === 'acp' ? 'it runs on an external coding agent' : null)
+
+  it('is true only when the quit hands off and a worker takes every turn', async () => {
+    assert.equal(await everyTurnHandsOff(turns.slice(0, 1), true, cannotRun), true)
+    // A turn the worker turns down waits for the next launch instead.
+    assert.equal(await everyTurnHandsOff(turns, true, cannotRun), false)
+    assert.equal(await everyTurnHandsOff(turns.slice(0, 1), false, cannotRun), false)
   })
 })

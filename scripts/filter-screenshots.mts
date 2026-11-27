@@ -31,15 +31,14 @@ import {
  *           back on a later run — a ping-pong (#609). We
  *           restore HEAD (do not commit) and surface the shot for human review.
  *   contested
- *           The committed baseline is DELIBERATE: the file was modified on this
- *           branch since the merge-base by someone other than CI (a human or
- *           agent hand-committed a specific reference shot; neither CI's own
- *           commits nor the commit accepting shots ticked in the review comment
- *           count, see CI_SCREENSHOT_AUTHORS), and/or main has modified it
- *           since the merge-base. CI must not override deliberate work with
- *           its own render — restore HEAD (the branch's committed version
- *           always wins) for deliberate local review. Set
- *           UPDATE_SCREENSHOTS_LABEL=true to keep every candidate explicitly.
+ *           Main has modified the committed baseline since the merge-base, so
+ *           the render's difference is main's, not this branch's. Restore HEAD.
+ *           Set UPDATE_SCREENSHOTS_LABEL=true to keep every candidate explicitly.
+ *           A baseline hand-committed on this branch (by someone outside
+ *           CI_SCREENSHOT_AUTHORS: neither CI's own commits nor the commit
+ *           accepting shots ticked in the review comment) is NOT held: a real
+ *           difference from this branch's render is kept for review, so a hash
+ *           no render produced cannot merge silently (#4435).
  *   out-of-scope
  *           The shot is not one this diff can legitimately move: the oracle maps
  *           no selected spec to it and nobody hand-committed it on this branch. The
@@ -245,11 +244,10 @@ function mergeBaseWithMain(): string | null {
 }
 
 /**
- * Whether the committed baseline of `path` is deliberate work CI must not
- * override: modified on this branch since the merge-base by an author outside
- * CI_SCREENSHOT_AUTHORS (a hand-committed reference shot, not CI's render or
- * the review comment's acceptance commit), and/or modified on main since the
- * merge-base (main moved under the PR). Null when neither — or when MAIN_REF
+ * Who moved the committed baseline of `path` since the merge-base: this
+ * branch, by an author outside CI_SCREENSHOT_AUTHORS (a hand-committed
+ * reference shot, not CI's render or the review comment's acceptance commit),
+ * and/or main (main moved under the PR). Null when neither — or when MAIN_REF
  * isn't available, in which case contested detection is disabled and the
  * pre-existing behaviour applies.
  */
@@ -333,20 +331,31 @@ export function classifyScreenshotChange(
     return { decision: 'ignore', reason: 'below noise threshold', ...vsHead }
   }
 
-  // A deliberate baseline is held unconditionally — including the decode-failed
-  // and resized cases below, which for an uncontested file would gamble on
-  // committing for review. The branch's committed version always wins; the
-  // update-screenshots label is the explicit override.
-  if (contested && (contested.branchTouched || contested.mainTouched)) {
-    const parts = []
-    if (contested.branchTouched) parts.push('deliberately committed on this branch')
-    if (contested.mainTouched) parts.push('changed on main since the merge-base')
+  // A baseline hand-committed on this branch must match what this branch
+  // renders. Holding it hid the mismatch: hashes no render produced reached
+  // main through feature commits and then showed up as drift on every later
+  // PR (#4435). Nothing commits a kept render on its own, so offering it for
+  // review overrides nobody's work; the reviewer accepts the render or
+  // declines it. Ahead of scope and flap: a stale hand-committed hash often
+  // matches an older committed render, and that is the case to show.
+  if (contested?.branchTouched) {
+    return {
+      decision: 'keep',
+      reason: "hand-committed baseline differs from this branch's render",
+      ...(vsHead ? { diffPixels: vsHead.diffPixels, ratio: vsHead.ratio } : {}),
+    }
+  }
+
+  // Main moved this baseline under the branch, so the difference is not this
+  // branch's to review. Held unconditionally, including the decode-failed and
+  // resized cases below; the update-screenshots label is the explicit override.
+  if (contested?.mainTouched) {
     return {
       decision: 'contested',
-      reason: parts.join('; '),
+      reason: 'changed on main since the merge-base',
       ...(vsHead ? { diffPixels: vsHead.diffPixels, ratio: vsHead.ratio } : {}),
-      branchTouched: contested.branchTouched,
-      mainTouched: contested.mainTouched,
+      branchTouched: false,
+      mainTouched: true,
     }
   }
 
@@ -592,9 +601,8 @@ export async function main(): Promise<void> {
     }
   }
 
-  // Revert contested shots — the committed baseline is deliberate (hand-committed
-  // on this branch and/or changed on main), so CI's render never overrides it.
-  // The PR comment surfaces a base-vs-branch comparison instead.
+  // Revert contested shots: main changed the baseline under this branch, so
+  // the difference is not this branch's to review.
   for (const v of contested) {
     const detail = v.diffPixels !== undefined ? `${String(v.diffPixels)} px vs HEAD` : 'differs'
     console.log(`  hold   ${v.path} (contested: ${v.reason}; ${detail})`)

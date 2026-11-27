@@ -33,6 +33,29 @@ describe('readOnlyProfileStoreFactory', () => {
     assert.deepEqual(writes, ['config:model', 'config:extra', 'config:projects'])
   })
 
+  it('reads and writes dotted paths into nested objects, as electron-store does', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ro-store-'))
+    dirs.push(dir)
+    writeFileSync(
+      join(dir, 'settings.json'),
+      JSON.stringify({ apiKey: { anthropic: { v: 1, enc: 'sealed' } }, model: 'a' }),
+    )
+    const store = readOnlyProfileStoreFactory(await readProfileStores(dir))({ name: 'settings' })
+    assert.deepEqual(store.get('apiKey.anthropic'), { v: 1, enc: 'sealed' })
+    assert.equal(store.get('apiKey.openai'), undefined)
+    assert.equal(store.get('model.nested'), undefined)
+    store.set('apiKey.openai', { v: 1, enc: 'other' })
+    assert.deepEqual(store.get('apiKey'), {
+      anthropic: { v: 1, enc: 'sealed' },
+      openai: { v: 1, enc: 'other' },
+    })
+    store.delete('apiKey.anthropic')
+    assert.deepEqual(store.get('apiKey'), { openai: { v: 1, enc: 'other' } })
+    store.set('fresh.deep.key', 1)
+    assert.equal(store.get('fresh.deep.key'), 1)
+    assert.deepEqual(store.listKeys().sort(), ['apiKey', 'fresh', 'model'])
+  })
+
   it('treats a missing or unreadable store as empty', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'ro-store-'))
     dirs.push(dir)

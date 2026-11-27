@@ -55,14 +55,6 @@ async function probe(): Promise<PanelProbe | null> {
   })
 }
 
-async function resize(width: number, height: number): Promise<void> {
-  const frame = await browser.execute(() => ({
-    width: window.outerWidth - window.innerWidth,
-    height: window.outerHeight - window.innerHeight,
-  }))
-  await browser.setWindowSize(width + frame.width, height + frame.height)
-}
-
 async function openHome(): Promise<void> {
   await browser.url('about:blank')
   await browser.url('/?scenario=activity-home')
@@ -113,11 +105,11 @@ describe('Activity home beside and above panels', () => {
   })
 
   after(async () => {
-    await resize(1280, 800)
+    await browser.setWindowSize(1280, 800)
   })
 
   it('shows the first group and Approve above a bottom panel', async () => {
-    await resize(700, 1000)
+    await browser.setWindowSize(700, 1000)
     await openHome()
     await $('.titlebar-btn[aria-label="Toggle right panel"]').click()
     await $('#pane-files').waitForDisplayed()
@@ -132,7 +124,7 @@ describe('Activity home beside and above panels', () => {
   })
 
   it('shows the first group and Approve in a chat pane of about 360 px', async () => {
-    await resize(1100, 700)
+    await browser.setWindowSize(1100, 700)
     await openHome()
     await $('.titlebar-btn[aria-label="Toggle right panel"]').click()
     await $('#pane-files').waitForDisplayed()
@@ -145,7 +137,7 @@ describe('Activity home beside and above panels', () => {
     await saveAppScreenshot('activity-home-narrow-pane-light.png')
   })
   it('gives the list the whole card when every group is folded', async () => {
-    await resize(1280, 800)
+    await browser.setWindowSize(1280, 800)
     await browser.url('about:blank')
     await browser.url('/?scenario=sidebar-thread-sort')
     await $('#activity-home .activity-group[data-group="working"]').waitForExist({
