@@ -13,6 +13,17 @@ import { gortexDaemonPidPath } from './search/semantic-index.ts'
 
 const execFileAsync = promisify(execFile)
 
+let foreignRoots: () => Promise<readonly OwnedProcessRoot[]> = () => Promise.resolve([])
+
+/**
+ * Where the Process Manager finds commands another Copse process started for
+ * this profile's threads (the turn host's), so they show under their thread
+ * rather than as unowned processes.
+ */
+export function setForeignProcessRoots(list: () => Promise<readonly OwnedProcessRoot[]>): void {
+  foreignRoots = list
+}
+
 export interface OwnedProcessRoot {
   pid: number
   label: string
@@ -277,6 +288,7 @@ export async function readOwnedProcessRows(
       }),
     ),
     ...sandboxFsServerRoots(listSandboxFsServerProcesses(), threadWorktreeOwner),
+    ...(await foreignRoots().catch((): readonly OwnedProcessRoot[] => [])),
   ]
   if (process.platform === 'win32') return ownedProcessRows(roots, [])
   const gortex = await readGortexDaemonRoot()

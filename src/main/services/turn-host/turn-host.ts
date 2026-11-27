@@ -31,6 +31,7 @@ import {
   peekBackgroundProcessLogs,
   stopBackgroundProcess,
 } from '../exec/background-process.ts'
+import { listForegroundShellProcesses } from '../exec/foreground-shell-process.ts'
 import type { MachineDispatchResult } from '@shared/types/machine-dispatch.ts'
 import type { CommandPhase } from '@copse/agent/wire-types.ts'
 import {
@@ -43,6 +44,7 @@ import {
   TURN_HOST_PROTOCOL,
   type AppToHost,
   type DispatchState,
+  type HostProcessRoot,
   type HostThreadPromptCommand,
   type HostToApp,
   type TestScenarioOp,
@@ -271,6 +273,9 @@ export class TurnHost {
         return
       case 'process':
         client.send(this.processResult(message))
+        return
+      case 'processes':
+        client.send({ t: 'processes-result', id: message.id, processes: hostProcessRoots() })
         return
       case 'profile-changed':
         this.profileStale = true
@@ -643,4 +648,28 @@ export class TurnHost {
 
 function key(projectId: string, threadId: string): string {
   return `${projectId}\0${threadId}`
+}
+
+/** The commands this host's turns started, for the app's Process Manager. */
+function hostProcessRoots(): HostProcessRoot[] {
+  return [
+    ...listBackgroundProcessPids().map(
+      ({ pid, command, threadId, projectId }): HostProcessRoot => ({
+        pid,
+        label: command,
+        type: 'Background task',
+        threadId,
+        projectId,
+      }),
+    ),
+    ...listForegroundShellProcesses().map(
+      ({ pid, command, threadId, projectId }): HostProcessRoot => ({
+        pid,
+        label: command,
+        type: 'Command',
+        threadId,
+        projectId,
+      }),
+    ),
+  ]
 }

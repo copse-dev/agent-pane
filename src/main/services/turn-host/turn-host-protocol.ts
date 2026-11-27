@@ -90,6 +90,7 @@ export type AppToHost =
       projectId: string
       threadId: string
     }
+  | { t: 'processes'; id: string }
 
 /** A scripted model scenario operation, for e2e builds (`mock-script.ts`). */
 export type TestScenarioOp =
@@ -133,6 +134,18 @@ export type HostThreadPromptCommand = Omit<ThreadPromptCommand, 'id' | 'expiresA
  */
 export type HostProcessOp = 'stop' | 'alive' | 'logs'
 
+/**
+ * A command a host turn started, for the Process Manager: the app's own
+ * `ps` sample finds its descendants, but only the host knows its thread.
+ */
+export interface HostProcessRoot {
+  pid: number
+  label: string
+  type: 'Background task' | 'Command'
+  threadId: string
+  projectId: string
+}
+
 export interface HostProcessLogs {
   logs: string
   running: boolean
@@ -169,6 +182,7 @@ export type HostToApp =
   | { t: 'ask-user'; id: string; projectId: string; threadId: string; request: AskUserRequest }
   | { t: 'taken'; projectId: string; threadId: string }
   | { t: 'process-result'; id: string; ok: boolean; logs?: HostProcessLogs | null | undefined }
+  | { t: 'processes-result'; id: string; processes: HostProcessRoot[] }
   | { t: 'approval-cancel'; id: string }
   | { t: 'store-write'; store: string; changes: ProfileStoreChange[] }
   | { t: 'shell-output'; chunk: string; taskId: string | null }
@@ -227,6 +241,7 @@ const appToHostSchema = z.discriminatedUnion('t', [
     projectId: id,
     threadId: id,
   }),
+  z.object({ t: z.literal('processes'), id }),
   z.object({
     t: z.literal('ask-user-answer'),
     id,
@@ -412,6 +427,21 @@ const hostToAppSchema = z.discriminatedUnion('t', [
       .object({ logs: z.string().max(16_000_000), running: z.boolean() })
       .nullable()
       .optional(),
+  }),
+  z.object({
+    t: z.literal('processes-result'),
+    id,
+    processes: z
+      .array(
+        z.object({
+          pid: z.number().int().positive(),
+          label: z.string().max(100_000),
+          type: z.enum(['Background task', 'Command']),
+          threadId: id,
+          projectId: id,
+        }),
+      )
+      .max(10_000),
   }),
   z.object({ t: z.literal('taken'), projectId: id, threadId: id }),
   z.object({ t: z.literal('approval-cancel'), id }),

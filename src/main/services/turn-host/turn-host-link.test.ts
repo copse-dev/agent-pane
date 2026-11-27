@@ -362,6 +362,29 @@ describe('TurnHostLink', () => {
     assert.equal(await line.testScenario({ kind: 'clear' }), null, 'no host, no answer')
   })
 
+  it("lists the host's commands for the Process Manager, without starting a host", async () => {
+    const host = new FakeHost()
+    const command = {
+      pid: 777,
+      label: 'sleep 45',
+      type: 'Command' as const,
+      threadId: 't1',
+      projectId: 'p1',
+    }
+    let answers = true
+    host.respond = (message, reply): void => {
+      if (message.t === 'processes' && answers)
+        reply({ t: 'processes-result', id: message.id, processes: [command] })
+    }
+    const { link: line } = link(host)
+    assert.deepEqual(await line.processes(), [])
+    assert.equal(host.connections, 0, 'asking started no host')
+    assert.ok(await line.ensureConnected())
+    assert.deepEqual(await line.processes(), [command])
+    answers = false
+    assert.deepEqual(await line.processes(5), [], 'a host that does not answer lists nothing')
+  })
+
   it("has this window submit a host turn's prompt to another thread", async () => {
     const host = new FakeHost()
     const answered = Promise.withResolvers<AppToHost>()

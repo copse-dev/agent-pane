@@ -12,6 +12,7 @@ import {
   type DispatchState,
   type HostApprovalAnswer,
   type HostProcessOp,
+  type HostProcessRoot,
   type HostThreadPromptCommand,
   type HostToApp,
   type TestScenarioOp,
@@ -141,6 +142,7 @@ export class TurnHostLink {
    * call is never carried out twice.
    */
   private readonly answered = new Map<string, AppToHost>()
+  private readonly processListWaiters = new Map<string, (processes: HostProcessRoot[]) => void>()
   private readonly processWaiters = new Map<
     string,
     (result: Extract<HostToApp, { t: 'process-result' }> | null) => void
@@ -278,6 +280,28 @@ export class TurnHostLink {
     })
   }
 
+  /**
+   * The commands the host's turns started, for the Process Manager. Empty when
+   * no host is up (this never starts one) or it does not answer in time.
+   */
+  processes(timeoutMs = 1_500): Promise<HostProcessRoot[]> {
+    if (!this.ready) return Promise.resolve([])
+    const id = (this.deps.createId ?? randomUUID)()
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        finish([])
+      }, timeoutMs)
+      timer.unref()
+      const finish = (processes: HostProcessRoot[]): void => {
+        clearTimeout(timer)
+        this.processListWaiters.delete(id)
+        resolve(processes)
+      }
+      this.processListWaiters.set(id, finish)
+      this.send({ t: 'processes', id })
+    })
+  }
+
   /** The app's supervisor changed a task a host turn's command runs under. */
   taskChanged(task: SupervisedTaskMeta): void {
     if (this.ready) this.send({ t: 'task-changed', task })
@@ -392,6 +416,9 @@ export class TurnHostLink {
       case 'process-result':
         this.processWaiters.get(message.id)?.(message)
         return
+      case 'processes-result':
+        this.processListWaiters.get(message.id)?.(message.processes)
+        return
       case 'shell-output':
         this.deps.onShellOutput?.(message.chunk, message.taskId)
         return
@@ -505,6 +532,7 @@ export class TurnHostLink {
     for (const waiter of [...this.statusWaiters.values()]) waiter('unknown')
     for (const waiter of [...this.scenarioWaiters.values()]) waiter(null)
     for (const waiter of [...this.processWaiters.values()]) waiter(null)
+    for (const waiter of [...this.processListWaiters.values()]) waiter([])
     // The host still waits on them, and asks again once a line is back.
     for (const controller of this.prompts.values()) controller.abort()
     this.prompts.clear()

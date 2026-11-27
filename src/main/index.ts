@@ -124,6 +124,7 @@ import {
   setQuitHandOffCheck,
   initCloseConfirm,
 } from './services/close-confirm.ts'
+import { setForeignProcessRoots } from './services/process-manager-owned.ts'
 import { checkToolAvailability } from './services/tool-availability.ts'
 import {
   createRegistry,
@@ -360,7 +361,13 @@ const isThreadBaseFallback = memberOf(THREAD_BASE_FALLBACKS)
  * detached instead of quitting.
  */
 function workInFlight(): number {
-  return listRunningThreadIds().length + getContainerRunService().activeThreadIds().length
+  const turns = new Set([...listRunningThreadIds(), ...hostRunningThreadIds()])
+  return turns.size + getContainerRunService().activeThreadIds().length
+}
+
+/** Threads whose turn the turn host is running for this window. */
+function hostRunningThreadIds(): string[] {
+  return turnHostLink?.runningThreadIds() ?? []
 }
 
 let unattendedQuit = false
@@ -810,6 +817,7 @@ app
     initUpdatePrompt(win)
     initCloseConfirm(win)
     setCloseConfirmContainerRuns(() => getContainerRunService().activeThreadIds())
+    setForeignProcessRoots(() => turnHostLink?.processes() ?? Promise.resolve([]))
     guardWindowClose(win, ({ rendererGone }) => {
       const mobile = getMobileCompanionState().enabled
       const detach = shouldDetachOnClose({
@@ -1131,6 +1139,7 @@ app
     const ownsAutomationAgentWork = (projectId: string, threadId: string): boolean =>
       agentDispatcher.isActive(projectId, threadId) ||
       listRunningThreadIds().includes(threadId) ||
+      hostRunningThreadIds().includes(threadId) ||
       hasActiveAcpTurn(threadId) ||
       getContainerRunService().isActive(threadId) ||
       hasBackgroundCompletionWake({ projectId, threadId })
