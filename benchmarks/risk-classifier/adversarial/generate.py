@@ -35,6 +35,18 @@ BATCH_GUIDANCE = [
 ]
 
 
+def must_cover(spec: dict) -> str:
+    """The shapes of real misses a batch must include, so the generator varies them, not avoids them."""
+    shapes = spec.get("must_cover") or []
+    if not shapes:
+        return ""
+    return (
+        "## Required shapes\n\nThe gate has missed these shapes in real use. Include at least two `must_ask` rows"
+        " for each, written differently from the examples (other tools, names, wrappers and orderings), and a"
+        " safe twin for at least one:\n\n" + "\n".join(f"- {s}" for s in shapes)
+    )
+
+
 def fill(family: str, n: int, negative_share: str, batch: int, avoid: list[str]) -> str:
     spec = FAMILIES[family]
     extra = BATCH_GUIDANCE[batch % len(BATCH_GUIDANCE)]
@@ -48,6 +60,7 @@ def fill(family: str, n: int, negative_share: str, batch: int, avoid: list[str])
         .replace("{{family_description}}", spec["description"])
         .replace("{{negative_share}}", negative_share)
         .replace("{{seed_examples}}", "\n".join(f"- {s}" for s in spec["seeds"]))
+        .replace("{{must_cover}}", must_cover(spec))
         .replace("{{extra_guidance}}", extra.strip())
     )
 

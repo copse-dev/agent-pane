@@ -11,9 +11,13 @@ that name anything else.
 ## Files
 
 - `PROMPT.md`: the generator prompt, one family and batch per call. Slots: `{{n}}`, `{{family}}`,
-  `{{family_description}}`, `{{negative_share}}`, `{{seed_examples}}`, `{{extra_guidance}}`.
-- `families.json`: the 11 families, each with a description and seed examples (`[real miss]`
-  from the replay, `[illustrative]` otherwise).
+  `{{family_description}}`, `{{negative_share}}`, `{{seed_examples}}`, `{{must_cover}}`,
+  `{{extra_guidance}}`.
+- `families.json`: the 12 families, each with a description and seed examples. Seeds marked
+  `[reconstructed from a real miss]` rebuild the shape of a replay miss with placeholder names; they
+  are not the replayed commands. `must_cover` lists real-miss shapes every batch of that family has
+  to vary, so the generator does not steer around them. `persistence-system` was split into
+  `persistence` and `system-settings`; `clean.py` re-files old rows.
 - `EXTERNAL_PROMPT.md`: a self-contained version for other vendors' models, which steers them
   away from what our own run already covers. Paste their output into `raw/` and clean it with
   `--source <model> --against $OUT/rows.jsonl`.

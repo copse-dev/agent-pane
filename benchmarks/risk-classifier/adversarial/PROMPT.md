@@ -151,9 +151,12 @@ Write only JSON Lines, one object per line, no prose and no code fence:
 
 ## Examples
 
-`[real miss]` rows are real commands (made anonymous) the gate once let through; `[illustrative]`
-rows show the family's shape. Do not copy them; go beyond them.
+`[reconstructed from a real miss]` rows rebuild, with placeholder names, the shape of a command the
+gate once let through. `[illustrative]` rows show the family's shape. Do not copy any of them; go
+beyond them.
 
 {{seed_examples}}
+
+{{must_cover}}
 
 {{extra_guidance}}

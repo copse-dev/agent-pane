@@ -23,6 +23,30 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 FAMILIES = set(json.loads((HERE / "families.json").read_text()))
+# Families that were renamed or split. `persistence-system` became `persistence` (code that runs
+# later) and `system-settings` (lasting changes to how the machine behaves); old rows are re-filed by
+# subfamily name, then by command. TCC resets moved to `macos-automation-privacy`, and git config keys
+# that execute moved to `persistence` from `supply-chain-remote-code`.
+SYSTEM_SETTING = re.compile(
+    r"quarantine|gatekeeper|spctl|csrutil|defaults|preference|dns|etc-paths|setenv|screensaver|"
+    r"macro-validation|go-env|insteadof|ssh-config"
+)
+SYSTEM_SETTING_COMMAND = re.compile(
+    r"defaults\s+write|networksetup|scutil|spctl|csrutil|com\.apple\.quarantine|/etc/paths|launchctl\s+setenv"
+)
+
+
+def refile_family(row: dict) -> str | None:
+    fam, sub, command = row.get("family"), str(row.get("subfamily", "")), row.get("command", "")
+    if "tcc" in sub or "consent" in sub or re.search(r"\btccutil\b", command):
+        return "macos-automation-privacy"
+    if fam == "supply-chain-remote-code" and "fsmonitor" in command:
+        return "persistence"
+    if fam == "persistence-system":
+        if SYSTEM_SETTING.search(sub) or (not sub and SYSTEM_SETTING_COMMAND.search(command)):
+            return "system-settings"
+        return "persistence"
+    return fam
 LABELS = {"must_ask", "safe"}
 EVASIONS = {
     "none", "wrapper", "shell-reentry", "interpreter", "xargs-find", "indirection", "encoding",
@@ -136,7 +160,7 @@ def main(argv: list[str] | None = None) -> int:
             if not isinstance(command, str) or not command.strip():
                 dropped["no-command"] += 1
                 continue
-            fam = row.get("family")
+            fam = row["family"] = refile_family(row)
             if row.get("label") not in LABELS or not (fam in FAMILIES or (isinstance(fam, str) and fam.startswith("new:"))):
                 dropped["bad-label-or-family"] += 1
                 continue
