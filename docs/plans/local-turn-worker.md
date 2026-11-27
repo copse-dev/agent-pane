@@ -327,16 +327,31 @@ in it, and folding container runs into it are separate steps, not part of this o
   mid-turn, relaunches and sees the turn finish once with no Retry card, and answers a host
   turn's approval in the window. It found the follower missing a turn the host took before
   writing its running status; the link now hands the follower the taken thread directly.
-- **H6, on by default.** Run with the setting on, a sample of seven e2e specs found five
-  that pass with it off and fail with it on, so it stays off until these are fixed:
-  - A host turn's tool card shows `done` in the window while its command still runs
-    (`tool-activity-icon`), and a shell approval the window was never shown was recorded
-    as answered.
-  - Over-limit command output (`agent-tasks-terminal`).
-  - A parent turn's subthreads after a restart (`subthread-orchestration-recovery`).
-  - Quit and crash recovery. A quit the user chose should still stop a host turn and leave
-    the Retry card (`foreground-shell-quit`). A crash no longer needs the app's restart
-    continuation (`reopen-turn-recovery`), which should keep covering the setting off.
+- **H6, on by default.** Run with the setting on, a sample of e2e specs found these that pass
+  with it off and fail with it on. Fixed:
+  - A host turn's tool card showed `done` while its command still ran (`tool-activity-icon`):
+    a host left by an earlier spec served the next with its stale profile. The e2e launcher
+    now stops the profile's host whenever it applies a new fixture.
+  - Over-limit command output (`agent-tasks-terminal`): a host turn's live command output now
+    reaches the window's terminal pane (`shell-output`).
+  - A parent turn's subthreads (`subthread-orchestration-recovery`): the window submits a
+    prompt to another thread, and the host had none. The host now asks the attached app's
+    window over the prompt line (`thread-prompt`), replayed on attach and cancelled by Stop.
+  - A quit the user chose (`foreground-shell-quit`): a quit that keeps no turns stops each
+    host turn as a quit, not a user Stop (`stop` with `reason: 'quit'`), so it stays
+    `running` on disk and the next launch offers Retry. The quit waits up to 10 s for those
+    turns to end, their commands drained.
+  - A crash no longer needs the app's restart continuation (`reopen-turn-recovery`), which
+    now pins the setting off to keep covering it.
+
+  Still open, so the default stays off:
+  - **Background tasks** (`foreground-shell-yield`). The task supervisor, which gives a
+    background command its durable, cancellable handle and its completion wake, runs in the
+    app; a host turn has none, so `run_shell` with `yield_after_ms` (and `run_background`)
+    refuse to start. The command runs in the host while its task record and the Background
+    tasks control are the app's, so this needs the host to adopt, settle and cancel its
+    processes through the app's supervisor over the line, and the app's startup
+    reconciliation to leave tasks a live host owns alone.
 
   The e2e seed helpers stop the profile's host before they write a new profile, since the
   host outlives each spec's app and would serve the next one with what it read before.
