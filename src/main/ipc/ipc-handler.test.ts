@@ -624,26 +624,9 @@ describe('sender guard', () => {
     },
   }
 
-  it('checks the main frame by default and for an explicit main-frame option', () => {
-    for (const check of [
-      senderCheck(closedBootWindow),
-      senderCheck(closedBootWindow, {}),
-      senderCheck(closedBootWindow, { sender: 'main-frame' }),
-    ]) {
-      assert.throws(() => {
-        check({ senderFrame: null })
-      }, /did not come from the app window/)
-    }
-  })
-
-  it("{ sender: 'any' } skips the check, as the unguarded usage handlers did", () => {
-    const listener = positionalIpcHandler(
-      senderCheck(closedBootWindow, { sender: 'any' }),
-      z.tuple([z.boolean().optional()]),
-      (force) => force,
-    )
-    assert.equal(listener({ senderFrame: null }, true), true)
-    assert.equal(listener({ senderFrame: null }), undefined)
-    assert.throws(() => listener({ senderFrame: null }, 'yes'), IpcValidationError)
+  it('always checks the main frame', () => {
+    assert.throws(() => {
+      senderCheck(closedBootWindow)({ senderFrame: null })
+    }, /did not come from the app window/)
   })
 })

@@ -7,7 +7,7 @@ import { getUsageSummary } from '../services/storage/usage-ledger.ts'
 import { loadPlanUsageSnapshot } from '../services/plan-usage-bridge.ts'
 
 export function registerUsageHandlers(win: BrowserWindow): void {
-  defineHandler(win, 'usage:get-summary', z.tuple([]), () => getUsageSummary(), { sender: 'any' })
+  defineHandler(win, 'usage:get-summary', z.tuple([]), () => getUsageSummary())
   // What the classifiers (shell guard, tier screen, terminal-read screen) did for one
   // thread: calls, verdicts, latency and tokens, from the thread's decision log.
   defineArgumentListHandler(
@@ -16,11 +16,7 @@ export function registerUsageHandlers(win: BrowserWindow): void {
     z.tuple([zProjectId, zThreadId]),
     ([projectId, threadId]) => getThreadClassifierUse(projectId, threadId),
   )
-  defineHandler(
-    win,
-    'usage:get-plan-usage',
-    z.tuple([z.boolean().optional()]),
-    async (refresh) => loadPlanUsageSnapshot({ force: refresh === true }),
-    { sender: 'any' },
+  defineHandler(win, 'usage:get-plan-usage', z.tuple([z.boolean().optional()]), async (refresh) =>
+    loadPlanUsageSnapshot({ force: refresh === true }),
   )
 }

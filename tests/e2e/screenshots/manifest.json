@@ -1153,6 +1153,10 @@
       "sha256": "fc5cfca5a7d5b69f8545827c96f4e8739702986ec6f56ef698b2a294f237796a",
       "bytes": 58806
     },
+    "browser-permissions-denied.png": {
+      "sha256": "21ba8827518ac7565bcf3ce8c37bbc16b4004371eebe255836e72020d63e03f2",
+      "bytes": 119962
+    },
     "browser-preview-missing-entry.png": {
       "sha256": "e12ddfef2c7a3e0dd7d1297374910f687f79cc9e1729e2c9707a661b1f654f6f",
       "bytes": 2105607
@@ -2840,6 +2844,14 @@
     "mermaid-parity-wide.png": {
       "sha256": "c78a1e21ef9504b34c832c5eea727c16bca6f8e3963e1e25b869ae8b1ae42a1e",
       "bytes": 42679
+    },
+    "mermaid-preview-attacker-guest.png": {
+      "sha256": "cd4fd699ac1c94db0eaa70c48a398c6c96f153bd885d66ae79ba8f86935eb7df",
+      "bytes": 23879
+    },
+    "mermaid-preview-combined-isolation.png": {
+      "sha256": "7bfae05196a2ec73f0ecce2fd6934b3f9ec8421d8da980dba8063a1a44e9872d",
+      "bytes": 266517
     },
     "message-fork-resend-actions.png": {
       "sha256": "2f232861b3b416c6cfe782268844e64a3105484aca45caaa1cde456966edf409",

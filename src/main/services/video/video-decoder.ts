@@ -7,12 +7,13 @@ import type {
 } from 'electron'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { isWindowMainFrameSender } from '../../ipc/ipc-guards.ts'
+import { parseDecodeResponse, parseDecodeResponseRequestId } from './decode-response.ts'
 import {
   VIDEO_DECODE_READY_CHANNEL,
   VIDEO_DECODE_REQUEST_CHANNEL,
   VIDEO_DECODE_RESULT_CHANNEL,
   type DecodeFramesRequest,
-  type DecodeFramesResponse,
   type DecodeFramesResult,
 } from '@shared/video/decode-contract.ts'
 
@@ -36,7 +37,7 @@ const IDLE_SHUTDOWN_MS = 3 * 60_000
  */
 const DECODE_TIMEOUT_MS = 5 * 60_000
 
-interface PendingDecode {
+export interface PendingDecode {
   resolve: (result: DecodeFramesResult) => void
   reject: (error: Error) => void
   timer: NodeJS.Timeout
@@ -75,22 +76,38 @@ function settleAll(error: Error): void {
   pending.clear()
 }
 
+/** Settle one decoder reply after its sending frame has passed the owner check. */
+export function settlePendingDecodeResponse(
+  pendingDecodes: Map<string, PendingDecode>,
+  raw: unknown,
+): void {
+  const response = parseDecodeResponse(raw)
+  if (!response) {
+    const malformedRequestId = parseDecodeResponseRequestId(raw)
+    if (!malformedRequestId) return
+    const malformedEntry = pendingDecodes.get(malformedRequestId)
+    if (!malformedEntry) return
+    pendingDecodes.delete(malformedRequestId)
+    clearTimeout(malformedEntry.timer)
+    malformedEntry.reject(new Error('The video decoder returned a malformed reply.'))
+    return
+  }
+  const entry = pendingDecodes.get(response.requestId)
+  if (!entry) return
+  pendingDecodes.delete(response.requestId)
+  clearTimeout(entry.timer)
+  if (response.ok) entry.resolve(response)
+  else entry.reject(new Error(response.error))
+}
+
 function attachListeners(): void {
   if (listenersAttached) return
   listenersAttached = true
-  requirePlatform().ipcMain.on(
-    VIDEO_DECODE_RESULT_CHANNEL,
-    (event, response: DecodeFramesResponse) => {
-      // Only the decoder window may answer; anything else is ignored outright.
-      if (!decoderWindow || event.sender !== decoderWindow.webContents) return
-      const entry = pending.get(response.requestId)
-      if (!entry) return
-      pending.delete(response.requestId)
-      clearTimeout(entry.timer)
-      if (response.ok) entry.resolve(response)
-      else entry.reject(new Error(response.error))
-    },
-  )
+  requirePlatform().ipcMain.on(VIDEO_DECODE_RESULT_CHANNEL, (event, raw: unknown) => {
+    // Only the decoder window may answer; anything else is ignored outright.
+    if (!isWindowMainFrameSender(event, decoderWindow)) return
+    settlePendingDecodeResponse(pending, raw)
+  })
 }
 
 function scheduleIdleShutdown(): void {
@@ -127,7 +144,7 @@ async function ensureDecoderWindow(): Promise<BrowserWindow> {
     decoderPlatform.attachWebContentsLockdown(win.webContents)
 
     const onReady = (event: IpcMainEvent): void => {
-      if (event.sender !== win.webContents) return
+      if (!isWindowMainFrameSender(event, win)) return
       decoderPlatform.ipcMain.removeListener(VIDEO_DECODE_READY_CHANNEL, onReady)
       decoderWindow = win
       resolve(win)
