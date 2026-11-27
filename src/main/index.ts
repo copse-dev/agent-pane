@@ -897,6 +897,9 @@ app
         onThreadTaken: (projectId: string, threadId: string): void => {
           void foreignTurns.follow({ projectId, threadId })
         },
+        onShellOutput: (chunk: string, taskId: string | null): void => {
+          getMainWindow()?.webContents.send('agent:shell-output', chunk, taskId)
+        },
       }
       const link = createTurnHostLink(launch)
       turnHostLink = link

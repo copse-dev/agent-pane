@@ -258,6 +258,11 @@ export class TurnHost {
     }
   }
 
+  /** A host turn's command printed: every attached app's terminal pane shows it. */
+  shellOutput(chunk: string, taskId: string | null): void {
+    this.broadcastTo({ t: 'shell-output', chunk, taskId })
+  }
+
   /**
    * Tell the dispatching app, and every attached app: the one that sent the
    * turn may have lost its line and attached again on a new one.

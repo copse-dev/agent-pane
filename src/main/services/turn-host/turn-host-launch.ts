@@ -46,6 +46,8 @@ export interface TurnHostLaunchDependencies {
   spawn?: Spawn
   log: (line: string) => void
   onThreadTaken: (projectId: string, threadId: string) => void
+  /** Paint a host turn's live command output into the window's terminal pane. */
+  onShellOutput?: (chunk: string, taskId: string | null) => void
   /** How long to keep trying to reach a host that is still booting. */
   connectWithinMs?: number
 }
@@ -120,6 +122,7 @@ export function createTurnHostLink(deps: TurnHostLaunchDependencies): TurnHostLi
       applyHostStoreWrite(store, changes, deps.log)
     },
     onThreadTaken: deps.onThreadTaken,
+    ...(deps.onShellOutput ? { onShellOutput: deps.onShellOutput } : {}),
     log: deps.log,
   })
 }

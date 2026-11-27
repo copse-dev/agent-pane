@@ -324,6 +324,17 @@ describe('TurnHostLink', () => {
     assert.equal(await line.testScenario({ kind: 'clear' }), null, 'no host, no answer')
   })
 
+  it("mirrors a host turn's live command output to the terminal pane", async () => {
+    const host = new FakeHost()
+    const output: Array<[string, string | null]> = []
+    const { link: line } = link(host, {
+      onShellOutput: (chunk, taskId) => output.push([chunk, taskId]),
+    })
+    assert.ok(await line.ensureConnected())
+    host.say({ t: 'shell-output', chunk: '1\n2\n', taskId: 'call-1' })
+    assert.deepEqual(output, [['1\n2\n', 'call-1']])
+  })
+
   it("saves a host turn's store write and tells the host the profile changed", async () => {
     const host = new FakeHost()
     const saved: unknown[] = []

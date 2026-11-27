@@ -40,6 +40,8 @@ import type { SshPromptRequest, SshPromptResponse } from '../ssh-workspace/ssh-p
  *   A prompt waits however long no app is attached, and is asked again of every
  *   app that attaches; `approval-cancel` takes any of them down once it no
  *   longer needs an answer.
+ * - `shell-output` mirrors a host turn's live command output to the window's
+ *   terminal pane, as the app's own shell output sink does for its turns.
  * - `store-write` carries a change a host turn made to a shared profile store
  *   (settings, config) to the app, which owns those files and applies it.
  *   `profile-changed` tells the host the app wrote the profile, so it reads it
@@ -119,6 +121,7 @@ export type HostToApp =
     }
   | { t: 'approval-cancel'; id: string }
   | { t: 'store-write'; store: string; changes: ProfileStoreChange[] }
+  | { t: 'shell-output'; chunk: string; taskId: string | null }
   | ({ t: 'test-scenario-result'; id: string } & TestScenarioResult)
 
 const id = z.string().min(1).max(256)
@@ -256,6 +259,11 @@ const hostToAppSchema = z.discriminatedUnion('t', [
       ),
   }),
   z.object({ t: z.literal('approval-cancel'), id }),
+  z.object({
+    t: z.literal('shell-output'),
+    chunk: z.string().max(4_000_000),
+    taskId: id.nullable(),
+  }),
   z
     .object({
       t: z.literal('test-scenario-result'),

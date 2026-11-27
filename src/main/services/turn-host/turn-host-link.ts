@@ -67,6 +67,8 @@ export interface TurnHostLinkDependencies {
     prompt: Extract<HostToApp, { t: 'ssh-prompt' }>,
     signal: AbortSignal,
   ) => Promise<SshPromptResponse>
+  /** A host turn's live command output, for the window's terminal pane. */
+  onShellOutput?: (chunk: string, taskId: string | null) => void
   /** Apply a host turn's change to a shared profile store, which the app owns. */
   applyStoreWrite?: (message: Extract<HostToApp, { t: 'store-write' }>) => void
   /** A host thread's lease is held: the follower should follow it now. */
@@ -289,6 +291,9 @@ export class TurnHostLink {
       case 'review-diff':
       case 'ssh-prompt':
         this.ask(message)
+        return
+      case 'shell-output':
+        this.deps.onShellOutput?.(message.chunk, message.taskId)
         return
       case 'store-write':
         try {

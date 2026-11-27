@@ -98,6 +98,11 @@ async function main(): Promise<number> {
   forward = (store, changes): void => {
     host.storeWrite(store, changes)
   }
+  // Live command output, which the app paints into its terminal pane.
+  const { setShellOutputSink } = await import('../exec/shell-output-context.ts')
+  setShellOutputSink((chunk, taskId) => {
+    host.shellOutput(chunk, taskId)
+  })
   const server = await serveTurnHost(
     socketPath,
     (message, client) => {
