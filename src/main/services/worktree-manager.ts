@@ -31,6 +31,7 @@ import {
   createWorktreeBackup,
   getDefaultBranch,
   invalidateGitWorkTreeProbe,
+  parseOriginHeadSymbolicRef,
 } from './github/git-service.ts'
 import {
   canonicalWorkspaceRoot,
@@ -887,6 +888,25 @@ export async function projectCheckoutBehindDefaultBranch(
   if (remote === null) return false
   const result = await git(projectRoot, ['merge-base', '--is-ancestor', remote, 'HEAD'])
   return result.code === 1
+}
+
+/**
+ * Whether `branch`, reported as the repository default, still names a commit a
+ * new thread can be cut from: origin's tracking ref, which allocation fetches
+ * and prefers, or else the local branch. A default read from a dangling
+ * `refs/remotes/origin/HEAD` does not count. When origin renames or deletes
+ * its default, a pruning fetch removes the tracking ref but leaves the symref,
+ * and `git symbolic-ref` keeps reporting the gone branch, so the only copy
+ * left is a local branch nothing updates any more. A remote that never
+ * recorded a default (no `origin/HEAD`) keeps the local fallback.
+ */
+export async function defaultBranchResolves(projectRoot: string, branch: string): Promise<boolean> {
+  if ((await resolveCommit(projectRoot, `refs/remotes/origin/${branch}`)) !== null) return true
+  const originHead = await git(projectRoot, ['symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD'])
+  if (originHead.code === 0 && parseOriginHeadSymbolicRef(originHead.stdout) === branch) {
+    return false
+  }
+  return (await resolveCommit(projectRoot, branchRef(branch))) !== null
 }
 
 export async function hasOriginRemote(projectRoot: string): Promise<boolean> {

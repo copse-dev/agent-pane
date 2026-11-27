@@ -239,6 +239,8 @@ import {
   describeImagesSchema,
 } from './ipc/ipc-guards.ts'
 import { describeImagesForHandoff } from './services/image-description.ts'
+import { memberOf } from '@shared/member-of.ts'
+import { THREAD_BASE_FALLBACKS } from '@shared/types/worktree.ts'
 import {
   recordStartupPhase,
   startEventLoopWatchdog,
@@ -332,6 +334,7 @@ setSecretCipher(
   }),
 )
 const taskSupervisor = getTaskSupervisor()
+const isThreadBaseFallback = memberOf(THREAD_BASE_FALLBACKS)
 
 /** This quit came from a signal or a fault, with nobody to confirm it. */
 let unattendedQuit = false
@@ -1169,6 +1172,7 @@ app
         choiceArg: unknown,
         modelArg?: unknown,
         baseBranchArg?: unknown,
+        baseFallbackArg?: unknown,
       ) => {
         assertMainFrameSender(event, win)
         assertPrimaryMainWindow(event.sender)
@@ -1187,6 +1191,9 @@ app
         // ends up in `git switch` or `git worktree add` either way.
         const baseBranch =
           baseBranchArg === undefined ? undefined : parseIpcArgs(zGitBranchName, [baseBranchArg])
+        if (baseFallbackArg !== undefined && !isThreadBaseFallback(baseFallbackArg)) {
+          throw new Error('Invalid checkout base fallback')
+        }
         return prepareThreadCheckout({
           projectId,
           threadId,
@@ -1194,6 +1201,7 @@ app
           choice: choiceArg,
           ...(modelArg !== undefined ? { model: modelArg } : {}),
           ...(baseBranch !== undefined ? { baseBranch } : {}),
+          ...(baseFallbackArg !== undefined ? { baseFallback: baseFallbackArg } : {}),
         })
       },
     )

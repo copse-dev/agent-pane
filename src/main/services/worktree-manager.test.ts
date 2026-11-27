@@ -21,7 +21,7 @@ import { createServer, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join, sep } from 'node:path'
 import { SandboxManager, type SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
-import type { ThreadWorktree } from '@shared/types/worktree.ts'
+import type { PreparedThreadCheckout, ThreadWorktree } from '@shared/types/worktree.ts'
 import { initialThreadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
 import { setProjectSandboxEnabled } from '../project-sandbox/enabled.ts'
 import { setGitAvailableForTest } from './tool-availability.ts'
@@ -30,10 +30,19 @@ import {
   getInternalWorkspaceRootRegistration,
 } from './workspace.ts'
 import { changedPaths } from './git-status-paths.ts'
+import type { Project } from '@shared/types/state.ts'
+import type { Thread } from '@shared/types/thread.ts'
+import { localBranchExists, resetDefaultBranchCache } from './github/git-service.ts'
+import {
+  createThreadCheckoutTransaction,
+  inspectProject,
+  recoverUnpersistedWorktree,
+} from './thread-checkout-transaction.ts'
 import {
   adoptThreadWorktree,
   allocateThreadWorktree,
   canAdoptThreadWorktree,
+  defaultBranchResolves,
   expectedThreadWorktreePath,
   fetchDefaultBranch,
   threadWorktreeOwner,
@@ -1145,6 +1154,153 @@ describe('worktree manager', () => {
 
     assert.equal(git(repo, ['rev-parse', '--verify', 'refs/remotes/origin/-dash']).trim(), tip)
     assert.equal(git(repo, ['tag', '--list', 'remote-only']).trim(), '')
+  })
+
+  /**
+   * Start a blank thread through the real first-message transaction (real
+   * inspection, branch checks and allocation; only thread persistence is
+   * faked) with what a proposal card sends: no base branch, no fallback.
+   */
+  async function startProposedThread(repo: string): Promise<PreparedThreadCheckout> {
+    const project: Project = { id: 'project-1', name: 'Project', path: repo }
+    let thread: Thread = {
+      id: 'thread-proposed',
+      title: 'Proposed follow-up',
+      status: 'idle',
+      messages: [],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    const prepare = createThreadCheckoutTransaction({
+      getDeferredWorktreesEnabled: () => false,
+      canDeferAcpModel: () => false,
+      getProject: () => project,
+      getThread: async () => thread,
+      updateMeta: async (_projectId, _threadId, patch) => {
+        thread = { ...thread, ...patch }
+      },
+      warmupModel: async () => undefined,
+      preflightModel: async () => undefined,
+      inspect: inspectProject,
+      allocate: allocateThreadWorktree,
+      recoverUnpersisted: recoverUnpersistedWorktree,
+      branchExists: localBranchExists,
+      defaultBranchResolves,
+      checkoutBranch: async () => {
+        throw new Error('a worktree start must not switch the project checkout')
+      },
+      rebaseInProgress: async () => false,
+      validate: validateThreadWorktree,
+      retire: retireThreadWorktree,
+      serialize: async (_key, task) => await task(),
+    })
+    return await prepare({
+      projectId: 'project-1',
+      threadId: 'thread-proposed',
+      prompt: 'Proposed follow-up',
+      choice: 'worktree',
+    })
+  }
+
+  it('starts a machine-initiated thread from fetched origin/main while the checkout is parked elsewhere', async () => {
+    // The incident: the project checkout sat on a weeks-old feature branch and
+    // every accepted proposal was cut from it. A proposal start must get the
+    // fetched remote default, not the parked branch and not the stale local
+    // `main`.
+    const { temp, repo } = await setup()
+    resetDefaultBranchCache()
+    const remote = join(temp, 'remote.git')
+    git(temp, ['init', '-q', '--bare', '-b', 'main', remote])
+    git(repo, ['remote', 'add', 'origin', remote])
+    git(repo, ['push', '-q', 'origin', 'main'])
+    git(repo, ['remote', 'set-head', 'origin', '-a'])
+    git(repo, ['switch', '-q', '-c', 'feature/parked'])
+    await writeFile(join(repo, 'parked.txt'), 'old feature work\n')
+    git(repo, ['add', '.'])
+    git(repo, ['commit', '-q', '-m', 'parked feature'])
+    const parkedCommit = git(repo, ['rev-parse', 'HEAD']).trim()
+
+    const clone = join(temp, 'clone')
+    git(temp, ['clone', '-q', remote, clone])
+    await writeFile(join(clone, 'from-remote.txt'), 'newer commit\n')
+    git(clone, ['add', '.'])
+    git(clone, ['commit', '-q', '-m', 'pushed elsewhere'])
+    git(clone, ['push', '-q', 'origin', 'main'])
+    const remoteMain = git(remote, ['rev-parse', 'main']).trim()
+
+    const result = await startProposedThread(repo)
+
+    assert.equal(result.checkoutMode, 'worktree')
+    assert.ok(result.worktree)
+    assert.equal(result.worktree.baseBranch, 'main')
+    assert.equal(result.worktree.baseCommit, remoteMain)
+    assert.notEqual(result.worktree.baseCommit, parkedCommit)
+    assert.equal(
+      await readFile(join(result.worktree.path, 'from-remote.txt'), 'utf-8'),
+      'newer commit\n',
+    )
+    await assert.rejects(readFile(join(result.worktree.path, 'parked.txt'), 'utf-8'))
+    // The user's checkout is untouched.
+    assert.equal(git(repo, ['branch', '--show-current']).trim(), 'feature/parked')
+  })
+
+  it('does not start a machine-initiated thread from a stale local default when origin/HEAD dangles', async () => {
+    // Origin renamed its default from `main` to `trunk`. A pruning fetch
+    // removed `origin/main` but left `refs/remotes/origin/HEAD` pointing at
+    // it, and the user moved to `trunk` while keeping the old local `main`.
+    // The recorded default no longer exists upstream, so taking it would cut
+    // the thread from that abandoned local `main`.
+    const { temp, repo } = await setup()
+    resetDefaultBranchCache()
+    const remote = join(temp, 'remote.git')
+    git(temp, ['init', '-q', '--bare', '-b', 'main', remote])
+    git(repo, ['remote', 'add', 'origin', remote])
+    git(repo, ['push', '-q', 'origin', 'main'])
+    git(repo, ['remote', 'set-head', 'origin', '-a'])
+    const staleMain = git(repo, ['rev-parse', 'main']).trim()
+
+    const clone = join(temp, 'clone')
+    git(temp, ['clone', '-q', remote, clone])
+    await writeFile(join(clone, 'from-remote.txt'), 'newer commit\n')
+    git(clone, ['add', '.'])
+    git(clone, ['commit', '-q', '-m', 'pushed elsewhere'])
+    git(clone, ['push', '-q', 'origin', 'main'])
+    git(remote, ['branch', '-m', 'main', 'trunk'])
+    const remoteTrunk = git(remote, ['rev-parse', 'trunk']).trim()
+
+    git(repo, ['fetch', '-q', '--prune', 'origin'])
+    git(repo, ['switch', '-q', 'trunk'])
+    assert.equal(
+      git(repo, ['symbolic-ref', 'refs/remotes/origin/HEAD']).trim(),
+      'refs/remotes/origin/main',
+    )
+    assert.equal(git(repo, ['branch', '--list', '--remotes', 'origin/main']).trim(), '')
+
+    const result = await startProposedThread(repo)
+
+    assert.ok(result.worktree)
+    assert.notEqual(result.worktree.baseCommit, staleMain)
+    assert.equal(result.worktree.baseBranch, 'trunk')
+    assert.equal(result.worktree.baseCommit, remoteTrunk)
+  })
+
+  it('refuses a default branch only when origin/HEAD names it and dangles', async () => {
+    const { temp, repo } = await setup()
+    // No remote: the local branch is the default, if it exists.
+    assert.equal(await defaultBranchResolves(repo, 'main'), true)
+    assert.equal(await defaultBranchResolves(repo, 'missing'), false)
+    // A remote that recorded no default and holds no tracking ref yet keeps the
+    // local fallback: allocation fetches it, or cuts from the only copy there is.
+    const remote = join(temp, 'remote.git')
+    git(temp, ['init', '-q', '--bare', '-b', 'main', remote])
+    git(repo, ['remote', 'add', 'origin', remote])
+    assert.equal(await defaultBranchResolves(repo, 'main'), true)
+    // origin/HEAD names a tracking ref that does not exist: refused despite the local `main`.
+    git(repo, ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main'])
+    assert.equal(await defaultBranchResolves(repo, 'main'), false)
+    git(repo, ['push', '-q', 'origin', 'main'])
+    assert.equal(await defaultBranchResolves(repo, 'main'), true)
   })
 
   it('falls back to the local default branch when the best-effort fetch times out', async () => {
