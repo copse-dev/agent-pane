@@ -83942,7 +83942,7 @@ function createBrowserDesignMode(options) {
   const hint = el(
     "p",
     { class: "browser-design-hint" },
-    "Click an element to pin it. Esc stops picking."
+    "Click an element to pin it. \u2191 picks its parent, Esc stops."
   );
   const clearBtn = el(
     "button",
@@ -83980,7 +83980,7 @@ function createBrowserDesignMode(options) {
     button.setAttribute("data-tooltip", label);
     tray.toggleAttribute("hidden", !active2 && items.length === 0);
     tray.classList.toggle("is-picking", active2);
-    hint.textContent = active2 ? items.length === 0 ? "Click an element to pin it. Esc stops picking." : "Click another element, or add a note to each one." : "Picking is off. Turn it back on from the toolbar.";
+    hint.textContent = active2 ? items.length === 0 ? "Click an element to pin it. \u2191 picks its parent, Esc stops." : "Click another element, or add a note to each one." : "Picking is off. Turn it back on from the toolbar.";
     const count = items.length;
     sendLabel.textContent = count === 0 ? "Send to agent" : `Send ${String(count)} to agent`;
     sendBtn.disabled = count === 0;
@@ -85239,8 +85239,9 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     };
     designBtn.addEventListener("click", () => {
       setMenuOpen(false);
-      if (design.toggle() && tab.annotation?.active) {
-        tab.annotation.deactivate();
+      if (design.toggle()) {
+        if (tab.annotation?.active) tab.annotation.deactivate();
+        tab.webview?.focus();
       }
     });
     annotateBtn.addEventListener("click", () => {
