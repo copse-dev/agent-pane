@@ -3,7 +3,7 @@ import { mkdirSync, openSync } from 'node:fs'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { requestApproval, runWithApprovalOwner } from '../approval.ts'
-import { requestUserAnswers } from '../ask-user.ts'
+import { canAskUser, requestUserAnswers, type AskUserResult } from '../ask-user.ts'
 import { reviewRemoteStagedDiff } from '../diff-queue.ts'
 import { requestSshPrompt } from '../ssh-workspace/ssh-prompt.ts'
 import { deleteSetting, setSetting } from '../storage/settings.ts'
@@ -118,8 +118,16 @@ export function createTurnHostLink(deps: TurnHostLaunchDependencies): TurnHostLi
       }
     },
     // The window's question dialog, filed under the host turn's thread.
-    askQuestions: ({ projectId, threadId, request }, signal) =>
-      requestUserAnswers({ ...request, projectId, threadId }, signal),
+    // With no window to ask, or one that closed before an answer, the host
+    // keeps the question for the next window rather than taking blanks.
+    askQuestions: async (
+      { projectId, threadId, request },
+      signal,
+    ): Promise<AskUserResult | null> => {
+      if (!canAskUser()) return null
+      const result = await requestUserAnswers({ ...request, projectId, threadId }, signal)
+      return result.windowClosed ? null : result
+    },
     // The thread's diff panel shows it; deciding there answers the host.
     reviewDiff: ({ projectId, threadId, entry }, signal) =>
       reviewRemoteStagedDiff({ projectId, threadId }, entry, signal),

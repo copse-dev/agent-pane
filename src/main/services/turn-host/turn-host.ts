@@ -645,7 +645,6 @@ export class TurnHost {
     })
   }
 
-  /** (Re)start the idle countdown when nothing holds the host up, else stop it. */
   /** Resolves once no turn runs here (at once if none does). */
   private whenNothingRuns(): Promise<void> {
     if (this.running.size === 0) return Promise.resolve()
@@ -654,6 +653,7 @@ export class TurnHost {
     })
   }
 
+  /** (Re)start the idle countdown when nothing holds the host up, else stop it. */
   private armIdle(): void {
     if (this.running.size === 0) for (const waiter of this.idleWaiters.splice(0)) waiter()
     if (this.idleTimer !== null) clearTimeout(this.idleTimer)

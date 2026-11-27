@@ -76,12 +76,15 @@ export interface TurnHostLinkDependencies {
     prompt: Extract<HostToApp, { t: 'ssh-prompt' }>,
     signal: AbortSignal,
   ) => Promise<SshPromptResponse>
-  /** Have the window submit a host turn's prompt to another thread. */
-  /** Put a host turn's own questions (`ask_user`) to the user. */
+  /**
+   * Put a host turn's own questions (`ask_user`) to the user. Null when no
+   * window could answer (it closed): the question stays with the host.
+   */
   askQuestions?: (
     prompt: Extract<HostToApp, { t: 'ask-user' }>,
     signal: AbortSignal,
-  ) => Promise<AskUserResult>
+  ) => Promise<AskUserResult | null>
+  /** Have the window submit a host turn's prompt to another thread. */
   sendThreadPrompt?: (
     command: HostThreadPromptCommand,
     signal: AbortSignal,
@@ -490,6 +493,12 @@ export class TurnHostLink {
         return refusal(prompt)
       })
       .then((reply) => {
+        if (reply === null) {
+          // Nobody here could answer: leave it to the host, which asks again on
+          // the next attach.
+          if (this.prompts.get(prompt.id) === controller) this.prompts.delete(prompt.id)
+          return
+        }
         if (this.prompts.get(prompt.id) !== controller) {
           // Taken down: the line dropped, or the host withdrew it. A task call
           // or thread prompt has been carried out all the same, so the host's
@@ -517,7 +526,7 @@ export class TurnHostLink {
   private answer(
     prompt: Extract<HostToApp, PromptKinds>,
     signal: AbortSignal,
-  ): Promise<AppToHost> | null {
+  ): Promise<AppToHost | null> | null {
     const { id } = prompt
     switch (prompt.t) {
       case 'approval': {
@@ -547,7 +556,9 @@ export class TurnHostLink {
       case 'ask-user': {
         const ask = this.deps.askQuestions
         return ask
-          ? ask(prompt, signal).then((result) => ({ t: 'ask-user-answer', id, result }))
+          ? ask(prompt, signal).then((result): AppToHost | null =>
+              result === null ? null : { t: 'ask-user-answer', id, result },
+            )
           : null
       }
       case 'thread-prompt': {

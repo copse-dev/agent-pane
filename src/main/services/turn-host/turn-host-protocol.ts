@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { askUserParamsSchema } from '@copse/agent/ask-user-format.ts'
 import {
   connectLocalLine,
   localSocketPath,
@@ -309,11 +310,17 @@ const hostTaskCallShape = z.discriminatedUnion('op', [
   z.looseObject({ op: z.literal('cancel'), projectId: id, taskId: id }),
 ])
 
-/** The fields of a host turn's thread prompt the app reads before the window does. */
-const askUserRequestShape = z.looseObject({
-  questions: z.array(z.looseObject({ question: z.string().max(100_000) })).max(1_000),
-})
+/** A host turn's `ask_user` request, checked as the tool checks its own arguments. */
+const askUserRequestSchema = askUserParamsSchema
+  .extend({
+    presentation: z.object({ kind: z.literal('actions'), title: z.string().max(1_000) }).optional(),
+  })
+  .transform(({ questions, presentation }): AskUserRequest => ({
+    questions,
+    ...(presentation === undefined ? {} : { presentation }),
+  }))
 
+/** The fields of a host turn's thread prompt the app reads before the window does. */
 const threadPromptCommandShape = z.looseObject({
   sourceThreadId: id,
   projectId: id,
@@ -402,7 +409,7 @@ const hostToAppSchema = z.discriminatedUnion('t', [
     threadId: id,
     // Built by the same ask_user tool as an in-process question; the window
     // renders it as it would one of its own.
-    request: z.custom<AskUserRequest>((value) => askUserRequestShape.safeParse(value).success),
+    request: askUserRequestSchema,
   }),
   z.object({
     t: z.literal('thread-prompt'),

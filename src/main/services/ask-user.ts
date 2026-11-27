@@ -51,6 +51,8 @@ export interface AskUserResult {
   timedOut?: true
   /** No person is waiting on this run; the caller must preserve any reviewable question. */
   deferred?: true
+  /** The window asking closed before anyone answered. */
+  windowClosed?: true
 }
 
 /**
@@ -104,6 +106,11 @@ function cancelledAnswers(req: AskUserRequest): AskUserResult {
  */
 function timedOutAnswers(req: AskUserRequest): AskUserResult {
   return { ...blankAnswers(req), timedOut: true }
+}
+
+/** Whether anything here can put a question to the user. */
+export function canAskUser(): boolean {
+  return handler !== null
 }
 
 export function requestUserAnswers(
@@ -202,7 +209,7 @@ export function initAskUser(
       pending.delete(id)
       replay.delete(id)
       pendingQuestionThreads.delete(id)
-      resolve({ answers: [] })
+      resolve({ answers: [], windowClosed: true })
     }
   })
 

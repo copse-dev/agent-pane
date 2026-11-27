@@ -121,7 +121,7 @@ async function main(): Promise<number> {
       const before = getWorkspaceRoot()
       await profile.reload()
       // The app switched projects: what the turns see comes from the new root.
-      const pluginsChanged = getPluginService().applyPersistedEnablement()
+      const pluginsChanged = await getPluginService().applyPersistedEnablement()
       if (rereadPersistedWorkspaceRoot() !== before || pluginsChanged) await workspaceChanged()
     },
     ...(await testScenarioDependency()),

@@ -458,6 +458,35 @@ describe('TurnHostLink', () => {
     assert.deepEqual(await line.processes(5), [], 'a host that does not answer lists nothing')
   })
 
+  it("leaves a host turn's question with the host when no window can answer it", async () => {
+    const host = new FakeHost()
+    let asked = 0
+    const { link: line } = link(host, {
+      askQuestions: () => {
+        asked += 1
+        return Promise.resolve(null)
+      },
+    })
+    assert.ok(await line.ensureConnected())
+    const question = {
+      t: 'ask-user' as const,
+      id: 'q-1',
+      projectId: 'p1',
+      threadId: 't1',
+      request: { questions: [{ question: 'Which branch?' }] },
+    }
+    host.say(question)
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(
+      host.sent.filter((m) => m.t === 'ask-user-answer').length,
+      0,
+      'no blank answer sent',
+    )
+    host.say(question)
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(asked, 2, 'asked again when the host asks again')
+  })
+
   it("has this window submit a host turn's prompt to another thread", async () => {
     const host = new FakeHost()
     const answered = Promise.withResolvers<AppToHost>()
