@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { envForRendererChildProcess } from './child-process-env.ts'
+import { envForContainedChildProcess, envForRendererChildProcess } from './child-process-env.ts'
 
 describe('envForRendererChildProcess', () => {
   it('strips LLM API keys from the child environment', () => {
@@ -80,5 +80,44 @@ describe('envForRendererChildProcess', () => {
     assert.equal(merged['ANTHROPIC_API_KEY'], undefined)
     assert.equal(merged['PATH'], '/usr/bin')
     assert.equal(merged['GIT_AUTHOR_NAME'], 'Copse')
+  })
+})
+
+describe('envForContainedChildProcess', () => {
+  it('drops forge, cloud and registry credentials by name and by shape', () => {
+    const env = envForContainedChildProcess({
+      PATH: '/usr/bin',
+      HOME: '/Users/me',
+      GITHUB_TOKEN: 'g',
+      GH_TOKEN: 'g',
+      AWS_ACCESS_KEY_ID: 'AKIA',
+      AWS_SECRET_ACCESS_KEY: 's',
+      AWS_SESSION_TOKEN: 't',
+      NPM_TOKEN: 'n',
+      GHCR_PAT: 'p',
+      SENTRY_AUTH_TOKEN: 's',
+      DB_PASSWORD: 'pw',
+      STRIPE_SECRET_KEY: 'sk',
+      ANTHROPIC_API_KEY: 'sk-ant',
+    })
+    assert.deepEqual(env, { PATH: '/usr/bin', HOME: '/Users/me' })
+  })
+
+  it('keeps settings that only look like credentials', () => {
+    const env = envForContainedChildProcess({
+      AWS_REGION: 'eu-west-2',
+      AWS_PROFILE: 'dev',
+      AWS_WEB_IDENTITY_TOKEN_FILE: '/var/run/token',
+      HF_HUB_DISABLE_IMPLICIT_TOKEN: '1',
+      SSH_AUTH_SOCK: '/tmp/agent.sock',
+      PATH: '/usr/bin',
+      KUBECONFIG: './kubeconfig.staging',
+    })
+    assert.equal(Object.keys(env).length, 7)
+  })
+
+  it('keeps only the credentials the caller selected', () => {
+    const env = envForContainedChildProcess({ GH_TOKEN: 'g', GITHUB_TOKEN: 'g' }, ['GH_TOKEN'])
+    assert.deepEqual(env, { GH_TOKEN: 'g' })
   })
 })

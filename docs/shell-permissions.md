@@ -28,6 +28,19 @@ Approval, containment, network authority and credential access are separate prop
 [user sandbox guide](user/project-sandbox.md#execution-boundaries) diagrams execution boundaries;
 the [auto-approval guide](user/auto-approval.md) explains the user-facing controls.
 
+Every agent-driven child loses Copse's own LLM provider keys. A command **contained** in the
+project sandbox also loses the user's inherited tool and cloud credentials (`GITHUB_TOKEN`,
+`GH_TOKEN`, `AWS_*` keys, registry tokens, and names ending in `_TOKEN`, `_SECRET`, `_PASSWORD`,
+`_API_KEY`, `_PAT` and similar; `envForContainedChildProcess`). This covers `run_shell`,
+`run_background`, todo checks and loopback-hosted tasks, and applies to the caller's env overlay too.
+A contained command has no network, so it has no use for them. Removing them means a command the
+harm gate wrongly passed cannot print them, write them into the workspace or pass them to a later
+approved step. A contained run that genuinely needs one names it in `keepCredentialEnv`, which a
+scoped network plan does for its `GH_TOKEN`. Commands approved to run outside the sandbox, and the
+user's own terminal, keep the full environment. Outbound requests to remote models also redact JWTs,
+kubeconfig credential fields and `.npmrc` auth (`redact-secrets.ts`): containment cannot stop a
+contained command from showing a workspace file to the model, and the file tools read the same files.
+
 | Control                          | Scope and restriction                                                                                                                                                                                                                                                                                                                                                                                    |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Standard shell mode              | Contained commands may auto-run; external and destructive commands normally prompt. Local containment requires active macOS Seatbelt or Linux bubblewrap.                                                                                                                                                                                                                                                |

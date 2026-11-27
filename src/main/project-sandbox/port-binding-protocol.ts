@@ -28,6 +28,8 @@ const requestSchema = z.object({
   // Selected by main with its thread identity, never from the command's env.
   tmpDir: z.string().refine(isAbsolute),
   env: z.record(z.string(), z.string()).optional(),
+  // Credentials main deliberately selected for this run; all others are dropped.
+  keepCredentialEnv: z.array(z.string()).optional(),
   overlay: overlaySchema,
   violationId: z.string().optional(),
 })
