@@ -3,6 +3,7 @@ import './disable-brotli-decoding.ts' // MUST be first — see the module
 import { stopAllForegroundShellProcesses } from './services/exec/foreground-shell-process.ts'
 import {
   continuesTurnsAfterQuit,
+  everyTurnHandsOff,
   handOffTurns,
   turnWorkerPath,
   type HandOffTarget,
@@ -21,6 +22,7 @@ import {
 } from './services/plugins/plugin-client-service.ts'
 import { dispatchSubthreadPrompt, initThreadPrompts } from './services/thread-prompts.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
+import { removeOrphanedPlanWindowHistory } from './services/storage/plan-window-history-cleanup.ts'
 import { startDefaultBranchRefresh } from './services/default-branch-refresh.ts'
 import { startMachineService, stopMachineService } from './services/machines/machine-service.ts'
 import {
@@ -101,8 +103,10 @@ import { initAutoUpdate, quitInstallsUpdate } from './services/auto-update.ts'
 import { initUpdatePrompt } from './services/update-prompt.ts'
 import {
   approveClose,
+  closeWentUnanswered,
   deferQuitForCloseConfirmation,
   guardWindowClose,
+  setQuitHandOffCheck,
   initCloseConfirm,
 } from './services/close-confirm.ts'
 import { checkToolAvailability } from './services/tool-availability.ts'
@@ -775,6 +779,7 @@ app
     // Packaged macOS build only: background update check + prompts (no-op elsewhere).
     initAutoUpdate(win)
     startStorageMaintenance()
+    removeOrphanedPlanWindowHistory()
     startDefaultBranchRefresh()
     // P5: boot the plugin service before `createRegistry()` so persisted
     // `pluginDisabled` state is applied to the shared registry before
@@ -917,6 +922,17 @@ app
     perfMark('main:register-handlers')
     const agentDispatcher = new AgentDispatcher(agentHost, registry, undefined, transcriptWriter)
     listActiveTurns = (): HandOffTarget[] => agentDispatcher.activeTurns()
+    // The close dialog may only say turns keep going when a worker takes every
+    // one: a quit that hands off, with no update to install, and no turn the
+    // worker turns down (it waits for the next launch instead).
+    setQuitHandOffCheck(async () => {
+      const { workerCannotRun } = await import('./services/turn-worker/turn-worker.ts')
+      return everyTurnHandsOff(
+        agentDispatcher.activeTurns(),
+        continuesTurnsAfterQuit(getSetting) && !quitInstallsUpdate(),
+        workerCannotRun,
+      )
+    })
     setAgentInitiatedTurnAuthority(agentDispatcher)
     setDiffAcceptanceHandler({
       waitForIdle: (owner) => agentDispatcher.waitForIdle(owner.projectId, owner.threadId),
@@ -1729,8 +1745,9 @@ app.on('before-quit', (event) => {
   // The quit is going ahead. Only a quit the user confirmed hands its turns to
   // workers, and only with the setting on; otherwise the user chose to stop
   // them, so the next launch does not continue them (unless the updater asked).
-  // A signal or a fault has nobody at the keyboard, so it stops them too.
-  quitHandsOff = !unattendedQuit && continuesTurnsAfterQuit(getSetting)
+  // A signal, a fault, or a close nobody answered (the renderer went away or
+  // the prompt timed out) has nobody at the keyboard, so it stops them too.
+  quitHandsOff = !unattendedQuit && !closeWentUnanswered() && continuesTurnsAfterQuit(getSetting)
   const runEnded = recordRunEnd(quitHandsOff)
   beginMainWindowQuit()
   destroyAllTerminalSessions()

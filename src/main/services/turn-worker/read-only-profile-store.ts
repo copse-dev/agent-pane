@@ -20,33 +20,83 @@ export function readOnlyProfileStoreFactory(
 ): PersistentStoreFactory {
   return (options) => {
     const name = options.name ?? 'config'
-    const values = new Map<string, unknown>(Object.entries(structuredClone(stores.get(name) ?? {})))
+    const root: Record<string, unknown> = structuredClone(stores.get(name) ?? {})
     const reported = new Set<string>()
     const noteWrite = (key: string): void => {
       if (reported.has(key)) return
       reported.add(key)
       onWrite(name, key)
     }
+    // As electron-store's: `get`, `set` and `delete` take a dotted path
+    // (`apiKey.anthropic` is a field of the one `apiKey` object), while
+    // `setMany`, `listKeys` and `deleteKeys` work on top-level keys.
     const backing: BackingStore = {
-      get: (key): unknown => values.get(key),
+      get: (key): unknown => getPath(root, key),
       set: (key, value): void => {
         noteWrite(key)
-        values.set(key, structuredClone(value))
+        setPath(root, key, structuredClone(value))
       },
       setMany: (patch): void => {
-        for (const [key, value] of Object.entries(patch)) backing.set(key, value)
+        for (const [key, value] of Object.entries(patch)) {
+          noteWrite(key)
+          root[key] = structuredClone(value)
+        }
       },
       delete: (key): void => {
         noteWrite(key)
-        values.delete(key)
+        deletePath(root, key)
       },
-      listKeys: (): string[] => [...values.keys()],
+      listKeys: (): string[] => Object.keys(root),
       deleteKeys: (keys): void => {
-        for (const key of keys) backing.delete(key)
+        for (const key of keys) {
+          noteWrite(key)
+          Reflect.deleteProperty(root, key)
+        }
       },
     }
     return backing
   }
+}
+
+function getPath(root: Record<string, unknown>, path: string): unknown {
+  let node: unknown = root
+  for (const part of path.split('.')) {
+    if (!isRecord(node)) return undefined
+    node = node[part]
+  }
+  return node
+}
+
+/** The object at `parts`, made where it is missing or not an object. */
+function parentOf(
+  root: Record<string, unknown>,
+  parts: readonly string[],
+): Record<string, unknown> {
+  let node = root
+  for (const part of parts) {
+    const next = node[part]
+    if (isRecord(next)) node = next
+    else {
+      const made: Record<string, unknown> = {}
+      node[part] = made
+      node = made
+    }
+  }
+  return node
+}
+
+function setPath(root: Record<string, unknown>, path: string, value: unknown): void {
+  const parts = path.split('.')
+  const last = parts.pop() ?? path
+  parentOf(root, parts)[last] = value
+}
+
+function deletePath(root: Record<string, unknown>, path: string): void {
+  const parts = path.split('.')
+  const last = parts.pop() ?? path
+  const parent = getPath(root, parts.join('.'))
+  const target = parts.length === 0 ? root : parent
+  if (isRecord(target)) Reflect.deleteProperty(target, last)
 }
 
 /**

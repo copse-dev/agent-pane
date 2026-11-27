@@ -1,5 +1,6 @@
 import ts from 'typescript'
 import { z } from 'zod'
+import { scanPlatformGates, type PlatformInventory } from './platform-gates.mts'
 
 /**
  * Static flake-risk ratchet (docs/testing-strategy.md#flake-risk-ratchet).
@@ -16,6 +17,8 @@ export const FLAKE_RULES = [
   'unit-wall-clock-sleep',
   'e2e-checkout-seed',
   'e2e-fixed-port',
+  'unit-platform-early-return',
+  'unit-platform-suite-skip',
 ] as const
 export type FlakeRule = (typeof FLAKE_RULES)[number]
 
@@ -28,6 +31,10 @@ export const FLAKE_RULE_ADVICE: Readonly<Record<FlakeRule, string>> = {
   'e2e-checkout-seed':
     'seed seedStableWorkspace() or a temp repo instead of the shared checkout (process.cwd())',
   'e2e-fixed-port': 'listen on port 0 and read server.address().port',
+  'unit-platform-early-return':
+    "a per-test { skip: <platform condition> && 'reason' } (or t.skip('reason') before the return) so the run reports the skip, or inject the platform into the function under test (worktree-manager.test.ts does)",
+  'unit-platform-suite-skip':
+    "per-test { skip: process.platform !== 'darwin' && 'reason' } on each test (a shared const options object is fine), so the Linux run reports them skipped",
 }
 
 export interface FlakeFinding {
@@ -45,6 +52,9 @@ export const flakeRiskBaselineSchema = z.strictObject({
     'unit-wall-clock-sleep': countsSchema,
     'e2e-checkout-seed': countsSchema,
     'e2e-fixed-port': countsSchema,
+    // Added after the first baseline: the base ref's baseline may predate them.
+    'unit-platform-early-return': countsSchema.default({}),
+    'unit-platform-suite-skip': countsSchema.default({}),
   }),
 })
 export type FlakeRiskBaseline = z.infer<typeof flakeRiskBaselineSchema>
@@ -59,19 +69,30 @@ export function isE2ePath(path: string): boolean {
 
 /** Every flake-risk finding in one file; files outside both scopes yield none. */
 export function scanFlakeRisks(path: string, text: string): FlakeFinding[] {
+  return scanTestFile(path, text).findings
+}
+
+export interface TestFileScan {
+  findings: FlakeFinding[]
+  /** Unit tests in this file that run on exactly one host platform. */
+  inventory: PlatformInventory
+}
+
+/** Flake-risk findings plus the unit-tier platform inventory, from one parse. */
+export function scanTestFile(path: string, text: string): TestFileScan {
   const unit = isUnitTestPath(path)
   const e2e = isE2ePath(path)
-  if (!unit && !e2e) return []
+  if (!unit && !e2e) return { findings: [], inventory: {} }
   const file = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
   const found: FlakeFinding[] = []
-  const report = (rule: FlakeRule, node: ts.Node): void => {
+  const report = (rule: FlakeRule, node: ts.Node, override?: string): void => {
     const { line } = file.getLineAndCharacterOfPosition(node.getStart(file))
     const snippet = node.getText(file).replace(/\s+/g, ' ')
     found.push({
       rule,
       file: path,
       line: line + 1,
-      text: snippet.length > 80 ? `${snippet.slice(0, 77)}...` : snippet,
+      text: override ?? (snippet.length > 80 ? `${snippet.slice(0, 77)}...` : snippet),
     })
   }
   const bindings = collectBindings(file)
@@ -83,7 +104,16 @@ export function scanFlakeRisks(path: string, text: string): FlakeFinding[] {
   // In e2e a wall-clock sleep is a fixed pause by another name; a poll interval stays exempt.
   if (unit) scanSleeps(file, bindings, 'unit-wall-clock-sleep', report)
   if (e2e) scanSleeps(file, bindings, 'e2e-fixed-pause', report)
-  return found.sort((a, b) => a.line - b.line || a.rule.localeCompare(b.rule))
+  let inventory: PlatformInventory = {}
+  if (unit) {
+    const gates = scanPlatformGates(file)
+    for (const site of gates.sites) report(site.rule, site.node, site.text)
+    inventory = gates.inventory
+  }
+  return {
+    findings: found.sort((a, b) => a.line - b.line || a.rule.localeCompare(b.rule)),
+    inventory,
+  }
 }
 
 interface Bindings {
@@ -643,6 +673,8 @@ function emptyCounts(): FlakeCounts {
     'unit-wall-clock-sleep': new Map(),
     'e2e-checkout-seed': new Map(),
     'e2e-fixed-port': new Map(),
+    'unit-platform-early-return': new Map(),
+    'unit-platform-suite-skip': new Map(),
   }
 }
 
@@ -685,17 +717,38 @@ export function compareWithBaseline(
 }
 
 /**
+ * Rules the raw baseline text does not record at all. A base ref that
+ * predates a rule parses with it empty, but its first recording is not
+ * growth: it is the rule's starting point.
+ */
+export function rulesMissingFrom(text: string): Set<FlakeRule> {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return new Set()
+  }
+  const recorded: unknown =
+    typeof parsed === 'object' && parsed !== null && 'rules' in parsed ? parsed.rules : undefined
+  if (typeof recorded !== 'object' || recorded === null) return new Set(FLAKE_RULES)
+  return new Set(FLAKE_RULES.filter((rule) => !Object.hasOwn(recorded, rule)))
+}
+
+/**
  * Where the head baseline tolerates more than the base did. A key the base
  * lacks is growth unless git reports it as the rename of a base key the head
- * baseline dropped, carrying no more than that key allowed.
+ * baseline dropped, carrying no more than that key allowed. Rules in
+ * `introduced` (absent from the base baseline) are not compared.
  */
 export function flakeBaselineGrowth(
   base: FlakeRiskBaseline,
   head: FlakeRiskBaseline,
   renames: ReadonlyMap<string, string> = new Map(),
+  introduced: ReadonlySet<FlakeRule> = new Set(),
 ): string[] {
   const problems: string[] = []
   for (const rule of FLAKE_RULES) {
+    if (introduced.has(rule)) continue
     const before = baselineCounts(base, rule)
     const after = baselineCounts(head, rule)
     for (const [file, count] of [...after].sort(([a], [b]) => a.localeCompare(b))) {
@@ -733,6 +786,8 @@ export function baselineFromFindings(findings: readonly FlakeFinding[]): FlakeRi
       'unit-wall-clock-sleep': rule('unit-wall-clock-sleep'),
       'e2e-checkout-seed': rule('e2e-checkout-seed'),
       'e2e-fixed-port': rule('e2e-fixed-port'),
+      'unit-platform-early-return': rule('unit-platform-early-return'),
+      'unit-platform-suite-skip': rule('unit-platform-suite-skip'),
     },
   }
 }
