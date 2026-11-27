@@ -537,6 +537,11 @@ export interface PluginService {
    * Nothing is saved. Resolves whether anything changed.
    */
   applyPersistedEnablement(): Promise<boolean>
+  /**
+   * Enabled plugins with a tool runtime of their own: what a worker must be
+   * able to run before it takes a turn that may call them.
+   */
+  toolRuntimePluginIds(): string[]
   /** Read one plugin-scoped setting value (raw persisted value; renderer coerces). */
   getSetting(pluginId: string, key: string): unknown
   /** Persist one plugin-scoped setting value under the plugin's namespaced bag. */
@@ -904,6 +909,9 @@ export function createPluginService(registry: PluginRegistry): PluginService {
         changed = true
       }
       return changed
+    },
+    toolRuntimePluginIds(): string[] {
+      return [...selectedCandidates.keys()].filter((id) => registry.isEnabled(id))
     },
     getSetting(pluginId: string, key: string): unknown {
       return readPluginSettings(pluginId)[key]

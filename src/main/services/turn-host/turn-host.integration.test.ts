@@ -125,7 +125,7 @@ describe('the bundled turn host', { skip: !E2E, timeout: 120_000 }, () => {
       changed,
     )
     assert.ok(line, `the host never served:\n${log}`)
-    line.send({ t: 'hello', version: VERSION, protocol: 1 })
+    line.send({ t: 'hello', version: VERSION, protocol: 2 })
     line.send({ t: 'attach' })
     line.send({ t: 'dispatch', id: 'op-a', projectId: 'p1', threadId: 'a', payload: 'One' })
     line.send({ t: 'dispatch', id: 'op-b', projectId: 'p1', threadId: 'b', payload: 'Two' })
@@ -137,7 +137,10 @@ describe('the bundled turn host', { skip: !E2E, timeout: 120_000 }, () => {
     await until(() => received.some((m) => m.t === 'status' && m.id === 'op-a'))
     line.close()
 
-    assert.equal(received[0]?.t, 'hello')
+    const hello = received[0]
+    assert.equal(hello?.t, 'hello')
+    assert.deepEqual(hello.capabilities?.roles, ['turns'])
+    assert.equal(hello.capabilities.pluginRuntimes, false)
     assert.ok(received.some((m) => m.t === 'chunk' && m.threadId === 'a'))
     assert.ok(received.some((m) => m.t === 'chunk' && m.threadId === 'b'))
     for (const id of ['a', 'b']) {

@@ -20,6 +20,10 @@ import type { ApprovalRequest, ApprovalResponse } from '../approval.ts'
 import type { QueueEntry } from '../diff-queue.ts'
 import type { ProfileStoreChange } from '../turn-worker/read-only-profile-store.ts'
 import type { SshPromptRequest, SshPromptResponse } from '../ssh-workspace/ssh-prompt.ts'
+import {
+  workerCapabilitiesSchema,
+  type WorkerCapabilities,
+} from '../worker-protocol/worker-capabilities.ts'
 
 /**
  * The line between the app and the resident turn host
@@ -30,8 +34,10 @@ import type { SshPromptRequest, SshPromptResponse } from '../ssh-workspace/ssh-p
  * and adds the verbs a turn needs when it starts in the host rather than being
  * handed over at quit:
  *
- * - `hello` exchanges versions. An app sends turns only to a host of its own
- *   version; a host of another version finishes what it has and retires.
+ * - `hello` exchanges versions, and the host says what it can run
+ *   (`worker-capabilities.ts`). An app sends turns only to a host of its own
+ *   version, and only turns the host said it can run; a host of another
+ *   version finishes what it has and retires.
  * - `dispatch` starts a turn: the same project, thread and raw payload the
  *   window sends main on `agent:run`. The host answers `accepted` once the
  *   thread is claimed, or `refused` with a reason, then `ended` when the turn
@@ -66,7 +72,7 @@ import type { SshPromptRequest, SshPromptResponse } from '../ssh-workspace/ssh-p
  * beyond the profile path (`harness-worker-roadmap.md` R2).
  */
 
-export const TURN_HOST_PROTOCOL = 1
+export const TURN_HOST_PROTOCOL = 2
 
 export type AppToHost =
   | { t: 'hello'; version: string; protocol: number }
@@ -158,7 +164,13 @@ export interface HostProcessLogs {
 export type DispatchState = 'running' | 'ended' | 'refused' | 'unknown'
 
 export type HostToApp =
-  | { t: 'hello'; version: string; protocol: number; pid: number }
+  | {
+      t: 'hello'
+      version: string
+      protocol: number
+      pid: number
+      capabilities?: WorkerCapabilities | undefined
+    }
   | { t: 'accepted'; id: string; threadId: string }
   | { t: 'refused'; id: string; threadId: string; reason: string }
   | { t: 'ended'; id: string; threadId: string; error?: string | undefined }
@@ -196,7 +208,7 @@ export type HostToApp =
 
 const id = z.string().min(1).max(256)
 
-const appToHostSchema = z.discriminatedUnion('t', [
+export const appToHostSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('hello'), version: z.string().max(128), protocol: z.number().int() }),
   z.object({
     t: z.literal('dispatch'),
@@ -330,12 +342,15 @@ const threadPromptCommandShape = z.looseObject({
 
 // Chunks and snapshots come from this user's own host, written by the same
 // code that writes them in-process; the envelope is checked, the payload is not.
-const hostToAppSchema = z.discriminatedUnion('t', [
+export const hostToAppSchema = z.discriminatedUnion('t', [
   z.object({
     t: z.literal('hello'),
     version: z.string().max(128),
     protocol: z.number().int(),
     pid: z.number().int(),
+    // A host from before capabilities can run nothing new; the version check
+    // keeps an app from sending it turns in any case.
+    capabilities: workerCapabilitiesSchema.optional(),
   }),
   z.object({ t: z.literal('accepted'), id, threadId: id }),
   z.object({ t: z.literal('refused'), id, threadId: id, reason: z.string().max(2_000) }),

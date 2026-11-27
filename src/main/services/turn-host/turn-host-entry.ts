@@ -89,6 +89,7 @@ async function main(): Promise<number> {
     { registerSkillTools },
     { reloadMcpServers },
     { getPluginService },
+    { turnHostCapabilities },
   ] = await Promise.all([
     import('../workspace.ts'),
     import('../skills/skills-registry.ts'),
@@ -96,6 +97,7 @@ async function main(): Promise<number> {
     import('../registry-bootstrap.ts'),
     import('../mcp/mcp-registry.ts'),
     import('../plugins/plugin-service.ts'),
+    import('./host-can-run.ts'),
   ])
   // As the app does when its window selects a project or toggles a plugin
   // (workspace-handlers.ts, plugin-handlers.ts).
@@ -114,6 +116,7 @@ async function main(): Promise<number> {
     registry: runtime.registry,
     log,
     version,
+    capabilities: turnHostCapabilities,
     onIdle: (): void => {
       done.resolve(undefined)
     },

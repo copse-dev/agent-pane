@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -14,7 +14,9 @@ function runGate(
   eventName?: string,
   files: Record<string, { covered: number; total: number }> = {},
 ): { status: number | null; output: string; baseline: unknown } {
-  const dir = mkdtempSync(join(tmpdir(), 'coverage-gate-'))
+  // Real path: macOS's temp directory is a symlink, and the gate reads files
+  // against its working directory as the OS resolves it.
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'coverage-gate-')))
   try {
     mkdirSync(join(dir, 'coverage'))
     writeFileSync(

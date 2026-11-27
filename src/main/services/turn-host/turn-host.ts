@@ -52,6 +52,7 @@ import {
   type TestScenarioStatus,
   type TurnHostClient,
 } from './turn-host-protocol.ts'
+import { NO_CAPABILITIES, type WorkerCapabilities } from '../worker-protocol/worker-capabilities.ts'
 
 /**
  * The resident turn host (`docs/plans/local-turn-worker.md`, "Every turn in a
@@ -81,6 +82,8 @@ export interface TurnHostDependencies {
   version: string
   /** Called once the host has had no turn and no attached app for `idleMs`. */
   onIdle: () => void
+  /** What this host can run, said in its hello; nothing when left out. */
+  capabilities?: () => WorkerCapabilities
   idleMs?: number
   /** Read the profile again; the app wrote it (decision 5). */
   reloadProfile?: () => Promise<void>
@@ -231,6 +234,7 @@ export class TurnHost {
           version: this.deps.version,
           protocol: TURN_HOST_PROTOCOL,
           pid: process.pid,
+          capabilities: this.deps.capabilities?.() ?? NO_CAPABILITIES,
         })
         return
       case 'attach':

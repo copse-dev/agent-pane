@@ -19,6 +19,12 @@ import {
   type TestScenarioResult,
   type TurnHostConnection,
 } from './turn-host-protocol.ts'
+import {
+  NO_CAPABILITIES,
+  turnCannotRunOn,
+  type TurnNeeds,
+  type WorkerCapabilities,
+} from '../worker-protocol/worker-capabilities.ts'
 
 /**
  * The app's end of the line to the resident turn host
@@ -135,8 +141,11 @@ export class TurnHostLink {
   private readonly deps: TurnHostLinkDependencies
   private connection: TurnHostConnection | null = null
   private connecting: Promise<boolean> | null = null
-  /** The host's pid and whether its version matches this app's, once it said hello. */
-  private host: { pid: number; matches: boolean } | null = null
+  /**
+   * The host's pid, whether its version matches this app's and what it said it
+   * can run, once it said hello.
+   */
+  private host: { pid: number; matches: boolean; capabilities: WorkerCapabilities } | null = null
   private helloWaiters: (() => void)[] = []
   private stoppedAllWaiters: (() => void)[] = []
   private readonly pending = new Map<string, Pending>()
@@ -213,11 +222,22 @@ export class TurnHostLink {
   }
 
   /**
-   * Run a turn in the host. Resolves `app` when the host refused it or provably
-   * never ran it, and `host` once the host has run it (or the follower has it).
+   * Run a turn in the host. Resolves `app` when the host cannot run what the
+   * turn needs, refused it or provably never ran it, and `host` once the host
+   * has run it (or the follower has it).
    */
-  async run(projectId: string, threadId: string, payload: string): Promise<TurnPlacement> {
+  async run(
+    projectId: string,
+    threadId: string,
+    payload: string,
+    needs: TurnNeeds,
+  ): Promise<TurnPlacement> {
     if (!(await this.ensureConnected())) return 'app'
+    const cannot = turnCannotRunOn(this.host?.capabilities ?? NO_CAPABILITIES, needs)
+    if (cannot !== null) {
+      this.deps.log?.(`[turn-host] thread ${threadId} runs in the app: ${cannot}`)
+      return 'app'
+    }
     const id = (this.deps.createId ?? randomUUID)()
     const ended = Promise.withResolvers<undefined>()
     const placed = Promise.withResolvers<TurnPlacement>()
@@ -386,7 +406,11 @@ export class TurnHostLink {
             `[turn-host] host is version ${message.version}, the app ${this.deps.version}: running turns in the app`,
           )
         }
-        this.host = { pid: message.pid, matches }
+        this.host = {
+          pid: message.pid,
+          matches,
+          capabilities: message.capabilities ?? NO_CAPABILITIES,
+        }
         for (const waiter of this.helloWaiters.splice(0)) waiter()
         return
       }
