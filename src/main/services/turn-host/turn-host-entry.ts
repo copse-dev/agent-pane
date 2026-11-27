@@ -88,14 +88,17 @@ async function main(): Promise<number> {
     { initAgentsRegistry },
     { registerSkillTools },
     { reloadMcpServers },
+    { getPluginService },
   ] = await Promise.all([
     import('../workspace.ts'),
     import('../skills/skills-registry.ts'),
     import('../agents/agents-registry.ts'),
     import('../registry-bootstrap.ts'),
     import('../mcp/mcp-registry.ts'),
+    import('../plugins/plugin-service.ts'),
   ])
-  // As the app does when its window selects a project (workspace-handlers.ts).
+  // As the app does when its window selects a project or toggles a plugin
+  // (workspace-handlers.ts, plugin-handlers.ts).
   const workspaceChanged = async (): Promise<void> => {
     await initSkillsRegistry()
     await initAgentsRegistry()
@@ -118,7 +121,8 @@ async function main(): Promise<number> {
       const before = getWorkspaceRoot()
       await profile.reload()
       // The app switched projects: what the turns see comes from the new root.
-      if (rereadPersistedWorkspaceRoot() !== before) await workspaceChanged()
+      const pluginsChanged = getPluginService().applyPersistedEnablement()
+      if (rereadPersistedWorkspaceRoot() !== before || pluginsChanged) await workspaceChanged()
     },
     ...(await testScenarioDependency()),
   })

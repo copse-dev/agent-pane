@@ -530,6 +530,13 @@ export interface PluginService {
    * flips the flag on the shared registry — atomic, per the P1 contract.
    */
   setEnabled(pluginId: string, enabled: boolean): Promise<void>
+  /**
+   * Match the registry to the persisted enablement, for a process that does not
+   * toggle plugins itself: the turn host, after the app wrote the profile. A
+   * plugin with its own tool runtime is only ever turned off here. Returns
+   * whether anything changed.
+   */
+  applyPersistedEnablement(): boolean
   /** Read one plugin-scoped setting value (raw persisted value; renderer coerces). */
   getSetting(pluginId: string, key: string): unknown
   /** Persist one plugin-scoped setting value under the plugin's namespaced bag. */
@@ -869,6 +876,19 @@ export function createPluginService(registry: PluginRegistry): PluginService {
         else set.add(pluginId)
         return [...set].sort()
       })
+    },
+    applyPersistedEnablement(): boolean {
+      const persisted = readDisabledIds()
+      let changed = false
+      for (const plugin of registry.all()) {
+        const enabled = !persisted.has(plugin.id)
+        if (registry.isEnabled(plugin.id) === enabled) continue
+        if (enabled && selectedCandidates.has(plugin.id)) continue
+        if (enabled) registry.enable(plugin.id)
+        else registry.disable(plugin.id)
+        changed = true
+      }
+      return changed
     },
     getSetting(pluginId: string, key: string): unknown {
       return readPluginSettings(pluginId)[key]
