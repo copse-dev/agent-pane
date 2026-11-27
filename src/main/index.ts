@@ -1416,6 +1416,14 @@ app
           !delegation && turnHostLink?.ready === true
             ? (await turnHostLink.run(projectId, threadId, rawPrompt)) === 'host'
             : false
+        // The host gives the thread's lease back before its last transcript
+        // write lands, so the follower's repaint at the release can still read
+        // the turn as running. `ended` comes after that write: paint it again.
+        if (ranInHost) {
+          await foreignTurnDependencies.repaint({ projectId, threadId }).catch((error: unknown) => {
+            console.warn('[turn-host] could not repaint a finished host turn:', error)
+          })
+        }
         if (!ranInHost) {
           await (delegation
             ? dispatchSubthreadPrompt(projectId, delegation.parentThreadId, threadId, () =>
