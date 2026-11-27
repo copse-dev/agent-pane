@@ -760,7 +760,7 @@ app
     initUpdatePrompt(win)
     initCloseConfirm(win)
     setCloseConfirmContainerRuns(() => getContainerRunService().activeThreadIds())
-    guardWindowClose(win, () => {
+    guardWindowClose(win, ({ rendererGone }) => {
       const mobile = getMobileCompanionState().enabled
       const detach = shouldDetachOnClose({
         platform: process.platform,
@@ -769,7 +769,9 @@ app
         mobileCompanionEnabled: mobile,
       })
       if (detach) {
-        detachWindow(win, { keepRenderer: mobile })
+        // A crashed renderer cannot serve the phone while hidden, so drop it
+        // and let reattaching reload the window.
+        detachWindow(win, { keepRenderer: mobile && !rendererGone })
         quitDetachedAppWhenIdle(win)
       }
       return detach
