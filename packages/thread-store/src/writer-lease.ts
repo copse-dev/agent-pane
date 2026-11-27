@@ -315,3 +315,17 @@ export async function readWriterLease(
   const current = epoch > 0 ? await readEpoch(threadDir, threadId, epoch) : null
   return current && writerLeaseIsLive(current, env) ? current : null
 }
+
+/**
+ * Whether the thread's newest lease was left without a release: its holder died
+ * or stopped renewing. False when it was released, is still live, or there is none.
+ */
+export async function writerLeaseWasAbandoned(
+  threadDir: string,
+  threadId: string,
+  env: Pick<WriterLeaseEnvironment, 'owner' | 'now' | 'isAlive'> = defaultWriterLeaseEnvironment(),
+): Promise<boolean> {
+  const epoch = await highestEpoch(threadDir)
+  const current = epoch > 0 ? await readEpoch(threadDir, threadId, epoch) : null
+  return current !== null && current.releasedAt === undefined && !writerLeaseIsLive(current, env)
+}

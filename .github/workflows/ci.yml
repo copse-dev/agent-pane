@@ -371,6 +371,22 @@ jobs:
       - run: npm run format:check
       - run: npm run check:dead-code
       - run: npm run check:e2e-exclusions
+      - run: npm run check:e2e-syntax
+      - run: npm run demo:site:check
+      # Type coverage builds a whole TypeScript program per project, like
+      # typecheck; the script sets its own 4 GB heap (the node project aborts
+      # at V8's default). Same retry-on-137 as typecheck for the fleet cgroup.
+      - name: Type coverage
+        run: |
+          set +e
+          npm run type-coverage
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then exit 0; fi
+          if [ "$status" -ne 137 ]; then exit "$status"; fi
+          echo "::warning::type-coverage OOM-killed (137); retrying once"
+          sleep 10
+          npm run type-coverage
       # Burn-in admission (docs/testing-strategy.md): select the e2e specs this
       # PR adds, modifies or restores. An over-cap plan is not a precheck
       # failure; the `e2e-burn-in` job reports it. An unreadable registry or a
