@@ -96,6 +96,13 @@ interface ClientState {
 
 export class TurnHost {
   private readonly deps: TurnHostDependencies
+  private readonly idleWaiters: (() => void)[] = []
+  /**
+   * Turns whose model work is over but whose last transcript writes have not
+   * landed, by thread: the lease is already given back, so a next turn for the
+   * thread waits for these rather than writing beside them.
+   */
+  private readonly settling = new Map<string, Promise<void>>()
   private readonly dispatcher: AgentDispatcher
   private readonly transcripts: TurnTranscriptWriter
   private readonly clients = new WeakMap<TurnHostClient, ClientState>()
@@ -229,6 +236,14 @@ export class TurnHost {
       case 'stop':
         this.stop(message.threadId, message.reason)
         return
+      case 'stop-all': {
+        const threadIds = new Set([...this.running.values()].map((turn) => turn.threadId))
+        for (const threadId of threadIds) this.stop(threadId, message.reason)
+        void this.whenNothingRuns().then(() => {
+          client.send({ t: 'stopped-all' })
+        })
+        return
+      }
       case 'dispatch': {
         // A repeat of an id gets what became of it, never a second run.
         const seen = this.operations.get(message.id)
@@ -536,6 +551,9 @@ export class TurnHost {
         this.deps.log(`could not read the profile again: ${String(error)}`)
       })
     }
+    // The thread's last turn here may still be writing its transcript: let it
+    // land first, so this turn does not run beside it (or, refused, in the app).
+    await this.settling.get(key(projectId, threadId))
     const reason = await this.refusal(message, client, payload.model)
     if (reason !== null) {
       refuse(reason)
@@ -554,11 +572,13 @@ export class TurnHost {
       client.send({ t: 'accepted', id, threadId })
     }
     this.claimed.set(turnKey, { operationId: id, accept })
+    const settled = Promise.withResolvers<undefined>()
     try {
       await this.withPrompts(projectId, threadId, stopped.signal, () =>
         this.dispatcher.dispatch({ projectId, threadId, payload }),
       )
       accept()
+      this.settling.set(turnKey, settled.promise)
       await this.finish(projectId, threadId, id)
       this.tell(client, { t: 'ended', id, threadId })
       this.deps.log(`thread ${threadId}: turn ended`)
@@ -571,6 +591,7 @@ export class TurnHost {
             : `the host could not take the thread: ${String(error)}`,
         )
       } else {
+        this.settling.set(turnKey, settled.promise)
         await this.finish(projectId, threadId, id)
         this.tell(client, { t: 'ended', id, threadId, error: String(error) })
         this.deps.log(`thread ${threadId}: turn failed: ${String(error)}`)
@@ -578,6 +599,8 @@ export class TurnHost {
     } finally {
       this.claimed.delete(turnKey)
       this.running.delete(turnKey)
+      if (this.settling.get(turnKey) === settled.promise) this.settling.delete(turnKey)
+      settled.resolve(undefined)
       this.armIdle()
     }
   }
@@ -601,7 +624,16 @@ export class TurnHost {
   }
 
   /** (Re)start the idle countdown when nothing holds the host up, else stop it. */
+  /** Resolves once no turn runs here (at once if none does). */
+  private whenNothingRuns(): Promise<void> {
+    if (this.running.size === 0) return Promise.resolve()
+    return new Promise((resolve) => {
+      this.idleWaiters.push(resolve)
+    })
+  }
+
   private armIdle(): void {
+    if (this.running.size === 0) for (const waiter of this.idleWaiters.splice(0)) waiter()
     if (this.idleTimer !== null) clearTimeout(this.idleTimer)
     this.idleTimer = null
     if (this.running.size > 0) return
