@@ -546,7 +546,7 @@ export function summarizeToolTurn(toolCalls: ToolCall[], items: ToolCallDisplayI
 export interface ToolDisplayOptions {
   /**
    * Wrap even a single regular tool so a co-located reasoning trail can nest
-   * inside the italic summary (rather than floating above it).
+   * inside the rollup summary (rather than floating above it).
    */
   forceRollup?: boolean
   /**
@@ -571,7 +571,7 @@ function isSurfacedFailure(tc: ToolCall, opts: ToolDisplayOptions | undefined): 
  * failures stay visible beside the rollup, so it would be empty.
  *
  * `forceRollup` wraps even a single regular tool so a co-located reasoning trail
- * can nest inside the italic summary (rather than floating above it).
+ * can nest inside the rollup summary (rather than floating above it).
  */
 export function buildToolCallDisplayItems(
   toolCalls: ToolCall[],

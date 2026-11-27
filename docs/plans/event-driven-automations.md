@@ -8,6 +8,48 @@ open and creates fresh tasks for newly completed failures on the branch's curren
 head. PR-scoped CI with workflow filters, pull-request and issue-label triggers, and
 delivery history were added on 2026-10-07 (see the status update below).
 
+## Status update (2026-11-25): pull request bots
+
+Two triggers watch **every open pull request into a base branch** instead of one branch or one
+PR number, so one automation can act as a fix bot for all of a user's PRs:
+
+| Trigger (`trigger.kind`)   | Filters                                                                                                     | Delivery identity                               | Freshness rule before a run starts                                                    |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `github-pr-ci-failed`      | base branch; authors `mine` (default) or `anyone`; optional workflow-name list (max 10)                     | workflow run id + attempt                       | PR open, head SHA unchanged; not already started on this head by another failed check |
+| `github-pr-review-comment` | base branch; authors `mine` (default) or `anyone`; commenters `collaborators` (default), `others`, `anyone` | `rc:<pr>:r<newest review id>:c<newest conv id>` | PR open; no newer comment batch for the same PR                                       |
+
+- **Who can start a run.** A review-comment run acts as the user and its job is to act on the
+  comment text, so the default counts only comments whose `author_association` is `OWNER`,
+  `MEMBER` or `COLLABORATOR`, never a `[bot]` login, and never `viewer` (the `gh` account
+  resolved when the trigger is saved). That keeps strangers from starting runs or spending the
+  user's model budget, and stops bot comments and the run's own replies from retriggering it.
+  `others` (any account but `viewer`) and `anyone` are explicit opt-ins with warning copy. The
+  run's facts state that comment text is untrusted feedback, not instructions.
+- **Whose pull requests.** `mine` keeps a fix bot off other people's branches. `anyone` warns
+  that fork PRs mean checking out and running outside code. `action_required` is not counted as
+  a failure for these triggers, since GitHub also reports it for a first-time contributor's runs
+  awaiting approval.
+- **No replay on save.** The CI trigger records `watchingSince` when it is saved and ignores
+  runs that completed before it, instead of a bounded list of run ids that could drop entries.
+- **Waiting deliveries.** A delivery already in the inbox is never re-admitted (its evidence
+  carries a mutable PR title, and re-admitting changed evidence is rejected, which used to stop
+  the whole automation polling). Every poll reconciles waiting deliveries instead; this applies
+  to every event trigger kind.
+- Review comments are read with two repository-wide calls (inline review comments and PR
+  conversation comments, newest 100 each) and consumed by a per-definition `commentCursor`.
+  Comment bodies are never read by the poller. New comments are batched into one delivery per
+  PR per poll; a newer batch supersedes one still waiting for a slot.
+- CI over open PRs reads the open-PR list (newest 50 by update) plus one workflow-runs call per
+  watched head, capped at the 20 most recently updated matching PRs.
+- Limits for both: at most three runs per PR and ten per automation per 24 hours (single-resource
+  triggers keep three per automation). The one-active-run rule and worktree cap still apply.
+
+Known gaps: unattended approvals (a run that must `git push` still stops on a prompt); default
+enablement of `copse.automations`; webhooks; reviews submitted with only a summary body are not
+observed; inline comments drafted in a pending review may get ids older than the cursor by the
+time the review is submitted (unverified); a CI fix that fails again retriggers its own
+automation up to the per-PR cap; one runs call per watched head per minute.
+
 ## Status update (2026-10-07)
 
 Slice B's remaining controls and slice C's first two adapters are implemented, all through the

@@ -10,6 +10,7 @@ import {
   createProvider,
 } from '@copse/llm/create-provider.ts'
 import { firstPartyProviderOf } from '@copse/llm/model-families.ts'
+import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 import { withSecretRedaction } from '@copse/llm/redacting-provider.ts'
 import type { LLMProvider } from '@copse/llm/wire-types.ts'
 import { memberOf } from '@copse/std/member-of.ts'
@@ -36,6 +37,17 @@ export interface ProviderSelection {
   readonly baseUrl?: string | undefined
   /** Steps for `mock`, shared or per role. */
   readonly script?: MockScript | undefined
+  /** Request parameters (reasoning effort, sampling) for every call this route makes. */
+  readonly params?: ModelParameters | undefined
+}
+
+/** A local OpenAI-compatible server a route talks to, for the pre-flight model probe. */
+export interface LocalEndpoint {
+  readonly kind: 'lmstudio' | 'openai-compatible'
+  /** The OpenAI-compatible base URL (`http://localhost:1234/v1`); carries no credential. */
+  readonly baseUrl: string
+  /** The bearer the server expects; never written to a report. */
+  readonly apiKey: string
 }
 
 export interface SelectedProvider {
@@ -44,6 +56,10 @@ export interface SelectedProvider {
   readonly provider: LLMProvider
   /** Whether requests leave the machine (and were therefore wrapped in redaction). */
   readonly remote: boolean
+  /** The server behind an `lmstudio` or `openai-compatible` route. */
+  readonly endpoint?: LocalEndpoint | undefined
+  /** The request parameters the route was built with. */
+  readonly params?: ModelParameters | undefined
   /**
    * The provider for one role (`review:<lens>`, `challenge`, `reproduce`). A
    * real provider is stateless and returns itself; the mock plays that role's
@@ -88,7 +104,13 @@ export function selectProvider(
 ): SelectedProvider {
   const kind = selection.kind ?? inferProviderKind(selection.model)
   const secrets = droppedHostSecrets(env)
-  const shared = (model: string, provider: LLMProvider, isRemote: boolean): SelectedProvider => {
+  const params = selection.params ?? {}
+  const shared = (
+    model: string,
+    provider: LLMProvider,
+    isRemote: boolean,
+    endpoint?: LocalEndpoint,
+  ): SelectedProvider => {
     const backedOff = withProviderBackoff(provider, {
       onRetry: (attempt, delayMs) => {
         // stderr: stdout may carry the JSON report or the event stream.
@@ -98,7 +120,15 @@ export function selectProvider(
       },
     })
     const wrapped = isRemote ? withSecretRedaction(backedOff, secrets) : backedOff
-    return { kind, model, provider: wrapped, remote: isRemote, providerFor: () => wrapped }
+    return {
+      kind,
+      model,
+      provider: wrapped,
+      remote: isRemote,
+      ...(endpoint === undefined ? {} : { endpoint }),
+      ...(selection.params === undefined ? {} : { params: selection.params }),
+      providerFor: () => wrapped,
+    }
   }
   const remote = (model: string, provider: LLMProvider): SelectedProvider =>
     shared(model, provider, true)
@@ -117,12 +147,19 @@ export function selectProvider(
       const model = selection.model ?? 'claude-sonnet-5'
       return remote(
         model,
-        createProvider(model, { anthropicApiKey: required(env, 'ANTHROPIC_API_KEY') }),
+        createProvider(model, { anthropicApiKey: required(env, 'ANTHROPIC_API_KEY') }, undefined, {
+          params,
+        }),
       )
     }
     case 'openai': {
       const model = selection.model ?? 'gpt-5'
-      return remote(model, createProvider(model, { openAiApiKey: required(env, 'OPENAI_API_KEY') }))
+      return remote(
+        model,
+        createProvider(model, { openAiApiKey: required(env, 'OPENAI_API_KEY') }, undefined, {
+          params,
+        }),
+      )
     }
     case 'openrouter': {
       const model = selection.model
@@ -142,7 +179,7 @@ export function selectProvider(
           // Review replies contain bounded tool calls and findings, not a large
           // deliverable. Cap Luna's per-response output (including hidden
           // reasoning) instead of inheriting its much larger server default.
-          ...(model === 'openai/gpt-6-luna' ? { params: { maxOutputTokens: 8_192 } } : {}),
+          params: model === 'openai/gpt-6-luna' ? { maxOutputTokens: 8_192, ...params } : params,
         }),
       )
     }
@@ -152,15 +189,19 @@ export function selectProvider(
       const url = selection.baseUrl ?? envValue(env, 'LM_STUDIO_URL') ?? DEFAULT_LOCAL_BASE_URL
       const key = envValue(env, 'LM_STUDIO_API_KEY') ?? envValue(env, 'LM_API_TOKEN') ?? 'lm-studio'
       // LM Studio on another host is still a remote endpoint: redact what leaves.
-      return shared(model, createLMStudioProvider(url, model, key), !isLoopbackUrl(url))
+      return shared(model, createLMStudioProvider(url, model, key, params), !isLoopbackUrl(url), {
+        kind,
+        baseUrl: url,
+        apiKey: key,
+      })
     }
     case 'openai-compatible': {
       const model = selection.model
       if (model === undefined) throw new Error('--model is required for openai-compatible')
       const url = selection.baseUrl ?? DEFAULT_LOCAL_BASE_URL
       const key = envValue(env, 'COPSE_REVIEW_API_KEY') ?? 'lm-studio'
-      const provider = createLocalOpenAIProvider(url, model, key)
-      return shared(model, provider, !isLoopbackUrl(url))
+      const provider = createLocalOpenAIProvider(url, model, key, params)
+      return shared(model, provider, !isLoopbackUrl(url), { kind, baseUrl: url, apiKey: key })
     }
   }
 }

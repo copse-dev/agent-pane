@@ -188,6 +188,33 @@ describe('tool permissions panel', () => {
     assert.equal(fixedAllow.title, 'Worktree preparation always requires approval.')
   })
 
+  it('shows a group its bare tool count and speaks it with the noun', async () => {
+    const root = await mount(apiHarness())
+    const summary = root.querySelector('.tool-permission-group .tool-permission-group-summary')
+    const count = summary?.querySelector('.tool-permission-count')
+    assert.ok(summary && count)
+    assert.equal(count.textContent, '2')
+    // A plain span has no accessible name, so the number is hidden from
+    // assistive tech and a visually hidden sibling says what it counts.
+    assert.equal(count.getAttribute('aria-hidden'), 'true')
+    assert.equal(count.hasAttribute('aria-label'), false)
+    assert.equal(summary.querySelector('.tool-permission-count-sr')?.textContent, '2 tools')
+  })
+
+  it('speaks a one-tool count in the singular', async () => {
+    const initialCatalog = catalog()
+    const proton = initialCatalog.groups.find((group) => group.id === 'mcp:project:proton')
+    assert.ok(proton)
+    proton.tools = proton.tools.slice(0, 1)
+    const root = await mount(apiHarness({ initialCatalog }))
+    const summary = root.querySelector(
+      '[data-group-id="mcp:project:proton"] .tool-permission-group-summary',
+    )
+    assert.ok(summary)
+    assert.equal(summary.querySelector('.tool-permission-count')?.textContent, '1')
+    assert.equal(summary.querySelector('.tool-permission-count-sr')?.textContent, '1 tool')
+  })
+
   it('shows backticked names in a tool description as inline code', async () => {
     const root = await mount(apiHarness())
     const description = root.querySelector(

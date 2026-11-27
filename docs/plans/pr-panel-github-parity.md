@@ -1,6 +1,7 @@
 # PR panel: GitHub parity in small PRs
 
-Status: **Active** — PR 1 (pull request activity tabs) landed in 3580a0f19; PRs 2–8 are planned.
+Status: **Active** — PR 1 (pull request activity tabs) landed in 3580a0f19; PR 3a (inline review
+threads with Address) and PR 4 (reply and resolve) are in review together; the rest are planned.
 
 Audited 2026-09-09. Start with visibility into feedback and CI; add writes as separate,
 reviewable changes. This is a sequence of proposed PRs, not opened GitHub PRs.
@@ -49,21 +50,46 @@ into one feature branch.
 - Test successful post, denied permission, network failure, duplicate-click prevention, and draft recovery.
 - Depends on PR 1.
 
-### PR 3 — Paginated inline review discussions
+### PR 3a — Inline review threads, handed to the agent (in review)
 
-- Load review threads with path/line, replies, outdated/resolved markers, and explicit Load more.
+Split from PR 3 because unresolved inline comments are the feedback an agent most often has to
+act on, and the panel already had the routing for Fix on a failed check.
+
+- Load the first 100 review threads (20 comments each) in the shared activity query, with path,
+  line, outdated and resolved markers. Label truncation and link to GitHub for more replies.
+- Show unresolved threads above the conversation in Comments; keep resolved ones collapsed.
+- **Address** on a thread, and **Address all N**, hand the threads to the thread that produced the
+  PR (the same routing as Fix on a failed check), or open a new thread with an editable draft.
+- The draft names each thread by `path:line` and node id but does not quote reviewer text, which
+  is third-party content: the agent reads it with `gh_api_read` and resolves a thread with
+  `gh_pr_resolve_review_thread` only after the fix is in place.
+- Validated by parser, draft and renderer unit tests, and the `pr-panel-activity` Electron spec
+  (`pr-activity-review-threads.png`).
+
+### PR 3 — Paginated inline review discussions (remaining)
+
+- Explicit Load more for review threads beyond the first 100 and replies beyond the first 20.
 - Show them in Comments; link to the matching file diff when the current line is available.
 - Paginate conversation comments/reviews too, preserving order and deduplicating by ID.
 - Read-only first: no reply or resolve actions yet.
 - Test deleted authors/files, outdated lines, multiple pages, and switching PRs during loading.
 - Depends on PR 1.
 
-### PR 4 — Reply to and resolve review threads
+### PR 4 — Reply to and resolve review threads (in review, with PR 3a)
 
-- Add reply and resolve/unresolve actions with permission-aware controls and per-thread pending state.
-- Retain drafts on failure and reconcile responses by thread/comment ID.
-- Test unavailable permissions, stale threads, failed writes, and reply ordering.
-- Depends on PR 3; reuse PR 2's draft and mutation behavior.
+- Each unresolved thread has a reply box (Reply, or Cmd/Ctrl+Enter) and Resolve; resolved threads
+  have Reopen only. Controls are disabled while a write is in flight, so a double click posts once.
+- One shared GraphQL path for the CLI and token backends (`pr-review-thread-actions.ts`). It first
+  checks the thread id belongs to this repository and PR, then writes once; an unconfirmed reply
+  says to refresh before posting again instead of retrying. Resolving an already-resolved thread is
+  a no-op.
+- Unsent replies are kept per thread while the pane is open, and survive a failed post. They are
+  not persisted across restarts yet, and there is no permission probe: GitHub's refusal is shown
+  beside the thread.
+- New IPC `gh:reply-to-review-thread` and `gh:set-review-thread-resolved` are main-frame-only and
+  desktop-only, like the other PR writes.
+- Validated by unit tests for the shared mutations, the mock backend and the renderer, and the
+  `pr-panel-activity` Electron spec (`pr-review-thread-reply.png`).
 
 ### PR 5 — CI refresh and run controls
 
