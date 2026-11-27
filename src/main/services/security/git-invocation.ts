@@ -69,7 +69,7 @@ const INTERNAL_GIT_COMMANDS = new Set([
  * Do not replace them with a preflight scan: config can change after inspection.
  * In particular, hooksPath does NOT disable core.fsmonitor (GitSpawn).
  */
-const INTERNAL_GIT_CONFIG = [
+export const INTERNAL_GIT_CONFIG = [
   'core.fsmonitor=false',
   'core.hooksPath=/dev/null',
   // fetch and push run this program to list an alternate object store's refs

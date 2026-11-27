@@ -16,6 +16,7 @@ export {
   isProjectSandboxEnabled,
   sandboxViolationCountForCommand,
   sandboxViolationCountForBackgroundProcess,
+  type ScopedSpawnNetwork,
 } from './spawn.ts'
 export {
   gatewayReadFile,

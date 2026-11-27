@@ -32,14 +32,16 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>()
 
 /**
- * Resolve the directory holding the repository's shared `config`.
+ * Resolve a repository's own git dir and the directory holding its shared `config`.
  *
  * `.git` is a directory in an ordinary clone, and a file containing
  * `gitdir: <path>` in a linked worktree or submodule. A linked worktree's own
- * git dir holds per-worktree state; the remotes live in the *common* dir, named
- * by its `commondir` file.
+ * git dir holds per-worktree state (including `config.worktree`); the remotes
+ * live in the *common* dir, named by its `commondir` file.
  */
-function resolveGitCommonDir(workspaceRoot: string): string | null {
+export function resolveGitDirs(
+  workspaceRoot: string,
+): { gitDir: string; commonDir: string } | null {
   const dotGit = join(workspaceRoot, '.git')
   let stat: ReturnType<typeof statSync>
   try {
@@ -47,7 +49,7 @@ function resolveGitCommonDir(workspaceRoot: string): string | null {
   } catch {
     return null
   }
-  if (stat.isDirectory()) return dotGit
+  if (stat.isDirectory()) return { gitDir: dotGit, commonDir: dotGit }
   if (!stat.isFile()) return null
 
   let gitDir: string
@@ -63,11 +65,18 @@ function resolveGitCommonDir(workspaceRoot: string): string | null {
 
   try {
     const commonDir = readFileSync(join(gitDir, 'commondir'), 'utf8').trim()
-    if (commonDir) return isAbsolute(commonDir) ? commonDir : resolve(gitDir, commonDir)
+    if (commonDir) {
+      return { gitDir, commonDir: isAbsolute(commonDir) ? commonDir : resolve(gitDir, commonDir) }
+    }
   } catch {
     // No `commondir` — this git dir is the common one.
   }
-  return gitDir
+  return { gitDir, commonDir: gitDir }
+}
+
+/** The directory holding the repository's shared `config` (see {@link resolveGitDirs}). */
+export function resolveGitCommonDir(workspaceRoot: string): string | null {
+  return resolveGitDirs(workspaceRoot)?.commonDir ?? null
 }
 
 /**
@@ -97,12 +106,8 @@ export function configuredGitRemotes(workspaceRoot: string | null): ReadonlySet<
   const cached = cache.get(workspaceRoot)
   if (cached?.signature === signature) return cached.remotes
 
-  let text: string
-  try {
-    text = readFileSync(configPath, 'utf8')
-  } catch {
-    return new Set()
-  }
+  const text = readSmallGitFile(configPath, MAX_CONFIG_BYTES)
+  if (text === null) return new Set()
 
   const remotes = new Set<string>()
   for (const match of text.matchAll(REMOTE_SECTION)) {
@@ -117,4 +122,19 @@ export function configuredGitRemotes(workspaceRoot: string | null): ReadonlySet<
 /** Drop cached config reads. Exported for tests. */
 export function clearGitRemotesCache(): void {
   cache.clear()
+}
+
+/**
+ * A bounded read of one Git administrative file (`config`, `config.worktree`),
+ * or null when it is missing, not a regular file or larger than `maxBytes`.
+ * Shared with `git-network-facts.ts` so the gate's config reads stay in one place.
+ */
+export function readSmallGitFile(path: string, maxBytes: number): string | null {
+  try {
+    const stat = statSync(path)
+    if (!stat.isFile() || stat.size > maxBytes) return null
+    return readFileSync(path, 'utf8')
+  } catch {
+    return null
+  }
 }

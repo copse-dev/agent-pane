@@ -4,8 +4,9 @@ import { constants } from 'node:os'
 import {
   afterSandboxedCommand,
   isProjectSandboxEnabled,
-  sandboxViolationCountForCommand,
+  sandboxViolationCountForBackgroundProcess,
   spawnShellInProjectSandbox,
+  type ScopedSpawnNetwork,
 } from '../../project-sandbox/index.ts'
 import {
   CappedOutputAccumulator,
@@ -103,6 +104,7 @@ export async function runShellOnce(
   onDetach?: () => () => Promise<void>,
   readonlyCheckout = false,
   yieldOptions?: ShellYieldOptions,
+  scopedNetwork?: ScopedSpawnNetwork,
 ): Promise<ShellRunResult> {
   signal.throwIfAborted()
   if (closing) throw new Error('Copse is closing; the command was not started.')
@@ -140,6 +142,7 @@ export async function runShellOnce(
           unsandboxed,
           readGrantTargets,
           ...(readonlyCheckout ? { readonlyCheckout } : {}),
+          ...(scopedNetwork ? { scopedNetwork } : {}),
           signal: spawnController.signal,
         })
       } catch (err) {
@@ -318,7 +321,7 @@ export async function runShellOnce(
       if (yieldOptions) yieldTimer = setTimeout(detach, yieldOptions.yieldAfterMs)
 
       const sandboxViolationCount = (): number =>
-        unsandboxed ? 0 : sandboxViolationCountForCommand(command)
+        unsandboxed ? 0 : sandboxViolationCountForBackgroundProcess(proc, command)
 
       const finish = (): void => {
         if (!unsandboxed) afterSandboxedCommand()

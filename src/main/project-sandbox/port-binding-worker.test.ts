@@ -24,7 +24,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { afterEach, describe, it, mock } from 'node:test'
+import { after, afterEach, before, describe, it, mock } from 'node:test'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import * as esbuild from 'esbuild'
 import { baseSandboxConfig, ensureWorkspaceTmpDir } from './config.ts'
@@ -44,7 +44,9 @@ import {
   sandboxViolationCountForBackgroundProcess,
   setProjectSandboxEnabled,
   spawnBackgroundProcess,
+  spawnShellInProjectSandbox,
 } from './spawn.ts'
+import { acquireWorkerBundleLock } from './worker-bundle-lock.test-support.ts'
 import { terminateProcessTree } from '../services/exec/subprocess-kill.ts'
 import {
   clearThreadReadRoots,
@@ -139,6 +141,15 @@ async function outputContaining(
     })
   })
 }
+
+// shell-tool-network-scope.test.ts bundles the same worker path with its own stub.
+let releaseBundle: (() => void) | null = null
+before(async () => {
+  releaseBundle = await acquireWorkerBundleLock()
+})
+after(() => {
+  releaseBundle?.()
+})
 
 describe('port-binding background host', () => {
   let fixture = ''
@@ -264,6 +275,8 @@ describe('port-binding background host', () => {
         assert.ok(filesystem.allowRead.includes(`${skill}/**`))
         assert.ok(filesystem.allowRead.includes(readTarget))
         assert.ok(filesystem.denyWrite.includes(join(registration.commonGitDir, 'config')))
+        // The linked worktree's own config layer is write-denied too.
+        assert.ok(filesystem.denyWrite.includes(join(registration.gitDir, 'config.worktree')))
         assert.deepEqual(mainConfig.network.allowedDomains, [])
         assert.equal(mainUpdates, 0)
         assert.deepEqual(activeSandboxNetworkScopeLabels(), [])
@@ -286,6 +299,69 @@ describe('port-binding background host', () => {
         cancelEscalation()
       }
     })
+  })
+
+  it('runs a network-scoped command in its own host with only its hosts open', async () => {
+    if (process.platform === 'win32') return
+    mkdirSync(join(TEST_OUTPUT_DIR, 'port-binding-fixtures'), { recursive: true })
+    fixture = mkdtempSync(join(TEST_OUTPUT_DIR, 'port-binding-fixtures', 'scoped-'))
+    previousCopseDir = process.env['COPSE_DIR']
+    process.env['COPSE_DIR'] = fixture
+    const stub = join(fixture, 'sandbox-runtime-stub.mjs')
+    writeFileSync(stub, SANDBOX_RUNTIME_STUB)
+    bundleWorker(stub)
+
+    const mainConfig = baseSandboxConfig()
+    let mainUpdates = 0
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    mock.method(SandboxManager, 'getConfig', () => mainConfig)
+    mock.method(SandboxManager, 'updateConfig', () => {
+      mainUpdates += 1
+    })
+    mock.method(SandboxManager, 'cleanupAfterCommand', () => {})
+    setProjectSandboxEnabled(true)
+
+    const script =
+      "let input = ''; process.stdin.on('data', (d) => { input += d }); process.stdin.on('end', () => process.stdout.write('scoped env:' + String(process.env.SCOPED === 'yes' && !process.env.COPSE_PORT_BINDING_REQUEST) + ' gh:' + String((process.env.GH_CONFIG_DIR ?? '').includes('/gh-')) + ' stdin-closed net:' + require('node:fs').readFileSync(process.env.NET_MARKER, 'utf8') + '\\n'))"
+    const denialMarker = networkDenialMarker()
+    const proc = await spawnShellInProjectSandbox(
+      formatArgvForShell(process.execPath, ['-e', script]),
+      {
+        cwd: fixture,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { NET_MARKER: join(fixture, 'network.json') },
+        scopedNetwork: {
+          domains: ['github.com', 'api.github.com'],
+          env: { SCOPED: 'yes' },
+          freshGhConfig: true,
+        },
+      },
+    )
+    let output = ''
+    proc.stdout?.on('data', (chunk: Buffer) => {
+      output += chunk.toString()
+    })
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      output += chunk.toString()
+    })
+    await once(proc, 'close')
+    assert.match(output, /scoped env:true gh:true stdin-closed/)
+    // The host's allowlist while the command ran.
+    assert.deepEqual(JSON.parse(/net:(.*)$/m.exec(output)?.[1] ?? 'null'), {
+      allowedDomains: ['github.com', 'api.github.com'],
+      deniedDomains: [],
+      allowLocalBinding: false,
+    })
+    // Main's own allowlist never moved, so no other contained command saw it.
+    assert.deepEqual(mainConfig.network.allowedDomains, [])
+    assert.equal(mainUpdates, 0)
+    assert.deepEqual(activeSandboxNetworkScopeLabels(), [])
+    assert.deepEqual(
+      networkDenialsSince(denialMarker).map((denial) => denial.host),
+      ['blocked.example'],
+    )
+    // Violations reported by the host plus its one proxy denial.
+    assert.equal(sandboxViolationCountForBackgroundProcess(proc, 'unrelated'), 3)
   })
 
   it('does not wrap or spawn a command when ASRT initialization leaves protection disabled', () => {
@@ -379,6 +455,47 @@ describe('port-binding host protocol', () => {
       ),
       null,
     )
+    const scoped = (allowedDomains: string[], allowLocalBinding = false): unknown =>
+      parsePortBindingRequest(
+        JSON.stringify({
+          ...request,
+          overlay: {
+            ...overlay,
+            network: { allowedDomains, deniedDomains: [], allowLocalBinding },
+          },
+        }),
+      )
+    assert.ok(scoped(['github.com', 'api.github.com', '*.githubusercontent.com']))
+    assert.ok(scoped(['registry.npmjs.org']))
+    for (const domains of [
+      [],
+      ['localhost'],
+      ['127.0.0.1'],
+      ['10.0.0.5'],
+      ['::1'],
+      ['intranet'],
+      ['*'],
+      ['*.com'],
+      ['GitHub.com'],
+      ['github.com:443'],
+      Array.from({ length: 9 }, (_, index) => `h${String(index)}.example.com`),
+    ]) {
+      assert.equal(scoped(domains), null, JSON.stringify(domains))
+    }
+    // Public hosts never travel with local binding.
+    assert.equal(scoped(['github.com'], true), null)
+    // Trust evaluation (for Go's TLS on macOS) rides only with public hosts.
+    const withTrust = (network: unknown): unknown =>
+      parsePortBindingRequest(
+        JSON.stringify({
+          ...request,
+          overlay: { ...overlay, network, enableWeakerNetworkIsolation: true },
+        }),
+      )
+    assert.ok(
+      withTrust({ allowedDomains: ['github.com'], deniedDomains: [], allowLocalBinding: false }),
+    )
+    assert.equal(withTrust(overlay.network), null)
     assert.equal(parsePortBindingMessage({ type: 'violations', count: -1 }), null)
     assert.equal(parsePortBindingMessage({ type: 'network-denial', host: 4 }), null)
     assert.deepEqual(parsePortBindingRequest(JSON.stringify(request)), request)

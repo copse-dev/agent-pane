@@ -1648,6 +1648,11 @@ export function workspaceSandboxOverlay(
     ? [
         join(internalRoot.commonGitDir, 'config'),
         join(internalRoot.commonGitDir, 'config.worktree'),
+        // With `extensions.worktreeConfig` git also reads the linked worktree's
+        // own layer, from its otherwise writable git dir.
+        ...(internalRoot.gitDir !== internalRoot.commonGitDir
+          ? [join(internalRoot.gitDir, 'config.worktree')]
+          : []),
         join(internalRoot.commonGitDir, 'hooks'),
         join(internalRoot.commonGitDir, 'hooks/**'),
         ...(linuxAtomicGitAdminWrite

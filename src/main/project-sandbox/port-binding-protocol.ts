@@ -4,23 +4,51 @@ import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 
 export const PORT_BINDING_REQUEST_ENV = 'COPSE_PORT_BINDING_REQUEST'
 
+/**
+ * A public host a per-command network scope may open: a DNS name, optionally one
+ * leading `*.` wildcard label. Never loopback, an IP literal or a bare label, so a
+ * scoped command cannot reach a local service through this policy.
+ */
+export const SCOPED_NETWORK_DOMAIN =
+  /^(?:\*\.)?(?!localhost$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z][a-z0-9-]*[a-z0-9]$/
+
 // Main builds this exact workspace policy while it still has the validated
 // worktree registration and active thread's read-root ledger. The worker may
-// accept only a loopback network overlay across the process boundary.
-const overlaySchema = z.object({
-  network: z.object({
-    allowedDomains: z.array(z.enum(['localhost', '127.0.0.1', '::1'])),
-    deniedDomains: z.array(z.string()),
-    allowLocalBinding: z.literal(true),
-  }),
-  filesystem: z.object({
-    denyRead: z.array(z.string()),
-    allowRead: z.array(z.string()),
-    allowWrite: z.array(z.string()),
-    denyWrite: z.array(z.string()),
-    allowGitConfig: z.boolean(),
-  }),
+// accept only two network overlays across the process boundary: loopback with
+// binding (an approved dev server), or a short list of public hosts without
+// binding (one network-scoped command, `network-scoped-shell.ts`).
+const loopbackNetworkSchema = z.object({
+  allowedDomains: z.array(z.enum(['localhost', '127.0.0.1', '::1'])),
+  deniedDomains: z.array(z.string()),
+  allowLocalBinding: z.literal(true),
 })
+const scopedNetworkSchema = z.object({
+  allowedDomains: z.array(z.string().regex(SCOPED_NETWORK_DOMAIN)).min(1).max(8),
+  deniedDomains: z.array(z.string()),
+  allowLocalBinding: z.literal(false),
+})
+const overlaySchema = z
+  .object({
+    network: z.union([loopbackNetworkSchema, scopedNetworkSchema]),
+    /**
+     * macOS only: let the command reach trustd, which Go programs (`gh`) need to
+     * verify TLS certificates. Accepted only with a scoped public-host network,
+     * never with loopback binding.
+     */
+    enableWeakerNetworkIsolation: z.literal(true).optional(),
+    filesystem: z.object({
+      denyRead: z.array(z.string()),
+      allowRead: z.array(z.string()),
+      allowWrite: z.array(z.string()),
+      denyWrite: z.array(z.string()),
+      allowGitConfig: z.boolean(),
+    }),
+  })
+  .refine(
+    (overlay) =>
+      overlay.enableWeakerNetworkIsolation !== true || !overlay.network.allowLocalBinding,
+    { message: 'trust evaluation is only for a scoped public-host network' },
+  )
 
 const requestSchema = z.object({
   command: z.string().min(1),
@@ -30,6 +58,8 @@ const requestSchema = z.object({
   env: z.record(z.string(), z.string()).optional(),
   overlay: overlaySchema,
   violationId: z.string().optional(),
+  /** A foreground command: give it EOF on stdin instead of a held-open pipe. */
+  closeStdin: z.boolean().optional(),
 })
 
 export type PortBindingRequest = z.infer<typeof requestSchema>

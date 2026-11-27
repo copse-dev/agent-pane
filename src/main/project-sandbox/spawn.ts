@@ -4,6 +4,7 @@ import {
   type SpawnOptions,
   type SpawnOptionsWithoutStdio,
 } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
@@ -200,6 +201,13 @@ export async function spawnShellInProjectSandbox(
      * contained way to honour that request, so it fails instead.
      */
     readonlyCheckout?: boolean
+    /**
+     * Run contained in a dedicated ASRT host whose allowlist is exactly these
+     * public hosts (`network-scoped-shell.ts`), with `env` layered on top. Main's
+     * own process-global allowlist is never widened, so no other contained
+     * command sees the egress.
+     */
+    scopedNetwork?: ScopedSpawnNetwork
     executionTarget?: ExecutionTarget
   } & Pick<SpawnOptions, 'stdio'>,
 ): Promise<ChildProcess> {
@@ -208,6 +216,13 @@ export async function spawnShellInProjectSandbox(
   if (opts.readonlyCheckout && (isSshExecutionTarget(target) || opts.unsandboxed)) {
     throw new Error('A read-only checkout cannot run commands outside the project sandbox')
   }
+  const scopedNetwork =
+    opts.scopedNetwork &&
+    opts.unsandboxed !== true &&
+    !opts.readonlyCheckout &&
+    !isSshExecutionTarget(target)
+      ? opts.scopedNetwork
+      : undefined
   const readGrantTargets = opts.readGrantTargets ?? []
   const execution = await runtimeFor(target, 'agent-command').exec({
     command: { kind: 'shell', commandLine: shellCommandLine },
@@ -226,6 +241,35 @@ export async function spawnShellInProjectSandbox(
           readGrantTargets.length > 0
             ? readAllowedSandboxOverlay(opts.cwd, readGrantTargets)
             : workspaceSandboxOverlay(opts.cwd)
+        if (scopedNetwork) {
+          const overlay = {
+            ...baseConfig,
+            network: {
+              allowedDomains: [...scopedNetwork.domains],
+              deniedDomains: [],
+              allowLocalBinding: false,
+            },
+            ...(scopedNetwork.trustEvaluation && process.platform === 'darwin'
+              ? { enableWeakerNetworkIsolation: true as const }
+              : {}),
+          }
+          return {
+            config: overlay,
+            hostedLaunch: (): ChildProcess =>
+              spawnSandboxHost(
+                shellCommandLine,
+                {
+                  cwd: opts.cwd,
+                  env: { ...opts.env, ...scopedNetwork.env },
+                  violationId: `scoped-${randomUUID()}`,
+                  closeStdin: true,
+                  freshGhConfig: scopedNetwork.freshGhConfig,
+                  countNetworkDenials: true,
+                },
+                overlay,
+              ),
+          }
+        }
         return {
           config: opts.readonlyCheckout ? withoutCheckoutWrites(baseConfig, opts.cwd) : baseConfig,
         }
@@ -233,6 +277,20 @@ export async function spawnShellInProjectSandbox(
     },
   })
   return execution.child
+}
+
+/** Hosts and environment for one network-scoped spawn. */
+export interface ScopedSpawnNetwork {
+  domains: readonly string[]
+  env: Readonly<Record<string, string>>
+  /** Point `GH_CONFIG_DIR` at a fresh directory inside the command's temp dir. */
+  freshGhConfig: boolean
+  /**
+   * The program verifies TLS through macOS's trust service (Go's `gh`), which the
+   * default profile denies. Opens only that mach lookup; the allowlist still
+   * decides every connection the command itself makes.
+   */
+  trustEvaluation?: boolean
 }
 
 export interface SpawnBackgroundOptions {
@@ -295,7 +353,16 @@ export async function spawnBackgroundProcess(
         // did not take.
         return {
           config: overlay,
-          hostedLaunch: (): ChildProcess => spawnPortBindingHost(shellCommandLine, opts, overlay),
+          hostedLaunch: (): ChildProcess =>
+            spawnSandboxHost(
+              shellCommandLine,
+              {
+                cwd: opts.cwd,
+                ...(opts.env ? { env: opts.env } : {}),
+                ...(opts.violationId ? { violationId: opts.violationId } : {}),
+              },
+              overlay,
+            ),
         }
       },
     },
@@ -303,13 +370,36 @@ export async function spawnBackgroundProcess(
   return execution.child
 }
 
-function spawnPortBindingHost(
+interface SandboxHostOptions {
+  cwd: string
+  env?: NodeJS.ProcessEnv
+  violationId?: string
+  /** A foreground command reads EOF; a background task keeps stdin open. */
+  closeStdin?: boolean
+  freshGhConfig?: boolean
+  /**
+   * Count proxy denials as runner evidence for a retry decision. For a scoped
+   * command, a denial means it needed a host its plan did not open.
+   */
+  countNetworkDenials?: boolean
+}
+
+/**
+ * Launch `shellCommandLine` in a standalone ASRT owner (`port-binding-worker.ts`):
+ * an approved loopback-binding task, or a network-scoped command. Its runner
+ * evidence (violations and network denials) is reported back over IPC and counted
+ * by {@link sandboxViolationCountForBackgroundProcess}.
+ */
+function spawnSandboxHost(
   shellCommandLine: string,
-  opts: SpawnBackgroundOptions,
+  opts: SandboxHostOptions,
   overlay: Partial<SandboxRuntimeConfig>,
 ): ChildProcess {
   // Resolve while main still owns the thread context; the isolated host has none.
   const tmpDir = sandboxTmpDir(overlay)
+  const env = opts.freshGhConfig
+    ? { ...opts.env, GH_CONFIG_DIR: join(tmpDir, `gh-${randomUUID()}`) }
+    : opts.env
   const child = spawn(process.execPath, [portBindingWorkerPath()], {
     cwd: opts.cwd,
     env: {
@@ -320,9 +410,10 @@ function spawnPortBindingHost(
         command: shellCommandLine,
         cwd: opts.cwd,
         tmpDir,
-        ...(opts.env ? { env: opts.env } : {}),
+        ...(env ? { env } : {}),
         overlay,
         ...(opts.violationId ? { violationId: opts.violationId } : {}),
+        ...(opts.closeStdin ? { closeStdin: true } : {}),
       }),
     },
     // Keep the hosted task's stdin open. A closed fd makes `--watch` and
@@ -335,6 +426,11 @@ function spawnPortBindingHost(
     if (!message) return
     if (message.type === 'network-denial') {
       recordNetworkDenial(message.host, message.port)
+      // A denied connection is runner evidence too: the host's proxy refused it,
+      // not the command's own output.
+      if (opts.countNetworkDenials) {
+        hostedNetworkDenials.set(child, (hostedNetworkDenials.get(child) ?? 0) + 1)
+      }
     } else {
       portBindingViolationCounts.set(child, message.count)
     }
@@ -348,15 +444,16 @@ export function portBindingWorkerPath(): string {
 }
 
 const portBindingViolationCounts = new WeakMap<ChildProcess, number>()
+const hostedNetworkDenials = new WeakMap<ChildProcess, number>()
 
-/** Include a hosted port-binding task's ASRT evidence in retry decisions. */
+/** Include a hosted task's or scoped command's ASRT evidence in retry decisions. */
 export function sandboxViolationCountForBackgroundProcess(
   proc: ChildProcess,
   command: string,
 ): number {
   return Math.max(
     sandboxViolationCountForCommand(command),
-    portBindingViolationCounts.get(proc) ?? 0,
+    (portBindingViolationCounts.get(proc) ?? 0) + (hostedNetworkDenials.get(proc) ?? 0),
   )
 }
 

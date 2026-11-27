@@ -3,6 +3,7 @@ import { realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { storageGet, storageSet } from '../storage/storage.ts'
 import { isNonEmptyString } from '@shared/nullish.ts'
+import { pinRemotesAtTrust } from './git-network-facts.ts'
 
 /**
  * "Trust this workspace" gate (issue #100).
@@ -66,6 +67,9 @@ export function setWorkspaceTrusted(root: string, trusted: boolean): void {
   if (trusted) roots.add(key)
   else roots.delete(key)
   persistTrusted(roots)
+  // The user vouches for the repository as it stands now, remote URLs included:
+  // network-scoped commands reach only the hosts recorded here.
+  if (trusted) pinRemotesAtTrust(key)
 }
 
 /** @internal test helper — reset persisted trust. */
