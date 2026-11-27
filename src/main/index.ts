@@ -102,6 +102,7 @@ import { initAutoUpdate, quitInstallsUpdate } from './services/auto-update.ts'
 import { initUpdatePrompt } from './services/update-prompt.ts'
 import {
   approveClose,
+  closeWentUnanswered,
   deferQuitForCloseConfirmation,
   guardWindowClose,
   setQuitHandOffCheck,
@@ -1733,8 +1734,9 @@ app.on('before-quit', (event) => {
   // The quit is going ahead. Only a quit the user confirmed hands its turns to
   // workers, and only with the setting on; otherwise the user chose to stop
   // them, so the next launch does not continue them (unless the updater asked).
-  // A signal or a fault has nobody at the keyboard, so it stops them too.
-  quitHandsOff = !unattendedQuit && continuesTurnsAfterQuit(getSetting)
+  // A signal, a fault, or a close nobody answered (the renderer went away or
+  // the prompt timed out) has nobody at the keyboard, so it stops them too.
+  quitHandsOff = !unattendedQuit && !closeWentUnanswered() && continuesTurnsAfterQuit(getSetting)
   const runEnded = recordRunEnd(quitHandsOff)
   beginMainWindowQuit()
   destroyAllTerminalSessions()

@@ -40,6 +40,19 @@ const CLOSE_CONFIRM_TIMEOUT_MS = 2 * 60_000
 
 let requestConfirm: (() => Promise<boolean>) | null = null
 
+// Set when the close was let through with nobody's answer: the renderer went
+// away or never replied. Cleared by a real answer.
+let unanswered = false
+
+/**
+ * Whether the close going ahead was let through unanswered rather than
+ * confirmed. Nobody chose such a quit, so like a signal it must not hand its
+ * turns to workers.
+ */
+export function closeWentUnanswered(): boolean {
+  return unanswered
+}
+
 // Whether a quit now would hand every working turn to a worker. Until the app
 // wires it, only the setting is known.
 let quitHandsEveryTurnOff: () => Promise<boolean> = () =>
@@ -131,6 +144,7 @@ export function initCloseConfirm(win: BrowserWindow): void {
     try {
       assertMainFrameSender(event, win)
       const [id, confirmed] = parseIpcArgs(closeConfirmRespondSchema, rawArgs)
+      if (pending.has(id)) unanswered = false
       settle(id, confirmed)
     } catch (err) {
       if (err instanceof IpcValidationError) return
@@ -138,8 +152,14 @@ export function initCloseConfirm(win: BrowserWindow): void {
     }
   })
 
+  // Fail open, but as a quit nobody answered.
+  const release = (id: string): void => {
+    if (!pending.has(id)) return
+    unanswered = true
+    settle(id, true)
+  }
   const releaseAll = (): void => {
-    for (const id of [...pending.keys()]) settle(id, true)
+    for (const id of [...pending.keys()]) release(id)
   }
 
   // A renderer that is gone can no longer refuse; release every waiter so the
@@ -163,7 +183,7 @@ export function initCloseConfirm(win: BrowserWindow): void {
       }
       const id = randomUUID()
       const timer = setTimeout(() => {
-        settle(id, true)
+        release(id)
       }, CLOSE_CONFIRM_TIMEOUT_MS)
       if (typeof timer.unref === 'function') timer.unref()
       pending.set(id, (confirmed) => {

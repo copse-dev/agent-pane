@@ -55,7 +55,8 @@ without Electron.
    reviewed, rather than inventing a second resume path. A quit that hands off is recorded
    as `hand-off` in `last-run.json` (hooks plan decision 5), so a turn no worker took, because
    the worker declined it or never started, is continued by the next launch instead. Only a
-   quit the user confirmed hands off: a signal (Ctrl+C on `make run`, SIGTERM) or a fault quit
+   quit the user confirmed hands off: a signal (Ctrl+C on `make run`, SIGTERM), a fault quit,
+   or a close the dialog let through unanswered (the renderer went away, or two minutes passed)
    has nobody to confirm it, so it stops the run and is recorded as `quit`.
    The worker runs only Copse's own loop. A thread on an external coding agent (ACP) or a
    remote agent is left for the next launch, because the worker could not stop that agent or
