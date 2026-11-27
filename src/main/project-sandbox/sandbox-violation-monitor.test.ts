@@ -33,6 +33,13 @@ describe('countBlockingViolations', () => {
       ]),
       2,
     )
+    // A write whose path spells an incidental clause still counts.
+    assert.equal(
+      countBlockingViolations([
+        line('git(2) deny(1) file-write-create /tmp/deny(1) sysctl-read x'),
+      ]),
+      1,
+    )
     // A line in any other shape (a proxy or seccomp report) still counts.
     assert.equal(countBlockingViolations([line('network denied: example.com:443')]), 1)
   })
@@ -70,6 +77,21 @@ describe('blockingViolationsAreNetworkOnly', () => {
       false,
     )
     assert.equal(blockingViolationsAreNetworkOnly([line('network denied: example.com:443')]), false)
+    // A denied path or process name can spell a clause of its own; such a line
+    // is judged in neither direction.
+    assert.equal(
+      blockingViolationsAreNetworkOnly([
+        line('git(1) deny(1) file-write-create /tmp/deny network-outbound host:443'),
+      ]),
+      false,
+    )
+    assert.equal(
+      blockingViolationsAreNetworkOnly([
+        line('deny network-outbound github.com:443 (not in allowlist)'),
+        line('git(1) deny(1) file-write-create /tmp/x deny(1) sysctl-read y'),
+      ]),
+      false,
+    )
     assert.equal(
       blockingViolationsAreNetworkOnly([
         line('bash(1) deny(1) sysctl-read kern.iossupportversion'),

@@ -368,6 +368,29 @@ export function sandboxViolationCountForBackgroundProcess(
   )
 }
 
+/** Each `deny(<n>) <operation>` or `deny <operation>` a violation line holds. */
+const DENIAL_CLAUSE = /\bdeny(\(\d+\))? ([a-z][a-z-]*)/g
+
+/**
+ * The one denial a violation line reports: its operation, and whether it is a
+ * seatbelt line (`deny(1) …`) or the proxy's (`deny network-outbound …` at the
+ * start). Undefined when the line holds no denial clause or more than one: a
+ * denied path or a process name is chosen inside the sandbox and can spell a
+ * clause of its own, so a line it could have shaped is judged in neither
+ * direction and every caller fails closed.
+ */
+function denialOf(line: string | undefined): { operation: string; seatbelt: boolean } | undefined {
+  // A store entry can arrive without its line (a test double's does).
+  const clauses = [...(line ?? '').matchAll(DENIAL_CLAUSE)]
+  if (clauses.length !== 1) return undefined
+  const [clause] = clauses
+  if (!clause) return undefined
+  const operation = clause[2] ?? ''
+  const seatbelt = clause[1] !== undefined
+  if (!seatbelt && clause.index !== 0) return undefined
+  return { operation, seatbelt }
+}
+
 /**
  * A seatbelt denial that cannot be what made a command fail. The runtime itself
  * trips some on every command (`sysctl-read kern.iossupportversion` from each
@@ -376,18 +399,21 @@ export function sandboxViolationCountForBackgroundProcess(
  * contained profile refuses. Counting either would make any ordinary failure, a
  * red test run or a `grep` with no match, look like a sandbox block and offer
  * to run it outside. Only refused writes and network connections count; a line
- * in another shape (the proxy's `deny network-outbound …`) counts too.
+ * in another shape (the proxy's `deny network-outbound …`), or one that is
+ * ambiguous, counts too.
  */
-const INCIDENTAL_SEATBELT_DENIAL = /\bdeny\(\d+\) (?!file-write-|network-)\S/
-
-/**
- * A refused network connection: a seatbelt `deny(1) network-outbound …` from
- * the log monitor, or the network proxy's own `deny network-outbound host:port`.
- */
-const NETWORK_DENIAL = /\bdeny(?:\(\d+\))? network-\S/
+function isIncidentalDenial(line: string): boolean {
+  const denial = denialOf(line)
+  return (
+    denial !== undefined &&
+    denial.seatbelt &&
+    !denial.operation.startsWith('file-write-') &&
+    !denial.operation.startsWith('network-')
+  )
+}
 
 function blockingViolations<T extends { line: string }>(violations: readonly T[]): T[] {
-  return violations.filter((violation) => !INCIDENTAL_SEATBELT_DENIAL.test(violation.line))
+  return violations.filter((violation) => !isIncidentalDenial(violation.line))
 }
 
 /** Violations that can be what made a sandboxed command fail. */
@@ -396,18 +422,35 @@ export function countBlockingViolations(violations: readonly { line: string }[])
 }
 
 /** A seatbelt denial of neither a file nor a network operation (`sysctl-read`, `mach-lookup`). */
-const NON_FILE_SEATBELT_DENIAL = /\bdeny\(\d+\) (?!file-|network-)\S/
+function isNonFileSeatbeltDenial(line: string): boolean {
+  const denial = denialOf(line)
+  return (
+    denial !== undefined &&
+    denial.seatbelt &&
+    !denial.operation.startsWith('file-') &&
+    !denial.operation.startsWith('network-')
+  )
+}
+
+/**
+ * A refused network connection: a seatbelt `deny(1) network-outbound …` from
+ * the log monitor, or the network proxy's own `deny network-outbound host:port`.
+ */
+function isNetworkDenial(line: string): boolean {
+  return denialOf(line)?.operation.startsWith('network-') === true
+}
 
 /**
  * Whether the denials of a blocked command were only refused network
  * connections. False when there were none, or when any was a file denial of
- * any kind or a line in another shape. A refused read does not block a command
- * on its own, but it spoils this: a read-tier shape that tried a protected
- * credential and the network is not one whose reach its shape describes.
+ * any kind, a line in another shape, or an ambiguous line. A refused read does
+ * not block a command on its own, but it spoils this: a read-tier shape that
+ * tried a protected credential and the network is not one whose reach its
+ * shape describes.
  */
 export function blockingViolationsAreNetworkOnly(violations: readonly { line: string }[]): boolean {
-  const relevant = violations.filter((violation) => !NON_FILE_SEATBELT_DENIAL.test(violation.line))
-  return relevant.length > 0 && relevant.every((violation) => NETWORK_DENIAL.test(violation.line))
+  const relevant = violations.filter((violation) => !isNonFileSeatbeltDenial(violation.line))
+  return relevant.length > 0 && relevant.every((violation) => isNetworkDenial(violation.line))
 }
 
 /**
