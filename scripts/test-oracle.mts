@@ -1157,9 +1157,15 @@ export type ScreenshotGate = {
  * mobile companion demo's.
  */
 export function computeScreenshotGate(changed: string[], labeled: boolean): ScreenshotGate {
+  // A reference screenshot's hash cannot change a pixel. computeSelection maps
+  // a changed reference to its producer spec so the e2e plan renders it, but
+  // here that would make the PR own every sibling shot the spec saves, and
+  // their unrelated drift would reach review as candidates. A hand-committed
+  // shot is owned through the filter's branch check instead.
   const renderAffecting = changed.filter(
     (f) =>
       (f.startsWith('src/') || f.startsWith('packages/') || f.startsWith(`${E2E_DIR}/`)) &&
+      !f.startsWith(`${E2E_SCREENSHOT_DIR}/`) &&
       !f.endsWith('.test.ts'),
   )
   const sel = computeSelection(renderAffecting)

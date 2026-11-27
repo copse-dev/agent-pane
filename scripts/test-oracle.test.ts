@@ -612,4 +612,17 @@ describe('test oracle demo screenshot ownership', () => {
       [],
     )
   })
+
+  it('owns no sibling shots when only a reference hash changes', () => {
+    // A hash change still selects its producer for the e2e plan (#4435), but
+    // it cannot change a pixel, so the spec's other shots stay out of scope.
+    const changed = [
+      'tests/e2e/screenshots/manifest.json',
+      'tests/e2e/screenshots/activity-interrupted-run.png',
+    ]
+    assert.ok(computeSelection(changed).selectedE2e.length > 0)
+    const gate = computeScreenshotGate(changed, false)
+    assert.deepEqual(gate.affected, [])
+    assert.deepEqual(gate.missing, [])
+  })
 })
