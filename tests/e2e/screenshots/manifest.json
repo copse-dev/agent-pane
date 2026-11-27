@@ -794,8 +794,8 @@
       "bytes": 249283
     },
     "automation-create-modal.png": {
-      "sha256": "3b780eab8af75e2a6248aa558b912e4e6f3e82fa8722c24300a6ea97f3cdb8ce",
-      "bytes": 300767
+      "sha256": "eb8e1decab09cde6ac728b0ef64835a805b6f0c0bf5583b62a6846485ffdb27a",
+      "bytes": 308067
     },
     "automation-deferred-context.png": {
       "sha256": "74f8aa9191a8ea88564acf3bb161fc32ecdc012d35afc723d3339fa2646fdae5",
@@ -870,8 +870,8 @@
       "bytes": 83329
     },
     "automation-model-allowance-exhausted.png": {
-      "sha256": "da7ca300058f091d0dcdc794e7ef7c04ecb45329be1eacc21adb1a5d95351ff1",
-      "bytes": 31623
+      "sha256": "8377a12fa62d2e3b0615ff07e90eac5be7695b36ccc7e404dfa2f878eb79f8d0",
+      "bytes": 31619
     },
     "automation-model-allowance.png": {
       "sha256": "ec965dc1a6e59c461874ff453533d780b4407d487c808303df60a613cf0c56ee",
@@ -1546,16 +1546,16 @@
       "bytes": 121995
     },
     "composer-observer-bordered.png": {
-      "sha256": "c0f56703b76d57b6da0fb9d8465ad8babc9c73773e19cd62a2e0b35a195617a2",
-      "bytes": 325787
+      "sha256": "7a3776210dca6cb2388a3dc411048d706c6df52080a0c5cc56852c76b8ee0fe3",
+      "bytes": 323426
     },
     "composer-observer-borderless.png": {
       "sha256": "c103485303666373a8f93df4fa7f043ef052e21f2be9615c01b289699542ffed",
       "bytes": 323272
     },
     "composer-observer-content-grown.png": {
-      "sha256": "1b681b20b9b68d856685670f94225a1636d0e89096f5b5ab5effdcd5f1525c00",
-      "bytes": 331452
+      "sha256": "e294f19a35cadbe52a23d051ddfd4ecc9d359fc9955d4f7770198ca2772ea7b0",
+      "bytes": 327797
     },
     "composer-pills-light.png": {
       "sha256": "32d8f5b8b4b39be4fa5dc1a9ec5f79e09701da55ae7b6b24248cf74f68930559",
