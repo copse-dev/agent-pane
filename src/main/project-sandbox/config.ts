@@ -763,8 +763,37 @@ function corepackCacheCandidates(env: NodeJS.ProcessEnv, home: string): string[]
 }
 
 /**
+ * fnm's Node installs and version aliases, resolved the way fnm does: `$FNM_DIR`, else
+ * `${XDG_DATA_HOME:-~/.local/share}/fnm`, plus macOS's `~/Library/Application Support/fnm`.
+ * `fnm exec --using=<version> <cmd>` lists `node-versions` and reads `aliases` before it
+ * runs anything, so without them it cannot start contained. Only those two subtrees: the
+ * data root is never granted, and `fnm env`'s multishell links under `~/.local/state` stay
+ * unwritable (a writable PATH directory would outlive the sandbox).
+ */
+function fnmDataCandidates(env: NodeJS.ProcessEnv, home: string): string[] {
+  const explicit = env['FNM_DIR']
+  const roots =
+    explicit !== undefined && explicit !== ''
+      ? isAbsolute(explicit)
+        ? [explicit]
+        : []
+      : [
+          join(
+            env['XDG_DATA_HOME'] !== undefined && isAbsolute(env['XDG_DATA_HOME'])
+              ? env['XDG_DATA_HOME']
+              : join(home, '.local', 'share'),
+            'fnm',
+          ),
+          ...(process.platform === 'darwin'
+            ? [join(home, 'Library', 'Application Support', 'fnm')]
+            : []),
+        ]
+  return roots.flatMap((root) => [join(root, 'node-versions'), join(root, 'aliases')])
+}
+
+/**
  * Resolve the user's installed package-manager and interpreter caches so contained
- * commands can start them: Corepack's cache (pinned pnpm/yarn), `~/.bun/bin`, and
+ * commands can start them: Corepack's cache (pinned pnpm/yarn), fnm's Node installs, `~/.bun/bin`, and
  * the pyenv and uv Python installs a `.venv` links into.
  *
  * Read-only: a writable shim directory on PATH would let a contained command
@@ -781,6 +810,7 @@ export function resolveInterpreterToolchainAllowRead(
   const allow: string[] = []
   for (const path of [
     ...corepackCacheCandidates(env, home),
+    ...fnmDataCandidates(env, home),
     ...HOME_INTERPRETER_TOOLCHAIN_DIRS.map((dir) => join(home, dir)),
   ]) {
     const canonical = readTarget(path, true)

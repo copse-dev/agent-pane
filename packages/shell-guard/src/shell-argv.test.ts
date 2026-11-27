@@ -106,6 +106,26 @@ describe('shellSegments', () => {
 })
 
 describe('unwrapWrappers', () => {
+  it('looks through fnm exec to the command it runs', () => {
+    assert.deepEqual(unwrapWrappers(['fnm', 'exec', '--using=24', 'rm', '-rf', '/']), [
+      'rm',
+      '-rf',
+      '/',
+    ])
+    assert.deepEqual(unwrapWrappers(['fnm', 'exec', '--using', '24', '--', 'node', 'x.js']), [
+      'node',
+      'x.js',
+    ])
+    // An option fnm exec's unwrap does not model leaves fnm as the head.
+    assert.deepEqual(unwrapWrappers(['fnm', 'exec', '--log-level', 'quiet', 'node']), [
+      'fnm',
+      'exec',
+      '--log-level',
+      'quiet',
+      'node',
+    ])
+    assert.deepEqual(unwrapWrappers(['fnm', 'install', '24']), ['fnm', 'install', '24'])
+  })
   it('looks through wrappers that execute their tail unchanged', () => {
     for (const command of [
       'timeout 5 rm -rf /',

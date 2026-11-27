@@ -204,9 +204,23 @@ const EXTERNAL_PATTERNS: Array<{
     reason: 'ephemeral package runner (npx/dlx/bunx/uvx/pipx — may fetch & run unpinned code)',
     ambiguous: true,
   },
+  // Corepack runs the package manager a project pins. The project sandbox re-allows
+  // Corepack's cache read-only (`resolveInterpreterToolchainAllowRead`), so a pinned
+  // pnpm or yarn that is already downloaded starts contained, and one that is not is
+  // blocked from the network and escalates like `npx`. Hard-external here made
+  // `corepack pnpm test` prompt while `pnpm test` ran contained. Only a package
+  // manager named directly after `corepack` (or its version or help) is ambiguous; Corepack's own commands
+  // (enable, install, prepare…), however spelled or preceded by options, stay
+  // hard-external.
+  {
+    re: /\bcorepack[ \t]+(?!(?:(?:pnpm|pnpx|yarn|yarnpkg|npm|npx)(?:@[\w.+-]*)?|-v|--version|-h|--help)(?:\s|$))[^\s;&|)]/i,
+    reason: 'corepack (downloads package-manager binaries)',
+    commandWord: true,
+  },
   {
     re: /\bcorepack\b/i,
     reason: 'corepack (downloads package-manager binaries)',
+    ambiguous: true,
     commandWord: true,
   },
   {
@@ -380,7 +394,9 @@ const EXTERNAL_PATTERNS: Array<{
     // `find -exec` and container exec. Package-manager subcommands alone, global
     // options included (`pnpm -s exec`), are tried inside the OS sandbox.
     re: new RegExp(
-      String.raw`(?<!\b(?:npm|yarn|pnpm|bun)${PKG_GLOBAL_OPTIONS}[ \t]+)\bexec\b`,
+      // `fnm exec --using=24 cmd` selects a Node version and runs `cmd`, which is judged on its
+      // own (`unwrapWrappers` looks through it): the exec is fnm's subcommand, not the builtin.
+      String.raw`(?<!\b(?:npm|yarn|pnpm|bun)${PKG_GLOBAL_OPTIONS}[ \t]+)(?<!\bfnm[ \t]+)\bexec\b`,
       'i',
     ),
     reason: 'dynamic execution / encoding',

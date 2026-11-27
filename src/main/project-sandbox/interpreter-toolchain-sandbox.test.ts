@@ -88,6 +88,28 @@ describe('resolveInterpreterToolchainAllowRead', () => {
     }
   })
 
+  it("allows fnm's Node installs and aliases, never its data root", () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      const fnm = join(home, '.local', 'share', 'fnm')
+      mkdirSync(join(fnm, 'node-versions', 'v24.20.0', 'installation', 'bin'), { recursive: true })
+      mkdirSync(join(fnm, 'aliases'), { recursive: true })
+      const allow = resolveInterpreterToolchainAllowRead({}, home)
+      assert.deepEqual(allow, [...tree(join(fnm, 'node-versions')), ...tree(join(fnm, 'aliases'))])
+      assert.ok(!allow.includes(fnm))
+
+      const moved = join(home, 'fnm-dir')
+      mkdirSync(join(moved, 'node-versions'), { recursive: true })
+      assert.deepEqual(
+        resolveInterpreterToolchainAllowRead({ FNM_DIR: moved }, home),
+        tree(join(moved, 'node-versions')),
+      )
+      assert.deepEqual(resolveInterpreterToolchainAllowRead({ FNM_DIR: 'relative' }, home), [])
+    } finally {
+      cleanup()
+    }
+  })
+
   it('adds nothing when no toolchain is installed', () => {
     const { home, cleanup } = fakeHome()
     try {

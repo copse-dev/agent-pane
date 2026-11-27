@@ -630,10 +630,37 @@ export function wrapperChain(argv: readonly string[]): string[] {
   return chain
 }
 
+/**
+ * `fnm exec [--using <version>] [--] <cmd>` runs `<cmd>` with one Node version first on PATH,
+ * so analysis looks through it like `env`. It is a two-word wrapper, which the single-name
+ * table above cannot express. Any option other than `--using` stops the unwrap, so the
+ * segment keeps `fnm` as its head and is judged as written.
+ */
+function unwrapFnmExec(current: string[], chain: string[]): boolean {
+  if (commandName(current[0]) !== 'fnm' || current[1] !== 'exec') return false
+  let index = 2
+  for (;;) {
+    const next = current[index] ?? ''
+    if (next === '--') {
+      index += 1
+      break
+    }
+    if (/^--using=./.test(next)) index += 1
+    else if (next === '--using' && current[index + 1] !== undefined) index += 2
+    else if (next.startsWith('-')) return false
+    else break
+  }
+  if (index >= current.length) return false
+  chain.push('fnm exec')
+  current.splice(0, index)
+  return true
+}
+
 function unwrap(argv: readonly string[], chain: string[]): string[] {
   const current = [...argv]
   for (;;) {
     while (ASSIGNMENT.test(current[0] ?? '')) chain.push(current.shift() ?? '')
+    if (unwrapFnmExec(current, chain)) continue
     const spec = PASS_THROUGH_WRAPPERS.get(commandName(current[0]))
     if (!spec) return current
     chain.push(commandName(current.shift()))

@@ -6,6 +6,7 @@ import {
   hasShellInputRedirect,
   shellSegments,
   unwrapWrappers,
+  wrapperChain,
 } from './shell-argv.ts'
 import {
   downloadingRunner,
@@ -15,6 +16,7 @@ import {
 } from './package-runners.ts'
 import { productionTargetReason } from './production-targets.ts'
 import { packageRegistryOrigins, remoteChangeReasons } from './remote-change.ts'
+import { releaseActionReasons, releaseCommandReasons } from './release-actions.ts'
 import { secretFileExposure, tokenPrinterReason } from './secrets.ts'
 import { dangerousInSandboxReasons } from './shell-scope.ts'
 import { normalizeSshHost } from './trusted-ssh-hosts.ts'
@@ -416,8 +418,9 @@ const VARIABLE_REFERENCE = /\$\{?([A-Za-z_][A-Za-z0-9_]*)/g
 
 function secretReasons(rawArgv: readonly string[], argv: readonly string[]): string[] {
   const head = commandName(argv[0])
-  // `env` with nothing to run prints the whole environment.
-  if (commandName(rawArgv[0]) === 'env' && argv.length === 0) {
+  // `env` with nothing to run prints the whole environment, also behind another wrapper
+  // (`nohup env`, `timeout 60 env`, `fnm exec --using=24 env`).
+  if (argv.length === 0 && wrapperChain(rawArgv).includes('env')) {
     return ['prints every environment variable, which may include secrets']
   }
   if (head === 'printenv') {
@@ -755,9 +758,11 @@ export function hostReachReasons(command: string, context: HostReachContext): st
       privilegeReason(rawArgv, argv),
       tokenPrinterReason(argv),
       secretFileExposure(argv),
+      ...releaseActionReasons(argv),
     ]
     for (const reason of found) if (reason !== null) reasons.add(reason)
   }
+  for (const reason of releaseCommandReasons(command)) reasons.add(reason)
   for (const reason of [
     temporaryPathReason(command),
     downloadThenRunReason(segments),

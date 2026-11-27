@@ -467,7 +467,20 @@ part of their original command's arguments.
 Other package-manager `exec` commands (`npm exec`, `yarn exec`, `bun exec`) are ambiguous: they
 run a project command, but npm may fetch a missing executable. They start inside an active sandbox
 and ask before an outside retry only if that sandbox blocks them. Local `pnpm exec` follows the
-contained `pnpm run` treatment described above. Explicit package installs remain hard-external. The
+contained `pnpm run` treatment described above. A command run through Corepack
+(`corepack pnpm test`, `corepack pnpm@10.34.5 run build`) is ambiguous for the same reason: the
+sandbox re-allows Corepack's cache read-only, so a pinned package manager that is already downloaded
+starts contained, and one Corepack would download is blocked and asks before an outside retry.
+Corepack's own `enable`, `disable`, `install`, `prepare`, `use`, `up`, `pack` and `cache` commands
+write shims or package managers outside the workspace and stay hard-external. `fnm exec --using=<version> <cmd>`
+is read as `<cmd>` with that Node first on `PATH`: its `exec` is fnm's subcommand, not the shell
+builtin, so the command it runs decides the verdict and the harm gate inspects it. The sandbox
+re-allows fnm's `node-versions` and `aliases` read-only, which `fnm exec` lists before it starts.
+`eval "$(fnm env)"` still asks, as dynamic execution. `fnm env` and `fnm use` on their own start
+contained, but they write multishell links under `~/.local/state`, which the sandbox does not grant:
+a contained command must not write a directory that later sits on an unsandboxed `PATH`, so the
+blocked write escalates like any other sandbox block. Explicit package
+installs remain hard-external. The
 shell `exec` builtin in command position, `find -exec`, and container `exec` remain hard-external as
 dynamic execution.
 
@@ -1428,6 +1441,24 @@ While active:
     `influx` verbs that write or delete (`write`, `delete`, `restore`, …) and SQL run
     from a file or stdin (`psql -f`, `mysql db < dump.sql`, `cat dump.sql | psql db`);
   - filtering shell history for a secret-named word (`history | grep -i token`);
+  - release work (`release-actions.ts`): loading a secret file into the shell (`. ./.env.release`,
+    `source .env`, including inside `bash -c` or after `if`), release signers (`sign_update`,
+    `generate_keys`, `minisign`, `signify`, `codesign --sign`/`-fs`, `gpg --sign`/`-ab`,
+    `xcrun notarytool submit`; `--help` alone and ad-hoc `codesign --sign -` run), a task-runner or
+    package-script target that starts with `ship`, `release`, `publish`, `deploy`, `notarize` or
+    `upload` (`make ship-release`, `npm run release:mac`; `make -n`/`--dry-run` runs), pushing a tag
+    (`refs/tags/…`, `tags/…`, `tag <name>`, a version-shaped ref such as `v1` or `v1.7.0`, `--tags`,
+    `--follow-tags` and the prefixes git accepts for them), a push that rewrites or deletes remote
+    refs (`--mirror`, `--prune`, `--delete`, a `+` refspec), moving a tag (`git tag --force`), a
+    `git -c` or `--config-env` override of `credential.*`, `core.sshCommand`, `core.askPass`,
+    `core.fsmonitor`, `core.hooksPath` or an `include` (also as a lasting `git config` write), a
+    `GIT_ASKPASS`/`SSH_ASKPASS`/`GIT_SSH`/`GIT_SSH_COMMAND` or `GIT_CONFIG_*` assignment, a secret
+    file fed through `<` or copied (`cp .env /tmp/e`, `cp -t /tmp .env`; making `.env` from
+    `.env.example` runs), `ssh-add` other than `-l`/`-L`, and `env` behind another wrapper
+    (`nohup env`). Replays of real history and a red-team set found each of these allowed
+    unsandboxed. The command line is all the gate sees: a tag push that `push.followTags` or a
+    `remote.<name>.push` refspec in git config adds is not caught, and the remote-write
+    auto-approval tier refuses each git spelling above;
   - `find` deletions rooted outside the workspace (`find /x -exec rm {} +`,
     `find /x | xargs rm`), and `git filter-repo`.
 - Credential reads stay hard-denied when a redirect such as `2>&1` follows them and when the gate
@@ -1685,7 +1716,8 @@ shim mode) get only the shim directory, so their `node` fails contained and offe
 
 It also re-allows, read-only and only when the directory exists, the installed package-manager and
 interpreter caches: Corepack's cache (`$COREPACK_HOME`, else `${XDG_CACHE_HOME:-~/.cache}/node/corepack`,
-plus `~/Library/Caches/node/corepack` on macOS), `~/.bun/bin`, `~/.pyenv/versions`, and
+plus `~/Library/Caches/node/corepack` on macOS), fnm's `node-versions` and `aliases` (under `$FNM_DIR`, else
+`${XDG_DATA_HOME:-~/.local/share}/fnm`, plus `~/Library/Application Support/fnm` on macOS), `~/.bun/bin`, `~/.pyenv/versions`, and
 `~/.local/share/uv/python`. A Corepack-pinned pnpm or yarn, `bun test`, and a uv or pyenv `.venv`
 whose `bin/python` links into those installs therefore start contained instead of failing and
 offering to run outside. None of these roots is writable (a writable shim on `PATH` would run later

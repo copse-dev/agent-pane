@@ -625,7 +625,11 @@
       }
     },
     {
-      "files": ["benchmarks/shell-scope/scripts/**/*.mjs", "benchmarks/escalation-review/**/*.mjs"],
+      "files": [
+        "benchmarks/shell-scope/scripts/**/*.mjs",
+        "benchmarks/escalation-review/**/*.mjs",
+        "benchmarks/risk-classifier/**/*.mjs"
+      ],
       "rules": {
         "typescript/await-thenable": "off",
         "typescript/consistent-return": "off",
