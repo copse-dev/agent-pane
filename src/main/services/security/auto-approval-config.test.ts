@@ -6,9 +6,9 @@ import { join } from 'node:path'
 import { AUTO_APPROVAL_LEVEL_SETTING } from '@shared/auto-approval.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { setSetting } from '../storage/settings.ts'
-import { setWorkspaceTrusted } from './workspace-trust.ts'
+import { runWithWorkspaceTrust, setWorkspaceTrusted } from './workspace-trust.ts'
 import { clearGitRemotesCache } from './git-remotes.ts'
-import { resolveAutoApproval } from './auto-approval-config.ts'
+import { resolveAutoApproval, workspaceTrustWouldAutoApprove } from './auto-approval-config.ts'
 import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
 import { currentAgentRoots } from '../execution-root.ts'
 
@@ -170,5 +170,38 @@ describe('resolveAutoApproval — sandbox gate', () => {
       for (const root of [trusted, untrusted, ambient])
         rmSync(root, { recursive: true, force: true })
     }
+  })
+
+  it('offers trust only when trust is the one gate between a command and its tier', async () => {
+    await withTrustedRepo(async (root) => {
+      const roots = { projectRoot: root, executionRoot: root }
+      // Already trusted: nothing to offer.
+      assert.equal(workspaceTrustWouldAutoApprove('git status', roots, true), null)
+
+      setWorkspaceTrusted(root, false)
+      assert.equal(workspaceTrustWouldAutoApprove('git status', roots, true), root)
+      // Trust would not help: the classifier still asks, or another gate is closed.
+      assert.equal(workspaceTrustWouldAutoApprove('rm -rf build', roots, true), null)
+      assert.equal(workspaceTrustWouldAutoApprove('git status', roots, false), null)
+      assert.equal(
+        workspaceTrustWouldAutoApprove(
+          'git status',
+          { projectRoot: null, executionRoot: root },
+          true,
+        ),
+        null,
+      )
+      // An explicit host profile fixes trust for the run; a prompt cannot change it.
+      assert.equal(
+        runWithWorkspaceTrust(root, false, () =>
+          workspaceTrustWouldAutoApprove('git status', roots, true),
+        ),
+        null,
+      )
+      await setSetting('autoRunSandboxCommands', false)
+      assert.equal(workspaceTrustWouldAutoApprove('git status', roots, true), null)
+      // The offer never grants anything by itself.
+      assert.equal(resolveAutoApproval('git status', roots, true).action, 'prompt')
+    })
   })
 })

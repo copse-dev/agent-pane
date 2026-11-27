@@ -87,6 +87,11 @@ runs:
         printf '%s\n' 'Acquire::Retries "3";' 'Acquire::http::Timeout "30";' \
           'Acquire::https::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/80-ci-network >/dev/null
         mkdir -p "$APT_ARCHIVES/partial"
+        # The hosted image ships the packages.microsoft.com source, which now
+        # answers 403 for noble's InRelease; apt then refuses the whole index
+        # refresh. Nothing this job installs comes from it, so drop it.
+        sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list \
+          /etc/apt/sources.list.d/microsoft-prod.sources
         # A connection can also trickle without ever stalling, which the
         # per-fetch timeout never trips: run 41257134858 sat 29 minutes after
         # noble-security InRelease with the drop-in in place. Bound each index
