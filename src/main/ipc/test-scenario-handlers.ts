@@ -16,7 +16,10 @@ import {
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import { approveRemoteWatcherInstall } from '../services/ssh-workspace/remote-watcher-install-approval.ts'
 import { formatRemoteWatcherInstallApproval } from '../services/ssh-workspace/remote-native-watcher.ts'
-import { requestCloseConfirmation } from '../services/close-confirm.ts'
+import {
+  requestCloseConfirmation,
+  setCloseConfirmContainerRuns,
+} from '../services/close-confirm.ts'
 import { setSeededVncNearbyServersForTests } from '../services/vnc/vnc-service.ts'
 import { setSeededSimulatorDesktopForTests } from '../services/simulator-desktop/simulator-desktop-service.ts'
 import { showSimulatorDesktop } from '../services/simulator-desktop/simulator-desktop-panel.ts'
@@ -128,6 +131,21 @@ export function registerTestScenarioHandlers(win: BrowserWindow): void {
     ipcMain.handle('test:requestCloseConfirm', (event) => {
       assertMainFrameSender(event, win)
       return requestCloseConfirmation()
+    })
+    // Which threads the close question names as having a container run going.
+    // A real run needs Docker, so the screenshot spec names them directly. It
+    // replaces the live source for the rest of this e2e process.
+    ipcMain.handle('test:setCloseConfirmContainerRuns', (event, rawIds: unknown) => {
+      assertMainFrameSender(event, win)
+      const ids = parseIpcArgs(z.array(z.string().min(1).max(256)).max(16), [rawIds])
+      setCloseConfirmContainerRuns(() => ids)
+    })
+    // A container run snapshot as main pushes it, so the renderer's run states
+    // (the Stopped banner and toast) can be shown without Docker.
+    ipcMain.handle('test:emitContainerRun', (event, raw: unknown) => {
+      assertMainFrameSender(event, win)
+      const progress = parseIpcArgs(z.looseObject({ threadId: z.string().min(1).max(256) }), [raw])
+      win.webContents.send('container:run-changed', progress)
     })
     ipcMain.handle('test:createMainWindow', (event) => {
       assertMainFrameSender(event, win)

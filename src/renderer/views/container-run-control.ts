@@ -326,10 +326,13 @@ export function mountContainerRunControl(
     if (!run) {
       text.textContent = ''
       delete element.dataset['phase']
+      element.removeAttribute('data-stopped')
       onStateChanged()
       return
     }
     element.dataset['phase'] = run.phase
+    // A run the user stopped is not a failure, so it does not wear the danger hue.
+    element.toggleAttribute('data-stopped', run.phase === 'failed' && run.stoppedByUser === true)
     const result = run.record?.result
     const fetched = run.record?.carryOut.ref !== null && run.record?.carryOut.ref !== undefined
     const commits =

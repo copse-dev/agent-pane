@@ -2055,6 +2055,12 @@ if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') {
     requestCloseConfirm() {
       return ipcRenderer.invoke('test:requestCloseConfirm')
     },
+    setCloseConfirmContainerRuns(threadIds: string[]) {
+      return ipcRenderer.invoke('test:setCloseConfirmContainerRuns', threadIds)
+    },
+    emitContainerRun(progress: unknown) {
+      return ipcRenderer.invoke('test:emitContainerRun', progress)
+    },
     createMainWindow() {
       return ipcRenderer.invoke('test:createMainWindow')
     },
