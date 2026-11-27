@@ -94,9 +94,12 @@ Two choices need deciding before building:
   files sit on the host. The laptop keeps a read-only mirror that it refreshes on attach, so
   the thread list works offline. Recommended over keeping the store on the laptop, because a
   worker that has to reach the laptop to write has not offloaded anything.
-- **Credentials.** The worker needs a provider key while the laptop is closed. The offload
-  plan's decision 8 already accepts a short-lived key scoped to the lease, which departs from
-  "keys never leave the desktop". This needs an explicit yes, per host, from the user.
+- **Credentials (decided 27 November 2026).** Keys stay on the laptop by default: the
+  remote worker's model calls go through the laptop, so a run pauses while it sleeps. The
+  user can opt a host in, per provider, to holding a short-lived key scoped to the worker's lease (the
+  offload plan's decision 8), and only then does a run carry on with the laptop closed.
+  So R3 builds both paths: an inference relay over the forward, as container runs already
+  proxy model calls through their host (`host-inference.ts`), and the opt-in key lease.
 
 _Exit gate:_ start a turn on an SSH thread, close the laptop for ten minutes, reopen it, and
 find the turn finished once with its transcript complete.
@@ -198,8 +201,8 @@ closing (R3) first, because it is the clearest "run anywhere" win.
 
 1. **Thread files for a remote worker live on that machine,** with a read-only mirror on the
    laptop (R3).
-2. **A short-lived provider key may go to a remote worker,** per host and with consent (R3,
-   R8).
+2. **Keys stay on the laptop unless the user opts a host in** to a short-lived key scoped
+   to the lease (R3, R8). Decided 27 November 2026.
 3. **Order after R2.** Recommended: R3 (SSH), then R4, R5, R6, R7, then R8.
 
 ## Product areas
