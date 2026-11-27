@@ -218,6 +218,9 @@ describe('scoped preview promotion', () => {
           shownUrl = url
         },
         showArtefact() {},
+        decodeImage() {
+          throw new Error('This test does not decode an image')
+        },
       })
 
       await assert.rejects(
