@@ -76,8 +76,8 @@ export const experimentalMarkup = `
               </label>
               <p class="field-hint">
                 Turns run in a separate Copse process that keeps going if this window or the app
-                quits or crashes, and Copse follows them when it opens again. Approvals the turn
-                would ask for are held for your review for now. ChatGPT plan models, external
+                quits or crashes, and Copse follows them when it opens again. Its approvals, staged
+                edits and SSH questions come to this window as usual. ChatGPT plan models, external
                 coding agents and automations still run in the app. Takes effect when Copse next
                 starts.
               </p>

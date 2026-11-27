@@ -38,6 +38,7 @@ import { ACP_CANCELLED_TOOL_CALL_RESULT } from '../../../src/main/services/acp/a
 import { isMandatoryWriteDenyMountPath } from '../../../src/main/project-sandbox/mandatory-write-deny.ts'
 import { EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS } from '../../../packages/agent/src/plugins/first-party-plugins.ts'
 import { removeE2eTree } from './remove-tree.ts'
+import { stopTurnHosts } from './turn-host-processes.ts'
 
 const USER_DATA = copseUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
@@ -231,6 +232,7 @@ export function writeSeedConfig(
   config: Record<string, unknown>,
   options: { preserveProductWorktreeDefault?: boolean } = {},
 ): void {
+  stopTurnHosts(USER_DATA)
   mkdirSync(USER_DATA, { recursive: true })
   const remaining: Record<string, unknown> = {}
   const seededProjectIds = new Set<string>()
@@ -387,6 +389,7 @@ export const E2E_SETTINGS_BASELINE = {
 } as const
 
 export function writeSettings(settings: Record<string, unknown>): void {
+  stopTurnHosts(USER_DATA)
   mkdirSync(USER_DATA, { recursive: true })
   // Pin appearance so reference screenshots are deterministic. Most fixtures
   // keep tint off so existing shots do not inherit first-run appearance changes;

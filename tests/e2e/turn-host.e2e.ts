@@ -5,6 +5,7 @@ import { $, $$, browser, expect } from '@wdio/globals'
 import { copseUserDataDir } from '../../src/main/services/storage/copse-paths.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
+import { turnHostPids } from './helpers/turn-host-processes.ts'
 import {
   e2eWorkspaceDir,
   resetUserData,
@@ -40,21 +41,8 @@ function threadStatus(threadId: string): string | null {
   return /"status"\s*:\s*"(\w+)"/.exec(readFileSync(path, 'utf8'))?.[1] ?? null
 }
 
-/** The pids of the hosts this spec's profile started, from the host's log. */
 function hostPids(): number[] {
-  const path = join(copseUserDataDir(), 'logs', 'turn-host.log')
-  if (!existsSync(path)) return []
-  return [...readFileSync(path, 'utf8').matchAll(/pid (\d+)\)/g)].map((match) => Number(match[1]))
-}
-
-function stopHosts(): void {
-  for (const pid of hostPids()) {
-    try {
-      process.kill(pid, 'SIGTERM')
-    } catch {
-      // Already gone.
-    }
-  }
+  return turnHostPids(copseUserDataDir())
 }
 
 async function selectedThreadId(): Promise<string> {
@@ -69,7 +57,7 @@ describe('turns in the background host', function () {
   this.timeout(180_000)
 
   beforeEach(async () => {
-    stopHosts()
+    // resetUserData stops the host a previous app left running.
     resetUserData()
     seedEmptyProject(seedStableWorkspace(), PROJECT_ID, {
       model: 'claude-sonnet-4-6',
@@ -85,7 +73,6 @@ describe('turns in the background host', function () {
   // The suite's own after-test check reads each scenario's status, which the
   // host holds after a relaunch, so the host is stopped only once that is done.
   after(() => {
-    stopHosts()
     resetUserData()
   })
 

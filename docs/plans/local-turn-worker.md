@@ -274,8 +274,9 @@ in it, and folding container runs into it are separate steps, not part of this o
    Signals, faults and update installs stop the host's turns as they stop handed-off ones,
    and with `continueTurnsAfterQuit` off, quit stops them too.
 8. **Experimental first.** The setting `turnsRunInHost` (Experimental, off) routes turns to
-   the host. It becomes the default once a crash mid-turn is shown not to interrupt the turn,
-   in an e2e that kills the app's main process.
+   the host. A crash mid-turn is now shown not to interrupt the turn, in an e2e that kills
+   the app's main process (`tests/e2e/turn-host.e2e.ts`, H5). It becomes the default once
+   the e2e suite passes with it on (H6).
 
 ### Slices
 
@@ -321,8 +322,25 @@ in it, and folding container runs into it are separate steps, not part of this o
     wide, because the host rereads before each turn.
   - Settings that change the registry (plugins, MCP servers, custom tools) are reread, but
     the registry is not rebuilt yet.
-- **H5, crash proof.** e2e that kills the app's main process mid-turn, relaunches and sees
-  the turn finish once with no Retry card. Then `turnsRunInHost` defaults on.
+- **H5, crash proof.** Built. e2e scripted scenarios are set in the host too, over an
+  e2e-only `test-scenario` verb. `tests/e2e/turn-host.e2e.ts` kills the app's main process
+  mid-turn, relaunches and sees the turn finish once with no Retry card, and answers a host
+  turn's approval in the window. It found the follower missing a turn the host took before
+  writing its running status; the link now hands the follower the taken thread directly.
+- **H6, on by default.** Run with the setting on, a sample of seven e2e specs found five
+  that pass with it off and fail with it on, so it stays off until these are fixed:
+  - A host turn's tool card shows `done` in the window while its command still runs
+    (`tool-activity-icon`), and a shell approval the window was never shown was recorded
+    as answered.
+  - Over-limit command output (`agent-tasks-terminal`).
+  - A parent turn's subthreads after a restart (`subthread-orchestration-recovery`).
+  - Quit and crash recovery. A quit the user chose should still stop a host turn and leave
+    the Retry card (`foreground-shell-quit`). A crash no longer needs the app's restart
+    continuation (`reopen-turn-recovery`), which should keep covering the setting off.
+
+  The e2e seed helpers stop the profile's host before they write a new profile, since the
+  host outlives each spec's app and would serve the next one with what it read before.
+
 - **C3** (container runs, below) lands alongside, so a run that ends with no app is
   recorded in its thread straight away.
 
