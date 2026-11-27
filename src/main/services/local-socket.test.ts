@@ -25,15 +25,15 @@ describe('local socket long-profile fallback', { skip: process.platform === 'win
     // case where `mkdirSync`'s mode alone would leave the socket reachable.
     temp = mkdtempSync(join(tmpdir(), 'ls-'))
     chmodSync(temp, 0o1777)
-    savedTmpdir = process.env.TMPDIR
-    process.env.TMPDIR = temp
+    savedTmpdir = process.env['TMPDIR']
+    process.env['TMPDIR'] = temp
     savedUmask = process.umask(0)
   })
 
   afterEach(() => {
     process.umask(savedUmask)
-    if (savedTmpdir === undefined) delete process.env.TMPDIR
-    else process.env.TMPDIR = savedTmpdir
+    if (savedTmpdir === undefined) delete process.env['TMPDIR']
+    else process.env['TMPDIR'] = savedTmpdir
     rmSync(temp, { recursive: true, force: true })
   })
 
