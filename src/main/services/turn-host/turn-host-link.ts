@@ -172,6 +172,9 @@ export class TurnHostLink {
     connection.send({ t: 'hello', version: this.deps.version, protocol: TURN_HOST_PROTOCOL })
     connection.send({ t: 'attach' })
     await hello
+    // The app may have written the profile after the host read it and before
+    // this line was up, when no notice could reach it.
+    if (this.ready) this.send({ t: 'profile-changed' })
     return this.ready
   }
 

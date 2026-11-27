@@ -82,6 +82,28 @@ async function main(): Promise<number> {
   // turn asks here, and the turn's handler puts the question to the window.
   initSshAskpassServer(join(userDataPath, 'turn-host'))
   const runtime = await bootWorkerRuntime(log)
+  const [
+    { getWorkspaceRoot, rereadPersistedWorkspaceRoot },
+    { initSkillsRegistry },
+    { initAgentsRegistry },
+    { registerSkillTools },
+    { reloadMcpServers },
+  ] = await Promise.all([
+    import('../workspace.ts'),
+    import('../skills/skills-registry.ts'),
+    import('../agents/agents-registry.ts'),
+    import('../registry-bootstrap.ts'),
+    import('../mcp/mcp-registry.ts'),
+  ])
+  // As the app does when its window selects a project (workspace-handlers.ts).
+  const workspaceChanged = async (): Promise<void> => {
+    await initSkillsRegistry()
+    await initAgentsRegistry()
+    registerSkillTools(runtime.registry)
+    await reloadMcpServers(runtime.registry).catch((error: unknown) => {
+      log(`could not reload MCP servers for the project: ${String(error)}`)
+    })
+  }
   runtime.teardownOnSignals()
 
   const done = Promise.withResolvers<undefined>()
@@ -92,7 +114,12 @@ async function main(): Promise<number> {
     onIdle: (): void => {
       done.resolve(undefined)
     },
-    reloadProfile: profile.reload,
+    reloadProfile: async (): Promise<void> => {
+      const before = getWorkspaceRoot()
+      await profile.reload()
+      // The app switched projects: what the turns see comes from the new root.
+      if (rereadPersistedWorkspaceRoot() !== before) await workspaceChanged()
+    },
     ...(await testScenarioDependency()),
   })
   forward = (store, changes): void => {
