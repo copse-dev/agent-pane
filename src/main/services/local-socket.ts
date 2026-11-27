@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, rmSync } from 'node:fs'
+import { chmodSync, lstatSync, mkdirSync, rmSync } from 'node:fs'
 import { createConnection, createServer, type Server, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 
@@ -12,14 +12,20 @@ import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
  * run host (`docs/plans/local-turn-worker.md`).
  *
  * One Unix socket (a named pipe on Windows) per process, only reachable by this
- * user. Newline-delimited JSON, each line checked against a schema; a line that
+ * user: the socket sits in a directory this user owns with mode 0700, checked
+ * and tightened when it is served rather than left to the umask or to whatever
+ * mode an existing directory had. Newline-delimited JSON, each line checked against a schema; a line that
  * does not parse is dropped.
  */
 
 /** Unix socket paths are short (104 bytes on macOS); keep well inside that. */
 const MAX_SOCKET_PATH = 100
 
-/** The socket for `kind` and `id` in this profile. */
+/**
+ * The socket for `kind` and `id` in this profile. When the profile path is too
+ * long, the socket goes in a per-user directory under the temp directory
+ * rather than straight in it: on Linux that is the shared `/tmp`.
+ */
 export function localSocketPath(
   userDataPath: string,
   kind: string,
@@ -31,7 +37,26 @@ export function localSocketPath(
   const inProfile = join(userDataPath, 'run', `${kind}-${hash}.sock`)
   return inProfile.length <= MAX_SOCKET_PATH
     ? inProfile
-    : join(tmpdir(), `copse-${kind}-${hash}.sock`)
+    : join(tmpdir(), `copse-${String(process.getuid?.() ?? 'user')}`, `${kind}-${hash}.sock`)
+}
+
+/**
+ * Make `dir` a directory only this user can enter. `mkdirSync`'s mode applies
+ * only to a directory it creates (and the umask can narrow it), so an existing
+ * one is checked: a symlink or another user's directory is refused, and one of
+ * ours with group or other access is tightened.
+ */
+function ensurePrivateDirectory(dir: string): void {
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
+  const stat = lstatSync(dir)
+  if (!stat.isDirectory()) {
+    throw new Error(`Refusing to serve a local socket in ${dir}: it is not a directory.`)
+  }
+  const uid = process.getuid?.()
+  if (uid !== undefined && stat.uid !== uid) {
+    throw new Error(`Refusing to serve a local socket in ${dir}: another user owns it.`)
+  }
+  if ((stat.mode & 0o077) !== 0) chmodSync(dir, 0o700)
 }
 
 function readLines(socket: Socket, onLine: (line: string) => void): void {
@@ -102,7 +127,7 @@ export async function serveLocalLine<In, Out>(
     socket.on('error', leave)
   })
   if (process.platform !== 'win32') {
-    mkdirSync(join(path, '..'), { recursive: true, mode: 0o700 })
+    ensurePrivateDirectory(dirname(path))
     // A socket left by a process that died holds the path.
     rmSync(path, { force: true })
   }
@@ -113,6 +138,9 @@ export async function serveLocalLine<In, Out>(
       resolve()
     })
   })
+  // The directory already keeps others out; this covers a socket made under a
+  // permissive umask should it ever be moved or its directory loosened.
+  if (process.platform !== 'win32') chmodSync(path, 0o600)
   return {
     broadcast: (message): void => {
       for (const socket of clients) write(socket, message)
