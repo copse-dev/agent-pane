@@ -76,6 +76,14 @@ describe('local socket long-profile fallback', { skip: process.platform === 'win
     }
   })
 
+  it('falls back to /tmp when TMPDIR itself is too long for a socket path', () => {
+    const long = join(temp, 'y'.repeat(80))
+    process.env['TMPDIR'] = long
+    const path = localSocketPath(longProfile(), 'container-run', 'host')
+    assert.ok(path.startsWith('/tmp/copse-'), path)
+    assert.ok(path.length <= 100, path)
+  })
+
   it('tightens an existing directory of ours that others could enter', async () => {
     const path = localSocketPath(longProfile(), 'run', 'host')
     mkdirSync(dirname(path), { mode: 0o777 })

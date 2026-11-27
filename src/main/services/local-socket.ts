@@ -34,10 +34,15 @@ export function localSocketPath(
 ): string {
   const hash = createHash('sha256').update(`${userDataPath}\0${id}`).digest('hex').slice(0, 16)
   if (platform === 'win32') return `\\\\.\\pipe\\copse-${kind}-${hash}`
-  const inProfile = join(userDataPath, 'run', `${kind}-${hash}.sock`)
-  return inProfile.length <= MAX_SOCKET_PATH
-    ? inProfile
-    : join(tmpdir(), `copse-${String(process.getuid?.() ?? 'user')}`, `${kind}-${hash}.sock`)
+  const name = `${kind}-${hash}.sock`
+  const inProfile = join(userDataPath, 'run', name)
+  if (inProfile.length <= MAX_SOCKET_PATH) return inProfile
+  const owner = `copse-${String(process.getuid?.() ?? 'user')}`
+  // A long TMPDIR can push even the temp fallback past the limit, so end on
+  // `/tmp`, which is short everywhere; the directory check in
+  // `serveLocalLine` keeps it private either way.
+  const inTemp = join(tmpdir(), owner, name)
+  return inTemp.length <= MAX_SOCKET_PATH ? inTemp : join('/tmp', owner, name)
 }
 
 /**
