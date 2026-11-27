@@ -161,6 +161,31 @@ describe('TurnTranscriptWriter', () => {
     assert.equal((await stored()).status, 'idle')
   })
 
+  it('writes nothing more once the turn is fenced, not even its closing status', async () => {
+    await updateMeta(PROJECT, THREAD, { status: 'idle' })
+    const forwarded: Delivery[] = []
+    const { writer } = harness(
+      () => [],
+      (delivery) => forwarded.push(delivery),
+    )
+    const transcript = writer.begin(PROJECT, THREAD)
+    transcript.fence()
+    transcript.emit({ type: 'text', text: 'Written by a turn that lost its lease.' })
+    transcript.emit({ type: 'done' })
+    transcript.end()
+    await writer.settled(THREAD)
+    const thread = await stored()
+    assert.equal(thread.status, 'idle')
+    assert.deepEqual(
+      thread.messages.map((message) => message.id),
+      ['u1'],
+    )
+    assert.deepEqual(
+      forwarded.filter((delivery) => delivery.chunk.type === 'text'),
+      [],
+    )
+  })
+
   it('does not restore an old interruption in an ordinary human turn snapshot', async () => {
     // The renderer clears its marker after its user-message save has already
     // captured the old metadata. Main must not echo that stale disk marker.

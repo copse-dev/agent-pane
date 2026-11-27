@@ -18,7 +18,9 @@ every Monday.
 **Weekly betas** are cut on schedule without the per-release sign-off below.
 They rely on the gates every change already passes — the full `CI Passed` tier
 on promotion, and signing, notarization, and the packaged smoke test — plus the
-owner's install test before `Publish release artifacts`. Anything that would
+owner's install test before `Publish release artifacts`, which must run within
+30 days of the build ([publication window](releasing-macos.md#publication-window)).
+Anything that would
 need a checklist item below (a data migration, a security or privacy change, a
 known issue) is held by disabling auto-merge on that week's bump PR.
 
@@ -94,6 +96,13 @@ _before_ the version bump reaches `release`, not after.
       `copse-dev/copse-releases` repository. On the current GitHub Team plan,
       provenance attestation joins this path once the source repository is
       public. Do not rebuild or publish locally.
+- [ ] Publish within the artifact retention window: 30 days from the
+      successful `Release (macOS)` run, whose artifacts are the only bytes the
+      publisher accepts. After they expire that build can no longer be
+      published. An open `Release unpublished: <tag>` issue means the window is
+      closing or closed: publish now, or cut past the version by dispatching
+      `Bump release version` with the next version
+      ([publication window](releasing-macos.md#publication-window)).
 - [ ] Confirm the published artifacts and release notes identify the same
       version, channel, minimum OS, and architectures.
 

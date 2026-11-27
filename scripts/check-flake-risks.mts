@@ -2,7 +2,8 @@
  * Static flake-risk ratchet (docs/testing-strategy.md#flake-risk-ratchet).
  *
  * Scans unit tests and e2e specs/helpers for fixed waits, shared-checkout
- * seeding and fixed ports, and compares the per-file counts with
+ * seeding, fixed ports and host-platform gates that hide unit tests from the
+ * Linux run, prints the unit-tier platform inventory, and compares the per-file counts with
  * scripts/flake-risk-baseline.json. A count above the baseline (a new file
  * allows zero) fails with file, line and the preferred alternative. A count
  * below it fails until the baseline is lowered in the same change; `--write`
@@ -27,9 +28,11 @@ import {
   formatFlakeRiskBaseline,
   isE2ePath,
   isUnitTestPath,
-  scanFlakeRisks,
+  rulesMissingFrom,
+  scanTestFile,
   type FlakeRiskBaseline,
 } from './lib/flake-risks.mts'
+import { formatPlatformInventory, type PlatformInventory } from './lib/platform-gates.mts'
 import { decodeWithSchema, safeJsonParse } from './lib/safe-json.mts'
 
 function git(args: string[]): string | null {
@@ -62,7 +65,14 @@ if (listing === null) throw new Error('check-flake-risks: git ls-files failed')
 const paths = [...new Set(listing.split('\0'))]
   .filter((path) => (isUnitTestPath(path) || isE2ePath(path)) && existsSync(path))
   .sort()
-const findings = paths.flatMap((path) => scanFlakeRisks(path, readFileSync(path, 'utf8')))
+const scans = paths.map((path) => [path, scanTestFile(path, readFileSync(path, 'utf8'))] as const)
+const findings = scans.flatMap(([, scan]) => scan.findings)
+const inventories = new Map<string, PlatformInventory>(
+  scans.map(([path, scan]) => [path, scan.inventory]),
+)
+// Not ratcheted: more real per-platform tests (a reported `{ skip }`) are welcome.
+for (const line of formatPlatformInventory(inventories))
+  console.log(`check-flake-risks: unit tests that run on one host only: ${line}`)
 
 let failed = false
 const head = parse(readFileSync(FLAKE_RISK_BASELINE_PATH, 'utf8'), FLAKE_RISK_BASELINE_PATH)
@@ -135,6 +145,7 @@ if (base) {
       parse(baseText, `${base}:${FLAKE_RISK_BASELINE_PATH}`),
       current,
       renames,
+      rulesMissingFrom(baseText),
     )
     for (const problem of growth) {
       failed = true
