@@ -44577,15 +44577,24 @@ function parseModelLineage(id) {
   }
   const gpt = GPT_ID.exec(id);
   if (gpt) {
-    const version2 = gpt[1];
-    if (version2 === void 0) return null;
-    const tier = gpt[2];
+    const major = gpt[1];
+    if (major === void 0) return null;
+    const minor = gpt[2];
+    const tier = gpt[3];
     return {
       lineage: tier === void 0 ? "gpt" : `gpt-${tier}`,
-      version: version2.split(".").map(Number)
+      version: minor === void 0 ? [Number(major)] : [Number(major), Number(minor)]
     };
   }
   return null;
+}
+function releaseSpelling(id) {
+  const gpt = GPT_ID.exec(id);
+  const major = gpt?.[1];
+  const minor = gpt?.[2];
+  if (major === void 0 || minor === void 0) return id;
+  const tier = gpt?.[3];
+  return `gpt-${major}.${minor}${tier === void 0 ? "" : `-${tier}`}`;
 }
 function compareVersions(a4, b2) {
   for (let i2 = 0; i2 < Math.max(a4.length, b2.length); i2++) {
@@ -44613,7 +44622,7 @@ var CLAUDE_ID, GPT_ID;
 var init_model_version_suppression = __esm({
   "packages/llm/src/model-version-suppression.ts"() {
     CLAUDE_ID = /^claude-(opus|sonnet|haiku|fable)-(\d{1,2}(?:-\d{1,2})?)$/;
-    GPT_ID = /^gpt-(\d{1,2}(?:\.\d{1,2})?)(?:-([a-z][a-z0-9]*))?$/;
+    GPT_ID = /^gpt-(\d{1,2})(?:[.-](\d{1,2}))?(?:-([a-z][a-z0-9]*))?$/;
   }
 });
 
@@ -44755,6 +44764,9 @@ var init_model_coverage = __esm({
 function modelDisplayLabel(model) {
   return displayModelLabel(model);
 }
+function successorDisplayLabel(lineageId) {
+  return cloudModelDisplayLabel(releaseSpelling(lineageId));
+}
 async function pluginModelOptions(api, includeAgentModels, current) {
   if (!includeAgentModels) return [];
   try {
@@ -44789,8 +44801,8 @@ function acpAgentOptions(agents) {
       for (const model of models) {
         const label = acpModelChoiceLabel(model, ": ");
         const versioned = acpModelVersionName(model.description);
-        const lineageId = resolveAgentModelIdentity(model.value, versioned, model.label, label);
-        const hint = lineageId === null ? null : modelIntellectHint(lineageId);
+        const lineageId = resolveAgentModelIdentity(model.value, versioned, model.label, label) ?? model.value;
+        const hint = modelIntellectHint(lineageId);
         options.push({
           retention: ACP_RETENTION_NOTICE,
           value: acpModelValue(agent.id, model.value),
@@ -44961,12 +44973,12 @@ async function remoteAgentOptions(api, isAvailable, current, preferAcpForClaude 
     for (const model of liveModels) {
       const vendorLabel = model.label || model.id;
       const label = canonicalModelLabel(vendorLabel);
-      const lineageId = resolveAgentModelIdentity(model.id, vendorLabel, label);
-      const hint = lineageId === null ? null : modelIntellectHint(lineageId);
+      const lineageId = resolveAgentModelIdentity(model.id, vendorLabel, label) ?? model.id;
+      const hint = modelIntellectHint(lineageId);
       add(
         remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR, model.id),
         hint ? `${label}: ${hint}` : label,
-        lineageId ?? void 0
+        lineageId
       );
     }
     const currentSelection = parseRemoteAgentModelSelection(current);
@@ -45200,7 +45212,7 @@ async function fetchModelOptions(api, current, opts = {}) {
     return [
       {
         ...option,
-        label: `${option.label} (superseded by ${cloudModelDisplayLabel(successor)})`,
+        label: `${option.label} (superseded by ${successorDisplayLabel(successor)})`,
         disabled: true,
         // A row already disabled for another reason cannot run, so it keeps
         // the unavailable treatment rather than reading as the running model.
