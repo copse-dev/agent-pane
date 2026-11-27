@@ -29,7 +29,6 @@ describe('repoNetworkFactsFromConfig', () => {
   it('keeps the first url and pushurl per remote', () => {
     const facts = repoNetworkFactsFromConfig(
       '[remote "origin"]\n\turl = https://a.example.com/x\n\turl = https://b.example.com/x\n\tpushurl = https://c.example.com/x\n',
-      ['/w'],
     )
     assert.deepEqual(facts.remotes.get('origin'), {
       url: 'https://a.example.com/x',
@@ -37,30 +36,31 @@ describe('repoNetworkFactsFromConfig', () => {
     })
   })
 
-  it('treats a relative or in-workspace hooks path as workspace hooks', () => {
+  it('treats any configured hooks path as unprotected', () => {
+    assert.equal(repoNetworkFactsFromConfig('[core]\n\thooksPath = .husky\n').workspaceHooks, true)
     assert.equal(
-      repoNetworkFactsFromConfig('[core]\n\thooksPath = .husky\n', ['/w']).workspaceHooks,
+      repoNetworkFactsFromConfig('[core]\n\thooksPath = /w/hooks\n').workspaceHooks,
       true,
     )
     assert.equal(
-      repoNetworkFactsFromConfig('[core]\n\thooksPath = /w/hooks\n', ['/w']).workspaceHooks,
+      repoNetworkFactsFromConfig('[core]\n\thooksPath = /h/hooks\n').workspaceHooks,
       true,
-    )
-    assert.equal(
-      repoNetworkFactsFromConfig('[core]\n\thooksPath = /h/hooks\n', ['/w']).workspaceHooks,
-      false,
     )
   })
 })
 
 describe('hooks directory', () => {
   it('pins the default .git/hooks, and refuses one in any writable root', () => {
-    assert.equal(repoNetworkFactsFromConfig('', ['/w'], '/w/.git/hooks').hooksPath, '/w/.git/hooks')
-    const temp = repoNetworkFactsFromConfig('[core]\n\thooksPath = /tmp/h\n', ['/w', '/tmp'])
+    assert.equal(repoNetworkFactsFromConfig('', '/w/.git/hooks').hooksPath, '/w/.git/hooks')
+    const temp = repoNetworkFactsFromConfig('[core]\n\thooksPath = /tmp/h\n')
     assert.equal(temp.workspaceHooks, true)
     assert.equal(temp.hooksPath, null)
-    // A default hooks dir not named `.git/hooks` inside a writable root has no mandatory deny.
-    assert.equal(repoNetworkFactsFromConfig('', ['/tmp'], '/tmp/r.git/hooks').workspaceHooks, true)
+    // A default hooks dir not named `.git/hooks` has no mandatory deny.
+    assert.equal(repoNetworkFactsFromConfig('', '/srv/r.git/hooks').workspaceHooks, true)
+    // Any configured hooks path counts, wherever it points.
+    const own = repoNetworkFactsFromConfig('[core]\n\thooksPath = /h/hooks\n', '/w/.git/hooks')
+    assert.equal(own.workspaceHooks, true)
+    assert.equal(own.hooksPath, null)
   })
 })
 
@@ -72,7 +72,7 @@ describe('repoNetworkFactsFromConfig unsafe rewrites', () => {
       '[http]\n\tproxy = http://evil.example:8080\n',
       '[http "https://github.com"]\n\tproxy = http://evil.example:8080\n',
     ]) {
-      assert.notDeepEqual(repoNetworkFactsFromConfig(extra, ['/w']).unsafeConfig, [], extra)
+      assert.notDeepEqual(repoNetworkFactsFromConfig(extra).unsafeConfig, [], extra)
     }
   })
 })

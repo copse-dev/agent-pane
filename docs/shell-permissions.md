@@ -536,9 +536,10 @@ All of these must hold, or the command takes its ordinary path unchanged
   includes another file refuses the scope. With `extensions.worktreeConfig` on, the worktree's own
   `config.worktree` is judged the same way, but only where contained commands cannot write it: the
   primary checkout's, or a registered Copse worktree's, whose sandbox profile denies writes to that
-  file. Any other linked worktree refuses. A `core.hooksPath` that is relative or inside the
-  workspace or a temp directory refuses `push`; `fetch`, `ls-remote` and `clone` run with hooks
-  off.
+  file. Any other linked worktree refuses. Any configured `core.hooksPath` refuses `push`, which may
+  only run the repository's own `.git/hooks` (a mandatory write-deny): contained commands also
+  write a thread's own scratch `$TMPDIR`, which no fixed list of roots names. `fetch`, `ls-remote`
+  and `clone` run with hooks off.
 
 That scan is advisory where the config is writable. A registered Copse worktree's shared config
 and `hooks/` are write-denied, but a shared checkout's `.git/config` is not (`git push -u` and `git
@@ -550,9 +551,9 @@ internal git also switches off (`INTERNAL_GIT_CONFIG`: `core.fsmonitor`,
 `core.askPass`, `fetch.recurseSubmodules` and `push.recurseSubmodules` off,
 `GIT_ALLOW_PROTOCOL=https:ssh` (so no `ext::`, `file://` or remote helper a `remote.*.vcs` names),
 `GIT_SSH_COMMAND=/usr/bin/ssh` and `GIT_ASKPASS=/usr/bin/false`. Hooks are `/dev/null` for every
-shape but a push, which gets the hooks directory the gate judged write-protected (an absolute
-`core.hooksPath` outside every writable root, or the repository's own `.git/hooks`, a mandatory
-write-deny), passed back so a later edit cannot move it. `gh` finds its repository by running `git`,
+shape but a push, which gets the repository's own `.git/hooks`, passed back so a later
+`core.hooksPath` edit cannot move it. `core.alternateRefsCommand` is the shell builtin `true`,
+which lists no alternate refs. `gh` finds its repository by running `git`,
 which must therefore resolve outside the writable roots as well, and those `git` calls read
 attributes from the empty tree (`GIT_ATTR_SOURCE`), so no filter driver applies. Fetch, ls-remote
 and push read no working-tree content, so the filter drivers an override cannot name never run.

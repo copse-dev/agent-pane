@@ -67,7 +67,6 @@ describe('scoped git env against planted config', () => {
   function scopedEnv(command: string, local: string): Record<string, string> {
     const facts = repoNetworkFactsFromConfig(
       '[remote "origin"]\n\turl = https://github.com/acme/app\n',
-      [local],
       join(local, '.git', 'hooks'),
     )
     const assessment = planScopedNetwork(command, facts)

@@ -27,7 +27,7 @@ const CONFIG = `[core]
 `
 
 function facts(extra = ''): RepoNetworkFacts {
-  return repoNetworkFactsFromConfig(CONFIG + extra, [root], `${root}/.git/hooks`)
+  return repoNetworkFactsFromConfig(CONFIG + extra, `${root}/.git/hooks`)
 }
 
 /** The execution-time config entries of a scoped env, in order. */
@@ -239,20 +239,29 @@ describe('planScopedNetwork', () => {
     assert.match(none('git push origin feature', husky), /hooks/)
     assert.equal(plan('git fetch origin', husky).disableGitHooks, true)
     // Temp directories count as writable, like the workspace.
-    const temp = repoNetworkFactsFromConfig(CONFIG + '[core]\n\thooksPath = /tmp/h\n', [
-      root,
-      '/tmp',
-    ])
+    const temp = repoNetworkFactsFromConfig(CONFIG + '[core]\n\thooksPath = /tmp/h\n')
     assert.match(none('git push origin feature', temp), /hooks/)
-    // An absolute hooks directory outside them is the user's own, and pinned.
-    const own = plan(
-      'git push origin feature',
-      facts('[core]\n\thooksPath = /Users/me/.githooks\n'),
-    )
-    assert.equal(own.hooksPath, '/Users/me/.githooks')
+    // Any configured hooks path refuses a push, even an absolute one outside
+    // the workspace: a thread's own scratch $TMPDIR is writable and on no
+    // fixed list of roots.
+    for (const path of [
+      '/Users/me/.githooks',
+      '/Users/me/Library/Application Support/Copse/tmp/threads/abc123/val-hooks',
+    ]) {
+      assert.match(
+        none('git push origin feature', facts(`[core]\n\thooksPath = ${path}\n`)),
+        /hooks/,
+        path,
+      )
+      // A fetch still runs, with hooks off.
+      assert.equal(
+        plan('git fetch origin', facts(`[core]\n\thooksPath = ${path}\n`)).hooksPath,
+        null,
+      )
+    }
     // Without a known default hooks directory a push cannot pin one.
     assert.match(
-      none('git push origin feature', repoNetworkFactsFromConfig(CONFIG, [root])),
+      none('git push origin feature', repoNetworkFactsFromConfig(CONFIG)),
       /hooks directory/,
     )
   })
@@ -316,7 +325,7 @@ describe('scopedNetworkEnv', () => {
       // A shared checkout's config can be rewritten after the gate's scan, so
       // these entries, which outrank every config file, are what holds.
       assert.equal(lastValue(env, 'core.fsmonitor'), 'false')
-      assert.equal(lastValue(env, 'core.alternateRefsCommand'), '')
+      assert.equal(lastValue(env, 'core.alternateRefsCommand'), 'true')
       assert.equal(lastValue(env, 'core.askPass'), '')
       assert.equal(lastValue(env, 'fetch.recurseSubmodules'), 'false')
       assert.equal(lastValue(env, 'submodule.recurse'), 'false')

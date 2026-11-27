@@ -17,7 +17,7 @@ import { AUTO_APPROVAL_LEVEL_SETTING } from '@shared/auto-approval.ts'
 import { setProjectSandboxEnabled } from '../project-sandbox/enabled.ts'
 import { baseSandboxConfig } from '../project-sandbox/config.ts'
 import { activeSandboxNetworkScopeLabels } from '../project-sandbox/network-scope.ts'
-import { portBindingWorkerPath } from '../project-sandbox/spawn.ts'
+import { portBindingWorkerPath, setPortBindingWorkerPathForTest } from '../project-sandbox/spawn.ts'
 import { setApprovalHandler, type ApprovalRequest } from '../services/approval.ts'
 import { clearGitRemotesCache } from '../services/security/git-remotes.ts'
 import { ensureShellCommandPermitted } from '../services/security/permission-gate.ts'
@@ -111,9 +111,11 @@ describe('run_shell network scope', () => {
     const fixture = realpathSync.native(
       mkdtempSync(join(TEST_OUTPUT_DIR, 'network-scope-fixtures', 'run-')),
     )
+    // Its own bundle: port-binding-worker.test.ts builds the default path with
+    // other stubs, and the runner runs test files in parallel.
+    cleanups.push(setPortBindingWorkerPathForTest(join(fixture, 'port-binding-worker.js')))
     cleanups.push(() => {
       rmSync(fixture, { recursive: true, force: true })
-      rmSync(portBindingWorkerPath(), { force: true })
     })
     const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-scoped-shell-')))
     cleanups.push(() => {

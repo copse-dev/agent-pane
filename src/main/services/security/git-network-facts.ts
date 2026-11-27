@@ -1,5 +1,5 @@
 import { realpathSync } from 'node:fs'
-import { isAbsolute, join, resolve, sep } from 'node:path'
+import { join } from 'node:path'
 import { readSmallGitFile, resolveGitCommonDir, resolveGitDirs } from './git-remotes.ts'
 import { pinnedRemotes, pinRemotes } from './remote-pins.ts'
 
@@ -38,12 +38,12 @@ export interface RepoNetworkFacts {
    * makes git able to run code the facts cannot vouch for, so the scope is refused.
    */
   unsafeConfig: readonly string[]
-  /** `core.hooksPath`, or the default hooks directory, is somewhere contained commands write. */
+  /** A `core.hooksPath` is configured, or the default hooks directory is not a protected `.git/hooks`. */
   workspaceHooks: boolean
   /**
-   * The hooks directory git would use, when it is write-protected: an absolute
-   * `core.hooksPath` outside every writable root, or the repository's own
-   * `hooks/` (a mandatory write-deny). Null when unknown. A push passes it back
+   * The hooks directory git would use, when it is write-protected: the
+   * repository's own `.git/hooks` (a mandatory write-deny), and only when no
+   * `core.hooksPath` is configured. Null otherwise. A push passes it back
    * to git at execution time, so a later config edit cannot move it.
    */
   hooksPath: string | null
@@ -236,11 +236,7 @@ export function pinRemotesAtTrust(root: string): void {
   if (!dirs) return
   const shared = readSmallFile(join(dirs.commonDir, 'config'))
   if (shared === null) return
-  pinRemotes(canonical(dirs.commonDir), repoNetworkFactsFromConfig(shared, [root]).remotes)
-}
-
-function isWithin(path: string, root: string): boolean {
-  return path === root || path.startsWith(root + sep)
+  pinRemotes(canonical(dirs.commonDir), repoNetworkFactsFromConfig(shared).remotes)
 }
 
 function canonical(path: string): string {
@@ -258,7 +254,6 @@ function readSmallFile(path: string): string | null {
 /** Derive facts from already-read config text. Pure; exported for tests. */
 export function repoNetworkFactsFromConfig(
   configText: string,
-  workspaceRoots: readonly string[],
   defaultHooksDir: string | null = null,
 ): RepoNetworkFacts {
   const remotes = new Map<string, RemoteUrls>()
@@ -279,19 +274,17 @@ export function repoNetworkFactsFromConfig(
     // Like git, the last `core.hooksPath` wins.
     if (section === 'core' && name === 'hookspath') configuredHooks = entry.value
   }
-  const within = (path: string): boolean =>
-    workspaceRoots.some((root) => isWithin(resolve(path), root) || isWithin(canonical(path), root))
+  // A push runs hooks, so it may only use the repository's own `.git/hooks`,
+  // a mandatory write-deny wherever it is named that way. Any configured
+  // `core.hooksPath` refuses: contained commands write in places no fixed list
+  // of roots names (a thread's own scratch `$TMPDIR` among them), so "outside
+  // the writable roots" cannot be judged from here.
   let hooksPath: string | null = null
   if (configuredHooks !== null) {
-    if (!isAbsolute(configuredHooks) || within(configuredHooks)) workspaceHooks = true
-    else hooksPath = configuredHooks
-  } else if (defaultHooksDir !== null) {
-    // `<git dir>/hooks` is a mandatory write-deny wherever it is named
-    // `.git/hooks`; any other spelling counts only outside the writable roots.
-    if (/[\\/]\.git[\\/]hooks$/.test(defaultHooksDir) || !within(defaultHooksDir)) {
-      hooksPath = defaultHooksDir
-    } else workspaceHooks = true
-  }
+    workspaceHooks = true
+  } else if (defaultHooksDir !== null && /[\\/]\.git[\\/]hooks$/.test(defaultHooksDir)) {
+    hooksPath = defaultHooksDir
+  } else if (defaultHooksDir !== null) workspaceHooks = true
   return { remotes, unsafeConfig: [...unsafe], workspaceHooks, hooksPath }
 }
 
@@ -321,7 +314,6 @@ export function readRepoNetworkFacts(
   executionRoot: string,
   projectRoot: string | null,
   protectedWorktreeGitDir: string | null = null,
-  extraWritableRoots: readonly string[] = [],
 ): RepoNetworkFacts | null {
   const dirs = resolveGitDirs(executionRoot)
   if (!dirs) return null
@@ -347,18 +339,8 @@ export function readRepoNetworkFacts(
       unprotectedLayer = true
     }
   }
-  const roots = [
-    ...new Set([
-      executionRoot,
-      canonical(executionRoot),
-      ...(projectRoot ? [projectRoot, canonical(projectRoot)] : []),
-      // Temp directories: contained commands write there too, so a hooks
-      // directory inside one is as plantable as one in the workspace.
-      ...extraWritableRoots.flatMap((root) => [root, canonical(root)]),
-    ]),
-  ]
   const facts = vouchForRemotes(
-    repoNetworkFactsFromConfig(texts.join('\n'), roots, canonical(join(commonDir, 'hooks'))),
+    repoNetworkFactsFromConfig(texts.join('\n'), canonical(join(commonDir, 'hooks'))),
     canonical(commonDir),
   )
   return unprotectedLayer

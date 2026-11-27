@@ -439,8 +439,23 @@ function spawnSandboxHost(
 }
 
 /** Bundled ASRT owner for approved loopback-binding background tasks. */
+let portBindingWorkerPathOverride: string | null = null
+
 export function portBindingWorkerPath(): string {
-  return join(__dirname, 'port-binding-worker.js')
+  return portBindingWorkerPathOverride ?? join(__dirname, 'port-binding-worker.js')
+}
+
+/**
+ * @internal test helper: point the host at a test's own worker bundle, so test
+ * files that build the bundle with different runtime stubs can run in
+ * parallel without overwriting each other's. Returns the restore function.
+ */
+export function setPortBindingWorkerPathForTest(path: string | null): () => void {
+  const previous = portBindingWorkerPathOverride
+  portBindingWorkerPathOverride = path
+  return () => {
+    portBindingWorkerPathOverride = previous
+  }
 }
 
 const portBindingViolationCounts = new WeakMap<ChildProcess, number>()

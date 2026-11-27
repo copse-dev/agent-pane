@@ -371,6 +371,9 @@ const SCOPED_GIT_OVERRIDES: ReadonlyArray<[string, string]> = [
       return [entry.slice(0, eq), entry.slice(eq + 1)]
     },
   ),
+  // `true` (a shell builtin) lists no alternate refs; an empty value makes some
+  // git versions print "cannot run".
+  ['core.alternateRefsCommand', 'true'],
   ['core.askPass', ''],
   ['fetch.recurseSubmodules', 'false'],
   ['push.recurseSubmodules', 'no'],

@@ -1405,7 +1405,6 @@ export function scopedNetworkRunFor(
       executionRoot,
       projectRoot,
       getInternalWorkspaceRootRegistration(executionRoot)?.gitDir ?? null,
-      [darwinUserTempDir(), tmpdir(), '/tmp'].filter((root) => root !== null),
     ),
   )
   if (assessment.action !== 'scope') return null
