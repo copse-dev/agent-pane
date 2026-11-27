@@ -1609,6 +1609,66 @@ describe('ensureShellCommandPermitted — auto-approval classifier', () => {
   })
 })
 
+describe('ensureShellCommandPermitted — workspace trust offer', () => {
+  /** Run the gate in an untrusted repo and return the prompt it raised. */
+  async function promptFor(
+    command: string,
+    opts: { level?: AutoApprovalLevel; sandboxEnabled?: boolean } = {},
+  ): Promise<ApprovalRequest | null> {
+    setPermissionGateForTests(null)
+    const root = mkdtempSync(join(tmpdir(), 'copse-gate-trust-offer-'))
+    mkdirSync(join(root, '.git'))
+    writeFileSync(
+      join(root, '.git', 'config'),
+      '[remote "origin"]\n\turl = https://example.com/x.git\n',
+    )
+    clearGitRemotesCache()
+    const restore = setWorkspaceRootForTest(root)
+    await setSetting(AUTO_APPROVAL_LEVEL_SETTING, opts.level ?? 'remote-write')
+    await setSetting('safetyClassifierEnabled', false)
+    const seen: { request: ApprovalRequest | null } = { request: null }
+    setApprovalHandler((request) => {
+      seen.request = request
+      return Promise.resolve({ approved: false, remember: false })
+    })
+    try {
+      await runWithWorkspaceRoot(root, () =>
+        ensureShellCommandPermitted(command, {
+          sandboxEnabled: opts.sandboxEnabled ?? true,
+          autoRun: true,
+          executionRoot: root,
+        }),
+      )
+      const { request } = seen
+      if (request) assert.equal(request.workspaceTrustOffer?.root ?? root, root)
+      return request
+    } finally {
+      setApprovalHandler(null)
+      await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+      restore()
+      clearGitRemotesCache()
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
+
+  it('offers trust on a prompt the tiers would have skipped in a trusted project', async () => {
+    const request = await promptFor('git push origin main')
+    assert.ok(request?.workspaceTrustOffer, 'untrusted is the only reason this prompt exists')
+  })
+
+  it('does not offer trust when the prompt would remain after trusting', async () => {
+    assert.equal(
+      (await promptFor('git push origin main', { level: 'read' }))?.workspaceTrustOffer,
+      undefined,
+    )
+    assert.equal(
+      (await promptFor('git push origin main', { sandboxEnabled: false }))?.workspaceTrustOffer,
+      undefined,
+    )
+    assert.equal((await promptFor('curl https://example.com'))?.workspaceTrustOffer, undefined)
+  })
+})
+
 describe('custom tool permission', () => {
   it('auto-allows a remembered tool without requiresApproval (no prompt)', async () => {
     setPermissionGateForTests(null)
