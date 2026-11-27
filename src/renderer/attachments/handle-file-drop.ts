@@ -140,7 +140,7 @@ async function attachDroppedFile(
   }
 
   const absPath = diskPathOf(file)
-  if (absPath && workspaceRoot) {
+  if (absPath && workspaceRoot && workspaceRelativePath(absPath, workspaceRoot) !== null) {
     await attachWorkspacePath(absPath, handlers, api, workspaceRoot, owner)
     return
   }

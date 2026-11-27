@@ -117,9 +117,13 @@ describe('attaching dropped files', () => {
   it("asks the preload for an OS-dropped file's disk path (File.path is gone since Electron 32)", async () => {
     const paths = new Map<File, string>()
     const inWorkspace = fakeFile('notes.md', 'text/markdown')
-    const outside = fakeFile('todo.txt', 'text/plain')
+    const outside = new File(['selected external contents'], 'artwork.ai', {
+      type: 'application/postscript',
+    })
+    const sibling = new File(['sibling contents'], 'notes.txt', { type: 'text/plain' })
     paths.set(inWorkspace, '/repo/docs/notes.md')
-    paths.set(outside, '/home/me/todo.txt')
+    paths.set(outside, '/home/me/artwork.ai')
+    paths.set(sibling, '/repo-other/notes.txt')
     window.copseFiles = { pathForFile: (file): string => paths.get(file) ?? '' }
     try {
       const { handlers, recorded } = recordingHandlers()
@@ -137,12 +141,16 @@ describe('attaching dropped files', () => {
         projectId: 'p',
         threadId: 't',
       })
-      await attachFiles([outside], handlers, readApi, null)
+      await attachFiles([outside, sibling], handlers, readApi, '/repo', {
+        projectId: 'p',
+        threadId: 't',
+      })
       assert.deepEqual(reads, ['/repo/docs/notes.md'])
-      assert.deepEqual(
-        recorded.files.map((file) => file.path),
-        ['docs/notes.md', '/home/me/todo.txt'],
-      )
+      assert.deepEqual(recorded.files, [
+        { path: 'docs/notes.md', content: 'from workspace' },
+        { path: '/home/me/artwork.ai', content: 'selected external contents' },
+        { path: '/repo-other/notes.txt', content: 'sibling contents' },
+      ])
     } finally {
       delete window.copseFiles
     }
