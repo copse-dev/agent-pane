@@ -15,7 +15,6 @@ export {
   afterSandboxedCommand,
   isProjectSandboxEnabled,
   sandboxViolationCountForCommand,
-  sandboxViolationsAreNetworkOnlyForCommand,
   settledSandboxViolationCount,
   sandboxViolationCountForBackgroundProcess,
 } from './spawn.ts'
@@ -55,7 +54,9 @@ export async function initProjectSandbox(): Promise<void> {
   // runs back to back (a CI runner, a dev box) otherwise only ever accumulates.
   const reaped = reapOrphanedSandboxBridges()
   if (reaped.length > 0) {
-    console.log(`[project-sandbox] reaped ${String(reaped.length)} orphaned ASRT network bridge(s)`)
+    console.log(
+      `[project-sandbox] reaped ${String(reaped.length)} orphaned ASRT helper process(es)`,
+    )
   }
 
   try {
@@ -70,10 +71,12 @@ export async function initProjectSandbox(): Promise<void> {
         console.warn(`[project-sandbox] network denied: ${host}:${String(port ?? '?')}`)
         return Promise.resolve(false)
       },
-      // The macOS log monitor is the only producer of the violation store that
-      // a verified sandbox block is judged from (`sandboxViolationCountForCommand`).
-      // With it off, every count read 0, so no block ever offered the outside
-      // retry `docs/shell-permissions.md` describes.
+      // The macOS log monitor records seatbelt file denials in the violation
+      // store a verified sandbox block is judged from
+      // (`sandboxViolationCountForCommand`); the network proxy records refused
+      // connections there on every platform. With the monitor off, no file
+      // block on macOS ever offered the outside retry
+      // `docs/shell-permissions.md` describes.
       SANDBOX_VIOLATION_MONITOR,
     )
     if (!SandboxManager.isSandboxingEnabled()) {

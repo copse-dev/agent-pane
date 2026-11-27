@@ -260,28 +260,12 @@ describe('run_shell unsandboxed retry of a piped command (pipefail)', () => {
     return { prompts, outcome }
   }
 
-  it('auto-approves the retry from the raw command, not the injected pipefail line', async () => {
-    // `git fetch origin` alone is a read-tier shape; the retry used to be judged
-    // on `set -o pipefail\n…`, which no tier recognises, so it prompted.
+  it('asks before retrying outside after a network denial, even for a read-tier shape', async () => {
+    // `git fetch origin` is a read-tier shape the classifier would run outside
+    // without asking at the gate. A denial the sandbox reported still asks: the
+    // command chose what to reach, so its shape says nothing about the refusal.
     const { prompts, outcome } = await runFailingSandboxedPipeline(
       'git fetch origin 2>&1 | tail -5',
-    )
-    assert.deepEqual(
-      prompts.map((p) => p.title),
-      [],
-    )
-    assert.notEqual(outcome, 'User declined to run outside the sandbox.')
-    // The retry replaced the sandboxed attempt's result.
-    assert.ok(!outcome.includes(SANDBOXED_OUTPUT), outcome)
-  })
-
-  it('asks before retrying outside after a file denial, even for a read-tier shape', async () => {
-    // The same `git fetch origin` auto-approves after a network denial above. A
-    // file denial can be the sandbox refusing a protected credential read
-    // through a workspace symlink: the command's shape says nothing about that.
-    const { prompts, outcome } = await runFailingSandboxedPipeline(
-      'git fetch origin 2>&1 | tail -5',
-      'git(2) deny(1) file-read-data /Users/someone/.ssh/id_ed25519',
     )
     assert.equal(outcome, 'User declined to run outside the sandbox.')
     assert.deepEqual(
@@ -290,13 +274,10 @@ describe('run_shell unsandboxed retry of a piped command (pipefail)', () => {
     )
   })
 
-  it('asks before retrying a local-write shape outside after a network denial', async () => {
-    // The local-write tier is on, so `git commit` would auto-approve at the
-    // gate. Outside the sandbox its repository hooks run uncontained, and the
-    // network denial says nothing about them, so only the read tier answers.
+  it('asks before retrying a local-write shape outside after a file write denial', async () => {
     const { prompts, outcome } = await runFailingSandboxedPipeline(
       'git commit -m wip 2>&1 | tail -5',
-      'deny(1) network-outbound',
+      'git(2) deny(1) file-write-create /tmp/project/.git/hooks/x',
       'local-write',
     )
     assert.equal(outcome, 'User declined to run outside the sandbox.')
@@ -304,6 +285,17 @@ describe('run_shell unsandboxed retry of a piped command (pipefail)', () => {
       prompts.map((p) => p.cause),
       ['shell-sandbox-retry'],
     )
+  })
+
+  it('offers no outside retry when the only denial was a refused read', async () => {
+    // A red test run that also read an optional file under home (`~/.npmrc`)
+    // failed for its own reasons: the refused read is not a sandbox block.
+    const { prompts, outcome } = await runFailingSandboxedPipeline(
+      'pnpm test 2>&1 | tail -5',
+      'pnpm(5) deny(1) file-read-data /Users/someone/.npmrc',
+    )
+    assert.deepEqual(prompts, [])
+    assert.ok(outcome.includes(SANDBOXED_OUTPUT), outcome)
   })
 
   it('shows the agent-authored command, without pipefail, when the retry prompts', async () => {

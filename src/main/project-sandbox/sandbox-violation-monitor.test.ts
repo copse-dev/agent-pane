@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
 import { initProjectSandbox, isProjectSandboxEnabled, shutdownProjectSandbox } from './index.ts'
-import { blockingViolationsAreNetworkOnly, countBlockingViolations } from './spawn.ts'
+import { countBlockingViolations } from './spawn.ts'
 import { runShellOnce, type ShellRunResult } from '../services/exec/foreground-shell-process.ts'
 import { detectSandboxFailure } from '../services/security/sandbox-failure.ts'
 import { setGitAvailableForTest } from '../services/tool-availability.ts'
@@ -17,6 +17,10 @@ describe('countBlockingViolations', () => {
       countBlockingViolations([
         line('bash(1) deny(1) sysctl-read kern.iossupportversion'),
         line('git(2) deny(1) mach-lookup com.apple.coreservices.launchservicesd'),
+        // Toolchains read optional files under home on every run (`~/.npmrc`,
+        // `$CARGO_HOME/config.toml`, Python's user site), so a refused read
+        // says nothing about why a red test run failed.
+        line('pnpm(5) deny(1) file-read-data /Users/someone/.npmrc'),
       ]),
       0,
     )
@@ -27,44 +31,10 @@ describe('countBlockingViolations', () => {
         line('curl(4) deny(1) network-outbound 1.1.1.1:443'),
         line('git(2) deny(1) sysctl-read kern.iossupportversion'),
       ]),
-      3,
+      2,
     )
     // A line in any other shape (a proxy or seccomp report) still counts.
     assert.equal(countBlockingViolations([line('network denied: example.com:443')]), 1)
-  })
-})
-
-describe('blockingViolationsAreNetworkOnly', () => {
-  const line = (text: string): { line: string } => ({ line: text })
-
-  it('holds only when every blocking denial is a seatbelt network denial', () => {
-    assert.equal(
-      blockingViolationsAreNetworkOnly([
-        line('curl(4) deny(1) network-outbound 1.1.1.1:443'),
-        // Incidental denials are not blocking, so they do not spoil it.
-        line('git(2) deny(1) sysctl-read kern.iossupportversion'),
-      ]),
-      true,
-    )
-  })
-
-  it('fails closed for a file denial, an unknown shape or no blocking denial', () => {
-    // A credential read through a workspace symlink is a file denial.
-    assert.equal(
-      blockingViolationsAreNetworkOnly([
-        line('curl(4) deny(1) network-outbound 1.1.1.1:443'),
-        line('grep(3) deny(1) file-read-data /Users/someone/.ssh/id_ed25519'),
-      ]),
-      false,
-    )
-    assert.equal(blockingViolationsAreNetworkOnly([line('network denied: example.com:443')]), false)
-    assert.equal(
-      blockingViolationsAreNetworkOnly([
-        line('bash(1) deny(1) sysctl-read kern.iossupportversion'),
-      ]),
-      false,
-    )
-    assert.equal(blockingViolationsAreNetworkOnly([]), false)
   })
 })
 
@@ -140,6 +110,15 @@ describe('macOS sandbox violation monitor', () => {
     const missing = await run('ls does-not-exist', project)
     assert.notEqual(missing.exitCode, 0)
     assert.equal(missing.sandboxViolationCount, 0)
+    // A failing run that also had a read refused, as a toolchain reading an
+    // optional file under home does, is not a block either.
+    const homeFile = join(homedir(), `.copse-violation-monitor-${String(process.pid)}`)
+    writeFileSync(homeFile, 'x')
+    cleanups.push(homeFile)
+    const readDenied = await run(`cat '${homeFile}'; exit 1`, project)
+    assert.notEqual(readDenied.exitCode, 0)
+    assert.match(readDenied.output, /Operation not permitted/)
+    assert.equal(readDenied.sandboxViolationCount, 0)
     const ok = await run('mkdir allowed && touch allowed/file', project)
     assert.equal(ok.exitCode, 0, ok.output)
     assert.equal(ok.sandboxViolationCount, 0)

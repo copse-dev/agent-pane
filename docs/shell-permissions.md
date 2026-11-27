@@ -377,11 +377,11 @@ still prompt when the OS sandbox is unavailable.
 This matrix describes standard shell policy. Explicit trusted-command grants, per-tool overrides,
 Guarded YOLO and attested unattended containers have the separate rules above.
 
-| Situation                                | Sandbox-contained command                                                    | Hard-external command (network download, `git push`, install, `~/...`)                                                               | Ambiguous “may reach” command (`gh`, `nc`, cloud CLIs, `open <url>`)                                                                                                                                                             |
-| ---------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **macOS ASRT / Linux bubblewrap active** | Auto-runs inside the project sandbox. The model classifier is not consulted. | Prompts first, then runs outside the sandbox. Recognised low-risk shapes (`git push origin`) may skip that prompt via auto-approval. | Auto-runs inside the sandbox. A verified block offers retry outside. This includes opaque interpreter heredocs, whose effects the sandbox contains. `expects_sandbox_block: true` can move that prompt before the first attempt. |
-| **Windows / sandbox init failure**       | Prompts because no OS sandbox can contain it. Auto-approval does not fire.   | Prompts, unless strict-mode hard-deny applies. Auto-approval does not fire.                                                          | Prompts and is treated as external. Auto-approval does not fire.                                                                                                                                                                 |
-| **Auto-run disabled**                    | Prompts.                                                                     | Prompts.                                                                                                                             | Prompts.                                                                                                                                                                                                                         |
+| Situation                                | Sandbox-contained command                                                    | Hard-external command (network download, `git push`, install, `~/...`)                                                               | Ambiguous “may reach” command (`gh`, `nc`, cloud CLIs, `open <url>`)                                                                                                                                                                                      |
+| ---------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **macOS ASRT / Linux bubblewrap active** | Auto-runs inside the project sandbox. The model classifier is not consulted. | Prompts first, then runs outside the sandbox. Recognised low-risk shapes (`git push origin`) may skip that prompt via auto-approval. | Auto-runs inside the sandbox. A verified block offers retry outside, which always asks first. This includes opaque interpreter heredocs, whose effects the sandbox contains. `expects_sandbox_block: true` can move that prompt before the first attempt. |
+| **Windows / sandbox init failure**       | Prompts because no OS sandbox can contain it. Auto-approval does not fire.   | Prompts, unless strict-mode hard-deny applies. Auto-approval does not fire.                                                          | Prompts and is treated as external. Auto-approval does not fire.                                                                                                                                                                                          |
+| **Auto-run disabled**                    | Prompts.                                                                     | Prompts.                                                                                                                             | Prompts.                                                                                                                                                                                                                                                  |
 
 The ambiguous tier exists because short command names also appear harmlessly as paths or arguments.
 Where a sandbox is active, the sandbox—not a fuzzy match—decides whether they escape. Without a
@@ -813,26 +813,32 @@ expectation, not a confirmed sandbox failure. A cached denial instead retains �
 sandbox?” and states that a previous denial was recorded, without attributing a new request
 to the agent. Approval authorizes one outside execution; rejection keeps the contained attempt.
 
-A verified block is a non-zero exit plus at least one denial the OS sandbox itself reported for that
-attempt. On macOS, ASRT's log monitor (started with the project sandbox) reads each seatbelt
-denial from the unified log and attributes it to the attempt by a per-attempt id baked into the
-profile, so an earlier run of the same command never counts. A denial can reach that store a few
-milliseconds after the process closes, so a failed `run_shell` attempt with none yet waits up to
-200 ms for one, ending as soon as one arrives. Only file and network denials count:
-every sandboxed process also trips incidental ones such as `sysctl-read kern.iossupportversion`,
-and counting those would make any ordinary failure look like a block. A typical case is `git
-init` in a folder that is not yet a repository, because the sandbox protects `.git`. Linux does not
-start the runtime's seccomp observer yet, so there only the denial signatures below can verify a
-block. A verified block is real evidence, but of an access the policy refused, such as a read of a
-protected credential, so its retry outside still asks in Guarded YOLO. Guarded YOLO answers the retry
-itself only when the sandbox wrapper failed to start the command. Deterministic shell auto-approval
-judges the command's shape, not what the sandbox refused, so it may answer a verified block only
-when every blocking denial was a network denial and the command is a read-tier shape: a `git fetch
-origin` blocked from the network is the reach its shape is rated for. A local-write or
-remote-write shape asks even when its configured level allows it, because outside the sandbox the
-repository hooks it runs (`git commit`'s, say) are no longer contained. Any file denial, or a
-denial in another shape, always asks, because a read-tier `grep` can reach a protected credential
-through a workspace symlink.
+A verified block is a non-zero exit plus at least one denial the sandbox itself reported for that
+attempt. Two producers fill that store. On macOS, ASRT's log monitor (started with the project
+sandbox) reads each seatbelt denial from the unified log and attributes it to the attempt by a
+per-attempt id baked into the profile, so an earlier run of the same command never counts. The
+monitor pairs each denial with the tag line that follows it only when that tag ends in the launch's
+random suffix, which no sandboxed process can read, so a denied path holding a forged `Sandbox:` or
+tag line never becomes a violation of its own. On every platform, ASRT's network proxy also records
+each refused connection (`deny network-outbound host:port`) for the attempt, so a network block
+verifies on Linux too. A denial can reach that store a few milliseconds after the process closes, so
+a failed `run_shell` attempt with none yet waits up to 200 ms for one, ending as soon as one arrives.
+Only refused writes and refused network connections count. Every sandboxed process also trips
+incidental denials such as `sysctl-read kern.iossupportversion`, and a refused read (a credential,
+say) is the policy working, not a block that running outside should fix, so neither offers a retry:
+the contained attempt's failure is the answer. A typical verified block is `git init` in a folder
+that is not yet a repository, because the sandbox protects `.git`. Linux does not start the
+runtime's seccomp observer yet, so there a file block can only be verified by the denial signatures
+below.
+
+Every verified block asks a person before the retry outside, whatever answers prompts otherwise.
+The denial shows what the command tried to reach, and outside the sandbox nothing contains the rest
+of what it does: `git fetch origin` runs repository hooks and config-defined helpers, and a
+read-tier shape is no promise about where those reach. Neither Guarded YOLO nor deterministic shell
+auto-approval may answer it, even at a level that would allow the command's shape. Guarded YOLO,
+or a matching auto-approval tier, answers the retry itself only when the sandbox wrapper failed to
+start the command at all, because then the sandbox refused nothing and the command is judged as if
+it had never been sandboxed.
 
 Some sandboxed failures come from a broker or helper that does not increment the OS sandbox's
 violation counter. After a non-zero attempt, `run_shell` may recognise the bounded denial signatures

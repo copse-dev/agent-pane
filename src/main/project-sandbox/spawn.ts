@@ -369,16 +369,16 @@ export function sandboxViolationCountForBackgroundProcess(
 }
 
 /**
- * A seatbelt denial of something other than a file or network operation. The
- * runtime itself trips some on every command (`sysctl-read
- * kern.iossupportversion` from each process that starts), so counting them
- * would make any ordinary failure, a red test run or a `grep` with no match,
- * look like a sandbox block and offer to run it outside.
+ * A seatbelt denial that cannot be what made a command fail. The runtime itself
+ * trips some on every command (`sysctl-read kern.iossupportversion` from each
+ * process that starts), and toolchains read optional files under home on every
+ * run (`~/.npmrc`, `$CARGO_HOME/config.toml`, Python's user site), which the
+ * contained profile refuses. Counting either would make any ordinary failure, a
+ * red test run or a `grep` with no match, look like a sandbox block and offer
+ * to run it outside. Only refused writes and network connections count; a line
+ * in another shape (the proxy's `deny network-outbound …`) counts too.
  */
-const INCIDENTAL_SEATBELT_DENIAL = /\bdeny\(\d+\) (?!file-|network-)\S/
-
-/** A seatbelt denial of a network operation. */
-const NETWORK_SEATBELT_DENIAL = /\bdeny\(\d+\) network-\S/
+const INCIDENTAL_SEATBELT_DENIAL = /\bdeny\(\d+\) (?!file-write-|network-)\S/
 
 function blockingViolations<T extends { line: string }>(violations: readonly T[]): T[] {
   return violations.filter((violation) => !INCIDENTAL_SEATBELT_DENIAL.test(violation.line))
@@ -387,35 +387,6 @@ function blockingViolations<T extends { line: string }>(violations: readonly T[]
 /** Violations that can be what made a sandboxed command fail. */
 export function countBlockingViolations(violations: readonly { line: string }[]): number {
   return blockingViolations(violations).length
-}
-
-/**
- * Whether every violation that can have blocked a command was a seatbelt
- * network denial. False when there were none, or when any was a file denial or
- * a line in another shape: a file denial can be the sandbox refusing a read of
- * a protected credential, which no command-shape auto-approval may answer.
- */
-export function blockingViolationsAreNetworkOnly(violations: readonly { line: string }[]): boolean {
-  const blocking = blockingViolations(violations)
-  return (
-    blocking.length > 0 &&
-    blocking.every((violation) => NETWORK_SEATBELT_DENIAL.test(violation.line))
-  )
-}
-
-/**
- * {@link blockingViolationsAreNetworkOnly} for the violations the runner
- * recorded against `attribution` (see {@link sandboxViolationCountForCommand}).
- * False when the sandbox is inactive or no violation log is available.
- */
-export function sandboxViolationsAreNetworkOnlyForCommand(attribution: string): boolean {
-  if (!isProjectSandboxEnabled()) return false
-  try {
-    const store = SandboxManager.getSandboxViolationStore()
-    return blockingViolationsAreNetworkOnly(store.getViolationsForCommand(attribution))
-  } catch {
-    return false
-  }
 }
 
 /**

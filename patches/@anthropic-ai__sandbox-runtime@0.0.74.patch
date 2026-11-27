@@ -24,14 +24,18 @@ index e6d9fb687115a70c6d1dd538e01945c68e324810..8ec8fde91f22026611b98a8414690bac
      ];
      const denyFilters = new Set();
      for (const pathPattern of denyPaths) {
-@@ -904,13 +904,28 @@ resolveCommandText = id => id) {
+@@ -904,13 +904,31 @@ resolveCommandText = id => id) {
          '--style',
          'compact',
      ]);
 +    // Copse patch: `log stream` writes whatever has accumulated, so under load
 +    // one chunk holds several events and a line can straddle two chunks.
 +    // Reading only the first violation in each chunk dropped the rest. Read
-+    // every line, and pair each violation with the CMD64 tag line after it.
++    // every line. An event is the kernel's `Sandbox: ... deny ...` line and
++    // then its tag line, `CMD64_..._END_<sessionSuffix>`. A denied path can
++    // hold newlines, and with them a forged `Sandbox:` or `CMD64_` line, so
++    // only a tag ending in this launch's suffix (which a sandboxed process
++    // cannot read) closes an event, paired with that event's first line.
 +    let partialLine = '';
 +    let pendingViolation = null;
      logProcess.stdout?.on('data', (data) => {
@@ -44,14 +48,13 @@ index e6d9fb687115a70c6d1dd538e01945c68e324810..8ec8fde91f22026611b98a8414690bac
 +        const lines = (partialLine + data.toString()).split('\n');
 +        partialLine = lines.pop() ?? '';
 +        for (const line of lines) {
-+            if (line.includes('Sandbox:') && line.includes('deny')) {
++            if (line.startsWith('CMD64_') && line.trimEnd().endsWith(sessionSuffix)) {
 +                if (pendingViolation !== null)
-+                    reportViolation(pendingViolation, undefined);
-+                pendingViolation = line;
-+            }
-+            else if (pendingViolation !== null && line.startsWith('CMD64_')) {
-+                reportViolation(pendingViolation, line);
++                    reportViolation(pendingViolation, line);
 +                pendingViolation = null;
++            }
++            else if (pendingViolation === null && line.includes('Sandbox:') && line.includes('deny')) {
++                pendingViolation = line;
 +            }
 +        }
 +    });
@@ -59,7 +62,7 @@ index e6d9fb687115a70c6d1dd538e01945c68e324810..8ec8fde91f22026611b98a8414690bac
          // Extract violation details
          const sandboxMatch = violationLine.match(sandboxExtractRegex);
          if (!sandboxMatch?.[1])
-@@ -948,7 +963,7 @@ resolveCommandText = id => id) {
+@@ -948,7 +966,7 @@ resolveCommandText = id => id) {
              encodedCommand,
              timestamp: new Date(), // We could parse the timestamp from the log but this feels more reliable
          });

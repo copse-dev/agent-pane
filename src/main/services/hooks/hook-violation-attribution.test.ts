@@ -19,11 +19,11 @@ describe('hook sandbox violation attribution', () => {
     for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
   })
 
-  it('does not count an earlier run of the same hook command', async () => {
+  it("counts only this run's own violations, never another run's", async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'copse-hook-attr-'))
     cleanups.push(() => rm(cwd, { recursive: true, force: true }))
     const command = './guard.sh'
-    const attempts = new Set<string>()
+    const attempts: string[] = []
     mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
     mock.method(SandboxManager, 'cleanupAfterCommand', () => undefined)
     mock.method(
@@ -34,24 +34,19 @@ describe('hook sandbox violation attribution', () => {
         ...rest: [unknown, unknown, unknown, unknown, { commandId?: string } | undefined]
       ) => {
         const id = rest[4]?.commandId
-        if (id) attempts.add(id)
+        if (id) attempts.push(id)
         return Promise.resolve({ argv: ['/bin/sh', '-c', 'exit 2'], env: { ...process.env } })
       },
     )
-    // An EARLIER run of the hook tripped a file denial; the store keys it by
-    // the command text because that run had no per-attempt id.
+    // The store holds a denial keyed by the command text (a run before
+    // per-attempt ids) and one under the first spawn's own id.
+    const denial = [
+      { line: 'sh(1) deny(1) file-write-create /Users/x/.claude/log', timestamp: new Date() },
+    ]
     mock.method(
       SandboxManager.getSandboxViolationStore(),
       'getViolationsForCommand',
-      (c: string) =>
-        c === command
-          ? [
-              {
-                line: 'sh(1) deny(1) file-write-create /Users/x/.claude/log',
-                timestamp: new Date(),
-              },
-            ]
-          : [],
+      (c: string) => (c === command || c === attempts[0] ? denial : []),
     )
     setProjectSandboxEnabled(true)
     cleanups.push(() => {
@@ -59,9 +54,17 @@ describe('hook sandbox violation attribution', () => {
     })
 
     const sandbox = hooksDialectsEnvironment().sandbox
-    const child = await sandbox.spawnShell(command, { cwd, env: { ...process.env } })
-    await new Promise((resolve) => child.once('close', resolve))
-    assert.equal(sandbox.violationCount(command, child), 0)
-    assert.equal(attempts.size, 1, 'the hook spawn carries its own attempt id')
+    const run = async (): Promise<number> => {
+      const child = await sandbox.spawnShell(command, { cwd, env: { ...process.env } })
+      await new Promise((resolve) => child.once('close', resolve))
+      return sandbox.violationCount(command, child)
+    }
+    // The first run's own denial counts: a blocked hook reads as blocked.
+    assert.equal(await run(), 1)
+    // A second run of the same command counts neither the first run's denial
+    // nor the one keyed by the command text.
+    assert.equal(await run(), 0)
+    assert.equal(attempts.length, 2)
+    assert.notEqual(attempts[0], attempts[1], 'each hook spawn carries its own attempt id')
   })
 })
