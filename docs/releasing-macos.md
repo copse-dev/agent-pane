@@ -147,17 +147,20 @@ Monday. Publishing is the only routine manual step:
    `main` commit the run read, so later merges to `main` do not restart its CI;
    a dispatch fast-forwards it to the current `main`.
 3. [`Cut release tag`](../.github/workflows/release-cut.yml) sees the new
-   version on `release` and creates `v<version>` at that exact commit. A
-   promotion whose version is already tagged is a no-op, so ordinary promotions
-   cut nothing.
-4. When CI for the promoted commit finishes,
-   [`Release dispatch`](../.github/workflows/release-dispatch.yml) finds the tag
-   at that commit and starts `Release (macOS)`. Nothing waits for CI: the CI
-   run's completion is the trigger. If the tag was cut after CI had already
-   finished (a recovery run of `Cut release tag`), that workflow starts the build
-   itself. A commit gets one `Release (macOS)` run automatically, not counting a
-   run dispatched by hand before CI finished; a failed CI run still starts it,
-   so the failure is reported (see [Failed releases](#failed-releases)).
+   version on `release`, creates `v<version>` at that exact commit and hands the
+   commit to `Release dispatch`. A promotion whose version is already tagged is
+   a no-op, so ordinary promotions cut nothing.
+4. [`Release dispatch`](../.github/workflows/release-dispatch.yml) is the only
+   thing that starts `Release (macOS)` automatically. It evaluates the commit
+   when `Cut release tag` hands it over and again when the commit's CI
+   finishes, and starts the build at the tag once CI has finished. Nothing
+   waits for CI: the CI run's completion is the trigger. Both triggers share one
+   concurrency group per commit, and each dispatch leaves a `Release dispatch`
+   commit status naming the CI run attempt it acted on, so a cut that coincides
+   with CI's completion still dispatches once. A commit gets one
+   `Release (macOS)` run automatically, not counting a run that stopped because
+   CI had not finished; a failed CI run still starts it, so the failure is
+   reported (see [Failed releases](#failed-releases)).
 5. `Release (macOS)` re-checks the tag, the version match, reachability from
    `release`, and the tagged commit's exact `Full release validation` check — it will not
    accept a branch-tip, merge-ref, or unrelated successful run. It then builds,

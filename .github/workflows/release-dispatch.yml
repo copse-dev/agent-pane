@@ -6,10 +6,17 @@ name: Release dispatch
 # this same CI run finished. CI's completion is an event, so the build now
 # starts from it instead and its preflight checks the evidence once.
 #
-# A promotion's CI run is on `release`; a hand-pushed tag's CI run is on the
-# tag. Most promotions carry an already-released version, so for them this is a
-# no-op. scripts/release-dispatch.mts explains how this and release-cut.yml
-# cover each other's ordering.
+# This is the only place that starts the build automatically. It runs when CI
+# completes (a promotion's CI run is on `release`; a hand-pushed tag's is on the
+# tag), and when release-cut.yml hands it a newly cut commit, which covers a
+# cut made after CI already finished. Most promotions carry an already-released
+# version, so for them this is a no-op.
+#
+# One evaluation per commit runs at a time (the concurrency group below, shared
+# by both triggers), and each dispatch records a `Release dispatch` commit
+# status keyed to the CI run attempt it acted on. So the tag is dispatched at
+# most once per CI result, even when the cut and CI's completion coincide.
+# scripts/release-dispatch.mts has the decision.
 #
 # A failed CI run still starts the build: its preflight then fails on the
 # failed evidence and opens the release-failure issue, so a red release commit
@@ -27,25 +34,38 @@ on:
     workflows: [CI]
     types: [completed]
     branches: [release, 'v*']
+  # release-cut.yml's hand-over. A person may use it too, to re-evaluate a commit.
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Release commit (full SHA) to start Release (macOS) for, once its CI has finished
+        required: true
+        type: string
 
 permissions: {}
 
 concurrency:
-  # The promotion's run and a re-run can both complete for one commit. Each
-  # evaluation reads current state, so one pending run can replace another.
-  group: release-dispatch-${{ github.event.workflow_run.head_sha }}
+  # One evaluation per commit at a time, whichever trigger started it: the
+  # cut's hand-over and CI's completion can arrive together. Each evaluation
+  # reads current state, so one pending run can replace another.
+  group: release-dispatch-${{ github.event.workflow_run.head_sha || inputs.sha }}
   cancel-in-progress: false
 
 jobs:
   dispatch:
+    # A hand-over runs only from the default branch, like workflow_run does.
     if: >-
+      (github.event_name == 'workflow_dispatch' &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) ||
+      (github.event_name == 'workflow_run' &&
       github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_repository.full_name == github.repository
+      github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       actions: write # read CI and release runs; dispatch Release (macOS)
       contents: read # read package.json and the tag at the release commit
+      statuses: write # record each dispatch on the release commit
     outputs:
       tag: ${{ steps.release.outputs.tag }}
     steps:
@@ -65,7 +85,7 @@ jobs:
         name: Start Release (macOS) for a tag cut at this commit
         uses: actions/github-script@v9
         env:
-          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha || inputs.sha }}
         with:
           script: |
             const { releaseTagAt, startReleaseWhenCiFinished } = await import(
@@ -92,7 +112,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.dispatch.outputs.tag }}
-          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha || inputs.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail

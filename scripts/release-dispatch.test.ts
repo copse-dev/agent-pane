@@ -3,12 +3,15 @@ import { describe, it } from 'node:test'
 import {
   CI_PENDING_STEP,
   CI_WORKFLOW,
+  RELEASE_DISPATCH_CONTEXT,
   RELEASE_PREFLIGHT_JOB,
   RELEASE_WORKFLOW,
   ciFinished,
+  newestCiRun,
   releaseTagAt,
   startReleaseBuild,
   startReleaseWhenCiFinished,
+  type CiRun,
   type ReleaseDispatchContext,
   type ReleaseDispatchGitHub,
 } from './release-dispatch.mts'
@@ -16,6 +19,18 @@ import {
 const SHA = 'a'.repeat(40)
 const OTHER = 'b'.repeat(40)
 const TAG_OBJECT = 'c'.repeat(40)
+const ACTIONS_BOT = { id: 41898282, login: 'github-actions[bot]' }
+/** The CI result most tests act on: run 70, first attempt, finished. */
+const CI: CiRun = { id: 70, attempt: 1, status: 'completed' }
+const CI_KEY = 'https://github.com/copse-dev/agent-pane/actions/runs/70/attempts/1'
+
+interface Status {
+  context: string
+  state: string
+  description?: string
+  target_url: string
+  creator: { id: number; login: string }
+}
 
 interface Fake {
   version?: unknown
@@ -27,6 +42,9 @@ interface Fake {
   jobs?: Record<number, unknown>
   ciRuns?: unknown
   ciError?: { status: number }
+  /** The commit's statuses, shared between contexts to model later evaluations. */
+  statuses?: Status[]
+  statusWriteError?: boolean
 }
 
 interface Calls {
@@ -37,9 +55,15 @@ interface Calls {
   jobLookups: number[]
 }
 
-function context(fake: Fake): { ctx: ReleaseDispatchContext; calls: Calls; logs: string[] } {
+function context(fake: Fake): {
+  ctx: ReleaseDispatchContext
+  calls: Calls
+  logs: string[]
+  statuses: Status[]
+} {
   const calls: Calls = { refs: [], tags: [], dispatches: [], runLookups: [], jobLookups: [] }
   const logs: string[] = []
+  const statuses = fake.statuses ?? []
   const text =
     fake.packageJson === undefined
       ? JSON.stringify({ name: 'copse-panel', version: fake.version ?? '1.2.3-beta.4' })
@@ -53,6 +77,17 @@ function context(fake: Fake): { ctx: ReleaseDispatchContext; calls: Calls; logs:
           return Promise.resolve({
             data: text === null ? [] : { content: Buffer.from(text).toString('base64') },
           })
+        },
+        listCommitStatusesForRef: ({ ref }) => {
+          assert.equal(ref, SHA)
+          // Newest first, as the API returns them.
+          return Promise.resolve({ data: [...statuses].reverse() })
+        },
+        createCommitStatus: ({ sha, state, context: name, description, target_url }) => {
+          assert.equal(sha, SHA)
+          if (fake.statusWriteError) return Promise.reject(new Error('status API'))
+          statuses.push({ context: name, state, description, target_url, creator: ACTIONS_BOT })
+          return Promise.resolve({})
         },
       },
       git: {
@@ -72,9 +107,13 @@ function context(fake: Fake): { ctx: ReleaseDispatchContext; calls: Calls; logs:
           if (workflow_id === CI_WORKFLOW) {
             if (fake.ciError) return Promise.reject(Object.assign(new Error('API'), fake.ciError))
             return Promise.resolve({
-              data: fake.ciRuns ?? { workflow_runs: [{ run_number: 7, status: 'completed' }] },
+              data: fake.ciRuns ?? {
+                workflow_runs: [{ id: 70, run_attempt: 1, run_number: 7, status: 'completed' }],
+              },
             })
           }
+          // A fixed list: it does not show runs dispatched during the test, like
+          // the API in the seconds after a dispatch.
           return Promise.resolve({ data: fake.runs ?? { total_count: 0, workflow_runs: [] } })
         },
         listJobsForWorkflowRun: ({ run_id, filter }) => {
@@ -93,7 +132,17 @@ function context(fake: Fake): { ctx: ReleaseDispatchContext; calls: Calls; logs:
     ctx: { github, owner: 'copse-dev', repo: 'agent-pane', log: (m) => logs.push(m) },
     calls,
     logs,
+    statuses,
   }
+}
+
+function ciRun(
+  run_number: number,
+  status: string,
+  id = run_number * 10,
+  run_attempt = 1,
+): { id: number; run_attempt: number; run_number: number; status: string } {
+  return { id, run_attempt, run_number, status }
 }
 
 describe('releaseTagAt', () => {
@@ -180,21 +229,29 @@ const STOPPED_PENDING = preflight({ status: 'completed', conclusion: 'failure' }
 const DECIDED = preflight({ status: 'completed', conclusion: 'skipped' })
 
 describe('startReleaseBuild', () => {
-  it('dispatches Release (macOS) at the tag when the commit has no run', async () => {
-    const { ctx, calls } = context({})
-    assert.equal(await startReleaseBuild(ctx, SHA, 'v1.2.3'), 'started')
+  it('dispatches Release (macOS) at the tag and records the CI result it acted on', async () => {
+    const { ctx, calls, statuses } = context({})
+    assert.equal(await startReleaseBuild(ctx, SHA, 'v1.2.3', CI), 'started')
     assert.deepEqual(calls.runLookups, [{ workflow_id: 'release-mac.yml', head_sha: SHA }])
     assert.deepEqual(calls.dispatches, [
       { workflow_id: RELEASE_WORKFLOW, ref: 'v1.2.3', inputs: { tag: 'v1.2.3' } },
     ])
+    assert.deepEqual(statuses, [
+      {
+        context: RELEASE_DISPATCH_CONTEXT,
+        state: 'success',
+        description: 'Dispatched Release (macOS) for v1.2.3',
+        target_url: CI_KEY,
+        creator: ACTIONS_BOT,
+      },
+    ])
   })
 
   it('never dispatches a second run for a commit, even after a failed one', async () => {
-    // Both release-cut.yml and release-dispatch.yml may reach this for one
-    // commit. A failed release is reported and fixed forward, not retried.
+    // A failed release is reported and fixed forward, not retried.
     for (const jobs of [DECIDED, { jobs: [{ name: 'build-test', steps: [] }] }]) {
       const { ctx, calls } = context({ runs: { workflow_runs: [{ id: 11 }] }, jobs: { 11: jobs } })
-      assert.equal(await startReleaseBuild(ctx, SHA, 'v1.2.3'), 'already-started')
+      assert.equal(await startReleaseBuild(ctx, SHA, 'v1.2.3', CI), 'already-started')
       assert.deepEqual(calls.dispatches, [])
     }
   })
@@ -208,7 +265,7 @@ describe('startReleaseBuild', () => {
       preflight({ status: 'queued', conclusion: null }),
     ]) {
       const { ctx, calls } = context({ runs: { workflow_runs: [{ id: 11 }] }, jobs: { 11: jobs } })
-      assert.equal(await startReleaseBuild(ctx, SHA, 'v1.2.3'), 'already-started')
+      assert.equal(await startReleaseBuild(ctx, SHA, 'v1.2.3', CI), 'already-started')
       assert.deepEqual(calls.dispatches, [])
     }
   })
@@ -219,7 +276,7 @@ describe('startReleaseBuild', () => {
         runs: { workflow_runs: [{ id: 11 }] },
         jobs: { 11: jobs },
       })
-      assert.equal(await startReleaseBuild(ctx, SHA, 'v1.2.3'), 'started')
+      assert.equal(await startReleaseBuild(ctx, SHA, 'v1.2.3', CI), 'started')
       assert.deepEqual(calls.jobLookups, [11])
       assert.equal(calls.dispatches.length, 1)
       assert.match(logs.join('\n'), /run 11 stopped before CI finished; it does not count/)
@@ -231,22 +288,95 @@ describe('startReleaseBuild', () => {
       runs: { workflow_runs: [{ id: 11 }, { id: 12 }] },
       jobs: { 11: STOPPED_PENDING, 12: DECIDED },
     })
-    assert.equal(await startReleaseBuild(ctx, SHA, 'v1.2.3'), 'already-started')
+    assert.equal(await startReleaseBuild(ctx, SHA, 'v1.2.3', CI), 'already-started')
     assert.deepEqual(calls.jobLookups, [11, 12])
     assert.deepEqual(calls.dispatches, [])
   })
 
-  it('fails closed when existing runs or their jobs cannot be read', async () => {
+  it('trusts only its own record, and only for the same CI result', async () => {
+    const record = {
+      context: RELEASE_DISPATCH_CONTEXT,
+      state: 'success',
+      target_url: CI_KEY,
+      creator: ACTIONS_BOT,
+    }
+    const own = context({ statuses: [record] })
+    assert.equal(await startReleaseBuild(own.ctx, SHA, 'v1.2.3', CI), 'already-started')
+    assert.deepEqual(own.calls.dispatches, [])
+    for (const other of [
+      { ...record, creator: { id: 1, login: 'someone' } },
+      { ...record, context: 'CI Passed' },
+      { ...record, state: 'pending' },
+      { ...record, target_url: CI_KEY.replace('attempts/1', 'attempts/2') },
+    ]) {
+      const { ctx, calls } = context({ statuses: [other] })
+      assert.equal(
+        await startReleaseBuild(ctx, SHA, 'v1.2.3', CI),
+        'started',
+        JSON.stringify(other),
+      )
+      assert.equal(calls.dispatches.length, 1)
+    }
+  })
+
+  it('fails closed when runs, jobs or statuses cannot be read, and on a failed record', async () => {
     for (const fake of [
       { runs: { total_count: 0 } },
       { runs: { workflow_runs: [{ status: 'completed' }] } },
       { runs: { workflow_runs: [{ id: 11 }] }, jobs: { 11: {} } },
     ]) {
       const { ctx, calls } = context(fake)
-      await assert.rejects(startReleaseBuild(ctx, SHA, 'v1.2.3'), /Release \(macOS\) run/)
+      await assert.rejects(startReleaseBuild(ctx, SHA, 'v1.2.3', CI), /Release \(macOS\) run/)
       assert.deepEqual(calls.dispatches, [], JSON.stringify(fake))
     }
-    await assert.rejects(startReleaseBuild(context({}).ctx, 'v1.2.3', 'v1.2.3'))
+    await assert.rejects(startReleaseBuild(context({}).ctx, 'v1.2.3', 'v1.2.3', CI))
+    // The dispatch happened, so the job fails and reports; a re-run then finds
+    // the dispatched run in the run list.
+    const unrecorded = context({ statusWriteError: true })
+    await assert.rejects(startReleaseBuild(unrecorded.ctx, SHA, 'v1.2.3', CI), /status API/)
+    assert.equal(unrecorded.calls.dispatches.length, 1)
+  })
+})
+
+describe('the tag cut and CI completion overlapping', () => {
+  it('dispatches once when both evaluations see the run list from before the dispatch', async () => {
+    // release-cut.yml hands the commit to release-dispatch.yml just as CI
+    // completes. The workflow's concurrency group runs the two evaluations one
+    // after the other; the second reads a run list that does not show the first
+    // one's dispatch yet. The shared record is what stops a second dispatch.
+    const statuses: Status[] = []
+    const handOver = context({ statuses })
+    const ciCompletion = context({ statuses })
+    assert.equal(await startReleaseWhenCiFinished(handOver.ctx, SHA, 'v1.2.3'), 'started')
+    assert.equal(
+      await startReleaseWhenCiFinished(ciCompletion.ctx, SHA, 'v1.2.3'),
+      'already-started',
+    )
+    assert.equal(handOver.calls.dispatches.length + ciCompletion.calls.dispatches.length, 1)
+    assert.deepEqual(
+      ciCompletion.calls.runLookups.map((lookup) => lookup.workflow_id),
+      ['ci.yml'],
+    )
+  })
+
+  it('evaluates a CI re-run afresh, so a build its re-run stopped still starts', async () => {
+    // The dispatched run read CI while a re-run was in progress and stopped.
+    // The re-run's completion is a new CI result, so the record does not apply.
+    const statuses: Status[] = []
+    const first = context({ statuses })
+    assert.equal(await startReleaseWhenCiFinished(first.ctx, SHA, 'v1.2.3'), 'started')
+    const afterReRun = context({
+      statuses,
+      ciRuns: { workflow_runs: [ciRun(7, 'completed', 70, 2)] },
+      runs: { workflow_runs: [{ id: 11 }] },
+      jobs: { 11: STOPPED_PENDING },
+    })
+    assert.equal(await startReleaseWhenCiFinished(afterReRun.ctx, SHA, 'v1.2.3'), 'started')
+    assert.equal(afterReRun.calls.dispatches.length, 1)
+    assert.deepEqual(
+      statuses.map((status) => status.target_url),
+      [CI_KEY, CI_KEY.replace('attempts/1', 'attempts/2')],
+    )
   })
 })
 
@@ -258,7 +388,7 @@ describe('a manual dispatch before CI finishes, then CI completion', () => {
     const pending = context({
       runs,
       jobs: { 21: STOPPED_PENDING },
-      ciRuns: { workflow_runs: [{ run_number: 30, status: 'in_progress' }] },
+      ciRuns: { workflow_runs: [ciRun(30, 'in_progress')] },
     })
     assert.equal(await startReleaseWhenCiFinished(pending.ctx, SHA, 'v1.2.3'), 'ci-running')
     assert.deepEqual(pending.calls.dispatches, [])
@@ -266,7 +396,7 @@ describe('a manual dispatch before CI finishes, then CI completion', () => {
     const completed = context({
       runs,
       jobs: { 21: STOPPED_PENDING },
-      ciRuns: { workflow_runs: [{ run_number: 30, status: 'completed', conclusion: 'success' }] },
+      ciRuns: { workflow_runs: [ciRun(30, 'completed')] },
     })
     assert.equal(await startReleaseWhenCiFinished(completed.ctx, SHA, 'v1.2.3'), 'started')
     assert.deepEqual(completed.calls.dispatches, [
@@ -275,33 +405,30 @@ describe('a manual dispatch before CI finishes, then CI completion', () => {
   })
 })
 
-describe('ciFinished', () => {
+describe('newestCiRun and ciFinished', () => {
   it('reads the newest CI push run at the commit, whatever its conclusion', async () => {
     const { ctx, calls } = context({
       ciRuns: {
         workflow_runs: [
-          { run_number: 3, status: 'in_progress' },
-          { run_number: 9, status: 'completed', conclusion: 'failure' },
+          ciRun(3, 'in_progress'),
+          { ...ciRun(9, 'completed', 90, 2), conclusion: 'failure' },
         ],
       },
     })
+    assert.deepEqual(await newestCiRun(ctx, SHA), { id: 90, attempt: 2, status: 'completed' })
     assert.equal(await ciFinished(ctx, SHA), true)
-    assert.deepEqual(calls.runLookups, [{ workflow_id: 'ci.yml', head_sha: SHA, event: 'push' }])
+    assert.deepEqual(calls.runLookups[0], { workflow_id: 'ci.yml', head_sha: SHA, event: 'push' })
   })
 
   it('treats a newer run or re-run still in progress, or no run yet, as not finished', async () => {
     for (const ciRuns of [
-      {
-        workflow_runs: [
-          { run_number: 9, status: 'completed' },
-          { run_number: 12, status: 'in_progress' },
-        ],
-      },
-      { workflow_runs: [{ run_number: 9, status: 'queued' }] },
+      { workflow_runs: [ciRun(9, 'completed'), ciRun(12, 'in_progress')] },
+      { workflow_runs: [ciRun(9, 'queued')] },
       { workflow_runs: [] },
     ]) {
       assert.equal(await ciFinished(context({ ciRuns }).ctx, SHA), false, JSON.stringify(ciRuns))
     }
+    assert.equal(await newestCiRun(context({ ciRuns: { workflow_runs: [] } }).ctx, SHA), null)
   })
 
   it('throws on an API error or unreadable runs instead of answering either way', async () => {
@@ -309,17 +436,23 @@ describe('ciFinished', () => {
     // commit's one automatic run on a preflight that can only fail.
     await assert.rejects(ciFinished(context({ ciError: { status: 502 } }).ctx, SHA), /API/)
     await assert.rejects(ciFinished(context({ ciRuns: {} }).ctx, SHA), /CI runs/)
-    await assert.rejects(
-      ciFinished(context({ ciRuns: { workflow_runs: [{ status: 'completed' }] } }).ctx, SHA),
-      /run number/,
-    )
+    for (const run of [
+      { status: 'completed' },
+      { run_number: 7, status: 'completed' },
+      { id: 70, run_number: 7, status: 'completed' },
+    ]) {
+      await assert.rejects(
+        ciFinished(context({ ciRuns: { workflow_runs: [run] } }).ctx, SHA),
+        /run number, id or attempt/,
+      )
+    }
   })
 })
 
 describe('startReleaseWhenCiFinished', () => {
   it('leaves the build to CI completion while CI is still running', async () => {
     const { ctx, calls, logs } = context({
-      ciRuns: { workflow_runs: [{ run_number: 4, status: 'in_progress' }] },
+      ciRuns: { workflow_runs: [ciRun(4, 'in_progress')] },
     })
     assert.equal(await startReleaseWhenCiFinished(ctx, SHA, 'v1.2.3'), 'ci-running')
     assert.deepEqual(calls.dispatches, [])

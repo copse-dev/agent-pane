@@ -4,9 +4,9 @@ name: Cut release tag
 # and the ruleset only lets one merge after the full `CI Passed` tier is green.
 # Tagging that commit is mechanical, so do it here rather than by hand: when a
 # promotion carries a package version that has never been tagged, create
-# `v<version>` at that exact commit. `Release (macOS)` builds it once the
-# commit's CI finishes: release-dispatch.yml starts it from CI's completion, or
-# this workflow does when CI had already finished (scripts/release-dispatch.mts).
+# `v<version>` at that exact commit, then hand the commit to
+# release-dispatch.yml, which starts `Release (macOS)` once the commit's CI has
+# finished (scripts/release-dispatch.mts).
 #
 # Promotions that do not change the version — most of them — are no-ops, so the
 # release cadence is driven entirely by bumping `package.json` on `main`, which
@@ -21,7 +21,7 @@ on:
 
 permissions:
   contents: write # create the tag ref
-  actions: write # dispatch Release (macOS)
+  actions: write # hand the release commit to Release dispatch
 
 concurrency:
   group: release-cut
@@ -118,45 +118,31 @@ jobs:
             }
             core.setOutput('tag', tag);
 
-      # Load the helper from this workflow's own commit, not the release
-      # checkout above: a manual dispatch runs main's workflow file, which can be
-      # ahead of what was promoted. On a push the two are the same commit.
-      - name: Load the release dispatch helper
-        if: steps.tag.outputs.tag != ''
-        uses: actions/checkout@v7.0.1
-        with:
-          ref: ${{ github.workflow_sha }}
-          path: .release-dispatch
-          persist-credentials: false
-          sparse-checkout: |
-            scripts/release-dispatch.mts
-            scripts/lib/safe-json.mts
-          sparse-checkout-cone-mode: false
-
-      # The push that promoted this commit is normally still running CI, which
-      # is what the release gates on. When it finishes, release-dispatch.yml
-      # starts Release (macOS), so this job does not wait for it. Only a cut
-      # made after CI already finished (a recovery run) starts the build here.
-      # An API error fails this step rather than dispatching early; the tag
-      # already exists, so CI's completion still starts the build.
+      # Release dispatch is the one place that starts the build: one evaluation
+      # per commit at a time, at most one dispatch per CI result
+      # (scripts/release-dispatch.mts). The push that promoted this commit is
+      # normally still running CI, so that evaluation does nothing and CI's
+      # completion runs it again. Handing over here covers a cut made after CI
+      # already finished (a recovery run). This job never starts the build
+      # itself, so a cut and CI's completion cannot both dispatch it.
       #
       # A tag pushed with GITHUB_TOKEN raises no `push` event, so a tag trigger
       # could never start the build. workflow_dispatch is the documented
       # exception that does fire, and dispatching also avoids a third heavy-tier
       # CI run on this SHA: the push that promoted it already produced the
       # full-release validation preflight reads.
-      - name: Start Release (macOS) if CI has finished
+      - name: Hand the release commit to Release dispatch
         if: steps.tag.outputs.tag != ''
         uses: actions/github-script@v9
         env:
           RELEASE_SHA: ${{ steps.target.outputs.sha }}
-          TAG: ${{ steps.tag.outputs.tag }}
         with:
           script: |
-            const { startReleaseWhenCiFinished } = await import(
-              `${process.env.GITHUB_WORKSPACE}/.release-dispatch/scripts/release-dispatch.mts`);
-            await startReleaseWhenCiFinished(
-              { github, owner: context.repo.owner, repo: context.repo.repo, log: core.info },
-              process.env.RELEASE_SHA,
-              process.env.TAG,
-            );
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'release-dispatch.yml',
+              ref: context.payload.repository.default_branch,
+              inputs: { sha: process.env.RELEASE_SHA },
+            });
+            core.info(`Handed ${process.env.RELEASE_SHA} to Release dispatch.`);
