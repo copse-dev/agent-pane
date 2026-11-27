@@ -636,7 +636,13 @@ export interface ApiClient {
   }
   closeConfirm: {
     respond: (id: string, confirmed: boolean) => Promise<void>
-    onRequest: (handler: (req: { id: string; continuesAfterQuit?: boolean }) => void) => () => void
+    onRequest: (
+      handler: (req: {
+        id: string
+        continuesAfterQuit?: boolean
+        containerRunThreads?: string[]
+      }) => void,
+    ) => () => void
   }
   sshWorkspace: {
     listHosts: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>

@@ -4,14 +4,40 @@ import type { ContainerRunProgress, ContainerRunRequest } from '@shared/types/co
 import { isRecord } from '@shared/unknown-value.ts'
 import { internalGit } from '../security/internal-git-exec.ts'
 import { storageGet } from '../storage/storage.ts'
-import { getSetting } from '../storage/settings.ts'
+import { getSetting, storedKeysOpenOutsideApp } from '../storage/settings.ts'
 import {
   resolveThreadExecutionContext,
   type ThreadExecutionContext,
 } from '../thread-execution-context.ts'
 import { recordDecision } from '../security/decision-log-store.ts'
 import { resolveContainerProvider } from '../providers/container-provider.ts'
-import { DEPENDENCY_INSTALL_ORIGINS } from './guest-install.ts'
+import {
+  getElectronAppVersion,
+  getElectronUserDataPath,
+  isElectronAppPackaged,
+} from '../electron-app-runtime.ts'
+import {
+  armedEgress,
+  canHostOutsideApp,
+  withProvider,
+  type ContainerRunBase,
+  forgetRunHost,
+  listRunHosts,
+  type ContainerRunHostDisplay,
+  type ContainerRunHostRequest,
+  type ListedRunHost,
+  type RunHostFile,
+} from './run-host.ts'
+import {
+  followHost,
+  RunHostLostError,
+  runHostClientDependencies,
+  runHostEntryPath,
+  RunHostDetached,
+  runThroughHost,
+  type FollowHostOptions,
+} from './run-host-client.ts'
+import { continuesTurnsAfterQuit } from '../turn-worker/turn-worker-launch.ts'
 import {
   adoptCarryOut,
   assertThreadContainerEngine,
@@ -22,13 +48,13 @@ import {
   newRuntimeId,
   runThreadInContainer,
   sweepOrphanedRuntimes,
+  teardownLostRuntime,
   teardownRuntime,
   type OrphanSweep,
   type CarryOutAdoption,
   WORKER_IMAGE,
   workerBuildFingerprint,
   workerImageFingerprint,
-  type ThreadContainerRequest,
 } from './thread-container.ts'
 import type { ThreadContainerRecord } from '@shared/types/container-run.ts'
 import type { ThreadContainerEngine } from './container-engine.ts'
@@ -52,6 +78,29 @@ const LOG_TAIL = 60
 
 interface RunDependencies {
   run: typeof runThreadInContainer
+  /**
+   * Run in a host process of its own (`run-host.ts`), so the run does not
+   * depend on the app's process. Null runs it here, through {@link run}.
+   */
+  runHost:
+    | ((
+        request: ContainerRunHostRequest,
+        options: FollowHostOptions,
+      ) => Promise<ThreadContainerRecord>)
+    | null
+  /** Follow a host the last app session left running (`host.json`). */
+  followHost: (host: RunHostFile, options: FollowHostOptions) => Promise<ThreadContainerRecord>
+  /** The host files in this profile, live or not; see {@link listRunHosts}. */
+  listHosts: () => Promise<ListedRunHost[]>
+  /** Remove a host file once its run is settled. */
+  forgetHost: (host: RunHostFile) => Promise<void>
+  /** Whether quitting leaves host runs going (the turn hand-off setting). */
+  continueAfterQuit: () => boolean
+  /**
+   * Whether the host process can open the stored keys itself. A key only
+   * `safeStorage` sealed opens only in the app, so such a run stays here.
+   */
+  keysOpenOutsideApp: () => boolean
   /** Build the worker image on `engine` unless the one there is this build's. */
   ensureImage: (engine: ThreadContainerEngine) => Promise<void>
   /**
@@ -67,6 +116,8 @@ interface RunDependencies {
    * up is asked.
    */
   stop: typeof teardownRuntime
+  /** Clean up a run whose host process the app lost; see {@link teardownLostRuntime}. */
+  releaseLost: typeof teardownLostRuntime
   /**
    * The checkout this thread actually works in. Injected like the supervisor's
    * so a test can describe a worktree without building one.
@@ -90,7 +141,15 @@ interface RunDependencies {
 
 const productionDependencies: RunDependencies = {
   run: runThreadInContainer,
+  // Only the app's own service starts host processes; see getContainerRunService.
+  runHost: null,
+  followHost: (host, options) => followHost(host.socket, options),
+  listHosts: () => Promise.resolve([]),
+  forgetHost: () => Promise.resolve(),
+  continueAfterQuit: () => continuesTurnsAfterQuit(getSetting),
+  keysOpenOutsideApp: storedKeysOpenOutsideApp,
   stop: teardownRuntime,
+  releaseLost: teardownLostRuntime,
   sweep: sweepOrphanedRuntimes,
   sweepWanted: () => getSetting<boolean>('containerRunsEnabled', false) || hasRecordedRuns(),
   adopt: adoptCarryOut,
@@ -123,6 +182,29 @@ async function assertGitCheckout(root: string, describe: string): Promise<void> 
   }
 }
 
+interface SettlingRun {
+  projectId: string
+  threadId: string
+  runtimeId: string
+  /** Its supervisor task, once there is one. */
+  taskId: string | null
+}
+
+/** What a relaunched app needs to show a run it did not start. */
+function hostDisplay(progress: ContainerRunProgress): ContainerRunHostDisplay {
+  const {
+    runtimeId: _runtimeId,
+    phase: _phase,
+    finishedAt: _finishedAt,
+    log: _log,
+    warnings: _warnings,
+    record: _record,
+    error: _error,
+    ...display
+  } = progress
+  return structuredClone(display)
+}
+
 function projectIsRemote(projectId: string): boolean {
   const projects = storageGet('projects')
   if (!Array.isArray(projects)) return false
@@ -143,6 +225,11 @@ export class ContainerRunService {
   private readonly stopSignals = new Map<string, AbortController>()
   /** The engine each run this session started is on, by runtime id, for its stop. */
   private readonly engines = new Map<string, ThreadContainerEngine>()
+  /** Runs whose host side is a process of its own, by thread: aborting lets go of one. */
+  private readonly hostedRuns = new Map<string, AbortController>()
+  /** Runtimes this session let go of at quit; their supervisor tasks stay running. */
+  private readonly detachedRuntimes = new Set<string>()
+  private liveHosts: Promise<ListedRunHost[]> | null = null
   private supervisor: TaskSupervisor | null = null
   private readonly deps: RunDependencies
   private readonly imagePreparations = new Map<ThreadContainerEngine, Promise<void>>()
@@ -156,14 +243,23 @@ export class ContainerRunService {
   /** Track Docker as an external task; the supervisor never replays a container run. */
   installSupervisor(supervisor: TaskSupervisor): () => void {
     if (this.supervisor !== null) throw new Error('Container run supervisor is already installed')
-    const dispose = supervisor.registerExternalCanceller(CONTAINER_RUN_HANDLER, async (task) => {
-      const progress = this.runs.get(task.threadId)
-      if (progress?.runtimeId === task.processHandleId) {
-        await this.stopRuntime(task.threadId)
-      } else if (task.processHandleId) {
-        await this.deps.stop(task.processHandleId, this.engines.get(task.processHandleId))
-      }
-    })
+    const dispose = supervisor.registerExternalCanceller(
+      CONTAINER_RUN_HANDLER,
+      async (task) => {
+        const progress = this.runs.get(task.threadId)
+        if (progress?.runtimeId === task.processHandleId) {
+          await this.stopRuntime(task.threadId)
+        } else if (task.processHandleId) {
+          await this.deps.stop(task.processHandleId, this.engines.get(task.processHandleId))
+        }
+      },
+      {
+        survivesShutdown: (task) =>
+          task.processHandleId !== undefined && this.detachedRuntimes.has(task.processHandleId),
+        isAlive: async (task) =>
+          (await this.hosts()).some((host) => host.runtimeId === task.processHandleId),
+      },
+    )
     this.supervisor = supervisor
     return () => {
       dispose()
@@ -171,11 +267,194 @@ export class ContainerRunService {
     }
   }
 
-  /** Called before the supervisor shuts down, while its cancellers are still installed. */
-  async stopAll(): Promise<void> {
+  /**
+   * Called before the supervisor shuts down, while its cancellers are still
+   * installed. A run with a host process of its own carries on when the user
+   * lets turns continue after quit: the app lets go of it, and its supervisor
+   * task stays running for the next launch to settle. Every other run stops,
+   * and so does every run when `letGo` is false: a quit nobody chose (a
+   * signal, a fault) or one that installs an update.
+   */
+  async stopAll(letGo: boolean = this.deps.continueAfterQuit()): Promise<void> {
+    const keepHosted = letGo
     await Promise.all(
-      [...this.runs.keys()].filter((id) => this.isActive(id)).map((id) => this.stop(id)),
+      [...this.runs.keys()]
+        .filter((id) => this.isActive(id))
+        .map((id) => {
+          const detach = this.hostedRuns.get(id)
+          const runtimeId = this.runs.get(id)?.runtimeId ?? null
+          // A run the user already asked to stop is stopped, not let go.
+          const stopping = this.stopSignals.get(id)?.signal.aborted === true
+          if (keepHosted && detach && runtimeId !== null && !stopping) {
+            this.detachedRuntimes.add(runtimeId)
+            detach.abort()
+            return Promise.resolve(this.get(id))
+          }
+          return this.stop(id)
+        }),
     )
+  }
+
+  /** Host files, read once per session: start-up asks from more than one place. */
+  private hosts(): Promise<ListedRunHost[]> {
+    this.liveHosts ??= this.deps.listHosts().catch(() => [])
+    return this.liveHosts
+  }
+
+  /**
+   * Called once at start-up: follow every run a host is still running for this
+   * profile, so the banner, the dialog and Stop work as if this session had
+   * started it. A run whose host ended while Copse was closed settles from
+   * what the host left in its file; one whose host was killed settles as
+   * failed and is cleaned up. Returns the threads now followed or settled.
+   */
+  async reattach(): Promise<string[]> {
+    const followed: string[] = []
+    for (const host of await this.hosts()) {
+      const threadId = host.display.threadId
+      if (this.runs.has(threadId) && this.isActive(threadId)) continue
+      const progress: ContainerRunProgress = {
+        ...host.display,
+        runtimeId: host.runtimeId,
+        phase: 'running',
+        finishedAt: null,
+        log: [],
+        warnings: [],
+        record: null,
+        error: null,
+      }
+      const stopSignal = new AbortController()
+      this.runs.set(threadId, progress)
+      this.stopSignals.set(threadId, stopSignal)
+      this.emit(progress)
+      followed.push(threadId)
+      const detach = new AbortController()
+      this.hostedRuns.set(threadId, detach)
+      const taskId =
+        this.supervisor
+          ?.list()
+          .find(
+            (task) =>
+              task.handler === CONTAINER_RUN_HANDLER && task.processHandleId === host.runtimeId,
+          )?.taskId ?? null
+      void this.settle(
+        { projectId: host.projectId, threadId, runtimeId: host.runtimeId, taskId },
+        progress,
+        stopSignal,
+        () => this.endOf(host, this.runOptions(progress, stopSignal, detach.signal)),
+      ).then(() => {
+        // A run let go of again at this session's quit keeps its file.
+        if (!this.detachedRuntimes.has(host.runtimeId)) return this.deps.forgetHost(host)
+        return undefined
+      })
+    }
+    return followed
+  }
+
+  private endOf(host: ListedRunHost, options: FollowHostOptions): Promise<ThreadContainerRecord> {
+    switch (host.state) {
+      case 'live':
+        return this.deps.followHost(host, options)
+      case 'ended':
+        if (host.ended?.t === 'done') return Promise.resolve(host.ended.record)
+        return Promise.reject(new Error(host.ended?.error ?? 'Container run failed'))
+      case 'lost':
+        return Promise.reject(new RunHostLostError('The run host stopped before the run finished'))
+    }
+  }
+
+  private runOptions(
+    progress: ContainerRunProgress,
+    stopSignal: AbortController,
+    detach?: AbortSignal,
+  ): FollowHostOptions {
+    return {
+      ...(progress.runtimeId !== null ? { runtimeId: progress.runtimeId } : {}),
+      onLog: (line): void => {
+        this.update(progress, { log: [...progress.log, line].slice(-LOG_TAIL) })
+      },
+      onPhase: (phase): void => {
+        if (progress.phase !== 'finished' && progress.phase !== 'failed') {
+          this.update(progress, { phase })
+        }
+      },
+      signal: stopSignal.signal,
+      ...(detach ? { detach } : {}),
+    }
+  }
+
+  /**
+   * Wait for a run's record and settle the run with it: its progress, its
+   * supervisor task, and the settled listeners. A run the app let go of at
+   * quit settles none of these; the next launch does.
+   */
+  private async settle(
+    run: SettlingRun,
+    progress: ContainerRunProgress,
+    stopSignal: AbortController,
+    runner: () => Promise<ThreadContainerRecord>,
+  ): Promise<void> {
+    const supervisor = this.supervisor
+    const stoppedByUser = (): boolean => stopSignal.signal.aborted
+    try {
+      const record = await runner()
+      const outcome = judgeRun(record)
+      // A run the user stopped is not a guest failure; say what happened.
+      const stopped = stoppedByUser()
+      this.update(progress, {
+        phase: outcome.failure === null && !stopped ? 'finished' : 'failed',
+        record,
+        finishedAt: Date.now(),
+        error: stopped ? 'Stopped by you before the guest finished' : outcome.failure,
+        warnings: outcome.warnings,
+        ...(stopped ? { stoppedByUser: true } : {}),
+      })
+    } catch (error) {
+      if (error instanceof RunHostDetached) {
+        if (this.stopSignals.get(run.threadId) === stopSignal) this.stopSignals.delete(run.threadId)
+        this.hostedRuns.delete(run.threadId)
+        return
+      }
+      if (error instanceof RunHostLostError) {
+        // The host ended without its runner cleaning up after itself.
+        await this.deps
+          .releaseLost(run.runtimeId, this.engines.get(run.runtimeId))
+          .catch((cause: unknown) => {
+            console.error('[container-run] Could not clean up after a lost run host:', cause)
+          })
+      }
+      this.update(progress, {
+        phase: 'failed',
+        finishedAt: Date.now(),
+        error: errorMessage(error),
+        ...(stoppedByUser() ? { stoppedByUser: true } : {}),
+      })
+    }
+    this.hostedRuns.delete(run.threadId)
+    if (supervisor && run.taskId) {
+      try {
+        if (stoppedByUser()) await supervisor.cancel(run.projectId, run.taskId)
+        else if (progress.phase === 'finished') {
+          await supervisor.completeExternal(run.projectId, run.taskId, {
+            kind: 'handler',
+            ref: run.runtimeId,
+          })
+        } else {
+          await supervisor.failExternal(
+            run.projectId,
+            run.taskId,
+            progress.error ?? 'Container run failed',
+          )
+        }
+      } catch (error) {
+        // Preserve the container record even if saving operational metadata fails.
+        console.error('[container-run] Could not settle supervised task:', error)
+      }
+    }
+    if (this.stopSignals.get(run.threadId) === stopSignal) {
+      this.stopSignals.delete(run.threadId)
+    }
+    for (const listener of this.settledListeners) listener(run.projectId, snapshot(progress))
   }
 
   /**
@@ -232,6 +511,11 @@ export class ContainerRunService {
     return () => {
       this.settledListeners.delete(listener)
     }
+  }
+
+  /** The threads with a container run going. */
+  activeThreadIds(): string[] {
+    return [...this.runs.keys()].filter((id) => this.isActive(id))
   }
 
   isActive(threadId: string): boolean {
@@ -421,12 +705,7 @@ export class ContainerRunService {
               ? 'key'
               : 'none'
       // Only provider resolution and the explicit install choice admit origins.
-      egressAllowlist = [
-        ...new Set([
-          ...plan.egress,
-          ...(request.installDependencies === true ? DEPENDENCY_INSTALL_ORIGINS : []),
-        ]),
-      ]
+      egressAllowlist = armedEgress(plan, request.installDependencies === true)
       Object.assign(progress, { credential, egressAllowlist })
       // Check the host engine while the thread is reserved, then release the
       // reservation through the same failure path if the daemon is unavailable.
@@ -561,18 +840,16 @@ export class ContainerRunService {
   ): Promise<void> {
     const runtimeId = newRuntimeId()
     this.engines.set(runtimeId, engine)
-    // The key stays in memory: the runner hands it to the guest over the
-    // container's stdio link (decision A17). This process's environment, and
-    // so every terminal or tool it spawns meanwhile, never holds it.
-    const apiKey = plan.apiKey
-    const log = (line: string): void => {
-      this.update(progress, { log: [...progress.log, line].slice(-LOG_TAIL) })
-    }
     const supervisor = this.supervisor
     const stoppedByUser = (): boolean => stopSignal.signal.aborted
-    let taskId: string | null = null
-    try {
-      this.update(progress, { phase: 'building-image', runtimeId })
+    const run: SettlingRun = {
+      projectId: request.projectId,
+      threadId: request.threadId,
+      runtimeId,
+      taskId: null,
+    }
+    this.update(progress, { phase: 'building-image', runtimeId })
+    await this.settle(run, progress, stopSignal, async (): Promise<ThreadContainerRecord> => {
       if (supervisor) {
         const task = await supervisor.adoptRunning(
           {
@@ -600,7 +877,7 @@ export class ContainerRunService {
           },
           runtimeId,
         )
-        taskId = task.taskId
+        run.taskId = task.taskId
       }
       if (stoppedByUser()) throw new Error('Stopped by you before the container started')
       await this.ensureImage(engine)
@@ -608,7 +885,7 @@ export class ContainerRunService {
         throw new Error('Stopped by you before the container started')
       }
       this.update(progress, { phase: 'starting' })
-      const runRequest: ThreadContainerRequest = {
+      const base: ContainerRunBase = {
         workspace,
         threadId: request.threadId,
         prompt: continuation
@@ -617,69 +894,37 @@ export class ContainerRunService {
         // An earlier run that made no commits left nothing to carry in;
         // the checkout is snapshotted afresh and the prompt is the continuity.
         ...(continuation?.ref ? { carryInRef: continuation.ref } : {}),
-        model: plan.model,
-        ...(plan.mode === 'host-inference'
-          ? { hostInference: plan.hostInference, contextWindow: plan.contextWindow }
-          : { acp: plan.harness }),
-        ...(apiKey ? { apiKey } : {}),
         budgets: request.budgets,
         ...(request.installDependencies === true ? { installDependencies: true } : {}),
         egressAllowlist: progress.egressAllowlist,
         image: WORKER_IMAGE,
         engine,
       }
-      const record = await this.deps.run(runRequest, {
-        runtimeId,
-        onLog: log,
-        onPhase: (phase) => {
-          if (progress.phase !== 'finished' && progress.phase !== 'failed') {
-            this.update(progress, { phase })
-          }
-        },
-        signal: stopSignal.signal,
-      })
-      const outcome = judgeRun(record)
-      // A run the user stopped is not a guest failure; say what happened.
-      const stopped = stoppedByUser()
-      this.update(progress, {
-        phase: outcome.failure === null && !stopped ? 'finished' : 'failed',
-        record,
-        finishedAt: Date.now(),
-        error: stopped ? 'Stopped by you before the guest finished' : outcome.failure,
-        warnings: outcome.warnings,
-      })
-    } catch (error) {
-      this.update(progress, {
-        phase: 'failed',
-        finishedAt: Date.now(),
-        error: errorMessage(error),
-      })
-    } finally {
-      if (supervisor && taskId) {
-        try {
-          if (stoppedByUser()) await supervisor.cancel(request.projectId, taskId)
-          else if (progress.phase === 'finished') {
-            await supervisor.completeExternal(request.projectId, taskId, {
-              kind: 'handler',
-              ref: runtimeId,
-            })
-          } else {
-            await supervisor.failExternal(
-              request.projectId,
-              taskId,
-              progress.error ?? 'Container run failed',
-            )
-          }
-        } catch (error) {
-          // Preserve the container record even if saving operational metadata fails.
-          console.error('[container-run] Could not settle supervised task:', error)
-        }
+      // The key, if any, stays in memory either way: the runner hands it to the
+      // guest over the container's stdio link (decision A17), and a host process
+      // resolves its own. This process's environment, and so every terminal or
+      // tool it spawns meanwhile, never holds it.
+      if (
+        this.deps.runHost !== null &&
+        canHostOutsideApp(request.model) &&
+        this.deps.keysOpenOutsideApp()
+      ) {
+        const detach = new AbortController()
+        this.hostedRuns.set(request.threadId, detach)
+        return await this.deps.runHost(
+          {
+            runtimeId,
+            projectId: request.projectId,
+            display: hostDisplay(progress),
+            model: request.model,
+            useAgentLogin: request.useAgentLogin === true,
+            base,
+          },
+          this.runOptions(progress, stopSignal, detach.signal),
+        )
       }
-      if (this.stopSignals.get(request.threadId) === stopSignal) {
-        this.stopSignals.delete(request.threadId)
-      }
-      for (const listener of this.settledListeners) listener(request.projectId, snapshot(progress))
-    }
+      return await this.deps.run(withProvider(base, plan), this.runOptions(progress, stopSignal))
+    })
   }
 
   private update(progress: ContainerRunProgress, patch: Partial<ContainerRunProgress>): void {
@@ -818,6 +1063,22 @@ export function judgeRun(record: ThreadContainerRecord): {
 let service: ContainerRunService | null = null
 
 export function getContainerRunService(): ContainerRunService {
-  service ??= new ContainerRunService()
+  service ??= new ContainerRunService({
+    runHost: (request, options): Promise<ThreadContainerRecord> =>
+      runThroughHost(
+        request,
+        options,
+        runHostClientDependencies({
+          execPath: process.execPath,
+          entryPath: runHostEntryPath(),
+          userDataPath: getElectronUserDataPath(),
+          appVersion: getElectronAppVersion(),
+          packaged: isElectronAppPackaged(),
+          env: process.env,
+        }),
+      ),
+    listHosts: (): Promise<ListedRunHost[]> => listRunHosts(getElectronUserDataPath()),
+    forgetHost: (host): Promise<void> => forgetRunHost(getElectronUserDataPath(), host.runtimeId),
+  })
   return service
 }

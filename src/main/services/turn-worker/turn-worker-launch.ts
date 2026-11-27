@@ -15,10 +15,10 @@ import { join } from 'node:path'
 /** Whether a quit hands its turns to workers. */
 export const CONTINUE_TURNS_AFTER_QUIT_SETTING = 'continueTurnsAfterQuit'
 /**
- * Off until Settings offers the switch and Stop reaches a worker's turn; until
- * then a quit stops its turns, as it did before the worker.
+ * On: Settings offers the switch ("When Copse closes"), and Stop reaches a
+ * worker's turn (`turn-worker.ts`, `TurnControl`).
  */
-export const CONTINUE_TURNS_AFTER_QUIT_DEFAULT = false
+export const CONTINUE_TURNS_AFTER_QUIT_DEFAULT = true
 
 /** Whether a quit the user confirmed should hand its turns off. */
 export function continuesTurnsAfterQuit(
