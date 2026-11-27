@@ -179,7 +179,6 @@ import {
   init_acp,
   init_acp_agents_section,
   init_acp_known_agents,
-  init_actions,
   init_active_thread_owner,
   init_active_workspace,
   init_agent_activity,
@@ -204,7 +203,6 @@ import {
   init_chatgpt_plan_section,
   init_clamp,
   init_composite_intellect,
-  init_confirm_dialog,
   init_context_menu,
   init_context_window_advice,
   init_copse_tool_call,
@@ -239,9 +237,7 @@ import {
   init_model_parameters,
   init_model_picker,
   init_model_usage,
-  init_nullish as init_nullish2,
   init_one_line_text,
-  init_pane_tabs,
   init_panels,
   init_paste_key_form,
   init_pending_submissions,
@@ -281,7 +277,6 @@ import {
   init_tool_result_reminders,
   init_transcript_state,
   init_types,
-  init_ui,
   init_ui_scale,
   init_ui_scale2,
   init_working_brief,
@@ -340,7 +335,6 @@ import {
   modelDisplayLabel,
   modelParameterSupport,
   mountAnnotationLayer,
-  mountConfirmDialog,
   mountEnvironmentSetupOffer,
   mountModelPicker,
   mountModelSelectPicker,
@@ -393,7 +387,6 @@ import {
   refreshAgentRunPayload,
   refreshProjectThreadWorktrees,
   registerPromptAttachments,
-  registerUiKit,
   releaseHeldMessage,
   relocateProject,
   remoteAgentGroupLabel,
@@ -454,7 +447,6 @@ import {
   shellCommandsFromToolCalls,
   shouldSteerTodos,
   showCanvasArtefact,
-  showConfirmDialog,
   showContextMenu,
   showSideChatTranscript,
   sideChatsOf,
@@ -487,10 +479,6 @@ import {
   toggleRightPanelMaximized,
   toggleRightPanelWithWorkspace,
   transcriptMeta,
-  uiActions,
-  uiField,
-  uiPaneTab,
-  uiPaneTabsShell,
   updateContextSnapshot,
   updateQueuedMessageModel,
   updateQueuedMessageText,
@@ -498,12 +486,26 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-77BKYA6P.js";
+} from "./chunk-NGOGTKNF.js";
 import "./chunk-X6JZSFJR.js";
+import {
+  init_actions,
+  init_confirm_dialog,
+  init_nullish as init_nullish2,
+  init_pane_tabs,
+  init_ui,
+  mountConfirmDialog,
+  registerUiKit,
+  showConfirmDialog,
+  uiActions,
+  uiField,
+  uiPaneTab,
+  uiPaneTabsShell
+} from "./chunk-EPQ747CR.js";
 import {
   createSshWorkspaceConsent,
   init_ssh_workspace_consent
-} from "./chunk-FWVGBPA5.js";
+} from "./chunk-AYSMJRFY.js";
 import {
   StreamingMarkdownRenderer,
   appLinkDecorator,
@@ -537,7 +539,6 @@ import {
   init_inline_markdown,
   init_inline_status,
   init_ipc_error_message,
-  init_nullish,
   init_outline_icon,
   init_ssh_host_fields,
   init_ssh_host_helpers,
@@ -548,8 +549,6 @@ import {
   inlineStatus,
   ipcErrorMessage,
   isBrowserSanitizerSupported,
-  isDefined,
-  isNonNull,
   isRecord,
   isUnavailableThreadCheckoutError,
   maximizeIcon,
@@ -587,19 +586,26 @@ import {
   warningIcon,
   workspaceLinkTargetFromHref,
   zapIcon
-} from "./chunk-HIIVOQP4.js";
+} from "./chunk-JSCSK6EX.js";
+import {
+  init_nullish,
+  isDefined,
+  isNonNull
+} from "./chunk-WL34AAUC.js";
+import {
+  createOverlayDialog,
+  init_dialog_shell,
+  isAnyDialogOpen,
+  lazyBodyDialog
+} from "./chunk-QFUPXTRM.js";
 import {
   clear,
-  createOverlayDialog,
   el,
-  init_dialog_shell,
   init_helpers,
-  isAnyDialogOpen,
-  lazyBodyDialog,
   on,
   qs,
   qsRequired
-} from "./chunk-OB2CWITE.js";
+} from "./chunk-EMIRHVRH.js";
 import {
   __esm
 } from "./chunk-WW3EXSJD.js";
@@ -3713,6 +3719,121 @@ var init_thread_archive_toast = __esm({
   }
 });
 
+// src/renderer/dom/patch-children.ts
+function patchChildren(parent, desired) {
+  const wanted = new Set(desired);
+  let stale = parent.firstElementChild;
+  while (stale) {
+    const next = stale.nextElementSibling;
+    if (!wanted.has(stale)) stale.remove();
+    stale = next;
+  }
+  let cursor = parent.firstElementChild;
+  for (const node of desired) {
+    if (node === cursor) {
+      cursor = cursor.nextElementSibling;
+      continue;
+    }
+    parent.insertBefore(node, cursor);
+  }
+}
+var init_patch_children = __esm({
+  "src/renderer/dom/patch-children.ts"() {
+  }
+});
+
+// src/renderer/dom/keyed-reconcile.ts
+function keyed(node, key, deps = []) {
+  marks.set(node, { key, container: false, deps });
+  return node;
+}
+function keyedContainer(node, key) {
+  marks.set(node, { key, container: true, deps: [] });
+  return node;
+}
+function liveNode(node) {
+  return adoptedBy.get(node) ?? node;
+}
+function reconcileChildren(parent, fresh, options = {}) {
+  const liveByKey = /* @__PURE__ */ new Map();
+  for (const child of Array.from(parent.children)) {
+    const mark2 = marks.get(child);
+    if (mark2 && !liveByKey.has(mark2.key)) liveByKey.set(mark2.key, child);
+  }
+  const desired = [];
+  for (const node of fresh) {
+    if (node.parentElement === parent) {
+      desired.push(node);
+      continue;
+    }
+    const mark2 = marks.get(node);
+    const live = mark2 ? liveByKey.get(mark2.key) : void 0;
+    const liveMark = live ? marks.get(live) : void 0;
+    if (mark2 && live && liveMark) {
+      liveByKey.delete(mark2.key);
+      if (mark2.container && liveMark.container && onlyElementChildren(node)) {
+        syncAttributes(live, node, options.transientClasses ?? []);
+        reconcileChildren(live, Array.from(node.children), options);
+        adopt(node, live);
+        desired.push(live);
+        continue;
+      }
+      if (!mark2.container && !liveMark.container && builtMarkup.get(live) === node.outerHTML && sameDeps(liveMark.deps, mark2.deps)) {
+        adopt(node, live);
+        desired.push(live);
+        continue;
+      }
+    }
+    recordBuiltMarkup(node);
+    desired.push(node);
+  }
+  patchChildren(parent, desired);
+}
+function adopt(fresh, live) {
+  adoptedBy.set(fresh, live);
+  const mark2 = marks.get(fresh);
+  if (mark2) marks.set(live, mark2);
+}
+function sameDeps(a, b2) {
+  return a.length === b2.length && a.every((value, index) => value === b2[index]);
+}
+function onlyElementChildren(node) {
+  return node.childNodes.length === node.children.length;
+}
+function recordBuiltMarkup(node) {
+  for (const candidate of [node, ...Array.from(node.querySelectorAll("*"))]) {
+    if (marks.get(candidate)?.container === false) builtMarkup.set(candidate, candidate.outerHTML);
+  }
+}
+function syncAttributes(live, fresh, transientClasses) {
+  const kept = transientClasses.filter((name) => live.classList.contains(name));
+  for (const { name } of Array.from(live.attributes)) {
+    if (name !== "class" && !fresh.hasAttribute(name)) live.removeAttribute(name);
+  }
+  for (const { name, value } of Array.from(fresh.attributes)) {
+    if (name === "class") continue;
+    if (live.getAttribute(name) !== value) live.setAttribute(name, value);
+  }
+  const next = [
+    ...Array.from(fresh.classList),
+    ...kept.filter((name) => !fresh.classList.contains(name))
+  ];
+  const nextClass = next.join(" ");
+  if ((live.getAttribute("class") ?? "") !== nextClass) {
+    if (nextClass) live.setAttribute("class", nextClass);
+    else live.removeAttribute("class");
+  }
+}
+var marks, builtMarkup, adoptedBy;
+var init_keyed_reconcile = __esm({
+  "src/renderer/dom/keyed-reconcile.ts"() {
+    init_patch_children();
+    marks = /* @__PURE__ */ new WeakMap();
+    builtMarkup = /* @__PURE__ */ new WeakMap();
+    adoptedBy = /* @__PURE__ */ new WeakMap();
+  }
+});
+
 // src/renderer/dom/rename-blur.ts
 function bindRenameBlur(input, commit) {
   const mountedAt = Date.now();
@@ -4652,29 +4773,6 @@ var init_attention = __esm({
   }
 });
 
-// src/renderer/dom/patch-children.ts
-function patchChildren(parent, desired) {
-  const wanted = new Set(desired);
-  let stale = parent.firstElementChild;
-  while (stale) {
-    const next = stale.nextElementSibling;
-    if (!wanted.has(stale)) stale.remove();
-    stale = next;
-  }
-  let cursor = parent.firstElementChild;
-  for (const node of desired) {
-    if (node === cursor) {
-      cursor = cursor.nextElementSibling;
-      continue;
-    }
-    parent.insertBefore(node, cursor);
-  }
-}
-var init_patch_children = __esm({
-  "src/renderer/dom/patch-children.ts"() {
-  }
-});
-
 // src/renderer/controller/activity-final-reply.ts
 function finalReplyText(messages) {
   for (let index = messages.length - 1; index >= 0; index--) {
@@ -4983,6 +5081,18 @@ function mountApprovalDialog(api2, store2, options = {}) {
     el("input", { type: "checkbox", class: "approval-remember-input" }),
     "Always allow this tool"
   );
+  const trustOfferText = el("span", { class: "approval-trust-offer-text" });
+  const trustOfferButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary approval-trust-offer-btn" },
+    "Trust project\u2026"
+  );
+  const trustOffer = el(
+    "div",
+    { class: "approval-trust-offer", hidden: "" },
+    trustOfferText,
+    trustOfferButton
+  );
   const turnTreeLeaseLabel = el(
     "label",
     { class: "approval-remember approval-turn-tree" },
@@ -5020,6 +5130,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
     heading,
     origin,
     items,
+    trustOffer,
     rememberLabel,
     turnTreeLeaseLabel,
     uiActions(approveOnceButton, approveButton, rejectButton, {
@@ -5059,6 +5170,8 @@ function mountApprovalDialog(api2, store2, options = {}) {
   let cancelCoalesce = null;
   let cancelSettle = null;
   let detailsExpanded = false;
+  const trustedFromPrompt = /* @__PURE__ */ new Set();
+  let trustingFromPrompt = false;
   function closeDialog() {
     dialog.close();
     chatScrim.hidden = true;
@@ -5231,6 +5344,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
     approveOnceButton.classList.toggle("ui-btn-secondary", !showOnce);
     approveButton.classList.toggle("ui-btn-primary", !showOnce);
     approveButton.classList.toggle("ui-btn-secondary", showOnce);
+    renderTrustOffer();
     const grant = onceLabel !== "" ? null : rememberGrant();
     rememberLabel.hidden = grant === null;
     if (grant === null) rememberInput.checked = false;
@@ -5245,6 +5359,44 @@ function mountApprovalDialog(api2, store2, options = {}) {
     else {
       turnTreeLeaseText.textContent = leaseLabel;
       turnTreeLeaseInput.checked = batch.every((request) => request.turnTreeLeaseDefault === true);
+    }
+  }
+  function sharedTrustOffer() {
+    const first2 = batch[0];
+    const root = first2?.workspaceTrustOffer?.root;
+    if (!first2 || root === void 0) return null;
+    return batch.every((req) => req.workspaceTrustOffer?.root === root) ? { id: first2.id, root } : null;
+  }
+  function renderTrustOffer() {
+    const offer = sharedTrustOffer();
+    trustOffer.hidden = offer === null;
+    if (offer === null) return;
+    const trusted = trustedFromPrompt.has(offer.root);
+    trustOfferText.textContent = trusted ? "Project trusted. Commands like this will run without asking from now on; approve or reject this one." : "Copse is asking because this project isn't trusted. In a trusted project, commands like this run without asking.";
+    trustOfferButton.hidden = trusted;
+    trustOfferButton.disabled = trustingFromPrompt;
+  }
+  async function trustFromPrompt() {
+    const offer = sharedTrustOffer();
+    if (offer === null || trustingFromPrompt) return;
+    const details = await api2.workspace.trustOfferDetails(offer.id).catch(() => null);
+    if (details === null) return;
+    const { confirmProjectTrust } = await import("./workspace-trust-consent-IF5AN4PG.js");
+    const confirmed = await confirmProjectTrust({
+      projectName: details.name,
+      unsandboxedHooks: details.unsandboxedHooks,
+      lead: "Only trust a folder whose contents you wrote or have reviewed."
+    });
+    if (!confirmed) return;
+    trustingFromPrompt = true;
+    renderTrustOffer();
+    try {
+      await api2.workspace.trustFromApproval(offer.id);
+      trustedFromPrompt.add(offer.root);
+    } catch {
+    } finally {
+      trustingFromPrompt = false;
+      if (active2) renderTrustOffer();
     }
   }
   function clearSettle() {
@@ -5391,7 +5543,8 @@ function mountApprovalDialog(api2, store2, options = {}) {
       allowTurnTreeLease,
       turnTreeLeaseLabel: turnTreeLeaseLabel2,
       turnTreeLeaseDefault,
-      turnTreeLeaseSubject
+      turnTreeLeaseSubject,
+      workspaceTrustOffer
     }) => {
       if (queue.some((request) => request.id === id) || batch.some((request) => request.id === id))
         return;
@@ -5417,6 +5570,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
         turnTreeLeaseLabel: turnTreeLeaseLabel2,
         turnTreeLeaseDefault,
         turnTreeLeaseSubject,
+        workspaceTrustOffer,
         receivedAt: Date.now(),
         arrival: arrivals++
       };
@@ -5476,6 +5630,9 @@ function mountApprovalDialog(api2, store2, options = {}) {
   });
   rejectButton.addEventListener("click", () => {
     resolve(false, false);
+  });
+  trustOfferButton.addEventListener("click", () => {
+    void trustFromPrompt();
   });
   return {
     pending: () => [...batch, ...queue].sort((a, b2) => a.arrival - b2.arrival).map((req) => ({
@@ -7802,7 +7959,7 @@ function mountProjectsPane(root, store2, api2) {
       const next = await api2.threads.actionState();
       if (actionsDisposed() || JSON.stringify(next) === JSON.stringify(actionState)) return;
       actionState = next;
-      render2(true);
+      render2();
     } catch {
     } finally {
       actionLoading = false;
@@ -7812,13 +7969,13 @@ function mountProjectsPane(root, store2, api2) {
     threadFilter = filterText(searchInput.value.trim());
     filteredProjectId = store2.getState().activeProjectId;
     if (!archivedOnly) contentFilter.search(threadFilter);
-    render2();
+    renderFromTop();
   });
   searchInput.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       e.stopPropagation();
       closeThreadFilter();
-      render2();
+      renderFromTop();
     }
   });
   const list = el("div", { class: "projects-list" });
@@ -7904,7 +8061,7 @@ function mountProjectsPane(root, store2, api2) {
         onSelect: () => {
           needsCleanupOnly = !needsCleanupOnly;
           archivedOnly = false;
-          render2();
+          renderFromTop();
         }
       },
       {
@@ -7916,7 +8073,7 @@ function mountProjectsPane(root, store2, api2) {
           needsCleanupOnly = false;
           closeThreadFilter();
           archivedThreads.invalidate();
-          render2();
+          renderFromTop();
         }
       }
     ]);
@@ -7933,7 +8090,7 @@ function mountProjectsPane(root, store2, api2) {
         onSelect: () => {
           store2.setState({ sidebarThreadGroup: mode });
           saveSort("sidebarThreadGroup", mode);
-          render2();
+          renderFromTop();
         }
       })),
       { heading: "Sort by" },
@@ -7943,7 +8100,7 @@ function mountProjectsPane(root, store2, api2) {
         onSelect: () => {
           store2.setState({ sidebarThreadSort: mode });
           saveSort("sidebarThreadSort", mode);
-          render2();
+          renderFromTop();
         }
       })),
       { separator: true },
@@ -7954,7 +8111,7 @@ function mountProjectsPane(root, store2, api2) {
         onSelect: () => {
           store2.setState({ sidebarThreadSortReverse: !sidebarThreadSortReverse });
           saveSort("sidebarThreadSortReverse", !sidebarThreadSortReverse);
-          render2();
+          renderFromTop();
         }
       },
       {
@@ -8050,7 +8207,7 @@ function mountProjectsPane(root, store2, api2) {
         threadChangeCache.set(key, { summary, at: Date.now() });
       }
       if (generation !== threadChangeGeneration) return;
-      if (changed) render2(true);
+      if (changed) render2();
       const now = Date.now();
       const rest = pending.slice(batch.length).filter(({ projectId, threadId }) => {
         const cached = threadChangeCache.get(threadChangeKey(projectId, threadId));
@@ -8071,6 +8228,7 @@ function mountProjectsPane(root, store2, api2) {
   let renaming = null;
   let renamingGroup = null;
   let activeDrag = null;
+  let activeDragSource = null;
   const prLifecycleCache = /* @__PURE__ */ new Map();
   const prFetchInFlight = /* @__PURE__ */ new Set();
   let prStatusGeneration = 0;
@@ -8350,18 +8508,24 @@ function mountProjectsPane(root, store2, api2) {
     return lines.join("\n");
   }
   function renderOrphansSection() {
-    const section2 = el("div", { class: "orphans-section" });
+    const section2 = keyedContainer(el("div", { class: "orphans-section" }), "orphans");
     section2.append(
-      el(
-        "div",
-        { class: "orphans-heading" },
-        warningIcon("ui-icon ui-icon-sm"),
-        el("span", {}, "Recoverable threads")
+      keyed(
+        el(
+          "div",
+          { class: "orphans-heading" },
+          warningIcon("ui-icon ui-icon-sm"),
+          el("span", {}, "Recoverable threads")
+        ),
+        "heading"
       ),
-      el(
-        "p",
-        { class: "orphans-hint" },
-        "Saved chats with no project in the sidebar. Recover attaches them to a folder; Dismiss hides the row (threads stay on disk)."
+      keyed(
+        el(
+          "p",
+          { class: "orphans-hint" },
+          "Saved chats with no project in the sidebar. Recover attaches them to a folder; Dismiss hides the row (threads stay on disk)."
+        ),
+        "hint"
       )
     );
     for (const orphan of orphans) {
@@ -8390,7 +8554,7 @@ function mountProjectsPane(root, store2, api2) {
       dismissBtn.addEventListener("click", () => {
         void dismissOrphanProject(api2, orphan.id).then(() => {
           orphans = orphans.filter((entry) => entry.id !== orphan.id);
-          render2(true);
+          render2();
           showToast("Recoverable threads hidden. They remain on disk.");
         }).catch((err) => {
           showErrorToast("Could not dismiss recoverable threads", err);
@@ -8418,7 +8582,7 @@ function mountProjectsPane(root, store2, api2) {
       });
       actions.append(dismissBtn, recoverBtn);
       row2.append(actions);
-      section2.append(row2);
+      section2.append(keyed(row2, `orphan:${orphan.id}`, [orphan]));
     }
     return section2;
   }
@@ -8455,6 +8619,7 @@ function mountProjectsPane(root, store2, api2) {
   }
   function endDrag() {
     activeDrag = null;
+    activeDragSource = null;
     clearDropIndicators();
     list.classList.remove(...DROP_CLASSES);
     for (const dragging of list.querySelectorAll(".is-dragging")) {
@@ -8468,7 +8633,8 @@ function mountProjectsPane(root, store2, api2) {
       e.dataTransfer?.setData(SIDEBAR_DRAG_MIME, serializeSidebarDrag(payload));
       if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
       activeDrag = payload;
-      block.classList.add("is-dragging");
+      activeDragSource = row2;
+      liveNode(block).classList.add("is-dragging");
     });
     row2.addEventListener("dragend", endDrag);
   }
@@ -8494,10 +8660,10 @@ function mountProjectsPane(root, store2, api2) {
       e.stopPropagation();
       if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
       clearDropIndicators();
-      block.classList.add(`drop-${intent}`);
+      liveNode(block).classList.add(`drop-${intent}`);
     });
     row2.addEventListener("dragleave", () => {
-      block.classList.remove(...DROP_CLASSES);
+      liveNode(block).classList.remove(...DROP_CLASSES);
     });
     row2.addEventListener("drop", (e) => {
       const intent = intentAt(e);
@@ -8672,16 +8838,22 @@ function mountProjectsPane(root, store2, api2) {
     }
     return entries;
   }
-  function render2(preserveScroll = false) {
+  function renderFromTop() {
+    render2();
+    list.scrollTop = 0;
+  }
+  function render2() {
     const { projects: known, sidebarProjectFilterId } = store2.getState();
     if (sidebarProjectFilterId !== null && !known.some((p) => p.id === sidebarProjectFilterId)) {
       store2.setState({ sidebarProjectFilterId: null });
     }
-    endDrag();
-    const scrollTop = preserveScroll ? list.scrollTop : 0;
     prBackfillObserver?.disconnect();
     prBackfillObserver = null;
-    clear(list);
+    const fresh = [];
+    const commit = () => {
+      reconcileChildren(list, fresh, { transientClasses: ["is-dragging", ...DROP_CLASSES] });
+      if (activeDragSource && !activeDragSource.isConnected) endDrag();
+    };
     const prBackfillRows = [];
     const threadChangeWanted = [];
     const threadChangeSeen = [];
@@ -8707,13 +8879,14 @@ function mountProjectsPane(root, store2, api2) {
     const expandedId = expandedProjectId ?? activeProjectId;
     if (archivedOnly) {
       archivedThreads.show(visibleProjects, searchInput.value.trim());
-      list.append(archivedThreads.element);
+      fresh.push(archivedThreads.element);
+      commit();
       return;
     }
     archivedThreads.hide();
     if (projects.length === 0 && projectGroups.length === 0 && orphans.length === 0) {
-      list.append(el("div", { class: "sidebar-empty" }, 'No projects yet. Click "+".'));
-      if (preserveScroll) list.scrollTop = scrollTop;
+      fresh.push(el("div", { class: "sidebar-empty" }, 'No projects yet. Click "+".'));
+      commit();
       return;
     }
     function renderThreadRow(project, thread, options = {}) {
@@ -8989,7 +9162,13 @@ function mountProjectsPane(root, store2, api2) {
       } else {
         chatRow.append(el("span", { class: "chat-menu-btn-space", "aria-hidden": "true" }));
       }
-      return chatRow;
+      return keyed(chatRow, `thread:${project.id}:${thread.id}`, [
+        project,
+        thread,
+        options.displayTitle,
+        options.allowRename,
+        options.statusDetails
+      ]);
     }
     function renderAutomationsSection() {
       const scheduleOwners = /* @__PURE__ */ new Map();
@@ -9026,7 +9205,10 @@ function mountProjectsPane(root, store2, api2) {
       const hasActiveAutomation = allRuns.some((thread) => thread.id === activeThreadId);
       const attentionRuns = allRuns.filter((thread) => isThreadAwaitingAttention(thread.id));
       const sectionExpanded = automationsSectionExpanded || hasActiveAutomation || attentionRuns.length > 0;
-      const section2 = el("div", { class: "automation-threads-group" });
+      const section2 = keyedContainer(
+        el("div", { class: "automation-threads-group" }),
+        "automations"
+      );
       const toggle = el(
         "button",
         {
@@ -9066,24 +9248,27 @@ function mountProjectsPane(root, store2, api2) {
         ]);
       });
       section2.append(
-        el(
-          "div",
-          { class: "automation-threads-header" },
-          toggle,
-          // Creates against the active project, same default the plugin editor
-          // itself falls back to when no project is named — there is no single
-          // project this workspace-level heading could otherwise imply.
-          automationSetupBtn(
-            "New automation\u2026",
-            () => {
-              openAutomationDialog(store2, api2, { createNew: true });
-            },
-            plusIcon
-          )
+        keyed(
+          el(
+            "div",
+            { class: "automation-threads-header" },
+            toggle,
+            // Creates against the active project, same default the plugin editor
+            // itself falls back to when no project is named — there is no single
+            // project this workspace-level heading could otherwise imply.
+            automationSetupBtn(
+              "New automation\u2026",
+              () => {
+                openAutomationDialog(store2, api2, { createNew: true });
+              },
+              plusIcon
+            )
+          ),
+          "header"
         )
       );
       if (sectionExpanded) {
-        const rows = el("div", { class: "automation-thread-rows" });
+        const rows = keyedContainer(el("div", { class: "automation-thread-rows" }), "rows");
         for (const { project, scheduleId, scheduleName, runs } of scheduleOwners.values()) {
           const projectSuffix = el(
             "span",
@@ -9118,7 +9303,9 @@ function mountProjectsPane(root, store2, api2) {
                 })
               );
             });
-            rows.append(row2);
+            rows.append(
+              keyed(row2, `unrun:${project.id}:${scheduleId}`, [project, scheduleName, scheduleId])
+            );
             continue;
           }
           const firstRun = runs[0];
@@ -9132,7 +9319,9 @@ function mountProjectsPane(root, store2, api2) {
             const menuButton = row2.querySelector(".chat-menu-btn");
             if (menuButton) menuButton.before(setupBtn);
             else row2.append(setupBtn);
-            rows.append(row2);
+            rows.append(
+              keyed(row2, `run:${project.id}:${firstRun.id}`, [project, firstRun, scheduleId])
+            );
             continue;
           }
           const scheduleKey = `${project.id}\0${scheduleId}`;
@@ -9140,10 +9329,13 @@ function mountProjectsPane(root, store2, api2) {
           const showingAllRuns = expandedAutomationSchedules.has(scheduleKey) || hasActiveRun;
           const foldEntries = foldAutomationRuns(runs, isThreadAwaitingAttention);
           const scheduleRevealed = showingAllRuns || foldEntries.length > 0;
-          const scheduleGroup = el("div", {
-            class: "automation-schedule-group",
-            "data-schedule-id": scheduleId
-          });
+          const scheduleGroup = keyedContainer(
+            el("div", {
+              class: "automation-schedule-group",
+              "data-schedule-id": scheduleId
+            }),
+            `schedule:${scheduleKey}`
+          );
           const scheduleToggle = el(
             "button",
             {
@@ -9191,13 +9383,17 @@ function mountProjectsPane(root, store2, api2) {
             render2();
           });
           scheduleGroup.append(
-            el(
-              "div",
-              { class: "automation-schedule-header" },
-              scheduleToggle,
-              automationSetupBtn(`${scheduleName} setup`, () => {
-                openAutomationDialog(store2, api2, { projectId: project.id, scheduleId });
-              })
+            keyed(
+              el(
+                "div",
+                { class: "automation-schedule-header" },
+                scheduleToggle,
+                automationSetupBtn(`${scheduleName} setup`, () => {
+                  openAutomationDialog(store2, api2, { projectId: project.id, scheduleId });
+                })
+              ),
+              "header",
+              [project, scheduleName, heldRuns.length > 0]
             )
           );
           scheduleToggle.addEventListener("contextmenu", (e) => {
@@ -9223,7 +9419,7 @@ function mountProjectsPane(root, store2, api2) {
             );
           });
           if (scheduleRevealed) {
-            const runRows = el("div", { class: "automation-schedule-runs" });
+            const runRows = keyedContainer(el("div", { class: "automation-schedule-runs" }), "runs");
             const runRow2 = (thread) => {
               const index = runs.indexOf(thread);
               const timestamp = thread.automation?.triggeredAt;
@@ -9256,7 +9452,7 @@ function mountProjectsPane(root, store2, api2) {
                   row2.addEventListener("click", () => {
                     openActivityPanel();
                   });
-                  runRows.append(row2);
+                  runRows.append(keyed(row2, "fold-pending"));
                 } else {
                   const open = expandedFailedSchedules.has(scheduleKey);
                   const row2 = el(
@@ -9277,7 +9473,7 @@ function mountProjectsPane(root, store2, api2) {
                     else expandedFailedSchedules.add(scheduleKey);
                     render2();
                   });
-                  runRows.append(row2);
+                  runRows.append(keyed(row2, "fold-failed", [scheduleKey]));
                   if (open) for (const thread of entry.runs) runRows.append(runRow2(thread));
                 }
               }
@@ -9305,10 +9501,13 @@ function mountProjectsPane(root, store2, api2) {
         e.stopPropagation();
         openNewProjectThread(store2, api2, project.id);
       });
-      return newThreadBtn;
+      return keyed(newThreadBtn, "new-thread", [project.id]);
     }
     function renderProjectEntry(project) {
-      const entry = el("div", { class: "project-entry", "data-project-id": project.id });
+      const entry = keyedContainer(
+        el("div", { class: "project-entry", "data-project-id": project.id }),
+        `project:${project.id}`
+      );
       const isExpanded = project.id === expandedId;
       const hasRunningThread = store2.getState().backgroundThreads.some(
         ({ projectId, thread }) => projectId === project.id && thread.status === "running"
@@ -9447,10 +9646,14 @@ function mountProjectsPane(root, store2, api2) {
           menuButton.disabled = false;
         });
       });
-      const projectLine = el("div", { class: "project-line" }, projectRow, menuButton);
+      const projectLine = keyedContainer(el("div", { class: "project-line" }), "line");
+      projectLine.append(
+        keyed(projectRow, "row", [project, projectGroups]),
+        keyed(menuButton, "menu", [project, projectGroups])
+      );
       entry.append(projectLine);
       if (isExpanded && project.missing) {
-        entry.append(renderMissingNotice(project));
+        entry.append(keyed(renderMissingNotice(project), "missing", [project]));
         return entry;
       }
       if (isExpanded) {
@@ -9496,7 +9699,7 @@ function mountProjectsPane(root, store2, api2) {
           visibleThreadCounts.set(project.id, paged.visibleCount);
         }
       }
-      const chats = el("div", { class: "chats-list" });
+      const chats = keyedContainer(el("div", { class: "chats-list" }), "chats");
       if (sidebarThreads.length === 0 && isProjectSwitchInFlight(store2, project.id)) {
         chats.append(el("div", { class: "sidebar-empty chats-loading" }, "Loading\u2026"));
       } else if (isFiltering && contentFilter.pending) {
@@ -9537,20 +9740,23 @@ function mountProjectsPane(root, store2, api2) {
           visibleThreadCounts.set(project.id, visibleCount + SIDEBAR_THREADS_PAGE_SIZE);
           render2();
         });
-        chats.append(showMoreBtn);
+        chats.append(keyed(showMoreBtn, "show-more", [visibleCount]));
       }
       entry.append(chats);
       return entry;
     }
     function renderGroupEntry(group, members) {
-      const block = el("div", { class: "project-group", "data-group-id": group.id });
-      const row2 = renderGroupRow(group, members.length);
+      const block = keyedContainer(
+        el("div", { class: "project-group", "data-group-id": group.id }),
+        `group:${group.id}`
+      );
+      const row2 = keyed(renderGroupRow(group, members.length), "row", [group]);
       const node = { kind: "group", id: group.id };
       bindDragSource(row2, node, block);
       bindDropTarget(row2, block, node);
       block.append(row2);
       if (group.collapsed === true) return block;
-      const children = el("div", { class: "project-group-children" });
+      const children = keyedContainer(el("div", { class: "project-group-children" }), "children");
       for (const member of members) children.append(renderProjectEntry(member));
       if (members.length === 0) {
         children.append(el("div", { class: "sidebar-empty" }, "Drag a project here"));
@@ -9559,7 +9765,7 @@ function mountProjectsPane(root, store2, api2) {
       return block;
     }
     const automationsSection = renderAutomationsSection();
-    if (automationsSection) list.append(automationsSection);
+    if (automationsSection) fresh.push(automationsSection);
     function renderThreadSections(mode) {
       const owners = /* @__PURE__ */ new Map();
       const rows = [];
@@ -9591,10 +9797,14 @@ function mountProjectsPane(root, store2, api2) {
         nameRow.addEventListener("click", () => {
           switchProject(store2, api2, project.id);
         });
-        return el(
-          "div",
-          { class: "project-entry", "data-project-id": project.id },
-          el("div", { class: "project-line" }, nameRow, renderNewThreadButton(project))
+        return keyed(
+          el(
+            "div",
+            { class: "project-entry", "data-project-id": project.id },
+            el("div", { class: "project-line" }, nameRow, renderNewThreadButton(project))
+          ),
+          `empty-project:${project.id}`,
+          [project]
         );
       });
       if (ordered.length === 0) {
@@ -9608,9 +9818,14 @@ function mountProjectsPane(root, store2, api2) {
         ];
       }
       return sections.map((section2) => {
-        const block = el("div", { class: "thread-section", "data-section-id": section2.id });
+        const block = keyedContainer(
+          el("div", { class: "thread-section", "data-section-id": section2.id }),
+          `section:${mode}:${section2.id}`
+        );
         if (section2.label) {
-          block.append(el("div", { class: "thread-section-heading" }, section2.label));
+          block.append(
+            keyed(el("div", { class: "thread-section-heading" }, section2.label), "heading")
+          );
         }
         const byThread = new Map(section2.rows.map((row2) => [row2.thread, row2]));
         const countKey = `section:${mode}:${section2.id}`;
@@ -9624,7 +9839,7 @@ function mountProjectsPane(root, store2, api2) {
           activeRow?.thread.id
         );
         if (paged.visibleCount > limit) visibleThreadCounts.set(countKey, paged.visibleCount);
-        const chats = el("div", { class: "chats-list" });
+        const chats = keyedContainer(el("div", { class: "chats-list" }), "chats");
         for (const thread of paged.visibleThreads) {
           const project = owners.get(byThread.get(thread)?.projectId ?? "");
           if (!project) continue;
@@ -9646,7 +9861,7 @@ function mountProjectsPane(root, store2, api2) {
             visibleThreadCounts.set(countKey, paged.visibleCount + SIDEBAR_THREADS_PAGE_SIZE);
             render2();
           });
-          chats.append(showMoreBtn);
+          chats.append(keyed(showMoreBtn, "show-more", [countKey, paged.visibleCount]));
         }
         block.append(chats);
         return block;
@@ -9654,22 +9869,28 @@ function mountProjectsPane(root, store2, api2) {
     }
     const groupMode = store2.getState().sidebarThreadGroup;
     if (groupMode !== "project" && threadFilter.length === 0) {
-      list.append(...renderThreadSections(groupMode));
+      fresh.push(...renderThreadSections(groupMode));
     } else {
       for (const node of buildProjectTree(visibleProjects, projectGroups)) {
         if (node.kind === "group" && store2.getState().sidebarProjectFilterId !== null && node.projects.length === 0)
           continue;
-        if (node.kind === "group") list.append(renderGroupEntry(node.group, node.projects));
-        else list.append(renderProjectEntry(node.project));
+        if (node.kind === "group") fresh.push(renderGroupEntry(node.group, node.projects));
+        else fresh.push(renderProjectEntry(node.project));
       }
     }
-    if (orphans.length > 0) list.append(renderOrphansSection());
+    if (orphans.length > 0) fresh.push(renderOrphansSection());
+    commit();
+    const liveBackfillRows = prBackfillRows.map(({ row: row2, projectId, threadId }) => ({
+      row: liveNode(row2),
+      projectId,
+      threadId
+    }));
     prBackfillRowsByKey = new Map(
-      prBackfillRows.map(({ row: row2, projectId, threadId }) => [`${projectId}\0${threadId}`, row2])
+      liveBackfillRows.map(({ row: row2, projectId, threadId }) => [`${projectId}\0${threadId}`, row2])
     );
-    if (prBackfillRows.length > 0 && typeof IntersectionObserver !== "undefined") {
+    if (liveBackfillRows.length > 0 && typeof IntersectionObserver !== "undefined") {
       const rowThreads = new Map(
-        prBackfillRows.map(({ row: row2, projectId, threadId }) => [row2, { projectId, threadId }])
+        liveBackfillRows.map(({ row: row2, projectId, threadId }) => [row2, { projectId, threadId }])
       );
       const observer = new IntersectionObserver((entries) => {
         if (prBackfillObserver !== observer) return;
@@ -9722,7 +9943,7 @@ function mountProjectsPane(root, store2, api2) {
         }
       });
       prBackfillObserver = observer;
-      for (const { row: row2 } of prBackfillRows) observer.observe(row2);
+      for (const { row: row2 } of liveBackfillRows) observer.observe(row2);
     }
     threadChangeRendered = threadChangeSeen;
     const pruneBefore = Date.now() - 2 * THREAD_CHANGE_TTL_MS;
@@ -9730,7 +9951,6 @@ function mountProjectsPane(root, store2, api2) {
       if (entry.at < pruneBefore && !threadChangeSeenKeys.has(key)) threadChangeCache.delete(key);
     }
     refreshThreadChanges(threadChangeWanted);
-    if (preserveScroll) list.scrollTop = scrollTop;
   }
   const unsubWorkingTree = api2.git.onWorkingTreeChanged(() => {
     if (threadChangeTimer !== null) clearTimeout(threadChangeTimer);
@@ -9777,7 +9997,7 @@ function mountProjectsPane(root, store2, api2) {
     store2.select(
       (s) => s.sidebarProjectFilterId,
       () => {
-        render2();
+        renderFromTop();
       }
     ),
     store2.select(
@@ -9875,6 +10095,7 @@ var init_projects_pane = __esm({
     init_thread_archive_toast();
     init_side_chat();
     init_helpers();
+    init_keyed_reconcile();
     init_context_menu();
     init_rename_blur();
     init_pr_status();
@@ -15701,6 +15922,7 @@ function containerRunSummary(progress) {
   if (isLive(progress)) return null;
   const result = progress.record?.result ?? null;
   const ref = progress.record?.carryOut.ref ?? null;
+  if (progress.phase === "failed" && progress.stoppedByUser === true) return "Stopped by you";
   if (progress.phase === "failed") return `Failed: ${progress.error ?? "the run did not complete"}`;
   if (!result) return "Finished without a result";
   const commits = result.commits.length === 0 ? "no commits" : `${plural2(result.commits.length, "commit")} ${ref ? `on ${ref}` : "made but not fetched"}`;
@@ -24504,9 +24726,9 @@ function prepareSliceForReplace(slice2, $along) {
     end: node.resolveNoCache(node.content.size - slice2.openEnd - extra)
   };
 }
-function wrapMarks(marks, str) {
-  for (let i2 = marks.length - 1; i2 >= 0; i2--)
-    str = marks[i2].type.name + "(" + str + ")";
+function wrapMarks(marks2, str) {
+  for (let i2 = marks2.length - 1; i2 >= 0; i2--)
+    str = marks2[i2].type.name + "(" + str + ")";
   return str;
 }
 function checkAttrs(attrs, values, type, name) {
@@ -24768,10 +24990,10 @@ function validateType(typeName, attrName, type) {
       throw new RangeError(`Expected value of type ${types} for attribute ${attrName} on type ${typeName}, got ${name}`);
   };
 }
-function gatherMarks(schema, marks) {
+function gatherMarks(schema, marks2) {
   let found2 = [];
-  for (let i2 = 0; i2 < marks.length; i2++) {
-    let name = marks[i2], mark2 = schema.marks[name], ok = mark2;
+  for (let i2 = 0; i2 < marks2.length; i2++) {
+    let name = marks2[i2], mark2 = schema.marks[name], ok = mark2;
     if (mark2) {
       found2.push(mark2);
     } else {
@@ -24782,7 +25004,7 @@ function gatherMarks(schema, marks) {
       }
     }
     if (!ok)
-      throw new SyntaxError("Unknown mark type: '" + marks[i2] + "'");
+      throw new SyntaxError("Unknown mark type: '" + marks2[i2] + "'");
   }
   return found2;
 }
@@ -25337,12 +25559,12 @@ var init_dist3 = __esm({
       Create a properly sorted mark set from null, a single mark, or an
       unsorted array of marks.
       */
-      static setFrom(marks) {
-        if (!marks || Array.isArray(marks) && marks.length == 0)
+      static setFrom(marks2) {
+        if (!marks2 || Array.isArray(marks2) && marks2.length == 0)
           return _Mark.none;
-        if (marks instanceof _Mark)
-          return [marks];
-        let copy2 = marks.slice();
+        if (marks2 instanceof _Mark)
+          return [marks2];
+        let copy2 = marks2.slice();
         copy2.sort((a, b2) => a.type.rank - b2.type.rank);
         return copy2;
       }
@@ -25592,11 +25814,11 @@ var init_dist3 = __esm({
           main = other;
           other = tmp;
         }
-        let marks = main.marks;
-        for (var i2 = 0; i2 < marks.length; i2++)
-          if (marks[i2].type.spec.inclusive === false && (!other || !marks[i2].isInSet(other.marks)))
-            marks = marks[i2--].removeFromSet(marks);
-        return marks;
+        let marks2 = main.marks;
+        for (var i2 = 0; i2 < marks2.length; i2++)
+          if (marks2[i2].type.spec.inclusive === false && (!other || !marks2[i2].isInSet(other.marks)))
+            marks2 = marks2[i2--].removeFromSet(marks2);
+        return marks2;
       }
       /**
       Get the marks after the current position, if any, except those
@@ -25610,11 +25832,11 @@ var init_dist3 = __esm({
         let after = this.parent.maybeChild(this.index());
         if (!after || !after.isInline)
           return null;
-        let marks = after.marks, next = $end.parent.maybeChild($end.index());
-        for (var i2 = 0; i2 < marks.length; i2++)
-          if (marks[i2].type.spec.inclusive === false && (!next || !marks[i2].isInSet(next.marks)))
-            marks = marks[i2--].removeFromSet(marks);
-        return marks;
+        let marks2 = after.marks, next = $end.parent.maybeChild($end.index());
+        for (var i2 = 0; i2 < marks2.length; i2++)
+          if (marks2[i2].type.spec.inclusive === false && (!next || !marks2[i2].isInSet(next.marks)))
+            marks2 = marks2[i2--].removeFromSet(marks2);
+        return marks2;
       }
       /**
       The depth up to which this position and the given (non-resolved)
@@ -25766,10 +25988,10 @@ var init_dist3 = __esm({
       /**
       @internal
       */
-      constructor(type, attrs, content, marks = Mark.none) {
+      constructor(type, attrs, content, marks2 = Mark.none) {
         this.type = type;
         this.attrs = attrs;
-        this.marks = marks;
+        this.marks = marks2;
         this.content = content || Fragment.empty;
       }
       /**
@@ -25883,8 +26105,8 @@ var init_dist3 = __esm({
       Check whether this node's markup correspond to the given type,
       attributes, and marks.
       */
-      hasMarkup(type, attrs, marks) {
-        return this.type == type && compareDeep(this.attrs, attrs || type.defaultAttrs || emptyAttrs) && Mark.sameSet(this.marks, marks || Mark.none);
+      hasMarkup(type, attrs, marks2) {
+        return this.type == type && compareDeep(this.attrs, attrs || type.defaultAttrs || emptyAttrs) && Mark.sameSet(this.marks, marks2 || Mark.none);
       }
       /**
       Create a new node with the same markup as this node, containing
@@ -25899,8 +26121,8 @@ var init_dist3 = __esm({
       Create a copy of this node, with the given set of marks instead
       of the node's own marks.
       */
-      mark(marks) {
-        return marks == this.marks ? this : new _Node(this.type, this.attrs, this.content, marks);
+      mark(marks2) {
+        return marks2 == this.marks ? this : new _Node(this.type, this.attrs, this.content, marks2);
       }
       /**
       Create a copy of this node with only the content between the
@@ -26090,8 +26312,8 @@ var init_dist3 = __esm({
       Test whether replacing the range `from` to `to` (by index) with
       a node of the given type would leave the node's content valid.
       */
-      canReplaceWith(from2, to, type, marks) {
-        if (marks && !this.type.allowsMarks(marks))
+      canReplaceWith(from2, to, type, marks2) {
+        if (marks2 && !this.type.allowsMarks(marks2))
           return false;
         let start = this.contentMatchAt(from2).matchType(type);
         let end = start && start.matchFragment(this.content, to);
@@ -26147,19 +26369,19 @@ var init_dist3 = __esm({
       static fromJSON(schema, json) {
         if (!json)
           throw new RangeError("Invalid input for Node.fromJSON");
-        let marks = void 0;
+        let marks2 = void 0;
         if (json.marks) {
           if (!Array.isArray(json.marks))
             throw new RangeError("Invalid mark data for Node.fromJSON");
-          marks = json.marks.map(schema.markFromJSON);
+          marks2 = json.marks.map(schema.markFromJSON);
         }
         if (json.type == "text") {
           if (typeof json.text != "string")
             throw new RangeError("Invalid text node in JSON");
-          return schema.text(json.text, marks);
+          return schema.text(json.text, marks2);
         }
         let content = Fragment.fromJSON(schema, json.content);
-        let node = schema.nodeType(json.type).create(json.attrs, content, marks);
+        let node = schema.nodeType(json.type).create(json.attrs, content, marks2);
         return node;
       }
     };
@@ -26168,8 +26390,8 @@ var init_dist3 = __esm({
       /**
       @internal
       */
-      constructor(type, attrs, content, marks) {
-        super(type, attrs, null, marks);
+      constructor(type, attrs, content, marks2) {
+        super(type, attrs, null, marks2);
         if (!content)
           throw new RangeError("Empty text nodes are not allowed");
         this.text = content;
@@ -26188,8 +26410,8 @@ var init_dist3 = __esm({
       get nodeSize() {
         return this.text.length;
       }
-      mark(marks) {
-        return marks == this.marks ? this : new _TextNode(this.type, this.attrs, this.text, marks);
+      mark(marks2) {
+        return marks2 == this.marks ? this : new _TextNode(this.type, this.attrs, this.text, marks2);
       }
       withText(text) {
         if (text == this.text)
@@ -26493,20 +26715,20 @@ var init_dist3 = __esm({
       `null`. Similarly `marks` may be `null` to default to the empty
       set of marks.
       */
-      create(attrs = null, content, marks) {
+      create(attrs = null, content, marks2) {
         if (this.isText)
           throw new Error("NodeType.create can't construct text nodes");
-        return new Node2(this, this.computeAttrs(attrs), Fragment.from(content), Mark.setFrom(marks));
+        return new Node2(this, this.computeAttrs(attrs), Fragment.from(content), Mark.setFrom(marks2));
       }
       /**
       Like [`create`](https://prosemirror.net/docs/ref/#model.NodeType.create), but check the given content
       against the node type's content restrictions, and throw an error
       if it doesn't match.
       */
-      createChecked(attrs = null, content, marks) {
+      createChecked(attrs = null, content, marks2) {
         content = Fragment.from(content);
         this.checkContent(content);
-        return new Node2(this, this.computeAttrs(attrs), content, Mark.setFrom(marks));
+        return new Node2(this, this.computeAttrs(attrs), content, Mark.setFrom(marks2));
       }
       /**
       Like [`create`](https://prosemirror.net/docs/ref/#model.NodeType.create), but see if it is
@@ -26516,7 +26738,7 @@ var init_dist3 = __esm({
       always be created, this will always succeed if you pass null or
       `Fragment.empty` as content.
       */
-      createAndFill(attrs = null, content, marks) {
+      createAndFill(attrs = null, content, marks2) {
         attrs = this.computeAttrs(attrs);
         content = Fragment.from(content);
         if (content.size) {
@@ -26529,7 +26751,7 @@ var init_dist3 = __esm({
         let after = matched && matched.fillBefore(Fragment.empty, true);
         if (!after)
           return null;
-        return new Node2(this, attrs, content.append(after), Mark.setFrom(marks));
+        return new Node2(this, attrs, content.append(after), Mark.setFrom(marks2));
       }
       /**
       Returns true if the given fragment is valid content for this node
@@ -26567,30 +26789,30 @@ var init_dist3 = __esm({
       /**
       Test whether the given set of marks are allowed in this node.
       */
-      allowsMarks(marks) {
+      allowsMarks(marks2) {
         if (this.markSet == null)
           return true;
-        for (let i2 = 0; i2 < marks.length; i2++)
-          if (!this.allowsMarkType(marks[i2].type))
+        for (let i2 = 0; i2 < marks2.length; i2++)
+          if (!this.allowsMarkType(marks2[i2].type))
             return false;
         return true;
       }
       /**
       Removes the marks that are not allowed in this node from the given set.
       */
-      allowedMarks(marks) {
+      allowedMarks(marks2) {
         if (this.markSet == null)
-          return marks;
+          return marks2;
         let copy2;
-        for (let i2 = 0; i2 < marks.length; i2++) {
-          if (!this.allowsMarkType(marks[i2].type)) {
+        for (let i2 = 0; i2 < marks2.length; i2++) {
+          if (!this.allowsMarkType(marks2[i2].type)) {
             if (!copy2)
-              copy2 = marks.slice(0, i2);
+              copy2 = marks2.slice(0, i2);
           } else if (copy2) {
-            copy2.push(marks[i2]);
+            copy2.push(marks2[i2]);
           }
         }
-        return !copy2 ? marks : copy2.length ? copy2 : Mark.none;
+        return !copy2 ? marks2 : copy2.length ? copy2 : Mark.none;
       }
       /**
       @internal
@@ -26645,9 +26867,9 @@ var init_dist3 = __esm({
       /**
       @internal
       */
-      static compile(marks, schema) {
+      static compile(marks2, schema) {
         let result = /* @__PURE__ */ Object.create(null), rank = 0;
-        marks.forEach((name, spec) => result[name] = new _MarkType(name, rank++, schema, spec));
+        marks2.forEach((name, spec) => result[name] = new _MarkType(name, rank++, schema, spec));
         return result;
       }
       /**
@@ -26721,22 +26943,22 @@ var init_dist3 = __esm({
       `content` may be a `Fragment`, `null`, a `Node`, or an array of
       nodes.
       */
-      node(type, attrs = null, content, marks) {
+      node(type, attrs = null, content, marks2) {
         if (typeof type == "string")
           type = this.nodeType(type);
         else if (!(type instanceof NodeType))
           throw new RangeError("Invalid node type: " + type);
         else if (type.schema != this)
           throw new RangeError("Node type from different schema used (" + type.name + ")");
-        return type.createChecked(attrs, content, marks);
+        return type.createChecked(attrs, content, marks2);
       }
       /**
       Create a text node in the schema. Empty text nodes are not
       allowed.
       */
-      text(text, marks) {
+      text(text, marks2) {
         let type = this.nodes.text;
-        return new TextNode(type, type.defaultAttrs, text, Mark.setFrom(marks));
+        return new TextNode(type, type.defaultAttrs, text, Mark.setFrom(marks2));
       }
       /**
       Create a mark with the given type and attributes.
@@ -26933,10 +27155,10 @@ var init_dist3 = __esm({
     OPT_PRESERVE_WS_FULL = 2;
     OPT_OPEN_LEFT = 4;
     NodeContext = class {
-      constructor(type, attrs, marks, solid, match, options) {
+      constructor(type, attrs, marks2, solid, match, options) {
         this.type = type;
         this.attrs = attrs;
-        this.marks = marks;
+        this.marks = marks2;
         this.solid = solid;
         this.options = options;
         this.content = [];
@@ -27011,13 +27233,13 @@ var init_dist3 = __esm({
       // Add a DOM node to the content. Text is inserted as text node,
       // otherwise, the node is passed to `addElement` or, if it has a
       // `style` attribute, `addElementWithStyles`.
-      addDOM(dom, marks) {
+      addDOM(dom, marks2) {
         if (dom.nodeType == 3)
-          this.addTextNode(dom, marks);
+          this.addTextNode(dom, marks2);
         else if (dom.nodeType == 1)
-          this.addElement(dom, marks);
+          this.addElement(dom, marks2);
       }
-      addTextNode(dom, marks) {
+      addTextNode(dom, marks2) {
         let value = dom.nodeValue;
         let top = this.top, preserveWS = top.options & OPT_PRESERVE_WS_FULL ? "full" : this.localPreserveWS || (top.options & OPT_PRESERVE_WS) > 0;
         let { schema } = this.parser;
@@ -27036,16 +27258,16 @@ var init_dist3 = __esm({
             let lines = value.split(/\r?\n|\r/);
             for (let i2 = 0; i2 < lines.length; i2++) {
               if (i2)
-                this.insertNode(schema.linebreakReplacement.create(), marks, true);
+                this.insertNode(schema.linebreakReplacement.create(), marks2, true);
               if (lines[i2])
-                this.insertNode(schema.text(lines[i2]), marks, !/\S/.test(lines[i2]));
+                this.insertNode(schema.text(lines[i2]), marks2, !/\S/.test(lines[i2]));
             }
             value = "";
           } else {
             value = value.replace(/\r?\n|\r/g, " ");
           }
           if (value)
-            this.insertNode(schema.text(value), marks, !/\S/.test(value));
+            this.insertNode(schema.text(value), marks2, !/\S/.test(value));
           this.findInText(dom);
         } else {
           this.findInside(dom);
@@ -27053,7 +27275,7 @@ var init_dist3 = __esm({
       }
       // Try to find a handler for the given tag and use that to parse. If
       // none is found, the element's content nodes are added directly.
-      addElement(dom, marks, matchAfter) {
+      addElement(dom, marks2, matchAfter) {
         let outerWS = this.localPreserveWS, top = this.top;
         if (dom.tagName == "PRE" || /pre/.test(dom.style && dom.style.whiteSpace))
           this.localPreserveWS = true;
@@ -27063,7 +27285,7 @@ var init_dist3 = __esm({
         let rule = this.options.ruleFromNode && this.options.ruleFromNode(dom) || (ruleID = this.parser.matchTag(dom, this, matchAfter));
         out: if (rule ? rule.ignore : ignoreTags.hasOwnProperty(name)) {
           this.findInside(dom);
-          this.ignoreFallback(dom, marks);
+          this.ignoreFallback(dom, marks2);
         } else if (!rule || rule.skip || rule.closeParent) {
           if (rule && rule.closeParent)
             this.open = Math.max(0, this.open - 1);
@@ -27079,36 +27301,36 @@ var init_dist3 = __esm({
             if (!top.type)
               this.needsBlock = true;
           } else if (!dom.firstChild) {
-            this.leafFallback(dom, marks);
+            this.leafFallback(dom, marks2);
             break out;
           }
-          let innerMarks = rule && rule.skip ? marks : this.readStyles(dom, marks);
+          let innerMarks = rule && rule.skip ? marks2 : this.readStyles(dom, marks2);
           if (innerMarks)
             this.addAll(dom, innerMarks);
           if (sync)
             this.sync(top);
           this.needsBlock = oldNeedsBlock;
         } else {
-          let innerMarks = this.readStyles(dom, marks);
+          let innerMarks = this.readStyles(dom, marks2);
           if (innerMarks)
             this.addElementByRule(dom, rule, innerMarks, rule.consuming === false ? ruleID : void 0);
         }
         this.localPreserveWS = outerWS;
       }
       // Called for leaf DOM nodes that would otherwise be ignored
-      leafFallback(dom, marks) {
+      leafFallback(dom, marks2) {
         if (dom.nodeName == "BR" && this.top.type && this.top.type.inlineContent)
-          this.addTextNode(dom.ownerDocument.createTextNode("\n"), marks);
+          this.addTextNode(dom.ownerDocument.createTextNode("\n"), marks2);
       }
       // Called for ignored nodes
-      ignoreFallback(dom, marks) {
+      ignoreFallback(dom, marks2) {
         if (dom.nodeName == "BR" && (!this.top.type || !this.top.type.inlineContent))
-          this.findPlace(this.parser.schema.text("-"), marks, true);
+          this.findPlace(this.parser.schema.text("-"), marks2, true);
       }
       // Run any style parser associated with the node's styles. Either
       // return an updated array of marks, or null to indicate some of the
       // styles had a rule with `ignore` set.
-      readStyles(dom, marks) {
+      readStyles(dom, marks2) {
         let styles = dom.style;
         if (styles && styles.length)
           for (let i2 = 0; i2 < this.parser.matchedStyles.length; i2++) {
@@ -27121,45 +27343,45 @@ var init_dist3 = __esm({
                 if (rule.ignore)
                   return null;
                 if (rule.clearMark)
-                  marks = marks.filter((m2) => !rule.clearMark(m2));
+                  marks2 = marks2.filter((m2) => !rule.clearMark(m2));
                 else
-                  marks = marks.concat(this.parser.schema.marks[rule.mark].create(rule.attrs));
+                  marks2 = marks2.concat(this.parser.schema.marks[rule.mark].create(rule.attrs));
                 if (rule.consuming === false)
                   after = rule;
                 else
                   break;
               }
           }
-        return marks;
+        return marks2;
       }
       // Look up a handler for the given node. If none are found, return
       // false. Otherwise, apply it, use its return value to drive the way
       // the node's content is wrapped, and return true.
-      addElementByRule(dom, rule, marks, continueAfter) {
+      addElementByRule(dom, rule, marks2, continueAfter) {
         let sync, nodeType;
         if (rule.node) {
           nodeType = this.parser.schema.nodes[rule.node];
           if (!nodeType.isLeaf) {
-            let inner = this.enter(nodeType, rule.attrs || null, marks, rule.preserveWhitespace);
+            let inner = this.enter(nodeType, rule.attrs || null, marks2, rule.preserveWhitespace);
             if (inner) {
               sync = true;
-              marks = inner;
+              marks2 = inner;
             }
-          } else if (!this.insertNode(nodeType.create(rule.attrs), marks, dom.nodeName == "BR")) {
-            this.leafFallback(dom, marks);
+          } else if (!this.insertNode(nodeType.create(rule.attrs), marks2, dom.nodeName == "BR")) {
+            this.leafFallback(dom, marks2);
           }
         } else {
           let markType = this.parser.schema.marks[rule.mark];
-          marks = marks.concat(markType.create(rule.attrs));
+          marks2 = marks2.concat(markType.create(rule.attrs));
         }
         let startIn = this.top;
         if (nodeType && nodeType.isLeaf) {
           this.findInside(dom);
         } else if (continueAfter) {
-          this.addElement(dom, marks, continueAfter);
+          this.addElement(dom, marks2, continueAfter);
         } else if (rule.getContent) {
           this.findInside(dom);
-          rule.getContent(dom, this.parser.schema).forEach((node) => this.insertNode(node, marks, false));
+          rule.getContent(dom, this.parser.schema).forEach((node) => this.insertNode(node, marks2, false));
         } else {
           let contentDOM = dom;
           if (typeof rule.contentElement == "string")
@@ -27169,7 +27391,7 @@ var init_dist3 = __esm({
           else if (rule.contentElement)
             contentDOM = rule.contentElement;
           this.findAround(dom, contentDOM, true);
-          this.addAll(contentDOM, marks);
+          this.addAll(contentDOM, marks2);
           this.findAround(dom, contentDOM, false);
         }
         if (sync && this.sync(startIn))
@@ -27178,18 +27400,18 @@ var init_dist3 = __esm({
       // Add all child nodes between `startIndex` and `endIndex` (or the
       // whole node, if not given). If `sync` is passed, use it to
       // synchronize after every block element.
-      addAll(parent, marks, startIndex, endIndex) {
+      addAll(parent, marks2, startIndex, endIndex) {
         let index = startIndex || 0;
         for (let dom = startIndex ? parent.childNodes[startIndex] : parent.firstChild, end = endIndex == null ? null : parent.childNodes[endIndex]; dom != end; dom = dom.nextSibling, ++index) {
           this.findAtPoint(parent, index);
-          this.addDOM(dom, marks);
+          this.addDOM(dom, marks2);
         }
         this.findAtPoint(parent, index);
       }
       // Try to find a way to fit the given node type into the current
       // context. May add intermediate wrappers and/or leave non-solid
       // nodes that we're in.
-      findPlace(node, marks, cautious) {
+      findPlace(node, marks2, cautious) {
         let route, sync;
         for (let depth = this.open, penalty = 0; depth >= 0; depth--) {
           let cx = this.nodes[depth];
@@ -27210,17 +27432,17 @@ var init_dist3 = __esm({
           return null;
         this.sync(sync);
         for (let i2 = 0; i2 < route.length; i2++)
-          marks = this.enterInner(route[i2], null, marks, false);
-        return marks;
+          marks2 = this.enterInner(route[i2], null, marks2, false);
+        return marks2;
       }
       // Try to insert the given node, adjusting the context when needed.
-      insertNode(node, marks, cautious) {
+      insertNode(node, marks2, cautious) {
         if (node.isInline && this.needsBlock && !this.top.type) {
           let block = this.textblockFromContext();
           if (block)
-            marks = this.enterInner(block, null, marks);
+            marks2 = this.enterInner(block, null, marks2);
         }
-        let innerMarks = this.findPlace(node, marks, cautious);
+        let innerMarks = this.findPlace(node, marks2, cautious);
         if (innerMarks) {
           this.closeExtra();
           let top = this.top;
@@ -27237,14 +27459,14 @@ var init_dist3 = __esm({
       }
       // Try to start a node of the given type, adjusting the context when
       // necessary.
-      enter(type, attrs, marks, preserveWS) {
-        let innerMarks = this.findPlace(type.create(attrs), marks, false);
+      enter(type, attrs, marks2, preserveWS) {
+        let innerMarks = this.findPlace(type.create(attrs), marks2, false);
         if (innerMarks)
-          innerMarks = this.enterInner(type, attrs, marks, true, preserveWS);
+          innerMarks = this.enterInner(type, attrs, marks2, true, preserveWS);
         return innerMarks;
       }
       // Open a node of the given type
-      enterInner(type, attrs, marks, solid = false, preserveWS) {
+      enterInner(type, attrs, marks2, solid = false, preserveWS) {
         this.closeExtra();
         let top = this.top;
         top.match = top.match && top.match.matchType(type);
@@ -27252,7 +27474,7 @@ var init_dist3 = __esm({
         if (top.options & OPT_OPEN_LEFT && top.content.length == 0)
           options |= OPT_OPEN_LEFT;
         let applyMarks = Mark.none;
-        marks = marks.filter((m2) => {
+        marks2 = marks2.filter((m2) => {
           if (top.type ? top.type.allowsMarkType(m2.type) : markMayApply(m2.type, type)) {
             applyMarks = m2.addToSet(applyMarks);
             return false;
@@ -27261,7 +27483,7 @@ var init_dist3 = __esm({
         });
         this.nodes.push(new NodeContext(type, attrs, applyMarks, solid, null, options));
         this.open++;
-        return marks;
+        return marks2;
       }
       // Make sure all nodes above this.open are finished and added to
       // their parents
@@ -27386,9 +27608,9 @@ var init_dist3 = __esm({
       serializer may be `null` to indicate that marks of that type
       should not be serialized.
       */
-      constructor(nodes, marks) {
+      constructor(nodes, marks2) {
         this.nodes = nodes;
-        this.marks = marks;
+        this.marks = marks2;
       }
       /**
       Serialize the content of this fragment to a DOM fragment. When
@@ -27547,16 +27769,16 @@ function addMark(tr2, from2, to, mark2) {
   tr2.doc.nodesBetween(from2, to, (node, pos, parent) => {
     if (!node.isInline)
       return;
-    let marks = node.marks;
-    if (!mark2.isInSet(marks) && parent.type.allowsMarkType(mark2.type)) {
+    let marks2 = node.marks;
+    if (!mark2.isInSet(marks2) && parent.type.allowsMarkType(mark2.type)) {
       let start = Math.max(pos, from2), end = Math.min(pos + node.nodeSize, to);
-      let newSet = mark2.addToSet(marks);
-      for (let i2 = 0; i2 < marks.length; i2++) {
-        if (!marks[i2].isInSet(newSet)) {
-          if (removing && removing.to == start && removing.mark.eq(marks[i2]))
+      let newSet = mark2.addToSet(marks2);
+      for (let i2 = 0; i2 < marks2.length; i2++) {
+        if (!marks2[i2].isInSet(newSet)) {
+          if (removing && removing.to == start && removing.mark.eq(marks2[i2]))
             removing.to = end;
           else
-            removed.push(removing = new RemoveMarkStep(start, end, marks[i2]));
+            removed.push(removing = new RemoveMarkStep(start, end, marks2[i2]));
         }
       }
       if (adding && adding.to == start)
@@ -27777,13 +27999,13 @@ function canChangeType(doc3, pos, type) {
   let $pos = doc3.resolve(pos), index = $pos.index();
   return $pos.parent.canReplaceWith(index, index + 1, type);
 }
-function setNodeMarkup(tr2, pos, type, attrs, marks) {
+function setNodeMarkup(tr2, pos, type, attrs, marks2) {
   let node = tr2.doc.nodeAt(pos);
   if (!node)
     throw new RangeError("No node at given position");
   if (!type)
     type = node.type;
-  let newNode = type.create(attrs, null, marks || node.marks);
+  let newNode = type.create(attrs, null, marks2 || node.marks);
   if (node.isLeaf)
     return tr2.replaceWith(pos, pos + node.nodeSize, newNode);
   if (!type.validContent(node.content))
@@ -29288,8 +29510,8 @@ var init_dist4 = __esm({
       Change the type, attributes, and/or marks of the node at `pos`.
       When `type` isn't given, the existing node type is preserved,
       */
-      setNodeMarkup(pos, type, attrs = null, marks) {
-        setNodeMarkup(this, pos, type, attrs, marks);
+      setNodeMarkup(pos, type, attrs = null, marks2) {
+        setNodeMarkup(this, pos, type, attrs, marks2);
         return this;
       }
       /**
@@ -29664,9 +29886,9 @@ var init_dist5 = __esm({
       replace(tr2, content = Slice.empty) {
         super.replace(tr2, content);
         if (content == Slice.empty) {
-          let marks = this.$from.marksAcross(this.$to);
-          if (marks)
-            tr2.ensureMarks(marks);
+          let marks2 = this.$from.marksAcross(this.$to);
+          if (marks2)
+            tr2.ensureMarks(marks2);
         }
       }
       eq(other) {
@@ -29902,8 +30124,8 @@ var init_dist5 = __esm({
       /**
       Set the current stored marks.
       */
-      setStoredMarks(marks) {
-        this.storedMarks = marks;
+      setStoredMarks(marks2) {
+        this.storedMarks = marks2;
         this.updated |= UPDATED_MARKS;
         return this;
       }
@@ -29912,9 +30134,9 @@ var init_dist5 = __esm({
       at the selection, match the given set of marks. Does nothing if
       this is already the case.
       */
-      ensureMarks(marks) {
-        if (!Mark.sameSet(this.storedMarks || this.selection.$from.marks(), marks))
-          this.setStoredMarks(marks);
+      ensureMarks(marks2) {
+        if (!Mark.sameSet(this.storedMarks || this.selection.$from.marks(), marks2))
+          this.setStoredMarks(marks2);
         return this;
       }
       /**
@@ -29991,12 +30213,12 @@ var init_dist5 = __esm({
             to = from2;
           if (!text)
             return this.deleteRange(from2, to);
-          let marks = this.storedMarks;
-          if (!marks) {
+          let marks2 = this.storedMarks;
+          if (!marks2) {
             let $from = this.doc.resolve(from2);
-            marks = to == from2 ? $from.marks() : $from.marksAcross(this.doc.resolve(to));
+            marks2 = to == from2 ? $from.marks() : $from.marksAcross(this.doc.resolve(to));
           }
-          this.replaceRangeWith(from2, to, schema.text(text, marks));
+          this.replaceRangeWith(from2, to, schema.text(text, marks2));
           if (!this.selection.empty && this.selection.to == from2 + text.length)
             this.setSelection(Selection.near(this.selection.$to));
           return this;
@@ -32455,13 +32677,13 @@ function parseFromClipboard(view, text, html, plainText, $context) {
     if (parsed) {
       slice2 = parsed;
     } else {
-      let marks = $context.marks();
+      let marks2 = $context.marks();
       let { schema } = view.state, serializer = DOMSerializer.fromSchema(schema);
       dom = document.createElement("div");
       text.split(/(?:\r\n?|\n)+/).forEach((block) => {
         let p = dom.appendChild(document.createElement("p"));
         if (block)
-          p.appendChild(serializer.serializeNode(schema.text(block, marks)));
+          p.appendChild(serializer.serializeNode(schema.text(block, marks2)));
       });
     }
   } else {
@@ -33413,9 +33635,9 @@ function readDOMChange(view, from2, to, typeOver, addedNodes) {
         setTimeout(() => selectionToDOM(view), 20);
       }
       let tr2 = mkTr(view.state.tr.delete(chFrom, chTo));
-      let marks = doc3.resolve(change.start).marksAcross(doc3.resolve(change.endA));
-      if (marks)
-        tr2.ensureMarks(marks);
+      let marks2 = doc3.resolve(change.start).marksAcross(doc3.resolve(change.endA));
+      if (marks2)
+        tr2.ensureMarks(marks2);
       view.dispatch(tr2);
     } else if (
       // Adding or removing a mark
@@ -34534,10 +34756,10 @@ var init_dist8 = __esm({
       }
       // Sync the current stack of mark descs with the given array of
       // marks, reusing existing mark descs when possible.
-      syncToMarks(marks, inline, view, parentIndex) {
+      syncToMarks(marks2, inline, view, parentIndex) {
         let keep = 0, depth = this.stack.length >> 1;
-        let maxKeep = Math.min(depth, marks.length);
-        while (keep < maxKeep && (keep == depth - 1 ? this.top : this.stack[keep + 1 << 1]).matchesMark(marks[keep]) && marks[keep].type.spec.spanning !== false)
+        let maxKeep = Math.min(depth, marks2.length);
+        while (keep < maxKeep && (keep == depth - 1 ? this.top : this.stack[keep + 1 << 1]).matchesMark(marks2[keep]) && marks2[keep].type.spec.spanning !== false)
           keep++;
         while (keep < depth) {
           this.destroyRest();
@@ -34546,22 +34768,22 @@ var init_dist8 = __esm({
           this.top = this.stack.pop();
           depth--;
         }
-        while (depth < marks.length) {
+        while (depth < marks2.length) {
           this.stack.push(this.top, this.index + 1);
           let found2 = -1, scanTo = this.top.children.length;
           if (parentIndex < this.preMatch.index)
             scanTo = Math.min(this.index + 3, scanTo);
           for (let i2 = this.index; i2 < scanTo; i2++) {
             let next = this.top.children[i2];
-            if (next.matchesMark(marks[depth]) && !this.isLocked(next.dom)) {
+            if (next.matchesMark(marks2[depth]) && !this.isLocked(next.dom)) {
               found2 = i2;
               break;
             }
           }
           if (found2 < 0 && this.index < this.top.children.length) {
             let cur = this.top.children[this.index];
-            if (cur instanceof MarkViewDesc && cur.dirty != NODE_DIRTY && cur.mark.type == marks[depth].type && cur.spec.update && !this.isLocked(cur.dom) && cur.spec.update(marks[depth])) {
-              cur.mark = marks[depth];
+            if (cur instanceof MarkViewDesc && cur.dirty != NODE_DIRTY && cur.mark.type == marks2[depth].type && cur.spec.update && !this.isLocked(cur.dom) && cur.spec.update(marks2[depth])) {
+              cur.mark = marks2[depth];
               found2 = this.index;
               this.changed = true;
             }
@@ -34573,7 +34795,7 @@ var init_dist8 = __esm({
             }
             this.top = this.top.children[this.index];
           } else {
-            let markDesc = MarkViewDesc.create(this.top, marks[depth], inline, view);
+            let markDesc = MarkViewDesc.create(this.top, marks2[depth], inline, view);
             this.top.children.splice(this.index, 0, markDesc);
             this.top = markDesc;
             this.changed = true;
@@ -37173,13 +37395,13 @@ function objectIncludes(object1, object2, options = { strict: true }) {
     return object2[key] === object1[key];
   });
 }
-function findMarkInSet(marks, type, attributes = {}) {
-  return marks.find((item) => {
+function findMarkInSet(marks2, type, attributes = {}) {
+  return marks2.find((item) => {
     return item.type === type && objectIncludes(Object.fromEntries(Object.keys(attributes).map((k2) => [k2, item.attrs[k2]])), attributes);
   });
 }
-function isMarkInSet(marks, type, attributes = {}) {
-  return !!findMarkInSet(marks, type, attributes);
+function isMarkInSet(marks2, type, attributes = {}) {
+  return !!findMarkInSet(marks2, type, attributes);
 }
 function getMarkRange($pos, type, attributes) {
   if (!$pos || !type) return;
@@ -37400,14 +37622,14 @@ function createDocument(content, schema, parseOptions = {}, options = {}) {
 function getMarkAttributes(state, typeOrName) {
   const type = getMarkType(typeOrName, state.schema);
   const { from: from2, to, empty: empty2 } = state.selection;
-  const marks = [];
+  const marks2 = [];
   if (empty2) {
-    if (state.storedMarks) marks.push(...state.storedMarks);
-    marks.push(...state.selection.$head.marks());
+    if (state.storedMarks) marks2.push(...state.storedMarks);
+    marks2.push(...state.selection.$head.marks());
   } else state.doc.nodesBetween(from2, to, (node) => {
-    marks.push(...node.marks);
+    marks2.push(...node.marks);
   });
-  const mark2 = marks.find((markItem) => markItem.type.name === type.name);
+  const mark2 = marks2.find((markItem) => markItem.type.name === type.name);
   if (!mark2) return {};
   return { ...mark2.attrs };
 }
@@ -37737,7 +37959,7 @@ function getSchemaByResolvedExtensions(extensions, editor) {
     if (renderText) schema.toText = renderText;
     return [extension.name, schema];
   }));
-  const marks = Object.fromEntries(markExtensions.map((extension) => {
+  const marks2 = Object.fromEntries(markExtensions.map((extension) => {
     const extensionAttributes = allAttributes.filter((attribute) => attribute.type === extension.name);
     const context = {
       name: extension.name,
@@ -37772,7 +37994,7 @@ function getSchemaByResolvedExtensions(extensions, editor) {
   return new Schema({
     topNode,
     nodes,
-    marks
+    marks: marks2
   });
 }
 function findDuplicates(items) {
@@ -37909,7 +38131,7 @@ function getDebugJSON(node, startOffset = 0) {
   const increment = node.type === node.type.schema.topNodeType ? 0 : 1;
   const from2 = startOffset;
   const to = from2 + node.nodeSize;
-  const marks = node.marks.map((mark2) => {
+  const marks2 = node.marks.map((mark2) => {
     const output2 = { type: mark2.type.name };
     if (Object.keys(mark2.attrs).length) output2.attrs = { ...mark2.attrs };
     return output2;
@@ -37921,7 +38143,7 @@ function getDebugJSON(node, startOffset = 0) {
     to
   };
   if (Object.keys(attrs).length) output.attrs = attrs;
-  if (marks.length) output.marks = marks;
+  if (marks2.length) output.marks = marks2;
   if (node.content.childCount) {
     output.content = [];
     node.forEach((child, offset) => {
@@ -37933,24 +38155,24 @@ function getDebugJSON(node, startOffset = 0) {
   return output;
 }
 function getMarksBetween(from2, to, doc3) {
-  const marks = [];
+  const marks2 = [];
   if (from2 === to) doc3.resolve(from2).marks().forEach((mark2) => {
     const range = getMarkRange(doc3.resolve(from2), mark2.type);
     if (!range) return;
-    marks.push({
+    marks2.push({
       mark: mark2,
       ...range
     });
   });
   else doc3.nodesBetween(from2, to, (node, pos) => {
     if (!node || (node === null || node === void 0 ? void 0 : node.nodeSize) === void 0) return;
-    marks.push(...node.marks.map((mark2) => ({
+    marks2.push(...node.marks.map((mark2) => ({
       from: pos,
       to: pos + node.nodeSize,
       mark: mark2
     })));
   });
-  return marks;
+  return marks2;
 }
 function getSchemaTypeByName(name, schema) {
   return schema.nodes[name] || schema.marks[name] || null;
@@ -38088,9 +38310,9 @@ function canSetMark(state, tr2, newMarkType) {
   });
 }
 function ensureMarks(state, splittableMarks) {
-  const marks = state.storedMarks || state.selection.$to.parentOffset && state.selection.$from.marks();
-  if (marks) {
-    const filteredMarks = marks.filter((mark2) => splittableMarks === null || splittableMarks === void 0 ? void 0 : splittableMarks.includes(mark2.type.name));
+  const marks2 = state.storedMarks || state.selection.$to.parentOffset && state.selection.$from.marks();
+  if (marks2) {
+    const filteredMarks = marks2.filter((mark2) => splittableMarks === null || splittableMarks === void 0 ? void 0 : splittableMarks.includes(mark2.type.name));
     state.tr.ensureMarks(filteredMarks);
   }
 }
@@ -38913,9 +39135,9 @@ function wrappingInputRule(config) {
       if (config.keepMarks && config.editor) {
         const { selection, storedMarks } = state;
         const { splittableMarks } = config.editor.extensionManager;
-        const marks = storedMarks || selection.$to.parentOffset && selection.$from.marks();
-        if (marks) {
-          const filteredMarks = marks.filter((mark2) => splittableMarks.includes(mark2.type.name));
+        const marks2 = storedMarks || selection.$to.parentOffset && selection.$from.marks();
+        if (marks2) {
+          const filteredMarks = marks2.filter((mark2) => splittableMarks.includes(mark2.type.name));
           tr2.ensureMarks(filteredMarks);
         }
       }
@@ -39847,11 +40069,11 @@ var init_dist12 = __esm({
       if (dispatch) {
         const { selection, storedMarks } = state;
         const { splittableMarks } = editor.extensionManager;
-        const marks = storedMarks || selection.$to.parentOffset && selection.$from.marks();
+        const marks2 = storedMarks || selection.$to.parentOffset && selection.$from.marks();
         tr2.split($from.pos, 2, types).scrollIntoView();
         if (splitsAtStartOfItem) tr2.setNodeMarkup(itemStart, void 0, newTypeAttributes);
-        if (!marks || !dispatch) return true;
-        const filteredMarks = marks.filter((mark2) => splittableMarks.includes(mark2.type.name));
+        if (!marks2 || !dispatch) return true;
+        const filteredMarks = marks2.filter((mark2) => splittableMarks.includes(mark2.type.name));
         tr2.ensureMarks(filteredMarks);
       }
       return true;
@@ -39885,7 +40107,7 @@ var init_dist12 = __esm({
       const { selection, storedMarks } = state;
       const { $from, $to } = selection;
       const range = $from.blockRange($to);
-      const marks = storedMarks || selection.$to.parentOffset && selection.$from.marks();
+      const marks2 = storedMarks || selection.$to.parentOffset && selection.$from.marks();
       if (!range) return false;
       const parentList = findParentNode((node) => isList(node.type.name, extensions))(selection);
       const isAllSelection = selection.from === 0 && selection.to === state.doc.content.size;
@@ -39915,13 +40137,13 @@ var init_dist12 = __esm({
           return true;
         }).command(() => joinListBackwards(tr2, listType)).command(() => joinListForwards(tr2, listType)).run();
       }
-      if (!keepMarks || !marks || !dispatch) return chain().command(() => {
+      if (!keepMarks || !marks2 || !dispatch) return chain().command(() => {
         if (can().wrapInList(listType, attributes)) return true;
         return commands.clearNodes();
       }).wrapInList(listType, attributes).command(() => joinListBackwards(tr2, listType)).command(() => joinListForwards(tr2, listType)).run();
       return chain().command(() => {
         const canWrapInList = can().wrapInList(listType, attributes);
-        const filteredMarks = marks.filter((mark2) => splittableMarks.includes(mark2.type.name));
+        const filteredMarks = marks2.filter((mark2) => splittableMarks.includes(mark2.type.name));
         tr2.ensureMarks(filteredMarks);
         if (canWrapInList) return true;
         return commands.clearNodes();
@@ -39961,8 +40183,8 @@ var init_dist12 = __esm({
             const toUndo = undoable.transform;
             for (let j2 = toUndo.steps.length - 1; j2 >= 0; j2 -= 1) tr2.step(toUndo.steps[j2].invert(toUndo.docs[j2]));
             if (undoable.text) {
-              const marks = tr2.doc.resolve(undoable.from).marks();
-              tr2.replaceWith(undoable.from, undoable.to, state.schema.text(undoable.text, marks));
+              const marks2 = tr2.doc.resolve(undoable.from).marks();
+              tr2.replaceWith(undoable.from, undoable.to, state.schema.text(undoable.text, marks2));
             } else tr2.delete(undoable.from, undoable.to);
           }
           return true;
@@ -43158,10 +43380,10 @@ var init_dist18 = __esm({
             if (selection.$from.parent.type.spec.isolating) return false;
             const { keepMarks } = this.options;
             const { splittableMarks } = editor.extensionManager;
-            const marks = storedMarks || selection.$to.parentOffset && selection.$from.marks();
+            const marks2 = storedMarks || selection.$to.parentOffset && selection.$from.marks();
             return chain().insertContent({ type: this.name }).command(({ tr: tr2, dispatch }) => {
-              if (dispatch && marks && keepMarks) {
-                const filteredMarks = marks.filter((mark2) => splittableMarks.includes(mark2.type.name));
+              if (dispatch && marks2 && keepMarks) {
+                const filteredMarks = marks2.filter((mark2) => splittableMarks.includes(mark2.type.name));
                 tr2.ensureMarks(filteredMarks);
               }
               return true;
@@ -49381,11 +49603,11 @@ var init_dist32 = __esm({
           tokenizeInline: (src) => this.tokenizeInline(src),
           parseChildren: (tokens) => this.parseTokens(tokens),
           parseBlockChildren: (tokens) => this.parseTokens(tokens, true),
-          createTextNode: (text, marks) => {
+          createTextNode: (text, marks2) => {
             return {
               type: "text",
               text,
-              marks: marks || void 0
+              marks: marks2 || void 0
             };
           },
           createNode: (type, attrs, content) => {
@@ -57431,6 +57653,9 @@ var init_container_acp_agents = __esm({
 });
 
 // src/renderer/views/container-run-control.ts
+function phaseLabel2(run4) {
+  return run4.phase === "failed" && run4.stoppedByUser === true ? "Stopped" : PHASE_LABEL[run4.phase];
+}
 function isLive2(progress) {
   return progress !== null && progress.phase !== "finished" && progress.phase !== "failed";
 }
@@ -57536,15 +57761,17 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     if (!run4) {
       text.textContent = "";
       delete element.dataset["phase"];
+      element.removeAttribute("data-stopped");
       onStateChanged();
       return;
     }
     element.dataset["phase"] = run4.phase;
+    element.toggleAttribute("data-stopped", run4.phase === "failed" && run4.stoppedByUser === true);
     const result = run4.record?.result;
     const fetched = run4.record?.carryOut.ref !== null && run4.record?.carryOut.ref !== void 0;
     const commits = result === void 0 || result === null ? "" : result.commits.length === 0 ? "no commits" : `${String(result.commits.length)} commit${result.commits.length === 1 ? "" : "s"} ${fetched ? "back" : "made but NOT fetched"}`;
-    const summary = run4.phase === "finished" && result ? `${commits}, ${String(result.deferrals.length)} waiting for review.` : run4.phase === "failed" ? run4.error ?? "The run did not complete." : `${run4.model} \xB7 limited to the egress allowlist.`;
-    text.textContent = `Container run: ${PHASE_LABEL[run4.phase].toLowerCase()}. ${summary}`;
+    const summary = run4.phase === "finished" && result ? `${commits}, ${String(result.deferrals.length)} waiting for review.` : run4.phase === "failed" && run4.stoppedByUser === true ? "Stopped by you." : run4.phase === "failed" ? run4.error ?? "The run did not complete." : `${run4.model} \xB7 limited to the egress allowlist.`;
+    text.textContent = `Container run: ${phaseLabel2(run4).toLowerCase()}. ${summary}`;
     onStateChanged();
   }
   function ensureDialog3() {
@@ -57837,7 +58064,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     const result = run4.record?.result ?? null;
     const rows = [];
     const row2 = (label, value) => el("div", { class: "container-run-row" }, el("dt", {}, label), el("dd", {}, value));
-    rows.push(row2("Phase", PHASE_LABEL[run4.phase]));
+    rows.push(row2("Phase", phaseLabel2(run4)));
     if (run4.prompt) rows.push(row2("Task", run4.prompt));
     rows.push(row2("Model", run4.model));
     if (run4.checkout) {
@@ -58057,7 +58284,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       );
       apply2.addEventListener("click", () => {
         apply2.disabled = true;
-        void adopt(run4.record?.runtimeId ?? "", null).finally(() => {
+        void adopt2(run4.record?.runtimeId ?? "", null).finally(() => {
           apply2.disabled = false;
         });
       });
@@ -58158,7 +58385,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       console.error("[container-run] could not signal the finished run:", error);
     });
   }
-  async function adopt(runtimeId, toolCallId) {
+  async function adopt2(runtimeId, toolCallId) {
     const threadId = context.getActiveThreadId();
     const projectId = context.getActiveProjectId();
     if (!threadId || !projectId || runtimeId.length === 0) return;
@@ -58182,7 +58409,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     const runtimeId = detail["runtimeId"];
     const toolCallId = detail["toolCallId"];
     if (typeof runtimeId !== "string" || typeof toolCallId !== "string") return;
-    void adopt(runtimeId, toolCallId);
+    void adopt2(runtimeId, toolCallId);
   };
   document.addEventListener(CONTAINER_RUN_ADOPT_EVENT, onCardAdopt);
   function update(progress) {
@@ -58197,6 +58424,8 @@ function mountContainerRunControl(api2, context, onStateChanged) {
           `Container run finished: ${String(result.commits.length)} commit(s) back, ${String(result.deferrals.length)} waiting for review.`,
           { variant: "info", durationMs: 1e4 }
         );
+      } else if (progress.stoppedByUser === true) {
+        showToast("Container run stopped.", { variant: "info", durationMs: 6e3 });
       } else {
         showToast(`Container run failed: ${progress.error ?? "no result"}`, {
           variant: "error",
@@ -60115,7 +60344,12 @@ ${description}
           model,
           // The footer picker only names a branch; this is where that selection
           // becomes the worktree's base, or the shared checkout's branch.
-          baseBranch
+          baseBranch,
+          // With no selection to send (no listed default, or a detached
+          // checkout), the picker is showing the project checkout's branch,
+          // so start there — unlike machine-started threads, which main cuts
+          // from the fetched default branch.
+          "project-branch"
         );
         if (!getThreadById(store2, id)) return false;
         preparedPromptState = prepared.promptState;
@@ -89064,13 +89298,42 @@ function summariseWorkingThreads(titles2) {
   if (listed.length < 2) return listed.join("");
   return `${listed.slice(0, -1).join(", ")} and ${listed[listed.length - 1] ?? ""}`;
 }
-async function confirmClose(store2) {
-  const titles2 = workingThreadTitles(store2);
-  if (titles2.length === 0) return true;
+function containerRunTitles(store2, threadIds) {
+  const threads = store2.getState().threads;
+  return threadIds.map((id) => threadLabel(threads.find((thread) => thread.id === id)?.title ?? ""));
+}
+function containerRunSentence(titles2, continuesAfterQuit) {
   const one = titles2.length === 1;
+  const going = `${summariseWorkingThreads(titles2)} ${one ? "has a container run" : "have container runs"} going.`;
+  return continuesAfterQuit ? `${going} ${one ? "It keeps" : "They keep"} going outside Copse, and you can stop ${one ? "it" : "them"} from Copse when you open it again.` : `${going} Closing stops ${one ? "it" : "them"}.`;
+}
+async function confirmClose(store2, options = {}) {
+  const titles2 = workingThreadTitles(store2);
+  const runs = containerRunTitles(store2, options.containerRunThreads ?? []);
+  const continues = options.continuesAfterQuit === true;
+  if (titles2.length === 0 && runs.length === 0) return true;
+  if (titles2.length === 0) {
+    const one2 = runs.length === 1;
+    return await showConfirmDialog({
+      message: one2 ? "Close Copse while a container run is going?" : `Close Copse while ${String(runs.length)} container runs are going?`,
+      detail: containerRunSentence(runs, continues),
+      ...continues ? { confirmLabel: "Close", cancelLabel: "Keep Copse open" } : { confirmLabel: "Close anyway", cancelLabel: "Keep Copse open", danger: true }
+    });
+  }
+  const one = titles2.length === 1;
+  const working = `${summariseWorkingThreads(titles2)} ${one ? "is" : "are"} mid-turn.`;
+  const containers = runs.length > 0 ? ` ${containerRunSentence(runs, continues)}` : "";
+  if (continues) {
+    return await showConfirmDialog({
+      message: one ? "Close Copse while the agent is still working?" : `Close Copse while ${String(titles2.length)} threads are still working?`,
+      detail: `${working} ${one ? "It keeps" : "They keep"} going in the background after Copse closes, and ${one ? "is" : "are"} here when you open it again.${containers}`,
+      confirmLabel: "Close",
+      cancelLabel: "Keep Copse open"
+    });
+  }
   return await showConfirmDialog({
     message: one ? "Close Copse while the agent is still working?" : `Close Copse while ${String(titles2.length)} threads are still working?`,
-    detail: `${summariseWorkingThreads(titles2)} ${one ? "is" : "are"} mid-turn. Closing stops the run \u2014 anything the agent has not already written to your files is lost.`,
+    detail: `${working} Closing stops the run \u2014 anything the agent has not already written to your files is lost.${containers}`,
     confirmLabel: "Close anyway",
     cancelLabel: one ? "Keep working" : "Keep them working",
     danger: true
@@ -89078,7 +89341,10 @@ async function confirmClose(store2) {
 }
 function mountCloseConfirm(api2, store2) {
   return api2.closeConfirm.onRequest((req) => {
-    void confirmClose(store2).then((confirmed) => api2.closeConfirm.respond(req.id, confirmed));
+    void confirmClose(store2, {
+      ...req.continuesAfterQuit !== void 0 ? { continuesAfterQuit: req.continuesAfterQuit } : {},
+      ...req.containerRunThreads ? { containerRunThreads: req.containerRunThreads } : {}
+    }).then((confirmed) => api2.closeConfirm.respond(req.id, confirmed));
   });
 }
 var MAX_LISTED_TITLES;
