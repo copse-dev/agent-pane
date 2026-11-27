@@ -517,6 +517,12 @@ new tests should keep that trend:
   - **`subset` skips the coverage ratchet**, because a partial run's coverage
     number isn't comparable to `coverage-baseline.json`. The trunk-targeted run
     is where the ratchet applies.
+  - **The ratchet has per-area floors.** Besides the global line figure,
+    `coverage-baseline.json` holds `areas`, a floor for each layer in
+    `FLOORED_AREAS` (`scripts/lib/coverage-areas.mts`), so a drop in
+    `src/main/ipc` cannot hide behind a rise in `src/main/services`. Every run
+    prints the areas with the most uncovered lines in the job summary, and
+    `npm run coverage:update` resets the floors with the global baseline.
 - **Remote e2e for the local loop** (`npm run e2e:remote`) runs the same
   oracle-selected / CI-shaped suite on a cloud container from the working tree
   so agents and humans can keep iterating. Prefer it over local `test:e2e`

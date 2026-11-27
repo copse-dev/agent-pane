@@ -14,9 +14,22 @@
 //   npm run coverage:check    # compare against baseline, fail on regression
 //   npm run coverage:update   # set the baseline just under the current coverage
 //
+// Per-area floors (#4391): `coverage-baseline.json` may also hold `areas`, a
+// floor per area (`scripts/lib/coverage-areas.mts`), so a drop in one layer
+// cannot hide behind a rise elsewhere. Every run prints the areas with the most
+// uncovered lines; `--update` resets the floors with the global baseline.
+//
+import { existsSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { expectRecord } from '../src/shared/unknown-value.mts'
+import {
+  areaFloorFailures,
+  baselineFloors,
+  formatAreaTable,
+  summariseAreas,
+  updatedFloors,
+} from './lib/coverage-areas.mts'
 
 const SUMMARY = resolve('coverage/coverage-summary.json')
 const BASELINE = resolve('coverage-baseline.json')
@@ -32,6 +45,7 @@ const MAX_SLACK = 1
 // `--update` sets the bar this far under the measured figure, so the PR after a
 // bump is not failed by a few lines of unrelated churn.
 const UPDATE_MARGIN = 0.25
+const AREA_UPDATE_MARGIN = 0.5
 // The slack cap fails only pull requests (and local runs). Two PRs that each
 // pass inside the slack can together push main past it; failing main's own
 // push run, the nightly or every later PR's merge result then would turn the
@@ -62,18 +76,26 @@ if (typeof lines['pct'] !== 'number') {
   process.exit(1)
 }
 const current = lines['pct']
+const areas = summariseAreas(summary, process.cwd())
 
 if (update) {
   const next = Math.floor((current - UPDATE_MARGIN) * 100) / 100
-  await writeFile(BASELINE, JSON.stringify({ lines: next }, null, 2) + '\n')
+  // Area figures move more than the total when one file changes, so their
+  // floors keep a wider margin.
+  const previous = existsSync(BASELINE) ? baselineFloors(await readJson(BASELINE)) : {}
+  const floors = updatedFloors(areas, AREA_UPDATE_MARGIN, previous)
+  const written = Object.keys(floors).length > 0 ? { lines: next, areas: floors } : { lines: next }
+  await writeFile(BASELINE, JSON.stringify(written, null, 2) + '\n')
   console.log(
-    `coverage-gate: baseline updated to ${String(next)}% lines (measured ${String(current)}%).`,
+    `coverage-gate: baseline updated to ${String(next)}% lines (measured ${String(current)}%), ` +
+      `with floors for ${String(Object.keys(floors).length)} areas.`,
   )
   process.exit(0)
 }
 
 const baseline = await readJson(BASELINE)
 const required = typeof baseline['lines'] === 'number' ? baseline['lines'] : 0
+const floors = baselineFloors(baseline)
 const delta = current - required
 
 const summaryLine =
@@ -83,8 +105,25 @@ console.log(summaryLine)
 
 // Surface the result on the GitHub Actions run summary when available.
 const stepSummary = process.env['GITHUB_STEP_SUMMARY']
+const areaTable = formatAreaTable(areas, floors)
+console.log(`Areas with the most uncovered lines:\n${areaTable}`)
 if (stepSummary) {
-  await writeFile(stepSummary, `### Coverage\n\n${summaryLine}\n`, { flag: 'a' })
+  await writeFile(
+    stepSummary,
+    `### Coverage\n\n${summaryLine}\n\n#### Areas with the most uncovered lines\n\n${areaTable}\n`,
+    { flag: 'a' },
+  )
+}
+
+const areaFailures = areaFloorFailures(areas, floors, TOLERANCE)
+if (areaFailures.length > 0) {
+  console.error(
+    `coverage-gate: line coverage fell below an area floor:\n` +
+      areaFailures.map((failure) => `  ${failure}`).join('\n') +
+      `\nAdd tests to restore it, or, if the drop is intentional, lower that floor\n` +
+      `under \`areas\` in coverage-baseline.json.`,
+  )
+  process.exit(1)
 }
 
 if (current + TOLERANCE < required) {
