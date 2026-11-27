@@ -9,13 +9,18 @@ import {
 } from '../ipc/ipc-guards.ts'
 import { createCloseGate } from './close-gate.ts'
 import { isWindowDetached } from '../windows/window-detach.ts'
+import { getSetting } from './storage/settings.ts'
+import { continuesTurnsAfterQuit } from './turn-worker/turn-worker-launch.ts'
 
 /**
  * Guards closing the app while an agent is still working.
  *
  * Quitting is destructive to a live turn: `cleanupBeforeQuit` disposes every ACP
- * session, terminal and background process, and a run has no resume — whatever
- * the agent had not yet written to disk is gone. So the close is checked with
+ * session, terminal and background process, and whatever the agent had not yet
+ * written to disk is gone. Unless the quit hands its turns to background workers
+ * ("Continue turns after Copse closes"), a quit the user chose is also not
+ * continued on the next launch (`last-run.ts`); only a crash or an update
+ * relaunch is. So the close is checked with
  * the user *before* teardown starts, on both routes out of the app (the window's
  * own close, and `before-quit` from Cmd+Q / the menu / the updater).
  *
@@ -34,6 +39,34 @@ import { isWindowDetached } from '../windows/window-detach.ts'
 const CLOSE_CONFIRM_TIMEOUT_MS = 2 * 60_000
 
 let requestConfirm: (() => Promise<boolean>) | null = null
+
+// Set when the close was let through with nobody's answer: the renderer went
+// away or never replied. Cleared by a real answer.
+let unanswered = false
+
+/**
+ * Whether the close going ahead was let through unanswered rather than
+ * confirmed. Nobody chose such a quit, so like a signal it must not hand its
+ * turns to workers.
+ */
+export function closeWentUnanswered(): boolean {
+  return unanswered
+}
+
+// Whether a quit now would hand every working turn to a worker. Until the app
+// wires it, only the setting is known.
+let quitHandsEveryTurnOff: () => Promise<boolean> = () =>
+  Promise.resolve(continuesTurnsAfterQuit(getSetting))
+
+/**
+ * How the question learns whether closing keeps the working turns going: the
+ * setting, and whether a worker can run each of them (`workerCannotRun`). A
+ * turn the worker turns down waits for the next launch, so the dialog must not
+ * promise it keeps going.
+ */
+export function setQuitHandOffCheck(check: () => Promise<boolean>): void {
+  quitHandsEveryTurnOff = check
+}
 
 // Before the renderer is wired up there is nobody to object, so the gate asks a
 // question that answers itself.
@@ -59,6 +92,15 @@ export function approveClose(): void {
   gate.approve()
 }
 
+export function isCloseApproved(): boolean {
+  return gate.isApproved()
+}
+
+/** Ask again on the next close: the quit `approveClose` was for did not happen. */
+export function revokeCloseApproval(): void {
+  gate.revoke()
+}
+
 /**
  * Intercept the window's own close (traffic light, Alt+F4, Cmd+W) and re-issue
  * it once confirmed. `before-quit` covers the quit routes; this covers the ones
@@ -67,7 +109,7 @@ export function approveClose(): void {
 export function guardWindowClose(win: BrowserWindow, detachInstead?: () => boolean): void {
   win.on('close', (event) => {
     // A running turn no longer needs the window (main writes its transcript),
-    // so on macOS the close detaches it and there is nothing to warn about.
+    // so the close detaches it and there is nothing to warn about.
     if (detachInstead?.()) {
       event.preventDefault()
       return
@@ -102,6 +144,7 @@ export function initCloseConfirm(win: BrowserWindow): void {
     try {
       assertMainFrameSender(event, win)
       const [id, confirmed] = parseIpcArgs(closeConfirmRespondSchema, rawArgs)
+      if (pending.has(id)) unanswered = false
       settle(id, confirmed)
     } catch (err) {
       if (err instanceof IpcValidationError) return
@@ -109,8 +152,14 @@ export function initCloseConfirm(win: BrowserWindow): void {
     }
   })
 
+  // Fail open, but as a quit nobody answered.
+  const release = (id: string): void => {
+    if (!pending.has(id)) return
+    unanswered = true
+    settle(id, true)
+  }
   const releaseAll = (): void => {
-    for (const id of [...pending.keys()]) settle(id, true)
+    for (const id of [...pending.keys()]) release(id)
   }
 
   // A renderer that is gone can no longer refuse; release every waiter so the
@@ -127,20 +176,31 @@ export function initCloseConfirm(win: BrowserWindow): void {
 
   requestConfirm = (): Promise<boolean> =>
     new Promise<boolean>((resolve) => {
-      // A detached window has no page to ask; the quit was the user's choice.
+      // A detached window has no page to ask. The quit still goes ahead, but
+      // nobody answered it (the detach came from an earlier window close), so
+      // it hands nothing off.
       if (win.isDestroyed() || isWindowDetached(win)) {
+        unanswered = true
         resolve(true)
         return
       }
       const id = randomUUID()
-      win.webContents.send('app:close-confirm-request', { id })
       const timer = setTimeout(() => {
-        settle(id, true)
+        release(id)
       }, CLOSE_CONFIRM_TIMEOUT_MS)
       if (typeof timer.unref === 'function') timer.unref()
       pending.set(id, (confirmed) => {
         clearTimeout(timer)
         resolve(confirmed)
       })
+      // Whether a quit now hands the working turns off instead of stopping them,
+      // so the question can say what closing will do. A check that fails says
+      // the cautious thing: closing stops them.
+      void quitHandsEveryTurnOff()
+        .catch(() => false)
+        .then((continuesAfterQuit) => {
+          if (!pending.has(id) || win.isDestroyed()) return
+          win.webContents.send('app:close-confirm-request', { id, continuesAfterQuit })
+        })
     })
 }

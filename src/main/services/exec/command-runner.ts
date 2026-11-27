@@ -310,6 +310,10 @@ function runCommandImpl(
           return
         }
         settled = true
+        // Node's own abort listener, registered at spawn, runs before ours: it
+        // SIGTERMs only the leader and emits `error`. Kill the whole group
+        // here, or helpers such as `git-remote-http` outlive the abort.
+        if (opts.signal?.aborted && !terminationRequested) onAbort()
         if (terminationRequested) {
           opts.signal?.removeEventListener('abort', onAbort)
           reject(err instanceof Error ? err : new Error(String(err)))
