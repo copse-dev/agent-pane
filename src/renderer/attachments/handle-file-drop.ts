@@ -11,6 +11,7 @@ import {
   isUnrenderableImagePath,
 } from '@shared/fs/image-path.ts'
 import { workspaceRelativePath } from '@shared/fs/workspace-path.ts'
+import { formatByteSize } from '@shared/file-bytes.ts'
 import { showToast } from '../views/toast.ts'
 
 export const WORKSPACE_PATH_MIME = 'application/x-copse-panel-path'
@@ -18,6 +19,54 @@ export const WORKSPACE_PATH_MIME = 'application/x-copse-panel-path'
 /** Shown instead of a broken chip for an image the composer cannot render, pasted or dropped. */
 export const UNSUPPORTED_IMAGE_MESSAGE =
   "Can't attach this image — its format isn't supported here. Save it as PNG or JPEG and try again."
+
+/**
+ * Largest file picked from outside the project that attaches as text, and the
+ * most of any picked file the binary check reads.
+ *
+ * The prompt never carries a whole attachment (`renderTextBlock` keeps a
+ * head-and-tail preview of `ATTACHMENT_MAX_CHARS`), but the chip holds the full
+ * text in the window and the thread saves all of it with the message, so this
+ * bounds what a download can copy into the conversation. A file inside the
+ * project is not capped, as before: the main process has already read it whole
+ * by the time the renderer sees it, and the agent can open the rest by path.
+ */
+export const MAX_TEXT_ATTACHMENT_BYTES = 4 * 1024 * 1024
+
+/**
+ * Whether decoded file text is really binary: any NUL, or more than one
+ * character in ten that did not decode as UTF-8. Latin-1 text with a few
+ * accents stays text; a PDF-based design file (.ai) or an executable does not.
+ */
+function looksBinary(text: string): boolean {
+  if (text.includes('\u0000')) return true
+  let undecodable = 0
+  for (let i = text.indexOf('\uFFFD'); i !== -1; i = text.indexOf('\uFFFD', i + 1)) {
+    undecodable += 1
+  }
+  return undecodable * 10 > text.length
+}
+
+/**
+ * Refuse a file whose bytes would be noise to the model if inlined as text.
+ * Points at a route that does work: the agent's own tools for a file in the
+ * project, and an archive attachment (which the model unpacks on demand) or the
+ * agent's tools for one from elsewhere.
+ */
+function refuseBinaryAttachment(name: string, inProject: boolean): void {
+  const instead = inProject
+    ? "It's already in the project, so mention its path and the agent can open it with its tools."
+    : 'Attach it inside a .zip, or copy it into the project and mention its path so the agent can open it with its tools.'
+  showToast(`Can't attach ${name} — it isn't a text file. ${instead}`, { variant: 'error' })
+}
+
+/** Refuse a picked text file past {@link MAX_TEXT_ATTACHMENT_BYTES}. */
+function refuseOversizedPick(name: string, bytes: number): void {
+  showToast(
+    `Can't attach ${name} — at ${formatByteSize(bytes)} it's too large to save with the conversation. Copy it into the project and mention its path so the agent can open it with its tools.`,
+    { variant: 'error' },
+  )
+}
 
 /** A dropped or picked file's on-disk path, or null for one with none (a pasted blob). */
 function diskPathOf(file: File): string | null {
@@ -86,6 +135,12 @@ async function attachWorkspacePath(
       return
     }
     const content = await api.fs.readFile(owner.projectId, owner.threadId, path)
+    // No size cap here (see MAX_TEXT_ATTACHMENT_BYTES): a large project file
+    // still attaches, and the prompt keeps its head and tail.
+    if (looksBinary(content)) {
+      refuseBinaryAttachment(name, true)
+      return
+    }
     const relativePath = workspaceRoot ? workspaceRelativePath(path, workspaceRoot) : null
     // The root itself is '' — keep the absolute path rather than an empty one.
     handlers.attachFile({
@@ -140,14 +195,30 @@ async function attachDroppedFile(
   }
 
   const absPath = diskPathOf(file)
-  if (absPath && workspaceRoot) {
+  // Electron gives picker files an absolute path even when they came from
+  // outside the project. Only send an in-workspace path through the guarded
+  // workspace reader; external picker files must be read from their File blob.
+  // Otherwise the guarded read rejects the path and this attachment disappears.
+  if (absPath && workspaceRoot && workspaceRelativePath(absPath, workspaceRoot) !== null) {
     await attachWorkspacePath(absPath, handlers, api, workspaceRoot, owner)
     return
   }
 
   try {
-    const content = await file.text()
-    handlers.attachFile({ path: absPath ?? file.name, content })
+    // Text or binary is decided before size, on up to the cap: a large .ai
+    // opens with tens of KB of XML metadata before its first binary stream, so
+    // a small head would pass as text and get the wrong refusal.
+    const head = await file.slice(0, MAX_TEXT_ATTACHMENT_BYTES).text()
+    if (looksBinary(head)) {
+      refuseBinaryAttachment(file.name, false)
+      return
+    }
+    if (file.size > MAX_TEXT_ATTACHMENT_BYTES) {
+      refuseOversizedPick(file.name, file.size)
+      return
+    }
+    // Within the cap, the slice is the whole file.
+    handlers.attachFile({ path: absPath ?? file.name, content: head })
   } catch {
     /* ignore read errors */
   }
