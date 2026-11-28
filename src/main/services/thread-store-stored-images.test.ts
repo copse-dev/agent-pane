@@ -173,6 +173,25 @@ describe('thread store: large tool images stay on disk', () => {
     assert.deepEqual(await shownImages(loaded[1]), imageUrls(messages[1]))
   })
 
+  it('reads multi-megabyte files with multi-byte text back unchanged', async () => {
+    // Long enough that characters straddle the 512 KiB read boundaries.
+    const prose = '€ 😀 '.repeat(160_000)
+    const result = 'naïve ✓ '.repeat(160_000)
+    const call: ToolCall = { id: 'call-text', name: 'read', args: {}, status: 'done', result }
+    const long: Message = {
+      id: 'a3',
+      role: 'assistant',
+      content: prose,
+      toolCalls: [call],
+      createdAt: 4,
+    }
+    await appendMessage(PROJECT, THREAD, long)
+    const loaded = (await loadThreadMessages(PROJECT, THREAD))[2]
+    assert.equal(loaded?.content, prose)
+    assert.equal(loaded.toolCalls[0]?.result, result)
+    assert.deepEqual((await getProjectThread(PROJECT, THREAD))?.messages[2], loaded)
+  })
+
   it('drops an image whose reference cannot be read instead of writing the reference', async () => {
     const dangling = storedToolImageUrl({
       projectId: PROJECT,

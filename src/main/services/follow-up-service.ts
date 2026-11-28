@@ -27,7 +27,7 @@ import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
 import { hostRoutedNamespace } from '@copse/llm/model-selection.ts'
 import { askClassifierBatch, trueProbability } from './classifiers/background-classification.ts'
-import { getProjectThread } from './thread-store.ts'
+import { getThreadMeta } from './thread-store.ts'
 import { inspectThreadReadRoot } from './thread-execution-context.ts'
 
 const MAX_SUGGESTIONS = 3
@@ -359,8 +359,10 @@ export async function suggestThreadFollowUps(
 ): Promise<FollowUpSuggestion[]> {
   const root = await inspectThreadReadRoot(projectId, threadId)
   if (!root) return []
-  const thread = await getProjectThread(projectId, threadId)
-  const executor = followUpExecutorForModels(thread?.model, thread?.resolvedModel)
+  // The model is all this needs, and meta has it. Folding the transcript here
+  // allocated gigabytes on a long image thread at every turn's start and end.
+  const meta = await getThreadMeta(projectId, threadId)
+  const executor = followUpExecutorForModels(meta?.model, meta?.resolvedModel)
   return suggestFollowUps(context, root, executor)
 }
 

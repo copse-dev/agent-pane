@@ -690,7 +690,9 @@ async function readOrNull(path: string, strict = false): Promise<string | null> 
     assertStorePath(path)
     const handle = await fsPromises.open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
     try {
-      return await handle.readFile('utf8')
+      // One buffer, decoded once. readFile('utf8') builds a large file as a rope
+      // of 512 KiB pieces, and the first hash of it flattens a second copy.
+      return (await handle.readFile()).toString('utf8')
     } finally {
       await handle.close()
     }

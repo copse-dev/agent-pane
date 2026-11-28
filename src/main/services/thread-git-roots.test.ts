@@ -270,6 +270,30 @@ describe('thread Git roots with real checkout lifecycle and queued store', () =>
     }
   })
 
+  it('reads only the thread meta, not the transcript, for the automatic follow-up request', async () => {
+    await seed()
+    const counts: string[] = []
+    configureThreadStore({
+      workspaceRoot: () => join(root, 'workspace'),
+      listProjectIds: () => [PROJECT],
+      perf: { count: (name) => counts.push(name), span: (_name, fn) => fn() },
+    })
+    const previous = process.env['COPSE_PANEL_MOCK_FOLLOW_UPS']
+    process.env['COPSE_PANEL_MOCK_FOLLOW_UPS'] = '1'
+    try {
+      const suggestions = await suggestThreadFollowUps(PROJECT, THREAD, {
+        userMessage: 'Check the release.',
+        assistantMessage: 'The release is ready.',
+        toolNames: [],
+      })
+      assert.ok(suggestions.length > 0)
+      assert.equal(counts.includes('store:thread-prefetch'), false, 'no whole-thread fold')
+    } finally {
+      if (previous === undefined) delete process.env['COPSE_PANEL_MOCK_FOLLOW_UPS']
+      else process.env['COPSE_PANEL_MOCK_FOLLOW_UPS'] = previous
+    }
+  })
+
   it('restores for the submit/checkout path before capturing prompt state', async () => {
     const thread = await seed()
     const head = git(thread.worktree.path, ['rev-parse', 'HEAD'])
