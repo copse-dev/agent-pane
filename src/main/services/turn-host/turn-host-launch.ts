@@ -1,3 +1,4 @@
+import type { ProviderStreamChunk } from '@copse/llm/wire-types.ts'
 import { spawn, type SpawnOptions } from 'node:child_process'
 import { mkdirSync, openSync } from 'node:fs'
 import { join } from 'node:path'
@@ -95,19 +96,46 @@ function startHost(deps: TurnHostLaunchDependencies): void {
 }
 
 /** The link to the profile's host, wired to its stores. */
-export function createTurnHostLink(deps: TurnHostLaunchDependencies): TurnHostLink {
+/** Settle a thread left running interrupted, so Continue is the user's call. */
+export async function settleInterrupted(projectId: string, threadId: string): Promise<void> {
+  const meta = (await loadProjectThreadMetas(projectId)).find((m) => m.id === threadId)
+  if (meta?.status !== 'running') return
+  await updateMeta(projectId, threadId, { status: 'idle', interruptedTurnAt: Date.now() })
+}
+
+export function createTurnHostLink(
+  deps: TurnHostLaunchDependencies,
+  /** A host elsewhere (an SSH host's worker) replaces how it is reached. */
+  elsewhere: Partial<
+    Pick<
+      TurnHostLinkDependencies,
+      | 'connect'
+      | 'readRecord'
+      | 'isAlive'
+      | 'onThreadTaken'
+      | 'applyStoreWrite'
+      | 'sendThreadPrompt'
+      | 'callTaskSupervisor'
+      | 'askSsh'
+    >
+  > & {
+    /**
+     * Whether the host may act for this thread now (null: for no thread in
+     * particular, a model call). Left out, it may for any; an SSH host only
+     * for a turn this app sent it.
+     */
+    admits?: (threadId: string | null) => boolean
+  } = {},
+): TurnHostLink {
   const socketPath = turnHostSocketPath(deps.userDataPath)
-  return new TurnHostLink({
+  const { admits, ...replaced } = elsewhere
+  const linkDeps: TurnHostLinkDependencies = {
     version: deps.appVersion,
     connect: (onMessage, onClose) => connectTurnHost(socketPath, onMessage, onClose),
     readRecord: (projectId, threadId) =>
       readHostDispatchRecord(threadDirectoryPath(projectId, threadId)),
     isAlive: isPidAlive,
-    settleUncertain: async (projectId, threadId): Promise<void> => {
-      const meta = (await loadProjectThreadMetas(projectId)).find((m) => m.id === threadId)
-      if (meta?.status !== 'running') return
-      await updateMeta(projectId, threadId, { status: 'idle', interruptedTurnAt: Date.now() })
-    },
+    settleUncertain: settleInterrupted,
     // Filed under the host turn's thread, so it shows on that thread and on
     // the user's other devices as an in-process turn's prompt does.
     askUser: async ({ projectId, threadId, request }, signal): Promise<HostApprovalAnswer> => {
@@ -152,7 +180,54 @@ export function createTurnHostLink(deps: TurnHostLaunchDependencies): TurnHostLi
     ...(deps.callTaskSupervisor ? { callTaskSupervisor: deps.callTaskSupervisor } : {}),
     ...(deps.onUnfollowedChunk ? { onUnfollowedChunk: deps.onUnfollowedChunk } : {}),
     log: deps.log,
-  })
+    ...replaced,
+  }
+  return new TurnHostLink(admits === undefined ? linkDeps : admitted(linkDeps, admits))
+}
+
+const refused = (): Error => new Error('This host has no turn of that thread from this app.')
+
+/** A link's handlers that act only for threads `admits` lets the host act for. */
+function admitted(
+  deps: TurnHostLinkDependencies,
+  admits: (threadId: string | null) => boolean,
+): TurnHostLinkDependencies {
+  const { askUser, askQuestions, reviewDiff, infer, onUnfollowedChunk, onInstructionActivation } =
+    deps
+  const gated: TurnHostLinkDependencies = {
+    ...deps,
+    ...(askUser && {
+      askUser: (prompt, signal) =>
+        admits(prompt.threadId) ? askUser(prompt, signal) : Promise.reject(refused()),
+    }),
+    ...(askQuestions && {
+      askQuestions: (prompt, signal) =>
+        admits(prompt.threadId) ? askQuestions(prompt, signal) : Promise.resolve(null),
+    }),
+    ...(reviewDiff && {
+      reviewDiff: (prompt, signal) =>
+        admits(prompt.threadId) ? reviewDiff(prompt, signal) : Promise.resolve(false),
+    }),
+    ...(infer && {
+      infer: (request, signal): AsyncIterable<ProviderStreamChunk> => {
+        if (!admits(null)) throw refused()
+        return infer(request, signal)
+      },
+    }),
+    ...(onUnfollowedChunk && {
+      onUnfollowedChunk: (message): void => {
+        if (admits(message.threadId)) onUnfollowedChunk(message)
+      },
+    }),
+    ...(onInstructionActivation && {
+      onInstructionActivation: (projectKey, threadId, names): void => {
+        if (admits(threadId)) onInstructionActivation(projectKey, threadId, names)
+      },
+    }),
+  }
+  // Output for the app's own task pane: a host's processes stay there.
+  delete gated.onShellOutput
+  return gated
 }
 
 /**

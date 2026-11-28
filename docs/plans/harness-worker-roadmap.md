@@ -159,14 +159,32 @@ _State._ R3 is built in five steps:
      no running process was started from, and not uploaded in the last ten minutes, are
      then removed. Two builds that share a version number (developer builds) count as
      one.
-   - **The thread on the host.** The app gives the worker the SSH project as a project of
-     its own, rooted at the remote path, with the settings a turn reads, and the thread's
-     history the first time; the worker's turns then run their tools on the host directly.
-   - **Turns go there.** With the host's worker up, an SSH thread's prompt goes to a
-     `TurnHostLink` for that host, the app follows the turn as it follows a local host
-     turn, and copies the transcript into the laptop's store as it lands. The app makes
-     calls only for the models its own settings name, and checks a remote turn's pid
-     with the worker, not locally.
+   - **The thread on the host, and turns go there (done, behind Experimental).** With
+     "Run every turn in a background worker" on, an SSH project's prompt starts its host's
+     worker (`ssh-worker/ssh-turn-hosts.ts`), which gets the project as its own, rooted at
+     the remote path with no SSH host, so its tools run there directly, and the settings
+     the renderer may write, which hold no keys, less those naming other machines or
+     carrying an agent's environment (`ssh-worker-seed.ts`). Before each turn the host
+     is given the laptop's copy of the thread's history, after the laptop takes the
+     host's when the host has more (a turn the worker ran by itself); so a turn the app
+     ran while the host was unreachable is kept. The turn streams to the window over the
+     forward, and once it ends the laptop's copy is brought up to the host's through the
+     thread store. A copy back that still shows the turn running is settled interrupted.
+     A second prompt for a thread running there is refused rather than run in the app,
+     and so is one while a turn holds the thread's lease there, or when the two copies
+     went apart (the user forks it); so the copies never fork silently. A line that
+     drops mid-turn waits for the host's lease before the copy back. Stop reaches the
+     host, even while the thread is still being given to it. The copy back keeps what
+     is the laptop's in the thread's meta: a queued prompt, a draft, links, a rename,
+     and anything naming the laptop's worktrees or agents. Nothing the worker sends
+     changes the laptop's settings or projects, prompts another thread, records a process
+     on the laptop, or answers its SSH logins. A turn the worker cannot take runs in the
+     app as before.
+   - **Still open in step 3:** a turn the worker starts by itself (a wake) is seen at the
+     thread's next turn, not live, and a line that reconnects mid-turn does not stream
+     the rest of it; a lost line cannot check the worker's pid, so such a
+     turn is left to the user (Continue) rather than guessed; the app makes calls for any
+     model it can build; and there is no e2e of a whole turn yet (step 5).
 4. **The opt-in key lease.**
 5. **The exit gate** as an e2e.
 
