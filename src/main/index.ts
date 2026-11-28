@@ -12,6 +12,15 @@ import {
   ForeignTurnFollower,
   defaultForeignTurnDependencies,
 } from './services/turn-worker/foreign-turns.ts'
+import {
+  connectOrStartTurnHost,
+  createTurnHostLink,
+  turnHostPath,
+} from './services/turn-host/turn-host-launch.ts'
+import type { TurnHostLink } from './services/turn-host/turn-host-link.ts'
+import { setTestScenarioForwarder } from './services/turn-host/turn-host-test-scenarios.ts'
+import { turnNeeds } from './services/turn-host/turn-needs.ts'
+import type { TurnWorkerConnection } from './services/turn-worker/turn-worker-socket.ts'
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
 import { initRemoteInterface } from './services/mobile/remote-interface.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
@@ -20,7 +29,12 @@ import {
   setPluginClientThreadOpener,
   stopPluginClientApi,
 } from './services/plugins/plugin-client-service.ts'
-import { dispatchSubthreadPrompt, initThreadPrompts } from './services/thread-prompts.ts'
+import {
+  dispatchSubthreadPrompt,
+  initThreadPrompts,
+  sendThreadPrompt,
+} from './services/thread-prompts.ts'
+import { recordForeignNestedActivation } from './services/project-instructions.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
 import { abortScratchFetchesForQuit } from './services/default-branch-fetch.ts'
 import { removeOrphanedPlanWindowHistory } from './services/storage/plan-window-history-cleanup.ts'
@@ -73,7 +87,7 @@ import {
   shouldQuitDetachedApp,
 } from './windows/window-detach.ts'
 import { isWorktreeDeferralPending } from '@shared/git/worktree-policy.ts'
-import type { LLMMessage, StreamChunk } from '@shared/types'
+import type { LLMMessage, StreamChunk, TranscriptStamp } from '@shared/types'
 import { THEME_BACKGROUND } from '@shared/theme.ts'
 import {
   assertPrimaryMainWindow,
@@ -111,6 +125,7 @@ import {
   setQuitHandOffCheck,
   initCloseConfirm,
 } from './services/close-confirm.ts'
+import { setForeignProcessRoots } from './services/process-manager-owned.ts'
 import { checkToolAvailability } from './services/tool-availability.ts'
 import {
   createRegistry,
@@ -139,6 +154,7 @@ import {
 import { setTerminalCommandLauncher } from './services/exec/terminal-launch.ts'
 import { initSshPrompt } from './services/ssh-workspace/ssh-prompt.ts'
 import { initSshAskpassServer } from './services/ssh-workspace/askpass.ts'
+import { onPersistentStoreWrite } from '@copse/store-kit/persistent-store.ts'
 import { initSshWorkspaceIpc } from './services/ssh-workspace/ssh-workspace-ipc.ts'
 import { clearSshWorkspaceFsCache } from './services/workspace-fs/ssh-workspace-fs.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
@@ -146,6 +162,15 @@ import { senderProjectId } from './ipc/sender-project-root.ts'
 import { diffAcceptancePrompt, setDiffAcceptanceHandler } from './services/diff-acceptance-wake.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
 import { setRemoteWatcherInstallApprover } from './services/ssh-workspace/remote-watcher-install-approval.ts'
+import { storageGet } from './services/storage/storage.ts'
+import { setSshWorkerInstallApprover } from './services/ssh-worker/ssh-worker-install-approval.ts'
+import { SSH_THREAD_BUSY } from './services/ssh-worker/ssh-worker-seed.ts'
+import { SshThreadRefused } from '@shared/ssh-thread-refused.ts'
+import {
+  createSshTurnHosts,
+  sshProjectOf,
+  type SshTurnHosts,
+} from './services/ssh-worker/ssh-turn-hosts.ts'
 import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-watcher.ts'
 import {
   reapOversizedGortexDaemon,
@@ -265,7 +290,10 @@ import {
   cancelAllSupervisedBackgroundProcesses,
   hasBackgroundCompletionWake,
   installBackgroundProcessSupervisor,
+  setForeignBackgroundProcessLogsReader,
+  setForeignBackgroundProcessStopper,
 } from './services/exec/supervised-background-process.ts'
+import type { HostTaskCall, HostTaskCallResult } from './services/turn-host/host-task-supervisor.ts'
 import {
   backgroundCompletionPrompt,
   setBackgroundCompletionWakeHandler,
@@ -343,12 +371,51 @@ const isThreadBaseFallback = memberOf(THREAD_BASE_FALLBACKS)
  * detached instead of quitting.
  */
 function workInFlight(): number {
-  return listRunningThreadIds().length + getContainerRunService().activeThreadIds().length
+  const turns = new Set([...listRunningThreadIds(), ...hostRunningThreadIds()])
+  return turns.size + getContainerRunService().activeThreadIds().length
+}
+
+/** Threads whose turn the turn host is running for this window. */
+function hostRunningThreadIds(): string[] {
+  return turnHostLink?.runningThreadIds() ?? []
 }
 
 let unattendedQuit = false
 /** This quit hands its turns to workers (set once the quit goes ahead). */
 let quitHandsOff = false
+
+/** Tasks whose background command a turn host runs (H7), by project and task id. */
+const hostTaskIds = new Set<string>()
+const hostTaskKey = (task: { projectId: string; taskId: string }): string =>
+  `${task.projectId}\0${task.taskId}`
+const isHostTask = (task: { projectId: string; taskId: string }): boolean =>
+  hostTaskIds.has(hostTaskKey(task))
+
+/** A host turn's call on the app's task supervisor, for a command the host runs. */
+async function runHostTaskCall(call: HostTaskCall): Promise<HostTaskCallResult> {
+  try {
+    await taskSupervisor.start()
+    if (call.op === 'adopt') {
+      const task = await taskSupervisor.adoptRunning(call.input, call.processHandle)
+      hostTaskIds.add(hostTaskKey(task))
+      return { task }
+    }
+    // Only tasks a host adopted: a host does not settle the app's own.
+    if (!isHostTask(call)) return { error: 'The task is not one a turn host runs.' }
+    switch (call.op) {
+      case 'complete':
+        return {
+          task: await taskSupervisor.completeExternal(call.projectId, call.taskId, call.resultRef),
+        }
+      case 'fail':
+        return { task: await taskSupervisor.failExternal(call.projectId, call.taskId, call.reason) }
+      case 'cancel':
+        return { task: await taskSupervisor.cancel(call.projectId, call.taskId) }
+    }
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) }
+  }
+}
 
 /** Quit without asking: a signal or a fault has nobody to answer the prompt. */
 function quitUnattended(): void {
@@ -760,6 +827,7 @@ app
     initUpdatePrompt(win)
     initCloseConfirm(win)
     setCloseConfirmContainerRuns(() => getContainerRunService().activeThreadIds())
+    setForeignProcessRoots(() => turnHostLink?.processes() ?? Promise.resolve([]))
     guardWindowClose(win, ({ rendererGone }) => {
       const mobile = getMobileCompanionState().enabled
       const detach = shouldDetachOnClose({
@@ -854,16 +922,93 @@ app
     // Turns a worker took over when Copse last quit, still going now: shown as
     // running, streamed from the worker (or repainted from disk) until it lets
     // go of them, and stopped through it.
-    const foreignTurns = new ForeignTurnFollower(
-      defaultForeignTurnDependencies(app.getPath('userData'), {
-        snapshot: (snapshot) => {
-          if (!win.isDestroyed()) win.webContents.send('agent:transcript-snapshot', snapshot)
+    const foreignTurnDependencies = defaultForeignTurnDependencies(app.getPath('userData'), {
+      snapshot: (snapshot) => {
+        if (!win.isDestroyed()) win.webContents.send('agent:transcript-snapshot', snapshot)
+      },
+      chunk: ({ threadId, chunk, stamp }) => {
+        if (!win.isDestroyed()) win.webContents.send('agent:chunk', threadId, chunk, stamp)
+      },
+    })
+    const connectWorker = foreignTurnDependencies.connect
+    // A thread the resident turn host runs streams from the host's line; a turn
+    // a per-turn worker took at the last quit, from that worker's.
+    foreignTurnDependencies.connect = async (
+      turn,
+      onMessage,
+      onClose,
+    ): Promise<TurnWorkerConnection | null> =>
+      (await connectWorker?.(turn, onMessage, onClose)) ??
+      turnHostLink?.subscribe(turn.threadId, onMessage, onClose) ??
+      null
+    const foreignTurns = new ForeignTurnFollower(foreignTurnDependencies)
+    if (getSetting<unknown>('turnsRunInHost', false) === true) {
+      const launch = {
+        execPath: process.execPath,
+        hostPath: turnHostPath(),
+        userDataPath: app.getPath('userData'),
+        appVersion: app.getVersion(),
+        packaged: app.isPackaged,
+        env: process.env,
+        log: (line: string): void => {
+          console.log(line)
         },
-        chunk: ({ threadId, chunk, stamp }) => {
-          if (!win.isDestroyed()) win.webContents.send('agent:chunk', threadId, chunk, stamp)
+        onThreadTaken: (projectId: string, threadId: string): void => {
+          // The host writes this thread's history now: this process's cached
+          // copy goes stale, and the next turn run here reads it from disk.
+          agentDispatcher.forgetHistory(projectId, threadId)
+          void foreignTurns.follow({ projectId, threadId })
         },
-      }),
-    )
+        onShellOutput: (chunk: string, taskId: string | null): void => {
+          getMainWindow()?.webContents.send('agent:shell-output', chunk, taskId)
+        },
+        // Settings → Sources shows which nested instructions a host turn activated.
+        onInstructionActivation: recordForeignNestedActivation,
+        // A host turn's subthread start or peer prompt: this window submits it.
+        sendThreadPrompt,
+        // A host turn's background commands keep their task records here (H7).
+        callTaskSupervisor: runHostTaskCall,
+        onUnfollowedChunk: ({
+          threadId,
+          chunk,
+          stamp,
+        }: {
+          threadId: string
+          chunk: StreamChunk
+          stamp?: TranscriptStamp | undefined
+        }): void => {
+          getMainWindow()?.webContents.send('agent:chunk', threadId, chunk, stamp)
+        },
+      }
+      const link = createTurnHostLink(launch)
+      turnHostLink = link
+      // An SSH project's turns run on its host's worker, which keeps the
+      // thread there (docs/plans/harness-worker-roadmap.md, R3 step 3).
+      sshTurnHosts = createSshTurnHosts(launch, (message) => {
+        foreignTurnDependencies.deliver?.(message)
+      })
+      // The host re-reads the profile before its next turn once the app wrote
+      // it; one notice for every write made in the same tick.
+      let profileNoticePending = false
+      onPersistentStoreWrite(() => {
+        if (profileNoticePending) return
+        profileNoticePending = true
+        queueMicrotask(() => {
+          profileNoticePending = false
+          link.profileChanged()
+        })
+      })
+      // Never awaited: turns run in main until the host answers.
+      const hostStarted = connectOrStartTurnHost(link, launch)
+      // An e2e run's scripted scenarios are set in the host too, which claims
+      // host turns' responses; a test waits for the host before it sends one.
+      if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') {
+        setTestScenarioForwarder(async (op) => {
+          await hostStarted
+          return link.testScenario(op)
+        })
+      }
+    }
     stopFollowingForeignTurns = (): void => {
       foreignTurns.stop()
     }
@@ -926,6 +1071,16 @@ app
         body,
         type: 'shell',
         cause: 'ssh-watcher-install',
+        allowRemember: false,
+      })
+      return approved
+    })
+    setSshWorkerInstallApprover(async ({ title, body }) => {
+      const { approved } = await requestApproval({
+        title,
+        body,
+        type: 'shell',
+        cause: 'ssh-worker-install',
         allowRemember: false,
       })
       return approved
@@ -1011,6 +1166,7 @@ app
     const ownsAutomationAgentWork = (projectId: string, threadId: string): boolean =>
       agentDispatcher.isActive(projectId, threadId) ||
       listRunningThreadIds().includes(threadId) ||
+      hostRunningThreadIds().includes(threadId) ||
       hasActiveAcpTurn(threadId) ||
       getContainerRunService().isActive(threadId) ||
       hasBackgroundCompletionWake({ projectId, threadId })
@@ -1065,10 +1221,30 @@ app
     })
     disposeLongTaskWake = installLongTaskWakeConsumer(taskSupervisor, agentDispatcher)
     disposeCiWatchConsumer = installCiWatchConsumer(taskSupervisor, agentDispatcher)
-    disposeBackgroundProcessSupervisor = installBackgroundProcessSupervisor(taskSupervisor)
+    disposeBackgroundProcessSupervisor = installBackgroundProcessSupervisor(taskSupervisor, {
+      // A host turn's command carries on through a quit that keeps its turns.
+      survivesShutdown: (task) => isHostTask(task) && quitHandsOff && !quitInstallsUpdate(),
+      // After a relaunch, a command a host still runs keeps its task running.
+      isAlive: async (task) => {
+        if (!turnHostLink || task.processHandleId === undefined) return false
+        const answer = await turnHostLink.process('alive', task.processHandleId, task)
+        if (answer?.ok !== true) return false
+        hostTaskIds.add(hostTaskKey(task))
+        return true
+      },
+    })
+    setForeignBackgroundProcessStopper(async (task) => {
+      if (!turnHostLink || !isHostTask(task) || task.processHandleId === undefined) return false
+      return (await turnHostLink.process('stop', task.processHandleId, task))?.ok === true
+    })
+    setForeignBackgroundProcessLogsReader(async (processId, owner) => {
+      if (!turnHostLink?.ready) return null
+      return (await turnHostLink.process('logs', processId, owner))?.logs ?? null
+    })
     disposeContainerRunSupervisor = getContainerRunService().installSupervisor(taskSupervisor)
     disposeDarkFactorySensor = installDarkFactorySensor(taskSupervisor)
     disposeTaskSupervisorEvents = taskSupervisor.subscribe((task) => {
+      if (isHostTask(task)) turnHostLink?.taskChanged(task)
       if (!win.isDestroyed()) win.webContents.send('supervisor:changed', task.projectId)
     })
     void taskSupervisor
@@ -1260,11 +1436,58 @@ app
         const request = { projectId, threadId, payload: parseAgentRunPayload(rawPrompt) }
         // A delegated prompt's authority is decided here, not by the renderer's
         // pre-check: a revoke can land between that check and this invoke.
-        await (delegation
-          ? dispatchSubthreadPrompt(projectId, delegation.parentThreadId, threadId, () =>
-              agentDispatcher.dispatch(request),
-            )
-          : agentDispatcher.dispatch(request))
+        // With the turn host on, a turn runs there unless the host provably
+        // never ran it (`turn-host-link.ts`). Delegated prompts stay in main,
+        // where their grant is checked.
+        // A thread the app is already running stays in the app, so the copy
+        // here and the host's never go apart.
+        // A delegated prompt runs here, so not while the host runs the thread.
+        if (delegation && sshTurnHosts?.runningThreadIds().includes(threadId) === true)
+          throw new SshThreadRefused(SSH_THREAD_BUSY)
+        const onSshHost =
+          !delegation && sshTurnHosts && !listRunningThreadIds().includes(threadId)
+            ? sshProjectOf(storageGet('projects'), projectId)
+            : null
+        const ranOnSshHost =
+          onSshHost !== null && sshTurnHosts
+            ? (await sshTurnHosts.run(
+                onSshHost.hostId,
+                onSshHost.project,
+                threadId,
+                rawPrompt,
+                // The host runs its own commands, which the app does not confine.
+                {
+                  ...(await turnNeeds(projectId, threadId, request.payload.model)),
+                  sandbox: false,
+                },
+              )) === 'host'
+            : false
+        const ranInHost =
+          ranOnSshHost ||
+          (!delegation && turnHostLink?.ready === true
+            ? (await turnHostLink.run(
+                projectId,
+                threadId,
+                rawPrompt,
+                await turnNeeds(projectId, threadId, request.payload.model),
+              )) === 'host'
+            : false)
+        // The host gives the thread's lease back before its last transcript
+        // write lands, so the follower's repaint at the release can still read
+        // the turn as running. `ended` comes after that write: paint it again.
+        if (ranInHost) {
+          agentDispatcher.forgetHistory(projectId, threadId)
+          await foreignTurnDependencies.repaint({ projectId, threadId }).catch((error: unknown) => {
+            console.warn('[turn-host] could not repaint a finished host turn:', error)
+          })
+        }
+        if (!ranInHost) {
+          await (delegation
+            ? dispatchSubthreadPrompt(projectId, delegation.parentThreadId, threadId, () =>
+                agentDispatcher.dispatch(request),
+              )
+            : agentDispatcher.dispatch(request))
+        }
         await parkCompletedPullRequestWorktree(projectId, threadId).catch((error: unknown) => {
           console.warn('[worktree] Could not park PR-backed checkout:', error)
         })
@@ -1401,8 +1624,9 @@ app
       const reason = z.literal('send_now').optional().parse(reasonArg)
       transcriptWriter.noteUserAbort(threadId, reason ?? 'stop')
       abortAgent(threadId, reason)
-      // A turn a worker runs stops there.
-      foreignTurns.requestStop(threadId)
+      // A turn a worker or the turn host runs stops there.
+      if (foreignTurns.requestStop(threadId) || sshTurnHosts?.stop(threadId) === true) return
+      if (turnHostLink?.runningThreadIds().includes(threadId)) turnHostLink.stop(threadId)
     })
 
     // Thread ids with a live in-process run, so a renderer that's just loaded a
@@ -1412,7 +1636,8 @@ app
     ipcMain.handle('agent:running-thread-ids', async (event) => {
       assertMainFrameSender(event, win)
       const foreign = await foreignTurns.discover()
-      return [...new Set([...listRunningThreadIds(), ...foreign])]
+      const onSshHosts = sshTurnHosts?.runningThreadIds() ?? []
+      return [...new Set([...listRunningThreadIds(), ...foreign, ...onSshHosts])]
     })
 
     // Re-run just the post-turn review for a thread — the retry action on a
@@ -1676,6 +1901,8 @@ let quitCleanupFinished = false
  * data, and did so silently.
  */
 const QUIT_CLEANUP_DEADLINE_MS = 30_000
+/** How long a quit waits for stopped host turns to end, within the deadline above. */
+const HOST_TURN_QUIT_DRAIN_MS = 10_000
 let disposeTerminal: (() => void) | undefined
 let disposeVnc: (() => Promise<void>) | undefined
 let disposeSimulatorDesktop: (() => Promise<void>) | undefined
@@ -1688,6 +1915,10 @@ let disposeTaskSupervisorEvents: (() => void) | undefined
 let interruptTurnTranscripts: (() => Promise<void>) | undefined
 let listActiveTurns: (() => HandOffTarget[]) | undefined
 let stopFollowingForeignTurns: (() => void) | undefined
+/** The line to the resident turn host, when `turnsRunInHost` is on. */
+let turnHostLink: TurnHostLink | undefined
+/** SSH projects' turn hosts, when `turnsRunInHost` is on. */
+let sshTurnHosts: SshTurnHosts | undefined
 
 /**
  * Start a turn worker for each turn this quit cut off, so it continues now
@@ -1717,6 +1948,20 @@ function handOffInterruptedTurns(targets: readonly HandOffTarget[]): void {
 async function cleanupBeforeQuit(): Promise<void> {
   // Read before anything below stops them.
   const handOff = listActiveTurns?.() ?? []
+  // Turns in the resident host carry on through a quit that hands off, as a
+  // detach. Any other quit (the setting off, a signal or fault, an unanswered
+  // close, an update install) stops them as it stops in-process turns.
+  // A stopped host turn ends as a quit-interrupted one (Retry on the next
+  // launch); the quit waits for its commands to drain, as for in-process turns.
+  const hostLink = turnHostLink
+  const hostTurnsStopped = Promise.all([
+    hostLink && (!quitHandsOff || quitInstallsUpdate())
+      ? hostLink.stopAllForQuit(HOST_TURN_QUIT_DRAIN_MS)
+      : undefined,
+    // An SSH host's turns cannot go on without this app to make their model
+    // calls: every quit stops them.
+    sshTurnHosts?.stopAllForQuit(HOST_TURN_QUIT_DRAIN_MS),
+  ])
   stopFollowingForeignTurns?.()
   const transcriptDrain = interruptTurnTranscripts?.()
   // Host-side default-branch fetches run in their own process group and would
@@ -1725,6 +1970,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   setAgentInitiatedTurnAuthority(null)
   stopAllAgentRuns()
   await stopAllForegroundShellProcesses()
+  await hostTurnsStopped
   // Revoke input and inference synchronously, then await VM deletion within the quit deadline.
   await stopAllIsolatedDesktops().catch((error: unknown) => {
     console.error('[isolated-desktop] Shutdown VM cleanup failed:', error)
@@ -1746,6 +1992,8 @@ async function cleanupBeforeQuit(): Promise<void> {
   await getContainerRunService().stopAll(quitHandsOff && !quitInstallsUpdate())
   await cancelAllSupervisedBackgroundProcesses()
   await taskSupervisor.shutdown()
+  // Open until here, so cancelling a host turn's background commands reached the host.
+  hostLink?.close()
   disposeContainerRunSupervisor?.()
   disposeContainerRunSupervisor = undefined
   disposeBackgroundProcessSupervisor?.()

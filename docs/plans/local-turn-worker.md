@@ -181,11 +181,183 @@ instead of authenticating again. `turn-worker-ssh.test.ts` pins this with the e2
 
 ### Later
 
-- Start every turn in a worker, so a crash of the app never interrupts a turn (dispatch via
-  worker). This needs a live chunk stream from the worker to the desktop (a local socket),
-  since file-following alone lags the stream.
-- A resident daemon (`client-server-split.md` step 4) replaces per-turn workers.
+- A resident daemon (`client-server-split.md` step 4) replaces per-turn workers. The turn
+  host below is most of the way there for turns.
 - A worker on another machine (`cross-device-harness-offload.md` O2).
+
+## Every turn in a turn host
+
+The hand-off above covers a quit the user chose. A crash of the app, a renderer fault that
+takes main down, or a `kill` still cuts the turn off, and the next launch continues it once.
+This part runs every turn outside the app from its first step, so the app going away, for any
+reason, never interrupts one.
+
+It is phase R1 of `harness-worker-roadmap.md`, the local box of the shared harness worker in
+`cross-device-harness-offload.md`: one
+bundle that owns a thread's turns under its lease, with windows and the phone attaching to it.
+The host's protocol is written for any transport, so the same verbs (dispatch, attach,
+decisions, store writes) later reach a worker on an SSH host, in a container or on a cloud
+machine over a forwarded socket. Moving the worker off this machine, hosting external agents
+in it, and folding container runs into it are separate steps, not part of this one.
+
+```text
+ Copse.app (Electron main + renderer)                copse turn host (one per profile)
+ ────────────────────────────────────                ───────────────────────────────────
+  agent:run ─► TurnRouter                             Electron binary, ELECTRON_RUN_AS_NODE=1
+                ├─ host can run it ── dispatch ────►  dist/main/turn-host.js
+                │                                     ├─ booted once: sandbox, registry, MCP
+                └─ otherwise: AgentDispatcher         ├─ AgentDispatcher, one lease per thread
+                   in main, as today                  ├─ TurnTranscriptWriter writes threads
+                                                      │
+  ForeignTurnFollower ◄──── chunks, snapshots ─────── ├─ serves every thread it runs
+  approval dialog     ◄──── approval / askpass ────►  ├─ asks the attached app, else defers
+  Stop                ───── stop ─────────────────►  │
+                                                      └─ no app and no turn for 10 min ─► exit
+```
+
+### Decisions
+
+1. **One resident host per profile, not a worker per turn.** A worker boots the sandbox, the
+   tool registry, plugins and MCP servers before its turn starts, which takes seconds. Paid
+   on every message, that is a visible delay. The host pays it once: the app starts it at
+   launch, in the background, and routes turns to it once it answers. It serves every thread
+   on one socket (`<profile>/run/turn-host.sock`) and keeps the per-thread writer lease, so
+   W3 and W4 (follow, attach, stop) work unchanged against it.
+2. **The app never waits on the host, and a turn runs at most once.** A turn sent before the
+   host answers, a thread the host cannot run (`workerCannotRun`: ChatGPT-plan models,
+   external and remote agents), or a host that failed to start, runs in main as today.
+   Routing is per turn, and a turn never moves between processes mid-stream. Once a turn has
+   been sent, though, falling back is only safe if the host provably never ran it, so
+   ownership follows these rules:
+   - Every `dispatch` carries an operation id the app chooses. The host remembers each id it
+     has seen, and a repeat of one gets that operation's state, never a second run.
+   - When the host holds the thread's lease, and before the turn starts, it writes a dispatch
+     record (`host-dispatch.json`: operation id, `claimed` or `ended`) into the thread
+     directory, under that lease. It marks the record `ended` after the turn's last write.
+   - The app runs the turn in main only on an explicit `refused` for that id.
+   - Any other silence (the line drops, the host dies) before an answer is resolved by
+     asking, never by assuming. The app reconnects and sends `status` for the id. If no host
+     answers, it reads the thread's dispatch record:
+     - A record with the id means the host took the turn. If the host is gone, the thread is
+       settled interrupted through the existing follower path, which offers Continue.
+     - No record, with the host process gone, means the host never claimed the thread, so
+       the app runs the turn.
+     - If the host is neither reachable nor provably gone, nothing runs. The thread settles
+       interrupted, and Continue is the user's call.
+3. **Same protocol, more verbs.** The W4 socket gains `dispatch` (an `agent:run` request:
+   project, thread, payload, operation id), `status` (an operation's state by id),
+   `approval` and `approval-answer`, `askpass` and
+   `askpass-answer`, and `staged-diff` and its answer. `attach`, `chunk`, `snapshot` and
+   `stop` are as in W4. The renderer is unchanged: the app's follower turns host chunks into
+   `agent:chunk` and `agent:transcript-snapshot` as it already does for a handed-off turn.
+4. **Interactive while watched, deferred while not.** The host's approval handler
+   (`runWithApprovalHandler`) sends the request to the attached app, which shows the usual
+   dialog and answers. With no app attached, it defers as an unattended worker does
+   (decision 6). A request pending when the app goes away is deferred then, and an app that
+   attaches later gets the pending requests replayed, the same as
+   `agent:replay-pending-decisions` today. Staged diffs and SSH password prompts follow the
+   same rule, which closes the gap where password-only SSH hosts fail in a worker.
+5. **The app owns shared stores; the host asks it.** Decision 4 still holds: the host never
+   writes `config.json`. While attached, a write a turn makes to a shared store (settings,
+   projects, memory, todos) is sent to the app, which applies it. With no app, it is kept in
+   memory and logged, as a worker does today. Writes the app makes reach the host as a
+   `profile-changed` notice, and the host re-reads the profile before its next turn starts.
+   Settings that change the registry (plugins, MCP servers, custom tools) rebuild it between
+   turns, never under a running one.
+6. **Versions match or the host retires.** The app and host exchange their versions on
+   connect. An app that finds a host of another version (an update was installed) sends it
+   no new turns. That host finishes the turns it has and exits, and the app starts its own.
+   An update install waits for the host's running turns as quit already waits for the
+   hand-off (decision 8), since the updater replaces the binary the host runs from.
+7. **Quit is a detach.** With every turn already in the host, a confirmed quit just closes
+   the socket. The per-turn hand-off (W2) stays for turns that were running in main.
+   Signals, faults and update installs stop the host's turns as they stop handed-off ones,
+   and with `continueTurnsAfterQuit` off, quit stops them too.
+8. **Experimental first.** The setting `turnsRunInHost` (Experimental, off) routes turns to
+   the host. A crash mid-turn is now shown not to interrupt the turn, in an e2e that kills
+   the app's main process (`tests/e2e/turn-host.e2e.ts`, H5). It becomes the default once
+   the e2e suite passes with it on (H6).
+
+### Slices
+
+- **H1, the turn host.** `turn-host-entry.ts`, bundled to `dist/main/turn-host.js`: boots
+  once, serves `dispatch`, `attach` and `stop` for many threads, and exits when idle with no
+  app attached. It keeps the dispatch records and answers `status` (decision 2). Approvals
+  defer for now. _Exit gate:_ the bundled host, started against a temporary profile with the
+  mock provider, runs two turns on two threads to completion with the leases released, and
+  a repeated `dispatch` of an operation id runs nothing.
+- **H2, route turns.** The app starts the host at launch when the setting is on, the
+  follower attaches to it, and `agent:run` sends eligible turns to it, falling back to main
+  under decision 2's rules. _Exit gates:_ e2e: with the setting on, a turn streams into the
+  window from the host, and Stop ends it. Unit: a line dropped after `accepted`, both with
+  the host finishing the turn and with the host killed mid-turn, never runs the turn in
+  main.
+- **H3, interactive approvals** over the socket, with replay on attach. A host turn no
+  longer defers its prompts: each one goes to every attached app, waits however long no
+  app is attached, and is asked again of an app that attaches. _Exit gate:_ e2e of an
+  approval answered in the window for a host turn; it needs the mock scenarios in the
+  host, so it lands with H5's harness, and unit tests cover the line until then.
+- **H3b, staged diffs and SSH prompts** for host turns, on the same prompt line. A staged
+  edit shows in the thread's diff panel; deciding it there answers the host, which applies
+  it, so it is written once, where the turn runs. Unlike an in-process turn, the host turn
+  waits for that decision before it goes on. SSH questions reach the window through the
+  host's own askpass socket, apart from the app's, and the askpass lease carries the turn's
+  prompt handler to them. Remembering an SSH secret is not offered for host turns until H4.
+- **H4, shared stores and profile changes** (decision 5). Built. The audit found three
+  shared stores a process opens (`openPersistentStore`): `config` (projects, workspace and
+  other app state), `settings` (which also holds the grants a remembered approval saves,
+  through `updateSetting`) and `ssh-credentials`. A turn's own records (transcript, meta,
+  dispatch record) are per-thread files already, its todos live in memory for the run, and
+  project memory is files in the project. So:
+  - A host turn's write to `config` or `settings` reaches the app as `store-write`, and the
+    app saves it through `storageSet` or `setSetting` (with the setting's schema). With no
+    app attached it stays in the host's memory and is logged.
+  - A write to a key (`apiKey`) or to `ssh-credentials` is refused: keys stay with the app,
+    and remembering an SSH secret is still not offered for host turns.
+  - Every write the app makes sends `profile-changed` (once per tick). The host reads the
+    profile again before its next turn starts, under every store already open, and drops
+    their cached values.
+  - A read-modify-write a host turn makes (`updateSetting`) starts from the profile as the
+    host last read it, so it can overwrite an app change made since. The window is one turn
+    wide, because the host rereads before each turn.
+  - Settings that change the registry (plugins, MCP servers, custom tools) are reread, but
+    the registry is not rebuilt yet.
+- **H5, crash proof.** Built. e2e scripted scenarios are set in the host too, over an
+  e2e-only `test-scenario` verb. `tests/e2e/turn-host.e2e.ts` kills the app's main process
+  mid-turn, relaunches and sees the turn finish once with no Retry card, and answers a host
+  turn's approval in the window. It found the follower missing a turn the host took before
+  writing its running status; the link now hands the follower the taken thread directly.
+- **H6, on by default.** Run with the setting on, a sample of e2e specs found these that pass
+  with it off and fail with it on. Fixed:
+  - A host turn's tool card showed `done` while its command still ran (`tool-activity-icon`):
+    a host left by an earlier spec served the next with its stale profile. The e2e launcher
+    now stops the profile's host whenever it applies a new fixture.
+  - Over-limit command output (`agent-tasks-terminal`): a host turn's live command output now
+    reaches the window's terminal pane (`shell-output`).
+  - A parent turn's subthreads (`subthread-orchestration-recovery`): the window submits a
+    prompt to another thread, and the host had none. The host now asks the attached app's
+    window over the prompt line (`thread-prompt`), replayed on attach and cancelled by Stop.
+  - A quit the user chose (`foreground-shell-quit`): a quit that keeps no turns stops each
+    host turn as a quit, not a user Stop (`stop` with `reason: 'quit'`), so it stays
+    `running` on disk and the next launch offers Retry. The quit waits up to 10 s for those
+    turns to end, their commands drained.
+  - A crash no longer needs the app's restart continuation (`reopen-turn-recovery`), which
+    now pins the setting off to keep covering it.
+
+  Still open, so the default stays off:
+  - **Background tasks** (`foreground-shell-yield`). The task supervisor, which gives a
+    background command its durable, cancellable handle and its completion wake, runs in the
+    app; a host turn has none, so `run_shell` with `yield_after_ms` (and `run_background`)
+    refuse to start. The command runs in the host while its task record and the Background
+    tasks control are the app's, so this needs the host to adopt, settle and cancel its
+    processes through the app's supervisor over the line, and the app's startup
+    reconciliation to leave tasks a live host owns alone.
+
+  The e2e seed helpers stop the profile's host before they write a new profile, since the
+  host outlives each spec's app and would serve the next one with what it read before.
+
+- **C3** (container runs, below) lands alongside, so a run that ends with no app is
+  recorded in its thread straight away.
 
 ## Container runs
 

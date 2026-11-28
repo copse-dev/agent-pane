@@ -78,6 +78,7 @@ async function main(): Promise<number> {
     socketPath: runHostSocketPath(userDataPath, request.runtimeId),
     hostFile: runHostFilePath(userDataPath, request.runtimeId),
     log,
+    ...(values['app-version'] === undefined ? {} : { version: values['app-version'] }),
   })
   return 0
 }

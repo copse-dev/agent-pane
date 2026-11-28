@@ -414,6 +414,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // Defer eligible new threads across projects until their first write. Off by default.
   deferredWorktreesEnabled: z.boolean(),
   containerRunsEnabled: z.boolean(),
+  // Run each turn in the resident turn host, outside the app's main process, so
+  // a crash of the app does not interrupt it (docs/plans/local-turn-worker.md,
+  // "Every turn in a turn host"). Off by default while it is experimental.
+  turnsRunInHost: z.boolean(),
   // Experimental living-plan workflow: the composer's "Start planning" button
   // and dialog. Off by default — container, ACP, remote, and plugin-hosted
   // executors still fail closed while a plan is active, and completion is

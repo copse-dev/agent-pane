@@ -212,6 +212,9 @@ describe('bounded foreground command yielding', function () {
     seedEmptyProject(root, projectId, {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
+      // The quit case covers a quit that stops the turns. A quit that keeps
+      // them leaves a background host turn's command running with its turn.
+      continueTurnsAfterQuit: false,
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })

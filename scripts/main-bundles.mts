@@ -94,6 +94,14 @@ export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
     entry: 'src/main/services/turn-worker/turn-worker-entry.ts',
     outfile: 'dist/main/turn-worker.js',
   },
+  // The resident turn host: runs every turn the app sends it, for any thread, so
+  // the app going away does not interrupt them (docs/plans/local-turn-worker.md,
+  // "Every turn in a turn host"). Started like the turn worker, and bundled free
+  // of electron for the same reason.
+  {
+    entry: 'src/main/services/turn-host/turn-host-entry.ts',
+    outfile: 'dist/main/turn-host.js',
+  },
   // The host side of one container run, in its own process so the run does not
   // depend on the app staying open (docs/plans/local-turn-worker.md, "Container
   // runs"). Started like the turn worker, and bundled free of electron for the
@@ -176,5 +184,19 @@ export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
     // add the file to the bundle or change what the worker can do at runtime.
     external: ['@anthropic-ai/sandbox-runtime', './xhr-sync-worker.js'],
     alias: { 'node-pty': 'src/main/services/container-runtime/node-pty-stub.cjs' },
+  },
+  // The turn host as it runs on an SSH workspace host
+  // (docs/plans/harness-worker-roadmap.md, R3): uploaded there and run by the
+  // host's own Node, where the app's node_modules and natives do not exist.
+  // Bundled self-contained like the container worker above, for the same
+  // reasons and with the same two exceptions.
+  {
+    entry: 'src/main/services/turn-host/turn-host-entry.ts',
+    outfile: 'dist/main/ssh-worker.cjs',
+    external: ['@anthropic-ai/sandbox-runtime', './xhr-sync-worker.js'],
+    alias: {
+      'node-pty': 'src/main/services/container-runtime/node-pty-stub.cjs',
+      '@napi-rs/keyring': 'src/main/services/ssh-worker/keyring-stub.cjs',
+    },
   },
 ]

@@ -4,6 +4,7 @@
 landed the loop-in-guest half of this while it was open: O0, O3 and O4 below are delivered for
 a disposable local container. What remains unbuilt, and is what this plan now exists for, is
 ownership — the lease in O1 and the attach/detach in O2, which that plan parks as its T2.
+The order of the remaining work is in [`harness-worker-roadmap.md`](harness-worker-roadmap.md).
 This plan answers one question the
 package extraction made worth asking: now that the agent runtime no longer needs Electron,
 what stops it running on a different machine from the window that started it?
@@ -122,10 +123,15 @@ turn. A desktop that must be reachable for the run to proceed has not offloaded 
 7. **YOLO requires proven containment.** The worker advertises its sandbox state and the
    desktop refuses to arm unattended mode without an enforcing backend. An unsandboxed remote
    in YOLO is total trust of that machine, and must be an explicit, per-host decision.
-8. **Credentials are leased, not brokered.** The worker holds a short-lived provider key for
-   the duration of its lease. A broker that needs the desktop online defeats the point. This
-   knowingly departs from the "keys never leave the desktop" line held by
-   `ssh-remote-repo.md` and `unattended-runs.md`; the alternative is not offloading.
+8. **Keys stay on the desktop unless the user leases one out.** By default a remote worker
+   sends its model calls through the desktop, as container runs do through their host, so
+   keys never leave it and a run pauses while the desktop is away. The user can opt a worker
+   host in, per host and per provider, to holding a short-lived key for the duration of its
+   lease: revoked or expired when the lease ends, named in the run record, and narrower than
+   the user's main key where the provider supports that. Only an opted-in host keeps running
+   with the desktop closed. This departs from the "keys never leave the desktop" line held by
+   `ssh-remote-repo.md` and `unattended-runs.md` only for hosts the user chose (decided 27
+   November 2026, `harness-worker-roadmap.md`).
 9. **The worker runs under a non-human principal.** It must not inherit the ambient
    credentials or remembered approvals of whoever last opened the project
    (`execution-runtime-security.md` Decision 11). Takeover is an explicit lease transition.

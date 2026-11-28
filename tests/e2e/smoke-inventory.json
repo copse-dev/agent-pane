@@ -197,6 +197,10 @@
       "smoke": null
     },
     {
+      "prefix": "src/main/services/ssh-worker/",
+      "smoke": null
+    },
+    {
       "prefix": "src/main/services/ssh-workspace/",
       "smoke": null
     },
@@ -213,6 +217,10 @@
     },
     {
       "prefix": "src/main/services/terminal/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/turn-host/",
       "smoke": null
     },
     {
@@ -233,6 +241,10 @@
     },
     {
       "prefix": "src/main/services/web-search/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/worker-protocol/",
       "smoke": null
     },
     {

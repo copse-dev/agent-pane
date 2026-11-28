@@ -68,6 +68,21 @@ export const experimentalMarkup = `
               </p>
             </fieldset>
 
+            <fieldset data-testid="turns-run-in-host-settings">
+              <legend>Background turn host</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="turnsRunInHost" />
+                Run each turn in a background process, so a crash of Copse does not stop it
+              </label>
+              <p class="field-hint">
+                Turns run in a separate Copse process that keeps going if this window or the app
+                quits or crashes, and Copse follows them when it opens again. Its approvals, staged
+                edits and SSH questions come to this window as usual. ChatGPT plan models, external
+                coding agents and automations still run in the app. Takes effect when Copse next
+                starts.
+              </p>
+            </fieldset>
+
             <fieldset>
               <legend>Unattended container runs</legend>
               <label class="checkbox-label">
@@ -168,6 +183,7 @@ export const experimentalFields: readonly SettingField[] = [
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'deferredWorktreesEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'containerRunsEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'turnsRunInHost', kind: 'checkbox', default: false, save: true },
   { name: 'planModeEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
   { name: DEVELOPER_MODE_SETTING, kind: 'checkbox', default: false, save: true },

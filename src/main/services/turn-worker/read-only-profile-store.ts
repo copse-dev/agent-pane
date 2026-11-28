@@ -14,13 +14,28 @@ import { isRecord } from '@shared/unknown-value.ts'
  * memory for the rest of its run, and never writes them. `onWrite` hears each key it would have written, once, so the
  * log shows what a handed-off turn could not keep.
  */
+/** One key a process set or deleted in a store, as it would have written it. */
+export type ProfileStoreChange = { key: string; value: unknown } | { key: string; deleted: true }
+
+export type ReloadableProfileStoreFactory = PersistentStoreFactory & {
+  /**
+   * Replace every open store's contents with a fresh read of the profile.
+   * Cached values above them must be dropped too (`forgetCachedStoreValues`).
+   */
+  reload: (stores: ReadonlyMap<string, Record<string, unknown>>) => void
+}
+
 export function readOnlyProfileStoreFactory(
   stores: ReadonlyMap<string, Record<string, unknown>>,
   onWrite: (store: string, key: string) => void = (): void => undefined,
-): PersistentStoreFactory {
-  return (options) => {
+  /** Every change, with its value: the turn host sends these to the app (decision 5). */
+  onChange: (store: string, changes: ProfileStoreChange[]) => void = (): void => undefined,
+): ReloadableProfileStoreFactory {
+  const roots: { name: string; root: Record<string, unknown> }[] = []
+  const factory: PersistentStoreFactory = (options) => {
     const name = options.name ?? 'config'
     const root: Record<string, unknown> = structuredClone(stores.get(name) ?? {})
+    roots.push({ name, root })
     const reported = new Set<string>()
     const noteWrite = (key: string): void => {
       if (reported.has(key)) return
@@ -35,16 +50,22 @@ export function readOnlyProfileStoreFactory(
       set: (key, value): void => {
         noteWrite(key)
         setPath(root, key, structuredClone(value))
+        onChange(name, [{ key, value: structuredClone(value) }])
       },
       setMany: (patch): void => {
         for (const [key, value] of Object.entries(patch)) {
           noteWrite(key)
           root[key] = structuredClone(value)
         }
+        onChange(
+          name,
+          Object.entries(patch).map(([key, value]) => ({ key, value: structuredClone(value) })),
+        )
       },
       delete: (key): void => {
         noteWrite(key)
         deletePath(root, key)
+        onChange(name, [{ key, deleted: true }])
       },
       listKeys: (): string[] => Object.keys(root),
       deleteKeys: (keys): void => {
@@ -52,10 +73,22 @@ export function readOnlyProfileStoreFactory(
           noteWrite(key)
           Reflect.deleteProperty(root, key)
         }
+        onChange(
+          name,
+          keys.map((key) => ({ key, deleted: true as const })),
+        )
       },
     }
     return backing
   }
+  return Object.assign(factory, {
+    reload: (next: ReadonlyMap<string, Record<string, unknown>>): void => {
+      for (const { name, root } of roots) {
+        for (const key of Object.keys(root)) Reflect.deleteProperty(root, key)
+        Object.assign(root, structuredClone(next.get(name) ?? {}))
+      }
+    },
+  })
 }
 
 function getPath(root: Record<string, unknown>, path: string): unknown {

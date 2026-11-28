@@ -78,6 +78,20 @@ export class FakeSshTransport implements SshTransport {
     await Promise.resolve()
   }
 
+  /** Open socket forwards, local path to remote path. */
+  readonly socketForwards = new Map<string, string>()
+
+  async openSocketForward(localPath: string, remotePath: string): Promise<void> {
+    if (!this.connected) throw new Error('SSH transport is not connected')
+    this.socketForwards.set(localPath, remotePath)
+    await Promise.resolve()
+  }
+
+  async closeSocketForward(localPath: string): Promise<void> {
+    this.socketForwards.delete(localPath)
+    await Promise.resolve()
+  }
+
   async fetchFile(
     remotePath: string,
     localPath: string,

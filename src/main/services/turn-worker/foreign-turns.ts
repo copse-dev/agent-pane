@@ -129,6 +129,20 @@ export class ForeignTurnFollower {
   }
 
   /**
+   * Follow one thread another process just took, without waiting for its
+   * persisted status to say `running`: the turn host answers `accepted` once it
+   * holds the thread's lease, which can be before it writes the status, and a
+   * discover then would miss the turn and leave the window spinning.
+   */
+  async follow(turn: ForeignTurn): Promise<void> {
+    if (!this.following.has(turn.threadId)) {
+      this.following.set(turn.threadId, { ...turn, connection: null, stopPending: false })
+    }
+    this.start()
+    await this.enqueueTick()
+  }
+
+  /**
    * Ask the worker running `threadId` to stop. A worker that does not answer
    * yet (it is still starting) gets the stop as soon as it does. False when the
    * thread is not followed.

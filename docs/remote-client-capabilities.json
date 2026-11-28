@@ -420,6 +420,8 @@
       "workspace:pick-parent-directory",
       "workspace:set",
       "workspace:set-trusted",
+      "workspace:trust-from-approval",
+      "workspace:trust-offer-details",
       "worktrees:cleanup-packages",
       "worktrees:list",
       "worktrees:open-terminal",

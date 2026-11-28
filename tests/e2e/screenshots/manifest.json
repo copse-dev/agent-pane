@@ -3050,16 +3050,16 @@
       "bytes": 11499
     },
     "model-version-suppression-acp-gpt-after.png": {
-      "sha256": "6bf471b9b9d2609fab3bf970bf4cc1d4d9f955c60696620e9ce011e7a0301cba",
-      "bytes": 9907
+      "sha256": "a625d01a45870385579b80001c1b2b9ef1db9b5f5dab7e7c0a8c21ea6a5fbe31",
+      "bytes": 9982
     },
     "model-version-suppression-acp-scored-successor.png": {
-      "sha256": "7c1518dc510f17b706098fe82380cb685813680b9d4a902ac616e5525bc3ee61",
-      "bytes": 14331
+      "sha256": "91db1a5d6c516ef4acf5447f9758e17183db7ffd9d50f9ee5cdd20c40af5660b",
+      "bytes": 14436
     },
     "model-version-suppression-acp-sol-after.png": {
-      "sha256": "cb9ab785437dfe091a34474864350eaf65c287e15a5ecb609cae8fbc677a7fc4",
-      "bytes": 8341
+      "sha256": "8c898cf7061270ea1c07640b1f11b1dbf27511d0dfa92234ea0ed7949b64438f",
+      "bytes": 8448
     },
     "model-version-suppression-picker.png": {
       "sha256": "2457420c8aad22f2963581c7b320a281dd1355dbbabd32f455667dd38bb2253f",
@@ -3128,6 +3128,10 @@
     "new-project-dialog.png": {
       "sha256": "0c97d667b4459264be29b62a319bc72638cfef3c56fc6709d7d95c1ea3aa808e",
       "bytes": 95587
+    },
+    "new-project-trust-offer.png": {
+      "sha256": "d1a6800d3421c41b94ccb62d12239becbc4bd62a5e4635b9d61b4522a2ad1b4f",
+      "bytes": 283130
     },
     "new-thread-activity-home.png": {
       "sha256": "efa88bf3060deb186752229797b7adf1b26fa6129d15612d8650232cf33b2148",
@@ -3638,8 +3642,8 @@
       "bytes": 70333
     },
     "pr-panel-settings-gh-cli.png": {
-      "sha256": "0946de0792707982eb2e1586eb51d2ec5effe91bd00d6635bc123994910de972",
-      "bytes": 275997
+      "sha256": "721fdff51250713e3bd8df26812d6ce77b4ff29a57afeff7635cbc0709ceac9a",
+      "bytes": 278257
     },
     "pr-panel-status-icons.png": {
       "sha256": "0d7aff40ad0dda357a72070342c8b1d39700e21fbbd622b917f20b74daa5ac0a",
@@ -4014,8 +4018,8 @@
       "bytes": 154038
     },
     "remote-chat-connected-phone.png": {
-      "sha256": "13d6605e7f5947a531e3ad2973e8573fdd1fbc7c003121641e5cd5dbf52b3214",
-      "bytes": 43939
+      "sha256": "e6d726bbd81443e4fb2c5bf009cdbe2cac9414be81b4cd2a793bffddc4f956d5",
+      "bytes": 44066
     },
     "remote-chat-prototype-desktop.png": {
       "sha256": "39e755f85e1adc7709ea594150d81e8efeec501eb82699f3283ee33ea99b5ec0",
@@ -4778,12 +4782,12 @@
       "bytes": 61532
     },
     "settings-experimental-plugins.png": {
-      "sha256": "070f36f6e7a8f79a08f3278d53264c85555535bb5553ef882a67035912262138",
-      "bytes": 110052
+      "sha256": "23a37e930c49d7d085bfdd5ef60a90f51f74bc5f59c07a0382d26c450cfe2051",
+      "bytes": 111608
     },
     "settings-experimental.png": {
-      "sha256": "200b556129b2edd0118ba393f7d8153b709212935f7b2a269d40e7c57fa06d41",
-      "bytes": 302604
+      "sha256": "ed684aa7729d47dbe84838a8214b7e26214584959b156d40cc9766d8574d18e4",
+      "bytes": 306986
     },
     "settings-explainers-browse-recovery.png": {
       "sha256": "22ecdbdcefbdd19400d0891461e709882952afa241a7dbd0cbcfff5b543d45b7",
@@ -4818,8 +4822,8 @@
       "bytes": 251465
     },
     "settings-git-thread-links.png": {
-      "sha256": "0946de0792707982eb2e1586eb51d2ec5effe91bd00d6635bc123994910de972",
-      "bytes": 275997
+      "sha256": "721fdff51250713e3bd8df26812d6ce77b4ff29a57afeff7635cbc0709ceac9a",
+      "bytes": 278257
     },
     "settings-gui-app-permission.png": {
       "sha256": "d095c0293b8d9ff44f2cfc08bbf71166042235f220b7825fbdc236d48da5a52d",
@@ -5174,8 +5178,8 @@
       "bytes": 18660
     },
     "settings-sources-trust-confirm.png": {
-      "sha256": "134f7936da1029c1036db8f4a416e88fd9973310770b256af1845229961074d7",
-      "bytes": 37628
+      "sha256": "ed1b0f52cb27bc6c92435b820ad3e56287b42c315cb74dd829a0fb5802318741",
+      "bytes": 54659
     },
     "settings-sources-trust-trusted.png": {
       "sha256": "2b8308b1e4f8839c3045371be59968a6e6f57fb1e8e445565144208113b95970",
@@ -5828,6 +5832,10 @@
     "ssh-status-banner-no-lightning.png": {
       "sha256": "05f2c24c22023b9c5fcb8e26d5f2d65a1f43c0c61c24856cfab2841d477c801f",
       "bytes": 25524
+    },
+    "ssh-worker-install-approval.png": {
+      "sha256": "57d4475710ca66382f76fe19b07eaaf9245df01a518807c0d9bd7231103df63b",
+      "bytes": 75268
     },
     "staged-diff-css-accept-no-error.png": {
       "sha256": "b1077a5cc7fa6de02c3d34f376ada8202f1b4e3a2ddd83f3f394c14b94b9264c",
@@ -6764,6 +6772,18 @@
     "workspace-preview-protected.png": {
       "sha256": "7c93cebe61bca473b884671ccd4016ed58f681754efce10babbeccc7f678efd9",
       "bytes": 246614
+    },
+    "workspace-trust-offer-confirm.png": {
+      "sha256": "32c1d26b4e9d353b214886661db143d23c5e02732135f4fda0cedbdf53cfc29b",
+      "bytes": 244406
+    },
+    "workspace-trust-offer-prompt.png": {
+      "sha256": "f98f49761ed183861698a5f0ee548fc0602f3cbc432a819a4d23ce373508a9fb",
+      "bytes": 296731
+    },
+    "workspace-trust-offer-trusted.png": {
+      "sha256": "adb75d3a9180aa40bc1025f48f3e83449978e6015221406962e8dc61cbf5470c",
+      "bytes": 290151
     },
     "worktree-preparation-approval.png": {
       "sha256": "18d27e0560f675fc64507810b52e376cecaa8d07734c9f48c878aafe5a8a02e5",

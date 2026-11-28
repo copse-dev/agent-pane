@@ -28,7 +28,9 @@ describe('a turn interrupted by a crash', function () {
     process.env['ANTHROPIC_API_KEY'] = ''
     process.env['OPENAI_API_KEY'] = ''
     resetUserData()
-    seedEmptyProject(seedStableWorkspace(), PROJECT_ID)
+    // A crash of the app's own turn. A host turn carries on through the crash
+    // instead (\`turn-host.e2e.ts\`), so this pins turns to the app.
+    seedEmptyProject(seedStableWorkspace(), PROJECT_ID, { turnsRunInHost: false })
     await browser.reloadSession()
     await $('.chat-row.selected').waitForExist({ timeout: 30_000 })
   })

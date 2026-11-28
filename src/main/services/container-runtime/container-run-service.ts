@@ -143,7 +143,8 @@ const productionDependencies: RunDependencies = {
   run: runThreadInContainer,
   // Only the app's own service starts host processes; see getContainerRunService.
   runHost: null,
-  followHost: (host, options) => followHost(host.socket, options),
+  followHost: (host, options) =>
+    followHost(host.socket, options, { version: getElectronAppVersion() }),
   listHosts: () => Promise.resolve([]),
   forgetHost: () => Promise.resolve(),
   continueAfterQuit: () => continuesTurnsAfterQuit(getSetting),

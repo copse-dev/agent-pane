@@ -16,6 +16,11 @@ import { mountConversation } from './conversation.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { qsRequired } from '../dom/helpers.ts'
 
+// A mounted conversation keeps timers of its own (the environment-setup offer
+// re-checks 30 s after a thread status change), so one left mounted holds this
+// file's test process open until they fire. Unmount each view after its test.
+const unmounts: (() => void)[] = []
+
 // Component-level port of the former seeded `subagent display` e2e coverage.
 // Its live-mock describe OOM-crashed the constrained runner, while the seeded
 // describe asserted pure DOM
@@ -174,10 +179,11 @@ function mountWithSubagent(): void {
   addToolCall(store, messageId, exploreCall)
   const host = document.createElement('div')
   document.body.append(host)
-  mountConversation(host, store, fakeApi())
+  unmounts.push(mountConversation(host, store, fakeApi()))
 }
 
 afterEach(() => {
+  for (const unmount of unmounts.splice(0)) unmount()
   document.body.replaceChildren()
 })
 
@@ -240,7 +246,7 @@ describe('subagent display (component)', () => {
     })
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, fakeApi())
+    unmounts.push(mountConversation(host, store, fakeApi()))
 
     const rollup = host.querySelector('.tool-card-rollup')
     assert.ok(rollup, 'expected the two parent tool calls to collapse into one rollup')
@@ -274,7 +280,7 @@ describe('subagent display (component)', () => {
     addToolCall(store, messageId, semanticSearchCall)
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, fakeApi())
+    unmounts.push(mountConversation(host, store, fakeApi()))
 
     const intro = host.querySelector('.msg-assistant .message-text')
     const summary = host.querySelector('.tool-card-subagent .subagent-message-assistant')
@@ -308,7 +314,7 @@ describe('subagent display (component)', () => {
     addToolCall(store, messageId, structuredClone(exploreCall))
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, fakeApi())
+    unmounts.push(mountConversation(host, store, fakeApi()))
 
     const card = qsRequired<HTMLDetailsElement>(document, '.tool-card-subagent')
     const inner = qsRequired<HTMLDetailsElement>(card, '[data-tool-id="inner-read-1"]')
@@ -371,13 +377,15 @@ describe('subagent display (component)', () => {
 
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(
-      host,
-      store,
-      apiWithFiles([
-        { candidate: 'src/main/index.ts', path: 'src/main/index.ts' },
-        { candidate: 'src/renderer/index.ts', path: 'src/renderer/index.ts' },
-      ]),
+    unmounts.push(
+      mountConversation(
+        host,
+        store,
+        apiWithFiles([
+          { candidate: 'src/main/index.ts', path: 'src/main/index.ts' },
+          { candidate: 'src/renderer/index.ts', path: 'src/renderer/index.ts' },
+        ]),
+      ),
     )
 
     // The inner tool card is collapsed by default — its body (and so the
@@ -433,7 +441,7 @@ describe('subagent display (component)', () => {
     addToolCall(store, messageId, withExcerpts)
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, fakeApi())
+    unmounts.push(mountConversation(host, store, fakeApi()))
 
     const card = qsRequired<HTMLDetailsElement>(host, '.tool-card-subagent')
     const copies = [...card.querySelectorAll('.subagent-message-assistant')].filter((node) =>
@@ -455,7 +463,7 @@ describe('subagent display (component)', () => {
     addToolCall(store, messageId, diverged)
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, fakeApi())
+    unmounts.push(mountConversation(host, store, fakeApi()))
 
     const result = host.querySelector('.subagent-parent-result')
     assert.ok(result, 'a result absent from the timeline is still shown')
@@ -477,7 +485,7 @@ describe('subagent display (component)', () => {
     setThreadStatus(store, threadId, 'running')
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, fakeApi())
+    unmounts.push(mountConversation(host, store, fakeApi()))
 
     const card = qsRequired<HTMLDetailsElement>(host, '.tool-card-subagent')
     await delay(350)
@@ -507,7 +515,7 @@ describe('subagent display (component)', () => {
     addToolCall(store, messageId, structuredClone(exploreCall))
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, fakeApi())
+    unmounts.push(mountConversation(host, store, fakeApi()))
 
     const card = qsRequired<HTMLDetailsElement>(host, '.tool-card-subagent')
     card.querySelector<HTMLElement>(':scope > summary')?.click()

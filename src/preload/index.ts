@@ -159,12 +159,18 @@ const api: ApiClient = {
     get: () => ipcRenderer.invoke('workspace:get'),
     set: (root: string, sshHost?: string) => ipcRenderer.invoke('workspace:set', root, sshHost),
     isTrusted: () => ipcRenderer.invoke('workspace:is-trusted'),
-    setTrusted: (trusted: boolean) => ipcRenderer.invoke('workspace:set-trusted', trusted),
+    setTrusted: (trusted: boolean, expectedRoot?: string) =>
+      ipcRenderer.invoke('workspace:set-trusted', trusted, expectedRoot),
+    trustFromApproval: (approvalId: string) =>
+      ipcRenderer.invoke('workspace:trust-from-approval', approvalId),
+    trustOfferDetails: (approvalId: string) =>
+      ipcRenderer.invoke('workspace:trust-offer-details', approvalId),
     createNewProject: (name: string, parentDir: string) =>
       ipcRenderer.invoke('workspace:create-project', name, parentDir),
     pickParentDirectory: () => ipcRenderer.invoke('workspace:pick-parent-directory'),
     getHomeDirectory: () => ipcRenderer.invoke('workspace:get-home-directory'),
-    unsandboxedProjectHooks: () => ipcRenderer.invoke('hooks:unsandboxed-project-hooks'),
+    unsandboxedProjectHooks: (root?: string) =>
+      ipcRenderer.invoke('hooks:unsandboxed-project-hooks', root),
     onOpened: (handler: (root: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, root: string): void => {
         handler(root)
@@ -2075,6 +2081,9 @@ if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') {
     },
     requestRemoteWatcherInstallApproval() {
       return ipcRenderer.invoke('test:requestRemoteWatcherInstallApproval')
+    },
+    startSshWorker(hostId: string) {
+      return ipcRenderer.invoke('test:startSshWorker', hostId)
     },
     emitAgentChunks(threadId: string, chunks: unknown[]) {
       return ipcRenderer.invoke('test:emitAgentChunks', threadId, chunks)

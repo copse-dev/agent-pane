@@ -1,11 +1,16 @@
 import { existsSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
-/** Unpacked dependency directories that only Windows or Linux can load. */
+/**
+ * Unpacked dependency directories that only Windows or Linux can load.
+ *
+ * The sandbox runtime's Linux seccomp helpers stay: the app uploads that
+ * runtime to an SSH host with its worker (`ssh-worker-package.ts`), and that
+ * host is usually Linux.
+ */
 export const FOREIGN_PAYLOADS = [
   ['node-pty', 'deps', 'winpty'],
   ['node-pty', 'third_party', 'conpty'],
-  ['@anthropic-ai', 'sandbox-runtime', 'vendor', 'seccomp'],
   ['@anthropic-ai', 'sandbox-runtime', 'vendor', 'srt-win'],
 ] as const
 

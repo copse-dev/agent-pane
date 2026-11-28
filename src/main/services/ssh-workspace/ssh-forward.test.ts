@@ -30,6 +30,14 @@ describe('SSH local forwarding', () => {
     assert.equal(args[5], '127.0.0.1:43211:127.0.0.1:3000')
   })
 
+  it('forwards a local unix socket to one on the host', () => {
+    const args = sshForwardControlArgs('/tmp/copse.sock', 'build-box', 'forward', {
+      localSocket: '/run/app/worker.sock',
+      remoteSocket: '/home/me/.copse/worker.sock',
+    })
+    assert.equal(args[5], '/run/app/worker.sock:/home/me/.copse/worker.sock')
+  })
+
   it('allocates an available ephemeral loopback port', async () => {
     const port = await allocateLoopbackPort()
     assert.ok(port > 0 && port <= 65_535)

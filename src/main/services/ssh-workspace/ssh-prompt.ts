@@ -39,6 +39,11 @@ export function runWithSshPromptHandler<T>(next: SshPromptHandler, fn: () => T):
   return scopedHandler.run(next, fn)
 }
 
+/** The handler scoped to the current run, if any; the global one is not included. */
+export function currentScopedSshPromptHandler(): SshPromptHandler | null {
+  return scopedHandler.getStore() ?? null
+}
+
 export function setSshPromptHandler(next: SshPromptHandler | null): void {
   handler = next
 }

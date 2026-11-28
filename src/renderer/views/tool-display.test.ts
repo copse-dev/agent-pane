@@ -16,6 +16,11 @@ import { mountConversation } from './conversation.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { qsRequired } from '../dom/helpers.ts'
 
+// A mounted conversation keeps timers of its own (the environment-setup offer
+// re-checks 30 s after a thread status change), so one left mounted holds this
+// file's test process open until they fire. Unmount each view after its test.
+const unmounts: (() => void)[] = []
+
 // Component-level port of tests/e2e/tool-display-rollup.e2e.ts. The grouping /
 // tense / turn-rollup LOGIC is covered in src/shared/tools/tool-display.test.ts;
 // this file asserts the conversation VIEW: one collapsed `.tool-card-rollup`,
@@ -78,11 +83,12 @@ function mountWithTools(): {
   }
   const host = document.createElement('div')
   document.body.append(host)
-  mountConversation(host, store, fakeApi())
+  unmounts.push(mountConversation(host, store, fakeApi()))
   return { store, threadId, messageId }
 }
 
 afterEach(() => {
+  for (const unmount of unmounts.splice(0)) unmount()
   document.body.replaceChildren()
 })
 
@@ -93,7 +99,7 @@ describe('tool call display (component)', () => {
     const messageId = addMessage(store, threadId, 'assistant', '')
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, fakeApi())
+    unmounts.push(mountConversation(host, store, fakeApi()))
     setThreadStatus(store, threadId, 'running')
 
     addToolCall(store, messageId, {
@@ -121,7 +127,7 @@ describe('tool call display (component)', () => {
     const messageId = addMessage(store, threadId, 'assistant', '')
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, fakeApi())
+    unmounts.push(mountConversation(host, store, fakeApi()))
     setThreadStatus(store, threadId, 'running')
 
     addToolCall(store, messageId, {
@@ -170,7 +176,7 @@ describe('tool call display (component)', () => {
     const messageId = addMessage(store, threadId, 'assistant', '')
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, fakeApi())
+    unmounts.push(mountConversation(host, store, fakeApi()))
     setThreadStatus(store, threadId, 'running')
     addToolCall(store, messageId, {
       id: 'tc-running',
@@ -216,7 +222,7 @@ describe('tool call display (component)', () => {
     const messageId = addMessage(store, threadId, 'assistant', '')
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, fakeApi())
+    unmounts.push(mountConversation(host, store, fakeApi()))
     setThreadStatus(store, threadId, 'running')
     addToolCall(store, messageId, {
       id: 'tc-explicit-open',
@@ -255,7 +261,7 @@ describe('tool call display (component)', () => {
     })
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, fakeApi())
+    unmounts.push(mountConversation(host, store, fakeApi()))
 
     const runningCard = qsRequired(host, '[data-tool-id="tc-shell"]')
     const runningSlot = qsRequired(runningCard, '.tool-activity-icon-slot')
@@ -350,7 +356,7 @@ describe('tool call display (component)', () => {
     })
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, fakeApi())
+    unmounts.push(mountConversation(host, store, fakeApi()))
 
     const card = document.querySelector('.tool-card[data-tool-id="tc-advisor"]')
     assert.ok(card, 'expected an advisor tool card')
@@ -383,7 +389,7 @@ describe('tool call display (component)', () => {
     })
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, fakeApi())
+    unmounts.push(mountConversation(host, store, fakeApi()))
 
     const card = document.querySelector('.tool-card[data-tool-id="tc-acp-term"]')
     assert.ok(card, 'expected the ACP tool call to render a card')

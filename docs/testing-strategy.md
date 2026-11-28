@@ -16,7 +16,10 @@ Default to the cheapest layer that can actually fail on the bug:
    `data-*` attrs, store wiring, markdown output. The renderer is vanilla
    DOM/TS over a store, so most "does the UI do X" questions answer here without
    a browser engine. See `src/renderer/views/new-thread-keeps-panel.test.ts` for
-   the canonical shape.
+   the canonical shape. Call the unmount a `mount*` function returns once the
+   test is done: a view left mounted keeps its timers, and one pending timer
+   holds the test file's process open (a mounted conversation kept eleven files
+   alive 30 s each after their last test).
 3. **Browser geometry** (`tests/demo/*.demo.ts`, WebdriverIO + plain Chrome) — real layout and
    computed styles over deterministic in-memory state, without Electron lifecycle cost.
 4. **E2E** (`tests/e2e/*.e2e.ts`, WebdriverIO + real Electron) — only the
@@ -211,6 +214,11 @@ A focused subset is evidence for behavior, not a static/type-safety gate. Every 
 runs at least `npm run check:local`, which covers typecheck, lint, formatting, generated-site
 consistency, dead-code detection, oracle liveness, and e2e syntax/exclusion checks. The full
 `npm run check` composes that gate with the complete unit/component suite.
+
+`check:local` (`scripts/check-local.mts`) runs those gates side by side, splitting the slow ones
+(each `tsc` project, each type-coverage pass, each lint shard) into parts. It runs as many parts as
+the host has cores, up to eight, and as many type-aware parts as its free memory holds. Every gate still runs and must pass; it reports every failing part at the
+end with each part's time. `node scripts/check-local.mts --jobs=1` runs one part at a time.
 
 The local fast path is deliberately conjunctive: use `check:local` plus focused tests instead of a
 full local `check` only for a PR-bound change whose oracle result is **HIGH**, whose diff is localized
@@ -517,6 +525,12 @@ new tests should keep that trend:
   - **`subset` skips the coverage ratchet**, because a partial run's coverage
     number isn't comparable to `coverage-baseline.json`. The trunk-targeted run
     is where the ratchet applies.
+  - **The ratchet has per-area floors.** Besides the global line figure,
+    `coverage-baseline.json` holds `areas`, a floor for each layer in
+    `FLOORED_AREAS` (`scripts/lib/coverage-areas.mts`), so a drop in
+    `src/main/ipc` cannot hide behind a rise in `src/main/services`. Every run
+    prints the areas with the most uncovered lines in the job summary, and
+    `npm run coverage:update` resets the floors with the global baseline.
 - **Remote e2e for the local loop** (`npm run e2e:remote`) runs the same
   oracle-selected / CI-shaped suite on a cloud container from the working tree
   so agents and humans can keep iterating. Prefer it over local `test:e2e`

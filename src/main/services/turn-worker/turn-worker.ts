@@ -152,6 +152,11 @@ export async function workerCannotRun(projectId: string, threadId: string): Prom
   const thread = await getProjectThread(projectId, threadId)
   const setting = getSetting<unknown>('model', undefined)
   const model = thread?.model ?? (typeof setting === 'string' ? setting : undefined)
+  return modelCannotRunInWorker(model)
+}
+
+/** Why a turn on `model` must run in the app, or null when a worker can run it. */
+export function modelCannotRunInWorker(model: string | undefined): string | null {
   if (model === undefined) return null
   if (isChatGptPlanModel(model))
     return 'its model signs in with ChatGPT, whose tokens only the app can save'

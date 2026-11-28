@@ -28,6 +28,7 @@ export interface ScenarioBridge {
   openWorkspace(root: string): Promise<unknown>
   requestAcpPackageInstallApproval(scenario?: 'install' | 'upgrade' | 'mixed'): Promise<unknown>
   requestRemoteWatcherInstallApproval(): Promise<unknown>
+  startSshWorker(hostId: string): Promise<unknown>
   emitAgentChunks(threadId: string, chunks: unknown[]): Promise<void>
   emitApprovalRequests(requests: unknown): Promise<void>
   cancelApprovalRequest(id: string): Promise<void>
