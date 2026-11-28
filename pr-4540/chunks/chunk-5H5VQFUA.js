@@ -3,6 +3,17 @@ import {
   init_sanitize_dompurify
 } from "./chunk-X6JZSFJR.js";
 import {
+  init_actions,
+  init_confirm_dialog,
+  init_nullish as init_nullish2,
+  init_ui,
+  init_workspace_trust_consent,
+  showConfirmDialog,
+  uiActions,
+  uiField,
+  workspaceTrustDetail
+} from "./chunk-EPQ747CR.js";
+import {
   arrowLeftIcon,
   arrowRightIcon,
   arrowUpRightIcon,
@@ -24,7 +35,6 @@ import {
   init_inline_markdown,
   init_inline_status,
   init_ipc_error_message,
-  init_nullish,
   init_ssh_host_fields,
   init_ssh_host_helpers,
   init_toast,
@@ -33,9 +43,6 @@ import {
   init_unknown_value3,
   inlineStatus,
   ipcErrorMessage,
-  isNonBlankString,
-  isNonEmptyString,
-  isNonNull,
   isRecord,
   isUnavailableThreadCheckoutError,
   optionalBoolean,
@@ -63,223 +70,28 @@ import {
   unwrapIpcErrorText,
   upsertHost,
   warningIcon
-} from "./chunk-HIIVOQP4.js";
+} from "./chunk-JSCSK6EX.js";
+import {
+  init_nullish,
+  isNonBlankString,
+  isNonEmptyString,
+  isNonNull
+} from "./chunk-WL34AAUC.js";
+import {
+  createOverlayDialog,
+  init_dialog_shell
+} from "./chunk-QFUPXTRM.js";
 import {
   clear,
-  createOverlayDialog,
   el,
-  init_dialog_shell,
   init_helpers,
   on,
   qsRequired
-} from "./chunk-OB2CWITE.js";
+} from "./chunk-EMIRHVRH.js";
 import {
   __esm,
   __export
 } from "./chunk-WW3EXSJD.js";
-
-// src/shared/nullish.ts
-var init_nullish2 = __esm({
-  "src/shared/nullish.ts"() {
-    init_nullish();
-  }
-});
-
-// src/renderer/ui/cx.ts
-function cx(...parts) {
-  return parts.filter(isNonEmptyString).join(" ");
-}
-var init_cx = __esm({
-  "src/renderer/ui/cx.ts"() {
-    init_nullish2();
-  }
-});
-
-// src/renderer/ui/actions.ts
-function ensureDefined() {
-  if (customElements.get(CopseUiActions.tagName) === void 0) {
-    customElements.define(CopseUiActions.tagName, CopseUiActions);
-  }
-}
-function isUiActionsOptions(value) {
-  return typeof value === "object" && value !== null && !(value instanceof HTMLElement) && ("align" in value || "className" in value || Object.keys(value).length === 0);
-}
-function uiActions(...args) {
-  ensureDefined();
-  const last = args.at(-1);
-  const hasOptions = last !== void 0 && isUiActionsOptions(last);
-  const options = hasOptions ? last : {};
-  const buttons = (hasOptions ? args.slice(0, -1) : args).filter(
-    (node2) => node2 instanceof HTMLElement
-  );
-  const row = document.createElement(CopseUiActions.tagName);
-  const align = options.align ?? "end";
-  row.setAttribute("align", align);
-  row.dataset["align"] = align;
-  row.className = cx("ui-actions", options.className);
-  row.append(...buttons);
-  return row;
-}
-var CopseUiActions;
-var init_actions = __esm({
-  "src/renderer/ui/actions.ts"() {
-    init_cx();
-    CopseUiActions = class extends HTMLElement {
-      static tagName = "copse-ui-actions";
-      connectedCallback() {
-        this.classList.add("ui-actions");
-        const align = this.getAttribute("align");
-        if (align === "start" || align === "end" || align === "stretch") {
-          this.dataset["align"] = align;
-        } else {
-          this.dataset["align"] ??= "end";
-        }
-      }
-    };
-  }
-});
-
-// src/renderer/ui/field.ts
-function ensureDefined2() {
-  if (customElements.get(CopseUiField.tagName) === void 0) {
-    customElements.define(CopseUiField.tagName, CopseUiField);
-  }
-}
-function uiField(opts) {
-  ensureDefined2();
-  const field = document.createElement(CopseUiField.tagName);
-  field.setAttribute("label", opts.label);
-  if (opts.hint !== void 0 && opts.hint !== "") field.setAttribute("hint", opts.hint);
-  field.className = cx("ui-field", opts.className);
-  field.append(opts.control);
-  if (!(field instanceof CopseUiField)) {
-    throw new Error("copse-ui-field custom element failed to upgrade");
-  }
-  field.ensureStructure();
-  return field;
-}
-var CopseUiField;
-var init_field = __esm({
-  "src/renderer/ui/field.ts"() {
-    init_helpers();
-    init_cx();
-    CopseUiField = class extends HTMLElement {
-      static tagName = "copse-ui-field";
-      static observedAttributes = ["label", "hint"];
-      connectedCallback() {
-        this.ensureStructure();
-      }
-      attributeChangedCallback(name, oldValue, newValue) {
-        if (oldValue === newValue) return;
-        if (!this.isConnected || !this.hasAttribute("data-ui-ready")) return;
-        if (name === "label") {
-          const labelEl = this.querySelector(":scope > .ui-field-label");
-          if (labelEl) labelEl.textContent = newValue ?? "";
-          return;
-        }
-        if (name === "hint") {
-          const existing = this.querySelector(":scope > .ui-field-hint");
-          if (newValue === null || newValue === "") {
-            existing?.remove();
-            return;
-          }
-          if (existing) {
-            existing.textContent = newValue;
-            return;
-          }
-          this.append(el("span", { class: "ui-field-hint field-hint" }, newValue));
-        }
-      }
-      /** Public so factories can assemble structure before the node is connected. */
-      ensureStructure() {
-        if (this.hasAttribute("data-ui-ready")) return;
-        this.setAttribute("data-ui-ready", "");
-        this.classList.add("ui-field");
-        const label = this.getAttribute("label") ?? "";
-        const hint = this.getAttribute("hint");
-        const controls = [...this.childNodes];
-        const labelEl = el("span", { class: "ui-field-label" }, label);
-        const children = [labelEl, ...controls];
-        if (hint) children.push(el("span", { class: "ui-field-hint field-hint" }, hint));
-        this.replaceChildren(...children);
-      }
-    };
-  }
-});
-
-// src/renderer/ui/register.ts
-function registerUiKit() {
-  if (registered) return;
-  registered = true;
-  if (customElements.get(CopseUiActions.tagName) === void 0) {
-    customElements.define(CopseUiActions.tagName, CopseUiActions);
-  }
-  if (customElements.get(CopseUiField.tagName) === void 0) {
-    customElements.define(CopseUiField.tagName, CopseUiField);
-  }
-}
-var registered;
-var init_register = __esm({
-  "src/renderer/ui/register.ts"() {
-    init_actions();
-    init_field();
-    registered = false;
-  }
-});
-
-// src/renderer/ui/pane-tabs.ts
-function uiPaneTabsShell(opts) {
-  const titleEl2 = el("span", { class: "pane-header-title" }, opts.title);
-  const listHeader = el(
-    "div",
-    { class: cx("pane-header ui-pane-tabs-header", opts.headerClassName) },
-    titleEl2
-  );
-  const tabsWrap = el("div", { class: cx("ui-pane-tabs-list", opts.listClassName) });
-  const body = el("div", { class: cx("ui-pane-tabs-body", opts.bodyClassName) });
-  return { listHeader, titleEl: titleEl2, tabsWrap, body };
-}
-function uiPaneTab(opts) {
-  opts.tabBtn.classList.add("ui-pane-tab");
-  opts.panel.classList.add("ui-pane-tab-panel");
-  opts.tabBtn.addEventListener("click", (e2) => {
-    if (e2.target instanceof Element && e2.target.closest(opts.closeSelector)) return;
-    opts.onSelect();
-  });
-  opts.tabBtn.querySelector(opts.closeSelector)?.addEventListener("click", (e2) => {
-    e2.stopPropagation();
-    opts.onClose();
-  });
-  return {
-    setActive: (active2) => {
-      opts.tabBtn.classList.toggle("is-active", active2);
-      opts.panel.classList.toggle("is-active", active2);
-    },
-    remove: () => {
-      opts.tabBtn.remove();
-      opts.panel.remove();
-    }
-  };
-}
-var init_pane_tabs = __esm({
-  "src/renderer/ui/pane-tabs.ts"() {
-    init_helpers();
-    init_cx();
-  }
-});
-
-// src/renderer/ui/index.ts
-var init_ui = __esm({
-  "src/renderer/ui/index.ts"() {
-    init_register();
-    init_cx();
-    init_actions();
-    init_field();
-    init_pane_tabs();
-    init_register();
-    registerUiKit();
-  }
-});
 
 // node_modules/.pnpm/zod@4.6.7/node_modules/zod/v4/core/util.js
 var util_exports = {};
@@ -20888,136 +20700,6 @@ var init_member_of2 = __esm({
   }
 });
 
-// src/renderer/views/confirm-dialog.ts
-function mountConfirmDialog() {
-  document.getElementById("confirm-dialog")?.remove();
-  showConfirmDialogImpl = null;
-  const messageEl = el("h3", { class: "confirm-dialog-message" });
-  const detailEl = el("p", { class: "confirm-dialog-detail" });
-  const buttonsEl = uiActions({ className: "confirm-dialog-buttons" });
-  const dialog2 = el("dialog", { id: "confirm-dialog" }, messageEl, detailEl, buttonsEl);
-  document.body.append(dialog2);
-  const queue = [];
-  let active2 = null;
-  let confirming = false;
-  let controller = null;
-  function cancelActive() {
-    if (!active2) return;
-    if (confirming) {
-      if (!active2.cancellable) return;
-      controller?.abort();
-      dialog2.close();
-      return;
-    }
-    finish(false);
-  }
-  function finish(confirmed) {
-    if (!active2) return;
-    const resolve = active2.resolve;
-    active2 = null;
-    confirming = false;
-    controller = null;
-    dialog2.close();
-    resolve(confirmed);
-    if (queue.length > 0) {
-      active2 = queue.shift() ?? null;
-      renderActive();
-    }
-  }
-  function renderActive() {
-    if (!active2) return;
-    messageEl.textContent = active2.message;
-    if (active2.detail) {
-      detailEl.replaceChildren(active2.detail);
-      detailEl.hidden = false;
-    } else {
-      detailEl.textContent = "";
-      detailEl.hidden = true;
-    }
-    const cancelLabel = active2.cancelLabel ?? "Cancel";
-    const confirmLabel = active2.confirmLabel ?? "OK";
-    const cancelBtn = el(
-      "button",
-      { type: "button", class: "ui-btn ui-btn-secondary confirm-dialog-cancel" },
-      cancelLabel
-    );
-    const confirmBtn = el(
-      "button",
-      {
-        type: "button",
-        class: active2.danger ? "ui-btn ui-btn-danger confirm-dialog-confirm" : "ui-btn ui-btn-primary confirm-dialog-confirm"
-      },
-      confirmLabel
-    );
-    cancelBtn.addEventListener("click", () => {
-      cancelActive();
-    });
-    async function confirmActive() {
-      if (!active2 || confirming) return;
-      const request = active2;
-      if (!request.onConfirm) {
-        finish(true);
-        return;
-      }
-      confirming = true;
-      controller = new AbortController();
-      const signal = controller.signal;
-      cancelBtn.disabled = !request.cancellable;
-      confirmBtn.disabled = true;
-      confirmBtn.setAttribute("aria-busy", "true");
-      confirmBtn.textContent = request.confirmPendingLabel ?? `${confirmLabel}\u2026`;
-      try {
-        await request.onConfirm((label) => {
-          if (active2 === request) confirmBtn.textContent = label;
-        }, signal);
-        if (active2 === request) finish(!signal.aborted);
-      } catch (error62) {
-        if (active2 !== request) return;
-        const reject = request.reject;
-        active2 = null;
-        confirming = false;
-        controller = null;
-        dialog2.close();
-        reject(error62);
-        if (queue.length > 0) {
-          active2 = queue.shift() ?? null;
-          renderActive();
-        }
-      }
-    }
-    confirmBtn.addEventListener("click", () => {
-      void confirmActive();
-    });
-    buttonsEl.replaceChildren(cancelBtn, confirmBtn);
-    dialog2.showModal();
-    confirmBtn.focus();
-  }
-  dialog2.addEventListener("cancel", (event) => {
-    event.preventDefault();
-    cancelActive();
-  });
-  showConfirmDialogImpl = (req) => new Promise((resolve, reject) => {
-    const queued = { ...req, resolve, reject };
-    if (active2) queue.push(queued);
-    else {
-      active2 = queued;
-      renderActive();
-    }
-  });
-}
-function showConfirmDialog(req) {
-  if (!showConfirmDialogImpl) return Promise.resolve(false);
-  return showConfirmDialogImpl(req);
-}
-var showConfirmDialogImpl;
-var init_confirm_dialog = __esm({
-  "src/renderer/views/confirm-dialog.ts"() {
-    init_helpers();
-    init_ui();
-    showConfirmDialogImpl = null;
-  }
-});
-
 // packages/llm/src/agent-roles.ts
 function getAgentRole(id) {
   return AGENT_ROLES.find((role) => role.id === id) ?? null;
@@ -29209,9 +28891,7 @@ async function addProjectFromPath(store, api, path) {
     id = existing.id;
   } else {
     id = uuid3();
-    store.setState({
-      projects: [...store.getState().projects, { id, path, name: basename(path) }]
-    });
+    store.setState({ projects: [...store.getState().projects, { id, path, name: basename(path) }] });
   }
   return activateAndWait(store, api, id, path);
 }
@@ -29323,7 +29003,7 @@ async function restoreProject(store, api, id, preferredThreadId = null) {
   void resumePendingQueues(store, api);
 }
 async function createNewProject(store, api) {
-  const { openNewProjectDialog } = await import("./new-project-dialog-J2LQIJL5.js");
+  const { openNewProjectDialog } = await import("./new-project-dialog-MPRMYQYH.js");
   const inferred = lastProjectDirectory(store);
   const home = await api.workspace.getHomeDirectory();
   const parentDir = inferred !== "" ? inferred : home;
@@ -29340,7 +29020,27 @@ async function createNewProject(store, api) {
   const state = store.getState();
   const threadId = state.activeThreadId ?? createThread(store);
   setThreadDraftPrompt(store, threadId, NEW_PROJECT_STARTER_PROMPT);
+  void offerProjectTrust(api, root);
   return true;
+}
+async function offerProjectTrust(api, root) {
+  try {
+    if (await api.workspace.isTrusted()) return;
+    const unsandboxedHooks = await api.workspace.unsandboxedProjectHooks(root).catch(() => []);
+    const { confirmProjectTrust } = await import("./workspace-trust-consent-IF5AN4PG.js");
+    const confirmed = await confirmProjectTrust({
+      projectName: basename(root),
+      unsandboxedHooks,
+      lead: "Copse keeps new projects untrusted and asks before running their commands. Only trust a folder whose contents you wrote or have reviewed.",
+      cancelLabel: "Not now",
+      // Nobody asked for this dialog, so Enter must not grant trust.
+      focusCancel: true
+    });
+    if (!confirmed || await api.workspace.get() !== root) return;
+    await api.workspace.setTrusted(true, root);
+  } catch (err) {
+    showErrorToast("Could not trust project", err);
+  }
 }
 function lastProjectDirectory(store) {
   const projects = store.getState().projects;
@@ -29354,11 +29054,13 @@ function lastProjectDirectory(store) {
 async function addProject(store, api) {
   const path = await api.workspace.open();
   if (!path) return false;
+  const isNew = !findProjectByKey(store.getState().projects, void 0, path);
   await addProjectFromPath(store, api, path);
+  if (isNew) void offerProjectTrust(api, path);
   return true;
 }
 async function addRemoteProject(store, api) {
-  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-MLZT7WXA.js");
+  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-V2WZFFYP.js");
   const picked = await openRemoteFolderDialog(api, { projects: store.getState().projects });
   if (!picked) return false;
   await addProjectFromRemotePath(store, api, picked.hostId, picked.path);
@@ -44577,15 +44279,24 @@ function parseModelLineage(id) {
   }
   const gpt = GPT_ID.exec(id);
   if (gpt) {
-    const version2 = gpt[1];
-    if (version2 === void 0) return null;
-    const tier = gpt[2];
+    const major = gpt[1];
+    if (major === void 0) return null;
+    const minor = gpt[2];
+    const tier = gpt[3];
     return {
       lineage: tier === void 0 ? "gpt" : `gpt-${tier}`,
-      version: version2.split(".").map(Number)
+      version: minor === void 0 ? [Number(major)] : [Number(major), Number(minor)]
     };
   }
   return null;
+}
+function releaseSpelling(id) {
+  const gpt = GPT_ID.exec(id);
+  const major = gpt?.[1];
+  const minor = gpt?.[2];
+  if (major === void 0 || minor === void 0) return id;
+  const tier = gpt?.[3];
+  return `gpt-${major}.${minor}${tier === void 0 ? "" : `-${tier}`}`;
 }
 function compareVersions(a4, b2) {
   for (let i2 = 0; i2 < Math.max(a4.length, b2.length); i2++) {
@@ -44613,7 +44324,7 @@ var CLAUDE_ID, GPT_ID;
 var init_model_version_suppression = __esm({
   "packages/llm/src/model-version-suppression.ts"() {
     CLAUDE_ID = /^claude-(opus|sonnet|haiku|fable)-(\d{1,2}(?:-\d{1,2})?)$/;
-    GPT_ID = /^gpt-(\d{1,2}(?:\.\d{1,2})?)(?:-([a-z][a-z0-9]*))?$/;
+    GPT_ID = /^gpt-(\d{1,2})(?:[.-](\d{1,2}))?(?:-([a-z][a-z0-9]*))?$/;
   }
 });
 
@@ -44755,6 +44466,9 @@ var init_model_coverage = __esm({
 function modelDisplayLabel(model) {
   return displayModelLabel(model);
 }
+function successorDisplayLabel(lineageId) {
+  return cloudModelDisplayLabel(releaseSpelling(lineageId));
+}
 async function pluginModelOptions(api, includeAgentModels, current) {
   if (!includeAgentModels) return [];
   try {
@@ -44789,8 +44503,8 @@ function acpAgentOptions(agents) {
       for (const model of models) {
         const label = acpModelChoiceLabel(model, ": ");
         const versioned = acpModelVersionName(model.description);
-        const lineageId = resolveAgentModelIdentity(model.value, versioned, model.label, label);
-        const hint = lineageId === null ? null : modelIntellectHint(lineageId);
+        const lineageId = resolveAgentModelIdentity(model.value, versioned, model.label, label) ?? model.value;
+        const hint = modelIntellectHint(lineageId);
         options.push({
           retention: ACP_RETENTION_NOTICE,
           value: acpModelValue(agent.id, model.value),
@@ -44961,12 +44675,12 @@ async function remoteAgentOptions(api, isAvailable, current, preferAcpForClaude 
     for (const model of liveModels) {
       const vendorLabel = model.label || model.id;
       const label = canonicalModelLabel(vendorLabel);
-      const lineageId = resolveAgentModelIdentity(model.id, vendorLabel, label);
-      const hint = lineageId === null ? null : modelIntellectHint(lineageId);
+      const lineageId = resolveAgentModelIdentity(model.id, vendorLabel, label) ?? model.id;
+      const hint = modelIntellectHint(lineageId);
       add(
         remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR, model.id),
         hint ? `${label}: ${hint}` : label,
-        lineageId ?? void 0
+        lineageId
       );
     }
     const currentSelection = parseRemoteAgentModelSelection(current);
@@ -45200,7 +44914,7 @@ async function fetchModelOptions(api, current, opts = {}) {
     return [
       {
         ...option,
-        label: `${option.label} (superseded by ${cloudModelDisplayLabel(successor)})`,
+        label: `${option.label} (superseded by ${successorDisplayLabel(successor)})`,
         disabled: true,
         // A row already disabled for another reason cannot run, so it keeps
         // the unavailable treatment rather than reading as the running model.
@@ -48123,9 +47837,9 @@ function renderCompositeStrip(models) {
   }
   models.forEach((m2, i2) => {
     const cy = axisY - 12 - i2 * 14;
-    const cx2 = String(x3(m2.composite.value));
+    const cx = String(x3(m2.composite.value));
     const dot = svgEl("circle", {
-      cx: cx2,
+      cx,
       cy: String(cy),
       r: "5",
       fill: "var(--bg-base)",
@@ -48461,7 +48175,7 @@ function renderFrontierSvg(points, size = {}, gutters = {}, tooltip, costAxis = 
   }
   for (const p2 of points) {
     const displayedCx = pointX(p2);
-    const cx2 = String(displayedCx);
+    const cx = String(displayedCx);
     const cy = String(y3(p2.intellect));
     const emphasis = p2.onFrontier ? "var(--accent)" : "var(--border-strong)";
     const cls = [
@@ -48471,7 +48185,7 @@ function renderFrontierSvg(points, size = {}, gutters = {}, tooltip, costAxis = 
       p2.plan ? "plan" : ""
     ].filter(Boolean).join(" ");
     const dot = p2.intellectEstimated ? svgEl("circle", {
-      cx: cx2,
+      cx,
       cy,
       r: "5",
       fill: "var(--bg-base)",
@@ -48481,7 +48195,7 @@ function renderFrontierSvg(points, size = {}, gutters = {}, tooltip, costAxis = 
       class: cls,
       "data-model-id": p2.id
     }) : svgEl("circle", {
-      cx: cx2,
+      cx,
       cy,
       r: "5",
       fill: emphasis,
@@ -48492,7 +48206,7 @@ function renderFrontierSvg(points, size = {}, gutters = {}, tooltip, costAxis = 
     if (p2.plan) {
       svg.append(
         svgEl("circle", {
-          cx: cx2,
+          cx,
           cy,
           r: "8",
           fill: "none",
@@ -48512,7 +48226,7 @@ function renderFrontierSvg(points, size = {}, gutters = {}, tooltip, costAxis = 
     }, Infinity);
     const hitRadius = clamp(nearestDistance / 2 - 0.5, 5, 11);
     const hit = svgEl("circle", {
-      cx: cx2,
+      cx,
       cy,
       r: String(hitRadius),
       fill: "none",
@@ -50819,17 +50533,17 @@ function createMobileCompanionSection(api) {
   }
   function renderPublicName(state) {
     const name = state.publicName;
-    const registered2 = name.state !== "unregistered";
-    inviteRow.hidden = registered2;
-    nameIntro.hidden = registered2;
+    const registered = name.state !== "unregistered";
+    inviteRow.hidden = registered;
+    nameIntro.hidden = registered;
     registerBtn.toggleAttribute("disabled", name.busy !== null);
     registerBtn.textContent = name.busy === "registering" ? "Getting a name\u2026" : "Get a name";
-    removeNameBtn.parentElement?.toggleAttribute("hidden", !registered2);
+    removeNameBtn.parentElement?.toggleAttribute("hidden", !registered);
     removeNameBtn.toggleAttribute("disabled", name.busy !== null);
     removeNameBtn.textContent = name.busy === "removing" ? "Removing\u2026" : "Remove name";
     clear(nameSummary);
     clear(dnsNote);
-    if (registered2 && name.hostname) {
+    if (registered && name.hostname) {
       nameSummary.append(el("p", {}, el("strong", {}, name.hostname)));
       const certificate = name.certificate;
       nameSummary.append(
@@ -57440,10 +57154,7 @@ function createSourcesSection({
     const epoch = lifecycleEpoch;
     const unsandboxed = await api.workspace.unsandboxedProjectHooks().catch(() => []);
     if (epoch !== lifecycleEpoch) return;
-    const detail = [
-      "Its instruction files join the system prompt, and the MCP servers and hooks it defines are allowed to run.",
-      unsandboxed.length > 0 ? `${String(unsandboxed.length)} of those hooks declare "sandbox": false and run OUTSIDE the project sandbox: ${unsandboxed.map((h3) => `${h3.event}: ${h3.command}`).join("; ")}` : ""
-    ].filter(Boolean).join(" ");
+    const detail = workspaceTrustDetail(unsandboxed);
     const confirmed = await showConfirmDialog({
       message: "Trust this workspace?",
       detail,
@@ -57570,6 +57281,7 @@ var init_sources_section = __esm({
     init_helpers();
     init_attachment_preview();
     init_confirm_dialog();
+    init_workspace_trust_consent();
     init_source_row();
     init_settings_sources_skills();
   }
@@ -70585,6 +70297,19 @@ var init_agent_markup = __esm({
               </p>
             </fieldset>
 
+            <fieldset data-testid="continue-after-quit-settings">
+              <legend>When Copse closes</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="continueTurnsAfterQuit" />
+                Keep running turns and container runs going after Copse closes
+              </label>
+              <p class="field-hint">
+                A thread that is mid-turn, or a container run, carries on in the background and is
+                here when you open Copse again. On by default. Turn off to stop them when Copse
+                closes.
+              </p>
+            </fieldset>
+
             <div id="settings-agent-profiles-host" class="settings-mount"></div>
 
             <fieldset>
@@ -70707,6 +70432,7 @@ var init_agent_markup = __esm({
         save: true
       },
       { name: "localTodoItemsEnabled", kind: "checkbox", default: true, save: true },
+      { name: "continueTurnsAfterQuit", kind: "checkbox", default: true, save: true },
       { name: "postTurnReviewMinChangedLines", kind: "number", default: 1, save: true },
       { name: "bundledCursorSkillsEnabled", kind: "checkbox", default: true, save: true },
       { name: "skillExternalLinkWarnings", kind: "checkbox", default: true, save: true },
@@ -71622,6 +71348,21 @@ var init_experimental_markup = __esm({
               </p>
             </fieldset>
 
+            <fieldset data-testid="turns-run-in-host-settings">
+              <legend>Background turn host</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="turnsRunInHost" />
+                Run each turn in a background process, so a crash of Copse does not stop it
+              </label>
+              <p class="field-hint">
+                Turns run in a separate Copse process that keeps going if this window or the app
+                quits or crashes, and Copse follows them when it opens again. Its approvals, staged
+                edits and SSH questions come to this window as usual. ChatGPT plan models, external
+                coding agents and automations still run in the app. Takes effect when Copse next
+                starts.
+              </p>
+            </fieldset>
+
             <fieldset>
               <legend>Unattended container runs</legend>
               <label class="checkbox-label">
@@ -71721,6 +71462,7 @@ var init_experimental_markup = __esm({
       { name: "modelClassifierEnabled", kind: "checkbox", default: false, save: true },
       { name: "deferredWorktreesEnabled", kind: "checkbox", default: false, save: true },
       { name: "containerRunsEnabled", kind: "checkbox", default: false, save: true },
+      { name: "turnsRunInHost", kind: "checkbox", default: false, save: true },
       { name: "planModeEnabled", kind: "checkbox", default: false, save: true },
       { name: "orchestrationStrategyEnabled", kind: "checkbox", default: false, save: true },
       { name: DEVELOPER_MODE_SETTING, kind: "checkbox", default: false, save: true }
@@ -75257,23 +74999,11 @@ var init_tool_interruption = __esm({
 export {
   external_exports,
   init_zod,
-  init_nullish2 as init_nullish,
-  uiActions,
-  init_actions,
-  uiField,
-  registerUiKit,
-  uiPaneTabsShell,
-  uiPaneTab,
-  init_pane_tabs,
-  init_ui,
   mountProductAnnouncements,
   init_product_announcement_dialog,
   memberOf,
   init_member_of,
   init_member_of2,
-  mountConfirmDialog,
-  showConfirmDialog,
-  init_confirm_dialog,
   errorMessage,
   init_errors3 as init_errors,
   init_errors4 as init_errors2,

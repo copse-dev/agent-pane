@@ -179,7 +179,6 @@ import {
   init_acp,
   init_acp_agents_section,
   init_acp_known_agents,
-  init_actions,
   init_active_thread_owner,
   init_active_workspace,
   init_agent_activity,
@@ -204,7 +203,6 @@ import {
   init_chatgpt_plan_section,
   init_clamp,
   init_composite_intellect,
-  init_confirm_dialog,
   init_context_menu,
   init_context_window_advice,
   init_copse_tool_call,
@@ -239,9 +237,7 @@ import {
   init_model_parameters,
   init_model_picker,
   init_model_usage,
-  init_nullish as init_nullish2,
   init_one_line_text,
-  init_pane_tabs,
   init_panels,
   init_paste_key_form,
   init_pending_submissions,
@@ -281,7 +277,6 @@ import {
   init_tool_result_reminders,
   init_transcript_state,
   init_types,
-  init_ui,
   init_ui_scale,
   init_ui_scale2,
   init_working_brief,
@@ -340,7 +335,6 @@ import {
   modelDisplayLabel,
   modelParameterSupport,
   mountAnnotationLayer,
-  mountConfirmDialog,
   mountEnvironmentSetupOffer,
   mountModelPicker,
   mountModelSelectPicker,
@@ -393,7 +387,6 @@ import {
   refreshAgentRunPayload,
   refreshProjectThreadWorktrees,
   registerPromptAttachments,
-  registerUiKit,
   releaseHeldMessage,
   relocateProject,
   remoteAgentGroupLabel,
@@ -454,7 +447,6 @@ import {
   shellCommandsFromToolCalls,
   shouldSteerTodos,
   showCanvasArtefact,
-  showConfirmDialog,
   showContextMenu,
   showSideChatTranscript,
   sideChatsOf,
@@ -487,10 +479,6 @@ import {
   toggleRightPanelMaximized,
   toggleRightPanelWithWorkspace,
   transcriptMeta,
-  uiActions,
-  uiField,
-  uiPaneTab,
-  uiPaneTabsShell,
   updateContextSnapshot,
   updateQueuedMessageModel,
   updateQueuedMessageText,
@@ -498,12 +486,26 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-HFS6GO5U.js";
+} from "./chunk-5H5VQFUA.js";
 import "./chunk-X6JZSFJR.js";
+import {
+  init_actions,
+  init_confirm_dialog,
+  init_nullish as init_nullish2,
+  init_pane_tabs,
+  init_ui,
+  mountConfirmDialog,
+  registerUiKit,
+  showConfirmDialog,
+  uiActions,
+  uiField,
+  uiPaneTab,
+  uiPaneTabsShell
+} from "./chunk-EPQ747CR.js";
 import {
   createSshWorkspaceConsent,
   init_ssh_workspace_consent
-} from "./chunk-FWVGBPA5.js";
+} from "./chunk-AYSMJRFY.js";
 import {
   StreamingMarkdownRenderer,
   appLinkDecorator,
@@ -537,7 +539,6 @@ import {
   init_inline_markdown,
   init_inline_status,
   init_ipc_error_message,
-  init_nullish,
   init_outline_icon,
   init_ssh_host_fields,
   init_ssh_host_helpers,
@@ -548,8 +549,6 @@ import {
   inlineStatus,
   ipcErrorMessage,
   isBrowserSanitizerSupported,
-  isDefined,
-  isNonNull,
   isRecord,
   isUnavailableThreadCheckoutError,
   maximizeIcon,
@@ -587,19 +586,26 @@ import {
   warningIcon,
   workspaceLinkTargetFromHref,
   zapIcon
-} from "./chunk-HIIVOQP4.js";
+} from "./chunk-JSCSK6EX.js";
+import {
+  init_nullish,
+  isDefined,
+  isNonNull
+} from "./chunk-WL34AAUC.js";
+import {
+  createOverlayDialog,
+  init_dialog_shell,
+  isAnyDialogOpen,
+  lazyBodyDialog
+} from "./chunk-QFUPXTRM.js";
 import {
   clear,
-  createOverlayDialog,
   el,
-  init_dialog_shell,
   init_helpers,
-  isAnyDialogOpen,
-  lazyBodyDialog,
   on,
   qs,
   qsRequired
-} from "./chunk-OB2CWITE.js";
+} from "./chunk-EMIRHVRH.js";
 import {
   __esm
 } from "./chunk-WW3EXSJD.js";
@@ -5075,6 +5081,18 @@ function mountApprovalDialog(api2, store2, options = {}) {
     el("input", { type: "checkbox", class: "approval-remember-input" }),
     "Always allow this tool"
   );
+  const trustOfferText = el("span", { class: "approval-trust-offer-text" });
+  const trustOfferButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary approval-trust-offer-btn" },
+    "Trust project\u2026"
+  );
+  const trustOffer = el(
+    "div",
+    { class: "approval-trust-offer", hidden: "" },
+    trustOfferText,
+    trustOfferButton
+  );
   const turnTreeLeaseLabel = el(
     "label",
     { class: "approval-remember approval-turn-tree" },
@@ -5112,6 +5130,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
     heading,
     origin,
     items,
+    trustOffer,
     rememberLabel,
     turnTreeLeaseLabel,
     uiActions(approveOnceButton, approveButton, rejectButton, {
@@ -5151,6 +5170,8 @@ function mountApprovalDialog(api2, store2, options = {}) {
   let cancelCoalesce = null;
   let cancelSettle = null;
   let detailsExpanded = false;
+  const trustedFromPrompt = /* @__PURE__ */ new Set();
+  let trustingFromPrompt = false;
   function closeDialog() {
     dialog.close();
     chatScrim.hidden = true;
@@ -5323,6 +5344,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
     approveOnceButton.classList.toggle("ui-btn-secondary", !showOnce);
     approveButton.classList.toggle("ui-btn-primary", !showOnce);
     approveButton.classList.toggle("ui-btn-secondary", showOnce);
+    renderTrustOffer();
     const grant = onceLabel !== "" ? null : rememberGrant();
     rememberLabel.hidden = grant === null;
     if (grant === null) rememberInput.checked = false;
@@ -5337,6 +5359,44 @@ function mountApprovalDialog(api2, store2, options = {}) {
     else {
       turnTreeLeaseText.textContent = leaseLabel;
       turnTreeLeaseInput.checked = batch.every((request) => request.turnTreeLeaseDefault === true);
+    }
+  }
+  function sharedTrustOffer() {
+    const first2 = batch[0];
+    const root = first2?.workspaceTrustOffer?.root;
+    if (!first2 || root === void 0) return null;
+    return batch.every((req) => req.workspaceTrustOffer?.root === root) ? { id: first2.id, root } : null;
+  }
+  function renderTrustOffer() {
+    const offer = sharedTrustOffer();
+    trustOffer.hidden = offer === null;
+    if (offer === null) return;
+    const trusted = trustedFromPrompt.has(offer.root);
+    trustOfferText.textContent = trusted ? "Project trusted. Commands like this will run without asking from now on; approve or reject this one." : "Copse is asking because this project isn't trusted. In a trusted project, commands like this run without asking.";
+    trustOfferButton.hidden = trusted;
+    trustOfferButton.disabled = trustingFromPrompt;
+  }
+  async function trustFromPrompt() {
+    const offer = sharedTrustOffer();
+    if (offer === null || trustingFromPrompt) return;
+    const details = await api2.workspace.trustOfferDetails(offer.id).catch(() => null);
+    if (details === null) return;
+    const { confirmProjectTrust } = await import("./workspace-trust-consent-IF5AN4PG.js");
+    const confirmed = await confirmProjectTrust({
+      projectName: details.name,
+      unsandboxedHooks: details.unsandboxedHooks,
+      lead: "Only trust a folder whose contents you wrote or have reviewed."
+    });
+    if (!confirmed) return;
+    trustingFromPrompt = true;
+    renderTrustOffer();
+    try {
+      await api2.workspace.trustFromApproval(offer.id);
+      trustedFromPrompt.add(offer.root);
+    } catch {
+    } finally {
+      trustingFromPrompt = false;
+      if (active2) renderTrustOffer();
     }
   }
   function clearSettle() {
@@ -5483,7 +5543,8 @@ function mountApprovalDialog(api2, store2, options = {}) {
       allowTurnTreeLease,
       turnTreeLeaseLabel: turnTreeLeaseLabel2,
       turnTreeLeaseDefault,
-      turnTreeLeaseSubject
+      turnTreeLeaseSubject,
+      workspaceTrustOffer
     }) => {
       if (queue.some((request) => request.id === id) || batch.some((request) => request.id === id))
         return;
@@ -5509,6 +5570,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
         turnTreeLeaseLabel: turnTreeLeaseLabel2,
         turnTreeLeaseDefault,
         turnTreeLeaseSubject,
+        workspaceTrustOffer,
         receivedAt: Date.now(),
         arrival: arrivals++
       };
@@ -5568,6 +5630,9 @@ function mountApprovalDialog(api2, store2, options = {}) {
   });
   rejectButton.addEventListener("click", () => {
     resolve(false, false);
+  });
+  trustOfferButton.addEventListener("click", () => {
+    void trustFromPrompt();
   });
   return {
     pending: () => [...batch, ...queue].sort((a, b2) => a.arrival - b2.arrival).map((req) => ({
@@ -15856,6 +15921,7 @@ function containerRunSummary(progress) {
   if (isLive(progress)) return null;
   const result = progress.record?.result ?? null;
   const ref = progress.record?.carryOut.ref ?? null;
+  if (progress.phase === "failed" && progress.stoppedByUser === true) return "Stopped by you";
   if (progress.phase === "failed") return `Failed: ${progress.error ?? "the run did not complete"}`;
   if (!result) return "Finished without a result";
   const commits = result.commits.length === 0 ? "no commits" : `${plural2(result.commits.length, "commit")} ${ref ? `on ${ref}` : "made but not fetched"}`;
@@ -57580,6 +57646,9 @@ var init_container_acp_agents = __esm({
 });
 
 // src/renderer/views/container-run-control.ts
+function phaseLabel2(run4) {
+  return run4.phase === "failed" && run4.stoppedByUser === true ? "Stopped" : PHASE_LABEL[run4.phase];
+}
 function isLive2(progress) {
   return progress !== null && progress.phase !== "finished" && progress.phase !== "failed";
 }
@@ -57685,15 +57754,17 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     if (!run4) {
       text.textContent = "";
       delete element.dataset["phase"];
+      element.removeAttribute("data-stopped");
       onStateChanged();
       return;
     }
     element.dataset["phase"] = run4.phase;
+    element.toggleAttribute("data-stopped", run4.phase === "failed" && run4.stoppedByUser === true);
     const result = run4.record?.result;
     const fetched = run4.record?.carryOut.ref !== null && run4.record?.carryOut.ref !== void 0;
     const commits = result === void 0 || result === null ? "" : result.commits.length === 0 ? "no commits" : `${String(result.commits.length)} commit${result.commits.length === 1 ? "" : "s"} ${fetched ? "back" : "made but NOT fetched"}`;
-    const summary = run4.phase === "finished" && result ? `${commits}, ${String(result.deferrals.length)} waiting for review.` : run4.phase === "failed" ? run4.error ?? "The run did not complete." : `${run4.model} \xB7 limited to the egress allowlist.`;
-    text.textContent = `Container run: ${PHASE_LABEL[run4.phase].toLowerCase()}. ${summary}`;
+    const summary = run4.phase === "finished" && result ? `${commits}, ${String(result.deferrals.length)} waiting for review.` : run4.phase === "failed" && run4.stoppedByUser === true ? "Stopped by you." : run4.phase === "failed" ? run4.error ?? "The run did not complete." : `${run4.model} \xB7 limited to the egress allowlist.`;
+    text.textContent = `Container run: ${phaseLabel2(run4).toLowerCase()}. ${summary}`;
     onStateChanged();
   }
   function ensureDialog3() {
@@ -57986,7 +58057,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     const result = run4.record?.result ?? null;
     const rows = [];
     const row2 = (label, value) => el("div", { class: "container-run-row" }, el("dt", {}, label), el("dd", {}, value));
-    rows.push(row2("Phase", PHASE_LABEL[run4.phase]));
+    rows.push(row2("Phase", phaseLabel2(run4)));
     if (run4.prompt) rows.push(row2("Task", run4.prompt));
     rows.push(row2("Model", run4.model));
     if (run4.checkout) {
@@ -58346,6 +58417,8 @@ function mountContainerRunControl(api2, context, onStateChanged) {
           `Container run finished: ${String(result.commits.length)} commit(s) back, ${String(result.deferrals.length)} waiting for review.`,
           { variant: "info", durationMs: 1e4 }
         );
+      } else if (progress.stoppedByUser === true) {
+        showToast("Container run stopped.", { variant: "info", durationMs: 6e3 });
       } else {
         showToast(`Container run failed: ${progress.error ?? "no result"}`, {
           variant: "error",
@@ -60264,7 +60337,12 @@ ${description}
           model,
           // The footer picker only names a branch; this is where that selection
           // becomes the worktree's base, or the shared checkout's branch.
-          baseBranch
+          baseBranch,
+          // With no selection to send (no listed default, or a detached
+          // checkout), the picker is showing the project checkout's branch,
+          // so start there — unlike machine-started threads, which main cuts
+          // from the fetched default branch.
+          "project-branch"
         );
         if (!getThreadById(store2, id)) return false;
         preparedPromptState = prepared.promptState;
@@ -89213,22 +89291,42 @@ function summariseWorkingThreads(titles2) {
   if (listed.length < 2) return listed.join("");
   return `${listed.slice(0, -1).join(", ")} and ${listed[listed.length - 1] ?? ""}`;
 }
+function containerRunTitles(store2, threadIds) {
+  const threads = store2.getState().threads;
+  return threadIds.map((id) => threadLabel(threads.find((thread) => thread.id === id)?.title ?? ""));
+}
+function containerRunSentence(titles2, continuesAfterQuit) {
+  const one = titles2.length === 1;
+  const going = `${summariseWorkingThreads(titles2)} ${one ? "has a container run" : "have container runs"} going.`;
+  return continuesAfterQuit ? `${going} ${one ? "It keeps" : "They keep"} going outside Copse, and you can stop ${one ? "it" : "them"} from Copse when you open it again.` : `${going} Closing stops ${one ? "it" : "them"}.`;
+}
 async function confirmClose(store2, options = {}) {
   const titles2 = workingThreadTitles(store2);
-  if (titles2.length === 0) return true;
+  const runs = containerRunTitles(store2, options.containerRunThreads ?? []);
+  const continues = options.continuesAfterQuit === true;
+  if (titles2.length === 0 && runs.length === 0) return true;
+  if (titles2.length === 0) {
+    const one2 = runs.length === 1;
+    return await showConfirmDialog({
+      message: one2 ? "Close Copse while a container run is going?" : `Close Copse while ${String(runs.length)} container runs are going?`,
+      detail: containerRunSentence(runs, continues),
+      ...continues ? { confirmLabel: "Close", cancelLabel: "Keep Copse open" } : { confirmLabel: "Close anyway", cancelLabel: "Keep Copse open", danger: true }
+    });
+  }
   const one = titles2.length === 1;
   const working = `${summariseWorkingThreads(titles2)} ${one ? "is" : "are"} mid-turn.`;
-  if (options.continuesAfterQuit === true) {
+  const containers = runs.length > 0 ? ` ${containerRunSentence(runs, continues)}` : "";
+  if (continues) {
     return await showConfirmDialog({
       message: one ? "Close Copse while the agent is still working?" : `Close Copse while ${String(titles2.length)} threads are still working?`,
-      detail: `${working} ${one ? "It keeps" : "They keep"} going in the background after Copse closes, and ${one ? "is" : "are"} here when you open it again.`,
+      detail: `${working} ${one ? "It keeps" : "They keep"} going in the background after Copse closes, and ${one ? "is" : "are"} here when you open it again.${containers}`,
       confirmLabel: "Close",
       cancelLabel: "Keep Copse open"
     });
   }
   return await showConfirmDialog({
     message: one ? "Close Copse while the agent is still working?" : `Close Copse while ${String(titles2.length)} threads are still working?`,
-    detail: `${working} Closing stops the run \u2014 anything the agent has not already written to your files is lost.`,
+    detail: `${working} Closing stops the run \u2014 anything the agent has not already written to your files is lost.${containers}`,
     confirmLabel: "Close anyway",
     cancelLabel: one ? "Keep working" : "Keep them working",
     danger: true
@@ -89237,7 +89335,8 @@ async function confirmClose(store2, options = {}) {
 function mountCloseConfirm(api2, store2) {
   return api2.closeConfirm.onRequest((req) => {
     void confirmClose(store2, {
-      ...req.continuesAfterQuit !== void 0 ? { continuesAfterQuit: req.continuesAfterQuit } : {}
+      ...req.continuesAfterQuit !== void 0 ? { continuesAfterQuit: req.continuesAfterQuit } : {},
+      ...req.containerRunThreads ? { containerRunThreads: req.containerRunThreads } : {}
     }).then((confirmed) => api2.closeConfirm.respond(req.id, confirmed));
   });
 }
