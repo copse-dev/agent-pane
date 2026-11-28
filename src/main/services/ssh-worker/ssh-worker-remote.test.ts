@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import {
-  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -99,13 +98,16 @@ describe('the host side of the SSH worker', () => {
     // Writes its ready file as the turn host does, then leaves.
     writeFileSync(
       join(dir, 'ssh-worker.cjs'),
-      'const a = process.argv; const fs = require("fs"); fs.writeFileSync(a[a.indexOf("--ready-file") + 1], "/run/w.sock\\n"); fs.writeFileSync(a[a.indexOf("--user-data") + 1] + "/seen", "")',
+      'const a = process.argv; const fs = require("fs"); fs.writeFileSync(a[a.indexOf("--ready-file") + 1], "/run/w.sock\\n"); fs.mkdirSync(a[a.indexOf("--user-data") + 1]); fs.writeFileSync(a[a.indexOf("--user-data") + 1] + "/seen", process.env.COPSE_DIR)',
     )
     const started = run(startArgv(node, dir, '1.2.3'))
     assert.equal(started.code, 0, started.stderr)
     assert.equal(started.stdout.trim(), '/run/w.sock')
     // Every build serves the one profile the host keeps, made private.
-    assert.ok(existsSync(join(profileDir(node), 'seen')))
+    assert.equal(
+      readFileSync(join(profileDir(node), 'user-data', 'seen'), 'utf8'),
+      profileDir(node),
+    )
     assert.equal(statSync(profileDir(node)).mode & 0o777, 0o700)
 
     writeFileSync(join(dir, 'ssh-worker.cjs'), 'console.error("cannot start"); process.exit(1)')

@@ -76,7 +76,10 @@ export function installDir(node: RemoteNode, id: string): string {
   return `${workerHome(node)}/${id}`
 }
 
-/** The profile every build shares: threads, settings and the socket. */
+/**
+ * The profile every build shares, as the worker's `COPSE_DIR`: its threads,
+ * settings, worktrees and socket.
+ */
 export function profileDir(node: RemoteNode): string {
   return `${workerHome(node)}/profile`
 }
@@ -160,7 +163,9 @@ mkdir -p "$profile" && chmod 700 "$profile" || exit 1
 unset SSH_AUTH_SOCK
 if command -v setsid >/dev/null 2>&1; then detach=setsid; else detach=; fi
 # The bundle by its full path, so \`ps\` shows which build a worker runs.
-$detach nohup "$node" "$dir/${SSH_WORKER_BUNDLE}" --user-data "$profile" --app-version "$version" --ready-file "$ready" --relay-inference >"$dir/worker.log" 2>&1 </dev/null &
+# The profile is the worker's whole Copse directory: threads, worktrees and
+# caches land there, apart from any Copse the host's user runs themselves.
+COPSE_DIR="$profile" $detach nohup "$node" "$dir/${SSH_WORKER_BUNDLE}" --user-data "$profile/user-data" --app-version "$version" --ready-file "$ready" --relay-inference >"$dir/worker.log" 2>&1 </dev/null &
 pid=$!
 tries=0
 while [ ! -s "$ready" ]; do
