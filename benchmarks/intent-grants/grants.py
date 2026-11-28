@@ -491,7 +491,8 @@ def _gh(a, ctx):
         return [('ci-rerun', {'pr': None})]
     raise Unparsed('gh ' + group + ' ' + sub)
 
-# install reads every workspace package's manifest and runs its lifecycle scripts, and loads a pnpmfile
+# install reads every workspace manifest and loads a pnpmfile; lifecycle scripts can still run agent-edited
+# code these checks do not see (see the README's known limits)
 INSTALL_FILES = {'package.json', 'pnpm-lock.yaml', 'package-lock.json', 'npm-shrinkwrap.json', 'pnpm-workspace.yaml',
                  '.npmrc', '.pnpmfile.cjs', '.pnpmfile.mjs', 'yarn.lock'}
 def _touches(ctx, names):
@@ -525,9 +526,16 @@ def _pnpm(a, ctx, h):
         if _touches(ctx, INSTALL_FILES): raise Unparsed('modified manifest, lockfile or pnpmfile')
         return [('dev-install', 'install')]
     if sub in ('add', 'remove', 'rm', 'uninstall', 'view', 'info'):
-        if any(x in ('-g', '--global') or x.startswith('--registry') for x in args): raise Unparsed('global/registry')
-        pk = [x for x in args if not x.startswith('-')]
-        if sub in ('view', 'info'): pk = pk[:1]
+        # allow-listed options only: pnpm also accepts registry, pnpmfile and build settings as
+        # '--config.*', '--@scope:registry', '--pnpmfile', '--allow-build' and more
+        if sub in ('view', 'info'):
+            _, pk = opts(args, flags=('--json',))
+            pk = pk[:1]  # later positionals are field names
+        else:
+            _, pk = opts(args, flags=('-D', '--save-dev', '-O', '--save-optional', '-P', '--save-prod', '-E', '--save-exact',
+                                      '--save-peer', '--ignore-scripts', '--offline', '--prefer-offline'))
+        # add and remove install the whole manifest, and every pnpm command loads the pnpmfile
+        if _touches(ctx, INSTALL_FILES): raise Unparsed('modified manifest, lockfile or pnpmfile')
         if not pk: raise Unparsed('no package')
         if not all(pkg_spec_ok(p) for p in pk): raise Unparsed('package source')
         op = 'dep-view' if sub in ('view', 'info') else 'dep-remove' if sub in ('remove', 'rm', 'uninstall') else 'dep-add'

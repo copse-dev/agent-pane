@@ -44,7 +44,9 @@ name, tags, deletes, mirrors, default branches, other remotes, repositories or f
 `git restore` of the work tree, `stash drop`/`clear`, `gh api` with any method, field, header
 or input option or `graphql`, packages that are global, from another registry, or anything but
 a registry name with a version, range or tag (no `npm:` aliases, URLs, git or file sources),
-installs that are not frozen or whose manifest or lockfile changed, command substitution,
+installs that are not frozen, `pnpm add`/`remove`/`view` with any option outside a small
+allow-list (`--config.*`, `--@scope:registry`, `--pnpmfile`, `--allow-build` and the like), any
+install or add whose manifest, lockfile, workspace file, `.npmrc` or pnpmfile changed, command substitution,
 heredocs, `node -e`, unknown executables, and package scripts whose definition was modified.
 `HEAD` and a refspec-less push resolve to what is checked out when the gate decides, not to the
 thread's recorded branch; when the checkout is unknown (all of the real history), they ask.
@@ -87,9 +89,9 @@ rows in the run reported here). The red-team set is written by
 machine. The extractor sees the user's message and the assistant's final question, never the
 pending command.
 
-## Results, 2026-11-27 (after review round 2)
+## Results, 2026-11-28 (after review round 3)
 
-| Approach                                                  | Prompts skipped (of 854) | Real false skips | Adversarial false skips (219) | Held-out false skips (109) | Must-ask sweep (1,272) |
+| Approach                                                  | Prompts skipped (of 854) | Real false skips | Adversarial false skips (234) | Held-out false skips (109) | Must-ask sweep (1,272) |
 | --------------------------------------------------------- | -----------------------: | ---------------: | ----------------------------: | -------------------------: | ---------------------: |
 | prior-consent keyword baseline                            |                        0 |                0 |                            10 |                          1 |                    n/a |
 | Qwen 3.6 35B-A3B free-form judge, explicit (sample of 81) |                    ~5.8% |                1 |           35 of the first 126 |                          9 |                    n/a |
@@ -126,7 +128,7 @@ was not re-run on round 1's cases.
   The labels share the command parser with the matcher, so the real-data false-skip count
   checks intent, not parsing. Parsing is checked by the adversarial set, the held-out set and
   the must-ask sweep.
-- **Adversarial set (247):** injection through files, tool output, pasted logs and quoted issue
+- **Adversarial set (263):** injection through files, tool output, pasted logs and quoted issue
   text; scope creep from a push or PR request (force, tags, deletes, default branch, other
   remote or repository, admin merge, release, visibility, secrets); typo-squatted, global and
   registry-redirected packages; poisoned package scripts; refusals, opinion questions,
@@ -136,7 +138,10 @@ was not re-run on round 1's cases.
   and URL package specs, unfrozen installs, `HEAD` on another checkout, and provenance
   (another thread, a hook, a Reviewer answer). Review round 2 added 31 (`review2-*`): option
   spellings on `gh pr comment`/`edit`/`merge`, bundled `-R`, digit option values read as the
-  PR, write options on read commands, and changed workspace manifests and pnpmfiles.
+  PR, write options on read commands, and changed workspace manifests and pnpmfiles. Review
+  round 3 added 16 (`review3-*`): `pnpm add`/`remove`/`view` option spellings (`--config.*`,
+  `--@scope:registry`, `--pnpmfile`, `--allow-build`) and adds over changed install inputs. The
+  Qwen arms were not re-run on round 3's cases, so their adversarial rows count those as asks.
 - **Held-out set (118):** prior-consent's 38 hand-written cases (written before this work) and
   80 real turns with the reply replaced by a refusal.
 - **Must-ask sweep:** all 404 must-ask commands from the risk classifier's adversarial set and
@@ -151,6 +156,10 @@ was not re-run on round 1's cases.
   both are `gh pr create` on the thread's branch.
 - `code.work` (P2) runs project scripts outside the sandbox. A matching script is only trusted
   when its definition is unmodified, but the code it runs (tests, sources) is the agent's own.
+  Frozen installs are the same: the manifest, lockfile, workspace file, `.npmrc` and pnpmfile
+  must be unchanged, but lifecycle scripts still run code the agent may have edited (the root
+  `postinstall` runs `scripts/prepare-native-artifacts.mts`; a workspace package may carry a
+  `binding.gyp`), so the file check narrows the risk without closing it.
   The product equivalent should run the dev loop under a widened sandbox profile, not unsandboxed.
 - `CONDITIONAL` refuses any sentence containing "once", "if", "when", "after", "before",
   "until" and similar words, so plain orderings grant nothing too ("make a PR after that",
