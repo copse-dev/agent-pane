@@ -212,6 +212,11 @@ runs at least `npm run check:local`, which covers typecheck, lint, formatting, g
 consistency, dead-code detection, oracle liveness, and e2e syntax/exclusion checks. The full
 `npm run check` composes that gate with the complete unit/component suite.
 
+`check:local` (`scripts/check-local.mts`) runs those gates side by side, splitting the slow ones
+(each `tsc` project, each type-coverage pass, each lint shard) into parts. It runs as many parts as
+the host has cores, up to eight, and as many type-aware parts as its free memory holds. Every gate still runs and must pass; it reports every failing part at the
+end with each part's time. `node scripts/check-local.mts --jobs=1` runs one part at a time.
+
 The local fast path is deliberately conjunctive: use `check:local` plus focused tests instead of a
 full local `check` only for a PR-bound change whose oracle result is **HIGH**, whose diff is localized
 and directly covered, whose required PR CI will run the complete gates, and which avoids every
