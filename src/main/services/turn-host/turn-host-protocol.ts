@@ -81,7 +81,7 @@ import {
  * beyond the profile path (`harness-worker-roadmap.md` R2).
  */
 
-export const TURN_HOST_PROTOCOL = 3
+export const TURN_HOST_PROTOCOL = 4
 
 export type AppToHost =
   | {
@@ -131,6 +131,8 @@ export interface RelayedProviderOptions {
 export interface HostInferRequest {
   t: 'infer'
   id: string
+  /** The thread whose turn makes the call. */
+  threadId: string
   model: string
   promptCacheKey?: string | undefined
   providerOptions: RelayedProviderOptions
@@ -436,6 +438,8 @@ export const INFER_ALIVE_MS = 60_000
 export const hostInferRequestSchema = z.object({
   t: z.literal('infer'),
   id,
+  /** The thread whose turn makes the call: the app answers only for its own turns. */
+  threadId: id,
   model: z.string().min(1).max(512),
   promptCacheKey: z.string().max(512).optional(),
   providerOptions: z.object({

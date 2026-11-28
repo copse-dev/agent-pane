@@ -22,6 +22,7 @@ import {
 } from '../thread-store.ts'
 import type { HostToApp, TurnHostClient } from './turn-host-protocol.ts'
 import { readHostDispatchRecord } from './host-dispatch-record.ts'
+import { HostInferenceRelay } from './host-inference-relay.ts'
 import { TurnHost } from './turn-host.ts'
 import { runTestScenarioOp } from './turn-host-test-scenarios.ts'
 
@@ -132,6 +133,30 @@ function ended(sent: HostToApp[], id: string): boolean {
 }
 
 describe('TurnHost', { timeout: 30_000 }, () => {
+  it('gives its turns only to an app that said hello, and their calls only to one of its version', () => {
+    const attached: TurnHostClient[] = []
+    const relay = new HostInferenceRelay()
+    relay.attach = (client): void => {
+      attached.push(client)
+    }
+    const { host: turnHost } = host({ inferenceRelay: relay })
+    const silentApp = app()
+    turnHost.handle({ t: 'attach' }, silentApp.client)
+    const prober = app()
+    turnHost.handle({ t: 'hello', version: VERSION, protocol: 4, probe: true }, prober.client)
+    turnHost.handle({ t: 'attach' }, prober.client)
+    const older = app()
+    turnHost.handle({ t: 'hello', version: '0.0.1', protocol: 4 }, older.client)
+    turnHost.handle({ t: 'attach' }, older.client)
+    const current = app()
+    turnHost.handle({ t: 'hello', version: VERSION, protocol: 4 }, current.client)
+    turnHost.handle({ t: 'attach' }, current.client)
+    // An app that never said hello, or only asked the version, is not attached at all.
+    assert.equal(silentApp.joined(), false)
+    assert.equal(prober.joined(), false)
+    assert.deepEqual(attached, [current.client])
+  })
+
   it('runs turns on two threads and lets each thread go', async () => {
     await saveProjectThread('p1', idleThread('a'))
     await saveProjectThread('p1', idleThread('b'))

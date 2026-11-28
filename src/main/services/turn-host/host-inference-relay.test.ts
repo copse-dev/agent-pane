@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it, mock } from 'node:test'
 import type { LLMProvider, ProviderStreamChunk } from '@copse/llm/wire-types.ts'
+import { activeRunStorage, runWithActiveRunIdentity } from '../active-run-identity.ts'
 import { HostInferenceRelay } from './host-inference-relay.ts'
 import { TurnHostLink } from './turn-host-link.ts'
 import {
@@ -13,6 +14,9 @@ import {
 } from './turn-host-protocol.ts'
 
 const VERSION = '1.0.0'
+
+// The calls below are a turn's, as every call a worker relays is.
+activeRunStorage.enterWith({ threadId: 'thread-1', model: null, turnTreeId: null })
 
 type Infer = (request: HostInferRequest, signal: AbortSignal) => AsyncIterable<ProviderStreamChunk>
 
@@ -110,6 +114,7 @@ describe("a worker's model calls, made by the app", () => {
     const [request] = asked
     assert.ok(request)
     assert.equal(request.model, 'claude-sonnet-4-6')
+    assert.equal(request.threadId, 'thread-1')
     assert.equal(request.promptCacheKey, 'thread-1')
     assert.deepEqual(request.providerOptions, { reasoning: 'high', maxOutputTokens: 900 })
   })
@@ -309,5 +314,41 @@ describe("a worker's model calls, made by the app", () => {
     } finally {
       mock.timers.reset()
     }
+  })
+
+  it('sends no call made outside a turn', async () => {
+    const relay = new HostInferenceRelay()
+    const asked: HostInferRequest[] = []
+    await joined(relay, async function* (request) {
+      asked.push(request)
+      await Promise.resolve()
+      yield* []
+    })
+    await assert.rejects(
+      activeRunStorage.exit(() => collect(relay.provider('m'))),
+      /outside a turn/,
+    )
+    assert.deepEqual(asked, [])
+  })
+
+  it("sends a turn's calls to the app that sent the turn, else the latest", async () => {
+    const relay = new HostInferenceRelay()
+    const answered: string[] = []
+    const app = (name: string): Infer =>
+      async function* () {
+        answered.push(name)
+        await Promise.resolve()
+        yield { type: 'text', text: name }
+      }
+    const first = await joined(relay, app('first'))
+    await joined(relay, app('second'))
+    relay.placed('thread-1', first.app)
+    await collect(relay.provider('m'))
+    // Another thread's turn, which no app sent here, goes to the latest.
+    await runWithActiveRunIdentity('thread-2', () => collect(relay.provider('m')))
+    // The app that sent the turn went away: the latest makes its calls.
+    first.drop()
+    await collect(relay.provider('m'))
+    assert.deepEqual(answered, ['first', 'second', 'second'])
   })
 })

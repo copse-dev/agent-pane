@@ -10,7 +10,7 @@
   ],
   "roles": {
     "turns": {
-      "protocol": 3,
+      "protocol": 4,
       "clientToWorker": {
         "approval-answer": [
           "id",
@@ -134,6 +134,7 @@
           "options?",
           "promptCacheKey?",
           "providerOptions",
+          "threadId",
           "tools"
         ],
         "infer-cancel": [
