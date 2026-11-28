@@ -156,6 +156,8 @@ while [ ! -s "$ready" ]; do
   if [ "$tries" -gt 150 ] || ! kill -0 "$pid" 2>/dev/null; then
     [ -s "$ready" ] && break
     tail -n 20 "$dir/worker.log" >&2
+    # A worker that is only slow may still write it.
+    (sleep 60; rm -f "$ready") >/dev/null 2>&1 </dev/null &
     exit 1
   fi
   sleep 0.2

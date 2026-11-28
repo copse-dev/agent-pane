@@ -112,7 +112,7 @@ describe('Copse worker on an SSH host', () => {
     await dialog.$('.approval-approve').click()
 
     const started = await startResult()
-    assert.equal(started.ok, true, started.reason)
+    assert.equal(started.ok, true, started.reason ?? '')
     assert.equal(started.uploaded, true)
     assert.ok(started.hello, 'the worker said hello')
     workerPid = started.hello.pid
@@ -129,7 +129,7 @@ describe('Copse worker on an SSH host', () => {
     // worker already serving answers.
     await startWorker()
     const again = await startResult()
-    assert.equal(again.ok, true, again.reason)
+    assert.equal(again.ok, true, again.reason ?? '')
     assert.equal(again.uploaded, false)
     assert.equal(again.hello?.pid, workerPid)
   })
