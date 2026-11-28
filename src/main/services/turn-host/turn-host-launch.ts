@@ -1,3 +1,4 @@
+import { appInference } from './app-inference.ts'
 import { spawn, type SpawnOptions } from 'node:child_process'
 import { mkdirSync, openSync } from 'node:fs'
 import { join } from 'node:path'
@@ -138,6 +139,8 @@ export function createTurnHostLink(deps: TurnHostLaunchDependencies): TurnHostLi
       applyHostStoreWrite(store, changes, deps.log)
     },
     onThreadTaken: deps.onThreadTaken,
+    // Only a worker without keys asks; the profile's own host has them.
+    infer: appInference,
     ...(deps.onShellOutput ? { onShellOutput: deps.onShellOutput } : {}),
     ...(deps.onInstructionActivation
       ? { onInstructionActivation: deps.onInstructionActivation }

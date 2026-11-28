@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import type { ProviderStreamChunk } from '@copse/llm/wire-types.ts'
 import type { TurnWorkerConnection, WorkerToApp } from '../turn-worker/turn-worker-socket.ts'
 import type { SshPromptResponse } from '../ssh-workspace/ssh-prompt.ts'
 import type { ThreadPromptResult } from '@shared/thread-prompt.ts'
@@ -11,6 +12,7 @@ import {
   type AppToHost,
   type DispatchState,
   type HostApprovalAnswer,
+  type HostInferRequest,
   type HostProcessOp,
   type HostProcessRoot,
   type HostThreadPromptCommand,
@@ -107,6 +109,11 @@ export interface TurnHostLinkDependencies {
   applyStoreWrite?: (message: Extract<HostToApp, { t: 'store-write' }>) => void
   /** A host thread's lease is held: the follower should follow it now. */
   onThreadTaken?: (projectId: string, threadId: string) => void
+  /**
+   * Make a worker's model call with this app's keys (`host-inference-relay.ts`).
+   * Left out, the call fails: only a worker on another machine asks.
+   */
+  infer?: (request: HostInferRequest, signal: AbortSignal) => AsyncIterable<ProviderStreamChunk>
   log?: (line: string) => void
   createId?: () => string
 }
@@ -160,6 +167,8 @@ export class TurnHostLink {
    * call is never carried out twice.
    */
   private readonly answered = new Map<string, AppToHost>()
+  /** Model calls this app is making for the worker, by id. */
+  private readonly inferences = new Map<string, AbortController>()
   private readonly processListWaiters = new Map<string, (processes: HostProcessRoot[]) => void>()
   private readonly processWaiters = new Map<
     string,
@@ -472,6 +481,12 @@ export class TurnHostLink {
       case 'processes-result':
         this.processListWaiters.get(message.id)?.(message.processes)
         return
+      case 'infer':
+        void this.infer(message)
+        return
+      case 'infer-cancel':
+        this.inferences.get(message.id)?.abort()
+        return
       case 'stopped-all':
         for (const waiter of this.stoppedAllWaiters.splice(0)) waiter()
         return
@@ -598,6 +613,32 @@ export class TurnHostLink {
     }
   }
 
+  /** Make a worker's model call and stream the reply back on the same line. */
+  private async infer(request: HostInferRequest): Promise<void> {
+    const connection = this.connection
+    const controller = new AbortController()
+    this.inferences.set(request.id, controller)
+    const reply = (message: AppToHost): void => {
+      if (this.connection === connection) connection?.send(message)
+    }
+    try {
+      const infer = this.deps.infer
+      if (infer === undefined) throw new Error('This app makes no model calls for a worker.')
+      for await (const chunk of infer(request, controller.signal)) {
+        if (controller.signal.aborted) return
+        reply({ t: 'infer-chunk', id: request.id, chunk })
+      }
+      if (!controller.signal.aborted) reply({ t: 'infer-end', id: request.id })
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        const text = error instanceof Error ? error.message : String(error)
+        reply({ t: 'infer-error', id: request.id, error: text.slice(0, 8_000) })
+      }
+    } finally {
+      this.inferences.delete(request.id)
+    }
+  }
+
   /** The line dropped: settle every turn still waiting on it (decision 2). */
   private lost(): void {
     const host = this.host
@@ -613,6 +654,9 @@ export class TurnHostLink {
     // The host still waits on them, and asks again once a line is back.
     for (const controller of this.prompts.values()) controller.abort()
     this.prompts.clear()
+    // Nobody is left to read them; the worker fails each call.
+    for (const controller of this.inferences.values()) controller.abort()
+    this.inferences.clear()
     for (const subscribers of this.subscribers.values()) {
       for (const subscriber of subscribers) subscriber.onClose()
     }

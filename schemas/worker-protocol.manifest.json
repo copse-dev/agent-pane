@@ -10,7 +10,7 @@
   ],
   "roles": {
     "turns": {
-      "protocol": 2,
+      "protocol": 3,
       "clientToWorker": {
         "approval-answer": [
           "id",
@@ -30,6 +30,17 @@
         "hello": [
           "protocol",
           "version"
+        ],
+        "infer-chunk": [
+          "chunk",
+          "id"
+        ],
+        "infer-end": [
+          "id"
+        ],
+        "infer-error": [
+          "error",
+          "id"
         ],
         "process": [
           "id",
@@ -111,6 +122,18 @@
           "pid",
           "protocol",
           "version"
+        ],
+        "infer": [
+          "id",
+          "messages",
+          "model",
+          "options?",
+          "promptCacheKey?",
+          "providerOptions",
+          "tools"
+        ],
+        "infer-cancel": [
+          "id"
         ],
         "instruction-activation": [
           "names",

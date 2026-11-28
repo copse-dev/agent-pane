@@ -128,7 +128,7 @@ export async function serveLocalLine<In, Out>(
   inbound: z.ZodType<In>,
   onMessage: (message: In, client: LocalLineClient<Out>) => void,
   /** A joined peer's line closed. */
-  onLeave?: () => void,
+  onLeave?: (client: LocalLineClient<Out>) => void,
 ): Promise<LocalLineServer<Out>> {
   const clients = new Set<Socket>()
   // Every connection, joined or not: `server.close` waits for all of them.
@@ -150,7 +150,7 @@ export async function serveLocalLine<In, Out>(
     })
     const leave = (): void => {
       sockets.delete(socket)
-      if (clients.delete(socket)) onLeave?.()
+      if (clients.delete(socket)) onLeave?.(client)
     }
     socket.on('close', leave)
     socket.on('error', leave)

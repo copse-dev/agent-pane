@@ -135,7 +135,13 @@ _State._ R3 is built in five steps:
    - `tests/e2e/ssh-worker-start.e2e.ts` runs this against the fake SSH host and gets
      the worker's hello over the forward.
    - Nothing sends it turns yet.
-2. **The inference relay** over the forward.
+2. **The inference relay (done).** The worker starts with `--relay-inference`, so every
+   model call it makes (`buildProvider`) goes over the line as `infer` to the app that
+   attached last, which builds the provider with its own keys and streams the reply back
+   (`turn-host/host-inference-relay.ts`, `turn-host/app-inference.ts`; turn host
+   protocol 3). With no app attached a call waits for one, so a turn pauses while the
+   laptop sleeps; an app that goes away mid-reply fails that call. A relayed provider
+   carries no compaction identity yet.
 3. **SSH thread turns run on the host**, with the thread store there. The store moves to
    a profile that outlives builds (step 1 keeps one per build), and old builds are removed
    once no worker runs from them.

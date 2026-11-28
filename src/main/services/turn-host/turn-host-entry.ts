@@ -6,6 +6,10 @@
  * import `electron`.
  *
  *   turn-host.js --user-data <dir> [--app-version <v>] [--packaged] [--ready-file <path>]
+ *                [--relay-inference]
+ *
+ * With `--relay-inference` (a worker on an SSH host) every model call is made
+ * by the attached app with its own keys (`host-inference-relay.ts`).
  *
  * With `--ready-file`, it writes the socket path it serves (or that another
  * host already serves) there once a client can connect: a starter on another
@@ -26,6 +30,7 @@ import { installReadOnlyProfile } from '../turn-worker/worker-profile.ts'
 import { quietWorkerEnvironment } from '../turn-worker/worker-environment.ts'
 import { connectTurnHost, turnHostSocketPath } from './turn-host-protocol.ts'
 import type { TurnHostDependencies } from './turn-host.ts'
+import { HostInferenceRelay } from './host-inference-relay.ts'
 
 function log(line: string): void {
   process.stderr.write(`[turn-host ${new Date().toISOString()}] ${line}\n`)
@@ -39,6 +44,8 @@ async function main(): Promise<number> {
       'app-version': { type: 'string' },
       packaged: { type: 'boolean', default: false },
       'ready-file': { type: 'string' },
+      // On another machine: model calls go to the attached app, which holds the keys.
+      'relay-inference': { type: 'boolean', default: false },
     },
     strict: true,
   })
@@ -122,12 +129,19 @@ async function main(): Promise<number> {
   }
   runtime.teardownOnSignals()
 
+  const relay = values['relay-inference'] ? new HostInferenceRelay() : undefined
+  if (relay !== undefined) {
+    const { setInferenceRelay } = await import('../providers/provider-selection.ts')
+    setInferenceRelay((model, promptCacheKey, opts) => relay.provider(model, promptCacheKey, opts))
+  }
+
   const done = Promise.withResolvers<undefined>()
   const host = new TurnHost({
     registry: runtime.registry,
     log,
     version,
     capabilities: turnHostCapabilities,
+    ...(relay === undefined ? {} : { inferenceRelay: relay }),
     onIdle: (): void => {
       done.resolve(undefined)
     },
@@ -176,8 +190,8 @@ async function main(): Promise<number> {
     (message, client) => {
       host.handle(message, client)
     },
-    () => {
-      host.left()
+    (client) => {
+      host.left(client)
     },
   )
   host.bindBroadcast(server.broadcast)
