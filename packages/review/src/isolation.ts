@@ -206,10 +206,75 @@ export function cellEnvironment(
 }
 
 /**
+ * Dropped host variables that say where and as whom the review runs, not what
+ * it may reach: the login session, the locale, what npm or pnpm exports to
+ * the script that launched it, and the install paths a macOS shell exports.
+ * Their values are host paths, a user name, a locale or a package name, all of
+ * which turn up in ordinary command output; treating them as secrets turned
+ * every host path in a report into `[REDACTED_SECRET]/…`. They are still kept
+ * out of the cell; this list only stops the redactor from hiding them.
+ *
+ * Exact names, never a prefix. Neighbouring names do carry credentials:
+ * `npm_config_*` is `.npmrc` (registry tokens included), `.npmrc` can override
+ * `npm_package_config_*`, pnpm appends the command's arguments to
+ * `npm_lifecycle_script`, and `LC_*` is the family SSH's default `SendEnv`
+ * forwards, so it is used to smuggle arbitrary variables between hosts.
+ * Every variable not named here stays a secret.
+ */
+const NON_SECRET_HOST_VARIABLES: ReadonlySet<string> = new Set([
+  // The login session.
+  'HOME',
+  'USER',
+  'LOGNAME',
+  'SHELL',
+  'PWD',
+  'OLDPWD',
+  'TMPDIR',
+  // Locale categories beyond the allowlisted `LANG`, `LC_ALL` and `LC_CTYPE`.
+  'LANGUAGE',
+  'LC_COLLATE',
+  'LC_MESSAGES',
+  'LC_MONETARY',
+  'LC_NUMERIC',
+  'LC_TIME',
+  'LC_ADDRESS',
+  'LC_IDENTIFICATION',
+  'LC_MEASUREMENT',
+  'LC_NAME',
+  'LC_PAPER',
+  'LC_TELEPHONE',
+  // What npm and pnpm export to a package script.
+  'INIT_CWD',
+  'PNPM_SCRIPT_SRC_DIR',
+  'NODE',
+  'npm_command',
+  'npm_execpath',
+  'npm_node_execpath',
+  'npm_lifecycle_event',
+  'npm_package_json',
+  'npm_package_name',
+  'npm_package_version',
+  // What a macOS login exports: Homebrew's and nvm's install paths (from
+  // `brew shellenv` and `nvm.sh`), and the session's own markers. Homebrew's
+  // credential, `HOMEBREW_GITHUB_API_TOKEN`, is not named here.
+  'HOMEBREW_PREFIX',
+  'HOMEBREW_CELLAR',
+  'HOMEBREW_REPOSITORY',
+  'NVM_DIR',
+  'NVM_BIN',
+  'NVM_INC',
+  'COMMAND_MODE',
+  '__CF_USER_TEXT_ENCODING',
+  '__CFBundleIdentifier',
+])
+
+/**
  * The host values that must never appear in cell output: every variable the
- * allowlist dropped, when it is long enough to be a credential rather than a
- * flag. Fed to the secret redactor as literal secrets so a leak the backend
- * could not prevent still never reaches a finding.
+ * allowlist dropped, other than the well-known non-secret ones above, when it
+ * is long enough to be a credential rather than a flag. Fed to the secret
+ * redactor as literal secrets so a leak the backend could not prevent still
+ * never reaches a finding. A value is exempt only under an exempt name: if any
+ * other dropped variable carries the same value, it stays a secret.
  */
 export function droppedHostSecrets(
   hostEnv: Readonly<Record<string, string | undefined>>,
@@ -217,7 +282,7 @@ export function droppedHostSecrets(
   const allowed = new Set<string>(CELL_ENV_ALLOWLIST)
   const secrets: string[] = []
   for (const [key, value] of Object.entries(hostEnv)) {
-    if (allowed.has(key) || value === undefined) continue
+    if (allowed.has(key) || NON_SECRET_HOST_VARIABLES.has(key) || value === undefined) continue
     if (value.trim().length < 8) continue
     secrets.push(value)
   }

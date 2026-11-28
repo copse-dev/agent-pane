@@ -1,5 +1,7 @@
+import { randomBytes } from 'node:crypto'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { redactSecrets } from '@copse/llm/redact-secrets.ts'
 import {
   CELL_ENV_ALLOWLIST,
   cellEnvironment,
@@ -97,11 +99,76 @@ describe('cellEnvironment', () => {
 
   it('reports every dropped value long enough to be a credential as a literal secret', () => {
     const secrets = droppedHostSecrets(host)
-    assert.deepEqual(
-      [...secrets].sort(),
-      ['/Users/someone', host.ANTHROPIC_API_KEY, host.GITHUB_TOKEN].sort(),
-    )
+    assert.deepEqual([...secrets].sort(), [host.ANTHROPIC_API_KEY, host.GITHUB_TOKEN].sort())
     assert.equal(secrets.includes('x'), false, 'a one-character flag is not a secret')
     assert.equal(secrets.includes('/usr/bin'), false, 'an allowlisted value is not dropped')
+  })
+})
+
+describe('droppedHostSecrets', () => {
+  const home = '/Users/someone-with-a-long-name'
+  const repo = `${home}/src/agent-pane`
+  const host = {
+    HOME: home,
+    USER: 'someone-with-a-long-name',
+    PWD: repo,
+    SHELL: '/bin/zsh',
+    TMPDIR: '/var/folders/zz/abcdefgh/T/',
+    LC_TIME: 'en_GB.UTF-8',
+    npm_package_name: 'copse-panel',
+    npm_package_json: `${repo}/package.json`,
+    npm_lifecycle_event: 'review:stage0',
+    GITHUB_TOKEN: 'ghp_1234567890abcdefghijklmnopqrstuvwxyz1234',
+    FOO_KEY: randomBytes(24).toString('base64url'),
+    // Neighbours of exempt names that can carry a credential.
+    npm_config__authToken: 'registry-token-from-the-npmrc',
+    npm_package_config_token: 'overridden-from-the-npmrc',
+    npm_lifecycle_script: 'copse-review pr --flag-holding-a-credential',
+    LC_DEPLOY: 'smuggled-over-ssh-sendenv',
+    // What a macOS shell with Homebrew and nvm exports.
+    HOMEBREW_PREFIX: '/opt/homebrew',
+    HOMEBREW_CELLAR: '/opt/homebrew/Cellar',
+    HOMEBREW_REPOSITORY: '/opt/homebrew',
+    NVM_DIR: `${home}/.nvm`,
+    NVM_BIN: `${home}/.nvm/versions/node/v24.22.1/bin`,
+    NVM_INC: `${home}/.nvm/versions/node/v24.22.1/include/node`,
+    COMMAND_MODE: 'unix2003',
+    __CF_USER_TEXT_ENCODING: '0x1F5:0x0:0x0',
+    __CFBundleIdentifier: 'com.apple.Terminal',
+    // Redacted by name: the value need not look like a GitHub token.
+    HOMEBREW_GITHUB_API_TOKEN: 'homebrew-credential-in-the-shell',
+  }
+
+  it('exempts session, locale and script metadata but not their credential-bearing neighbours', () => {
+    assert.deepEqual(
+      [...droppedHostSecrets(host)].sort(),
+      [
+        host.GITHUB_TOKEN,
+        host.FOO_KEY,
+        host.npm_config__authToken,
+        host.npm_package_config_token,
+        host.npm_lifecycle_script,
+        host.LC_DEPLOY,
+        host.HOMEBREW_GITHUB_API_TOKEN,
+      ].sort(),
+    )
+    assert.equal(Object.hasOwn(cellEnvironment(host), 'HOME'), false, 'HOME still stays out')
+  })
+
+  it('keeps host paths readable in scrubbed output while redacting credentials', () => {
+    const failure = [
+      `Error at file://${repo}/packages/review/ci/prepare-npm-checkout.mts:22`,
+      `    at ${host.NVM_BIN}/node and /opt/homebrew/bin/git`,
+    ].join('\n')
+    const output = `${failure}\nGITHUB_TOKEN=${host.GITHUB_TOKEN}\nFOO_KEY=${host.FOO_KEY}`
+    const scrubbed = redactSecrets(output, droppedHostSecrets(host))
+    assert.ok(scrubbed.startsWith(failure), scrubbed)
+    assert.equal(scrubbed.includes(host.GITHUB_TOKEN), false)
+    assert.equal(scrubbed.includes(host.FOO_KEY), false)
+  })
+
+  it('still redacts an exempt value that another dropped variable also carries', () => {
+    const shared = 'someone-with-a-long-name'
+    assert.deepEqual(droppedHostSecrets({ USER: shared, DB_PASSWORD: shared }), [shared])
   })
 })

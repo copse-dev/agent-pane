@@ -606,7 +606,13 @@ On `main` under `packages/review/` (README there), with the app-side adapter und
   vacuous until Stage 2 puts a model in the loop and is re-armed then.
 - **Secret scrubbing** of every retained output through `@copse/llm`'s `redactSecrets`,
   with every environment value the allowlist dropped passed as a literal secret — a
-  second line behind the backend's wall, not a substitute for it.
+  second line behind the backend's wall, not a substitute for it. A short list of exact
+  names (the login session such as `HOME` and `PWD`, locale categories, npm/pnpm script
+  metadata such as `npm_package_name`, and macOS install paths such as `HOMEBREW_PREFIX`
+  and `NVM_BIN`) is exempt, so host paths stay readable; any other dropped variable stays
+  a secret. Exempt values are not secrets, but they are not private either: the login
+  name and home-relative paths reach the selected remote provider and can appear in a
+  review posted with `--post-review`.
 
 Not in Phase 0, by design: any model call, the CLI shell and SARIF (Phase 1), the app
 gesture (Phase 3), and the container backend that a foreign diff needs (Phase 4). Outside
