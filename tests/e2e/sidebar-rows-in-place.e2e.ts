@@ -5,6 +5,7 @@ import { $, $$, browser, expect } from '@wdio/globals'
 import type { Thread } from '@shared/types'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { submitComposer } from './helpers/composer.ts'
 import { expectAssistantReply, prepareMockTurn } from './helpers/mock-scenario.ts'
 import { saveFramedElementScreenshot, withCaptureFrame } from './helpers/screenshot.ts'
 
@@ -112,7 +113,8 @@ describe('sidebar rows update in place', () => {
     await $(`.chat-row*=${HOVERED_TITLE}`).moveTo()
     expect(await hoveredRowTitle()).toBe(HOVERED_TITLE)
 
-    await $('.submit-btn').click()
+    // A human prompt crosses the protected review before it dispatches.
+    await submitComposer()
     await turn.waitForHold('finish')
     await browser.waitUntil(async () => rowIsRunning(WORKING_TITLE), {
       timeout: 10_000,

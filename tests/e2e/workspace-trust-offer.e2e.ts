@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { waitForAgentIdle } from './helpers.ts'
+import { submitComposer } from './helpers/composer.ts'
 import {
   readSeededSettings,
   resetUserData,
@@ -67,7 +68,7 @@ describe('workspace trust offer on a shell prompt', () => {
       { name: 'run_shell', args: { command: 'git push origin main' } },
       'The push was declined.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
