@@ -248,20 +248,41 @@ export function registerGhHandlers(win: BrowserWindow): void {
     },
     { errors: 'per-argument' },
   )
-  defineSenderRootHandler(
+  defineSenderHandler(
     win,
     'gh:reply-to-review-thread',
     ghReviewThreadReplyArgs,
-    (root, owner, repo, number, threadId, body) =>
-      replyToPrReviewThread(root, { owner, repo, number }, threadId, body),
+    async (sender, owner, repo, number, threadId, body) => {
+      const root = senderProjectRoot(sender)
+      if (
+        !(await confirmNativeAction(sender, {
+          title: 'Reply on GitHub review thread?',
+          detail: `Post this reply on ${owner}/${repo}#${String(number)}?\n\n${body}`,
+          approveLabel: 'Post reply',
+        }))
+      )
+        throw new Error('Review thread reply was not confirmed')
+      return replyToPrReviewThread(root, { owner, repo, number }, threadId, body)
+    },
     { errors: 'per-argument' },
   )
-  defineSenderRootHandler(
+  defineSenderHandler(
     win,
     'gh:set-review-thread-resolved',
     ghReviewThreadResolveArgs,
-    (root, owner, repo, number, threadId, resolved) =>
-      setPrReviewThreadResolved(root, { owner, repo, number }, threadId, resolved),
+    async (sender, owner, repo, number, threadId, resolved) => {
+      const root = senderProjectRoot(sender)
+      const verb = resolved ? 'Resolve' : 'Reopen'
+      if (
+        !(await confirmNativeAction(sender, {
+          title: `${verb} GitHub review thread?`,
+          detail: `${verb} a review thread on ${owner}/${repo}#${String(number)}?`,
+          approveLabel: `${verb} thread`,
+        }))
+      )
+        throw new Error(`${verb} review thread was not confirmed`)
+      return setPrReviewThreadResolved(root, { owner, repo, number }, threadId, resolved)
+    },
     { errors: 'per-argument' },
   )
   defineSenderHandler(

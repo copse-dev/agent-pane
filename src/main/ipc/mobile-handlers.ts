@@ -104,13 +104,35 @@ export function registerMobileHandlers(win: BrowserWindow): void {
     assertMainFrameSender(event, win)
     await recheckMobilePublicNameDns()
   })
-  ipcMain.handle('mobile:set-relay-enabled', (event, rawEnabled: unknown) => {
+  ipcMain.handle('mobile:set-relay-enabled', async (event, rawEnabled: unknown) => {
     assertMainFrameSender(event, win)
     const enabled = parseIpcArgs(z.boolean(), [rawEnabled])
+    // Turning the relay off only narrows reach, so it needs no decision.
+    if (
+      enabled &&
+      !(await confirmNativeAction(event.sender, {
+        title: 'Reach this Mac through the Copse relay?',
+        detail:
+          'Let paired devices reach Mobile Companion from anywhere through the Copse relay. Device access still requires separate approval.',
+        approveLabel: 'Use relay',
+      }))
+    ) {
+      throw new IpcValidationError('Relay access was not confirmed')
+    }
     setMobileRelayEnabled(enabled)
   })
   ipcMain.handle('mobile:create-shell-pairing', async (event) => {
     assertMainFrameSender(event, win)
+    if (
+      !(await confirmNativeAction(event.sender, {
+        title: 'Add this Mac at copse.me?',
+        detail:
+          'Create a one-time link that adds this Mac to your copse.me account. Phones still need separate approval.',
+        approveLabel: 'Create link',
+      }))
+    ) {
+      throw new IpcValidationError('Adding this Mac was not confirmed')
+    }
     await createMobileShellPairing()
   })
   ipcMain.handle('mobile:clear-shell-pairing', (event) => {
