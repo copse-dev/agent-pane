@@ -6,10 +6,11 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
   Record<string, { readonly sourceSha256: string; readonly filenames: readonly string[] }>
 > = {
   'tests/e2e/acp-auth-error.e2e.ts': {
-    sourceSha256: '32631700988dbc2a43f006533b63ad79c533f0f9b7c161d177ad3f2ab752f461',
+    sourceSha256: 'efc070ad8428c9482b172de18ed27b91cd72b1b7e5e93695aaec79dc03a03a0c',
     filenames: [
       'acp-auth-error.png',
       'acp-auth-expired-mid-turn.png',
+      'claude-keychain-store-refused-auth-error.png',
       'claude-org-check-auth-error.png',
       'codex-workspace-routing-auth-error.png',
       'cursor-acp-auth-error.png',

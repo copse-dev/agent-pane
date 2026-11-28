@@ -301,6 +301,7 @@ import {
   type AcpTurnProgress,
 } from './acp/acp-turn-recovery.ts'
 import { offerAcpReauth } from './acp/acp-reauth.ts'
+import { renewClaudeLoginAfterRefusal } from './acp/claude-login-renewal.ts'
 import { assembleAcpTurnStart } from './acp/acp-turn-start.ts'
 import { SUBAGENTS_ENABLED_DEFAULT, SUBAGENTS_ENABLED_SETTING } from './subagents-setting.ts'
 import { isRecord } from '@shared/unknown-value.ts'
@@ -1625,12 +1626,26 @@ async function runAgentWithInlineCanvas(
       // One context for both readings. The agent's last message joins it
       // because an agent may write the cause there and then fail with a bare
       // code (Claude's expired OAuth sign-in reads only `-32000`).
-      const errorContext: ClassifyAgentErrorContext = {
+      const baseErrorContext: ClassifyAgentErrorContext = {
         acpAgentId: acpRunAgentId,
         acpSandboxed: err instanceof AcpTurnFailure && err.sandboxed,
         ...(partial?.finalMessageText ? { acpFinalMessage: partial.finalMessageText } : {}),
       }
-      const authFailure = aborted ? null : classifyAcpAuthFailure(err, errorContext)
+      const authFailure = aborted ? null : classifyAcpAuthFailure(err, baseErrorContext)
+      // Claude refused to renew a token it could not save to the read-only
+      // Keychain. Have Claude renew it outside the sandbox now, so the user's
+      // next message works without a trip to a terminal. The idle deadline is
+      // paused for the run, as it is around the sign-in offer below.
+      const loginRenewal =
+        authFailure === 'store_refused' && err instanceof AcpTurnFailure ? err.loginRenewal : null
+      const loginRenewed =
+        loginRenewal !== null &&
+        (await withRunDeadlinePaused(threadId, () =>
+          renewClaudeLoginAfterRefusal(loginRenewal).catch(() => false),
+        ))
+      const errorContext: ClassifyAgentErrorContext = loginRenewed
+        ? { ...baseErrorContext, acpLoginRenewed: true }
+        : baseErrorContext
       // A helper that cannot nest a second seatbelt inside the agent's own dies
       // the same way on every retry, so the marker must say that instead of the
       // generic provider-error note (2026-09-23: Codex CUA node_repl under the
@@ -1639,6 +1654,7 @@ async function runAgentWithInlineCanvas(
         aborted,
         authFailure,
         acpAgentId: acpRunAgentId,
+        loginRenewed,
       })
       const msg = agentErrorNotice(classifyAgentError(err, errorContext))
       // The notice is a block of its own (a GitHub alert renders only at the
@@ -1653,7 +1669,7 @@ async function runAgentWithInlineCanvas(
       // with its explanation already on screen. The idle deadline is paused for
       // the wait, exactly as it is around approval dialogs, so a user thinking
       // it over can't have the turn aborted underneath the modal.
-      if (authFailure) {
+      if (authFailure && !loginRenewed) {
         // Best-effort: the turn has already reported its failure, and a broken
         // offer must not escalate a handled error into an unhandled one.
         const launched = await withRunDeadlinePaused(threadId, () =>

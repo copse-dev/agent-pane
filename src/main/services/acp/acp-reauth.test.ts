@@ -100,6 +100,22 @@ describe('offerAcpReauth', () => {
     assert.doesNotMatch(asked, /has expired|is not signed in/)
   })
 
+  // The sign-in is still good when Claude refused to renew a token it could
+  // not save, so the offer names that cause rather than an expired sign-in.
+  it('says a refused Keychain save, not an expiry, caused the failure', async () => {
+    let asked = ''
+    await withAnswer(
+      (question) => {
+        asked = question
+        return 'Not now'
+      },
+      () => offerAcpReauth({ agentId: 'claude-acp', kind: 'store_refused' }),
+    )
+    assert.match(asked, /couldn’t save a renewed one to the macOS Keychain/)
+    assert.match(asked, /claude-agent-acp --cli auth login/)
+    assert.doesNotMatch(asked, /saved sign-in has expired|is not signed in/)
+  })
+
   it('launches nothing when the user declines', async () => {
     const command = await withAnswer(
       () => 'Not now',

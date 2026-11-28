@@ -89,6 +89,9 @@ describe('ACP authentication error presentation', () => {
     await $('[data-message-id="msg-assistant-claude-org-auth"] .message-text').waitForExist({
       timeout: 30_000,
     })
+    await $('[data-message-id="msg-assistant-claude-store-refused"] .message-text').waitForExist({
+      timeout: 30_000,
+    })
   })
 
   after(() => {
@@ -278,6 +281,29 @@ describe('ACP authentication error presentation', () => {
       '[data-message-id="msg-assistant-claude-org-auth"]',
       'claude-org-check-auth-error.png',
     )
+  })
+
+  // Inside Copse's sandbox the Keychain is read-only, so Claude Code refuses
+  // to renew an expired access token it could not save, and every turn died
+  // on a raw -32603 until something outside renewed it. The thread must say
+  // the sign-in is still good, why the sandbox blocks the renewal, how to
+  // renew it now and how to stop it recurring, before the agent's own words.
+  it('explains a Keychain save the sandbox refused as a renewal Claude could not make', async () => {
+    const selector = '[data-message-id="msg-assistant-claude-store-refused"]'
+    const message = await $(`${selector} .message-text`).getElement()
+    const warning = await message.$('.markdown-alert-warning').getElement()
+    await expect(warning.$('strong')).toHaveText('Claude couldn’t renew its sign-in')
+    await expect(message.$('p*=Your sign-in itself is still valid')).toHaveText(
+      expect.stringContaining('read the macOS Keychain but not write to it'),
+    )
+    await expect(message.$('ol code')).toHaveText('claude-agent-acp --cli auth login')
+    const hints = await hintPlacement('msg-assistant-claude-store-refused')
+    expect(hints.inSteps).toEqual(['claude-agent-acp --cli auth login'])
+    expect(hints.inNote).toEqual(['claude setup-token', 'CLAUDE_CODE_OAUTH_TOKEN'])
+    await expect(message.$('pre code')).toHaveText(
+      expect.stringContaining("Failed to refresh OAuth token: can't save to the Keychain"),
+    )
+    await saveAuthMessage(selector, 'claude-keychain-store-refused-auth-error.png')
   })
 })
 

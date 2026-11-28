@@ -181,6 +181,111 @@ describe('classifyAgentError', () => {
     }
   })
 
+  // Claude Code 2.1.330's wording when it proves the Keychain write before
+  // spending the refresh token and the write is refused (EPERM under Copse's
+  // read-only Keychain grant). Seen as a dead turn every time the token expired.
+  const storeRefusedMessage =
+    "Failed to refresh OAuth token: can't save to the Keychain. If locked, run `security unlock-keychain`. If sandboxed, use `claude setup-token`. Otherwise, retry, then `claude auth login`"
+  const storeRefusedFailure = (sandboxed: boolean): AcpTurnFailure =>
+    new AcpTurnFailure(
+      new RequestError(-32603, storeRefusedMessage, { errorKind: 'invalid_request' }),
+      {
+        assistantText: '',
+        finalMessageText: storeRefusedMessage,
+        usage: { inputTokens: 0, outputTokens: 0 },
+      },
+      { sandboxed },
+    )
+
+  it('reads a refused Keychain save as its own sign-in failure with a fix that works', () => {
+    const err = storeRefusedFailure(true)
+    const ctx = { acpAgentId: 'claude-acp', acpSandboxed: true }
+    const kind = classifyAcpAuthFailure(err, ctx)
+    assert.equal(kind, 'store_refused')
+    const out = withPlatform('darwin', () => classifyAgentError(err, ctx))
+    assert.match(out, /> \[!WARNING\]\n> \*\*Claude couldn’t renew its sign-in\*\*/)
+    assert.match(out, /read the macOS Keychain but not write to it/)
+    assert.match(out, /Your sign-in itself is still valid/)
+    assert.match(out, /1\. Run `claude-agent-acp --cli auth login` in a terminal\./)
+    assert.match(out, /`claude setup-token`[\s\S]*`CLAUDE_CODE_OAUTH_TOKEN`/)
+    assert.doesNotMatch(out, /unlock-keychain` in a terminal: a locked/)
+    assert.match(out, /Technical details[\s\S]*can't save to the Keychain/)
+    // The next turn's model is told a re-run fails until the token is renewed
+    // outside the sandbox, not that the user must sign in from scratch.
+    const interruption = acpTurnInterruptionFor(err, {
+      aborted: false,
+      authFailure: kind,
+      acpAgentId: 'claude-acp',
+    })
+    assert.equal(interruption, 'store_refused')
+    const marker = acpTurnInterruptionMarker(interruption, 'claude-acp')
+    assert.match(marker, /fail the same way until the token is renewed outside Copse’s sandbox/)
+  })
+
+  // Copse had Claude renew the token outside the sandbox after the refusal, so
+  // the fix is only to re-send: no terminal, no sign-in steps.
+  it('says re-send once Copse has had Claude renew the token outside the sandbox', () => {
+    const err = storeRefusedFailure(true)
+    const ctx = { acpAgentId: 'claude-acp', acpSandboxed: true, acpLoginRenewed: true }
+    const out = withPlatform('darwin', () => classifyAgentError(err, ctx))
+    assert.match(out, /^> \[!NOTE\]\n> \*\*Claude’s sign-in was renewed\*\*/)
+    assert.match(out, /renew it outside the sandbox, so re-send your message to continue/)
+    assert.doesNotMatch(out, /claude-agent-acp --cli auth login|\*\*To continue\*\*/)
+    assert.match(out, /Technical details[\s\S]*can't save to the Keychain/)
+    const interruption = acpTurnInterruptionFor(err, {
+      aborted: false,
+      authFailure: classifyAcpAuthFailure(err, ctx),
+      acpAgentId: 'claude-acp',
+      loginRenewed: true,
+    })
+    assert.equal(interruption, 'login_renewed')
+    assert.match(acpTurnInterruptionMarker(interruption, 'claude-acp'), /should work/)
+    // A renewal only answers this failure, never another credentials one.
+    assert.equal(
+      acpTurnInterruptionFor(err, {
+        aborted: false,
+        authFailure: 'expired',
+        acpAgentId: 'claude-acp',
+        loginRenewed: true,
+      }),
+      'expired',
+    )
+  })
+
+  it('reads the other wordings of a refused Keychain save the same way', () => {
+    for (const text of [
+      "Could not refresh your login: can't save to the Keychain · If locked, run security unlock-keychain",
+      "OAuth access token could not be refreshed: can't save to the macOS Keychain. Unlock it, run claude outside any sandbox, retry, or sign in again",
+      'API Error: {"apiError":"oauth_refresh_store_refused"}',
+    ]) {
+      assert.equal(
+        classifyAcpAuthFailure(new RequestError(-32603, text), { acpAgentId: 'claude-acp' }),
+        'store_refused',
+        text,
+      )
+    }
+  })
+
+  // Outside Copse's seatbelt nothing keeps the Keychain read-only, so the copy
+  // must not blame the sandbox there: a locked Keychain is the likely cause.
+  it('points an unsandboxed refused Keychain save at unlocking the Keychain', () => {
+    for (const [platform, sandboxed] of [
+      ['darwin', false],
+      ['linux', true],
+    ] as const) {
+      const out = withPlatform(platform, () =>
+        classifyAgentError(storeRefusedFailure(sandboxed), {
+          acpAgentId: 'claude-acp',
+          acpSandboxed: sandboxed,
+        }),
+      )
+      assert.match(out, /Claude couldn’t renew its sign-in/)
+      assert.match(out, /1\. Run `security unlock-keychain` in a terminal/)
+      assert.match(out, /If it fails again, run `claude-agent-acp --cli auth login`/)
+      assert.doesNotMatch(out, /Copse’s sandbox/, `${platform}, sandboxed: ${String(sandboxed)}`)
+    }
+  })
+
   it('keeps the organization-check note off other expired sign-ins', () => {
     const err = new RequestError(
       -32603,
@@ -766,7 +871,15 @@ describe('acpTurnInterruptionMarker', () => {
   // outcome here: the retry loop is already spent by the time a marker is
   // written, and a lapsed credential is the opposite of temporary.
   it('never calls an outcome transient', () => {
-    for (const outcome of ['expired', 'required', 'unverified', 'aborted', 'error'] as const) {
+    for (const outcome of [
+      'expired',
+      'required',
+      'unverified',
+      'store_refused',
+      'login_renewed',
+      'aborted',
+      'error',
+    ] as const) {
       assert.doesNotMatch(acpTurnInterruptionMarker(outcome, claude), /transient/i)
     }
   })
