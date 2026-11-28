@@ -200,8 +200,9 @@ _State._ R3 is built in five steps:
      there is refused. The copy back keeps the laptop's model choices, and the host's
      copy can only raise the thread's usage counts. The two copies are matched by a sync mark
      (`ssh-host-sync.json`): the side that moved since the last copy wins, and both moving
-     is refused as a fork, except when all the laptop added is prompts no turn ran (one
-     refused while the host ran a turn of its own): those go after the host's turn.
+     is refused as a fork, except when all the laptop added is prompts the host refused while it ran a turn of
+     its own, and the one being sent: those go after the host's turn. A prompt that is
+     neither may have run here and been cut off, so it still counts as a fork.
    - **Still open in step 3:**
      - a turn the worker starts by itself (a wake) is seen at the thread's next turn, not
        live, and a line that reconnects mid-turn does not stream the rest of it;
