@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { LLMMessage, Message, Thread } from '@shared/types'
 import { toResponsesInput } from '@copse/llm/responses-provider.ts'
+import { stripToolResultImages } from '@copse/llm/tool-result-images.ts'
 import {
   measureThreadStorage,
   loadProjectThreads,
@@ -2222,6 +2223,151 @@ describe('thread-store agent-run ↔ PR link (issue #690, Q6)', () => {
     await saveAgentHistory('proj-1', 't1', [{ role: 'user', content: 'y' }])
     await deleteProjectThread('proj-1', 't1')
     assert.equal(existsSync(join(root, 'proj-1', 't1')), false)
+  })
+
+  describe('agent-history.json writes and reads', () => {
+    const IMAGE_PREFIX = 'data:image/png;base64,'
+
+    /** A prompt-image history like a thread that generated images builds up. */
+    function imageHistory(images: number, imageBytes: number): LLMMessage[] {
+      const history: LLMMessage[] = []
+      for (let turn = 0; turn < images; turn++) {
+        history.push({
+          role: 'user',
+          content: [
+            // One character outside Latin-1 makes a whole-history string two-byte.
+            { type: 'text', text: `Make image ${String(turn)} — “brighter”` },
+            {
+              type: 'image',
+              dataUrl: `${IMAGE_PREFIX}${String(turn).padStart(4, '0')}${'Q'.repeat(imageBytes)}`,
+            },
+          ],
+        })
+        history.push({ role: 'assistant', content: `Image ${String(turn)} is ready.` })
+      }
+      return history
+    }
+
+    /** Count event-loop turns, and the longest one, while `run` is in flight. */
+    async function whileCountingTurns<T>(
+      run: () => Promise<T>,
+    ): Promise<{ result: T; turns: number; longestMs: number }> {
+      let turns = 0
+      let longestMs = 0
+      let last = performance.now()
+      let counting = true
+      const tick = (): void => {
+        const now = performance.now()
+        longestMs = Math.max(longestMs, now - last)
+        last = now
+        turns++
+        if (counting) setImmediate(tick)
+      }
+      setImmediate(tick)
+      const result = await run()
+      counting = false
+      longestMs = Math.max(longestMs, performance.now() - last)
+      return { result, turns, longestMs }
+    }
+
+    it('writes exactly the bytes one JSON.stringify of the history gives', async () => {
+      await createThread('proj-1', thread('t1'))
+      const history: LLMMessage[] = [
+        ...imageHistory(3, 700_000),
+        { role: 'user', content: 'quotes " and \\ backslashes, ]},[ brackets, 🌲, \ud800' },
+        {
+          role: 'tool',
+          toolResults: [
+            {
+              toolCallId: 'call-1',
+              result: 'frames written',
+              images: [{ name: 'frame-1.png', dataUrl: `${IMAGE_PREFIX}AAAA` }],
+            },
+          ],
+        },
+      ]
+      await saveAgentHistory('proj-1', 't1', history)
+
+      const stored = stripToolResultImages(history)
+      const path = join(root, 'proj-1', 't1', 'agent-history.json')
+      assert.equal(readFileSync(path, 'utf8'), `${JSON.stringify({ v: 1, messages: stored })}\n`)
+      assert.deepEqual(await loadAgentHistory('proj-1', 't1'), stored)
+    })
+
+    it('reads a history written in another JSON layout the same way', async () => {
+      await createThread('proj-1', thread('t1'))
+      const history = imageHistory(2, 1_000)
+      const path = join(root, 'proj-1', 't1', 'agent-history.json')
+      writeFileSync(path, JSON.stringify({ messages: history, v: 1 }, null, 2))
+      assert.deepEqual(await loadAgentHistory('proj-1', 't1'), history)
+      writeFileSync(path, `${JSON.stringify({ v: 1, messages: history }).slice(0, -1)}, "x": 1}`)
+      assert.deepEqual(await loadAgentHistory('proj-1', 't1'), history)
+      // A message that is not one fails the whole file closed, as before.
+      writeFileSync(path, `${JSON.stringify({ v: 1, messages: [...history, 7] })}\n`)
+      assert.deepEqual(await loadAgentHistory('proj-1', 't1'), [])
+      writeFileSync(path, `${JSON.stringify({ v: 1, messages: history }).slice(0, -2)}\n`)
+      assert.deepEqual(await loadAgentHistory('proj-1', 't1'), [])
+    })
+
+    it('keeps the previous history whole when a save fails partway', async () => {
+      await createThread('proj-1', thread('t1'))
+      const before = imageHistory(1, 10)
+      await saveAgentHistory('proj-1', 't1', before)
+      const original = fsPromises.writeFile.bind(fsPromises)
+      mock.method(
+        fsPromises,
+        'writeFile',
+        async (...args: Parameters<typeof fsPromises.writeFile>): Promise<void> => {
+          await original(args[0], '{"v":1,"messages":[{"role":"us', args[2])
+          throw Object.assign(new Error('no space left on device'), { code: 'ENOSPC' })
+        },
+      )
+      try {
+        await assert.rejects(
+          saveAgentHistory('proj-1', 't1', imageHistory(4, 10)),
+          /no space left on device/,
+        )
+      } finally {
+        mock.restoreAll()
+      }
+      assert.deepEqual(await loadAgentHistory('proj-1', 't1'), before)
+      assert.deepEqual(
+        fs.readdirSync(join(root, 'proj-1', 't1')).filter((name) => name.endsWith('.tmp')),
+        [],
+      )
+    })
+
+    it('saves the history as it was when the save was asked for', async () => {
+      await createThread('proj-1', thread('t1'))
+      const history = imageHistory(1, 10)
+      const saving = saveAgentHistory('proj-1', 't1', history)
+      // The loop goes on with its own array while the write waits its turn.
+      history.push({ role: 'user', content: 'a later prompt' })
+      await saving
+      assert.deepEqual(await loadAgentHistory('proj-1', 't1'), history.slice(0, -1))
+    })
+
+    it('saves and loads a large prompt-image history without holding the event loop', async (t) => {
+      // 24 prompt images of 1.5 MB: a smaller copy of the 70 MB history whose
+      // turn-end save held main for over a second at a time.
+      await createThread('proj-1', thread('t1'))
+      const history = imageHistory(24, 1_500_000)
+
+      const save = await whileCountingTurns(() => saveAgentHistory('proj-1', 't1', history))
+      const load = await whileCountingTurns(() => loadAgentHistory('proj-1', 't1'))
+      const size = fs.statSync(join(root, 'proj-1', 't1', 'agent-history.json')).size
+      t.diagnostic(
+        `${String(Math.round(size / 1e6))} MB history: save let the event loop turn ` +
+          `${String(save.turns)} times (longest ${save.longestMs.toFixed(1)} ms), ` +
+          `load ${String(load.turns)} times (longest ${load.longestMs.toFixed(1)} ms)`,
+      )
+
+      assert.equal(load.result.length, history.length)
+      assert.deepEqual(load.result.at(-2), history.at(-2))
+      // One synchronous write or parse would let it turn once, after the fact.
+      assert.ok(save.turns >= 10, `save let the event loop turn ${String(save.turns)} times`)
+      assert.ok(load.turns >= 5, `load let the event loop turn ${String(load.turns)} times`)
+    })
   })
 
   it('round-trips a private ACP session binding beside the thread', async () => {

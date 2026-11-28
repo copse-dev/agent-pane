@@ -1074,31 +1074,33 @@ async function runAcpAgentTurn(
         'This coding agent does not support image prompts. Add text, or use an agent that accepts images.',
       )
     }
-    const promptBlocks = buildAcpPromptContent(
-      options.userPrompt,
-      fresh
-        ? options.priorMessages
-        : unseenAcpTranscript(options.priorMessages, entry.transcriptCheckpoint),
-      {
-        sandboxed,
-        contained,
-        // The tools the agent actually listed (#4144), not the ones offered:
-        // the notes steer to Copse's tools only when there are some, and the
-        // GitHub steer names them, or says plainly that GitHub is out of reach
-        // when there are none, offered-but-never-connected included.
-        bridgeToolNames: listedToolNames,
-        readonlyCheckout,
-        includeNotes: fresh && options.executionMode !== 'agent',
-        ...(bridgeMounted && sessionBridge && options.executionMode !== 'agent'
-          ? { copseServer: sessionBridge.serverName }
-          : {}),
-        ...(copseToolsNote && options.executionMode !== 'agent' ? { copseToolsNote } : {}),
-        includeImages,
-        ...(operatorInstructions ? { operatorInstructions } : {}),
-        ...(skillContext.prompt ? { skills: skillContext.prompt } : {}),
-      },
-    )
+    const transcript = fresh
+      ? options.priorMessages
+      : await unseenAcpTranscript(options.priorMessages, entry.transcriptCheckpoint)
+    const promptBlocks = buildAcpPromptContent(options.userPrompt, transcript, {
+      sandboxed,
+      contained,
+      // The tools the agent actually listed (#4144), not the ones offered:
+      // the notes steer to Copse's tools only when there are some, and the
+      // GitHub steer names them, or says plainly that GitHub is out of reach
+      // when there are none, offered-but-never-connected included.
+      bridgeToolNames: listedToolNames,
+      readonlyCheckout,
+      includeNotes: fresh && options.executionMode !== 'agent',
+      ...(bridgeMounted && sessionBridge && options.executionMode !== 'agent'
+        ? { copseServer: sessionBridge.serverName }
+        : {}),
+      ...(copseToolsNote && options.executionMode !== 'agent' ? { copseToolsNote } : {}),
+      includeImages,
+      ...(operatorInstructions ? { operatorInstructions } : {}),
+      ...(skillContext.prompt ? { skills: skillContext.prompt } : {}),
+    })
     lastPrompt = promptBlocks.map((block) => (block.type === 'text' ? block.text : '')).join('')
+    // Hashed while the agent works: the delivered prefix is known before the
+    // prompt goes out, and a large history takes a while to hash.
+    const deliveredCheckpoint = checkpointAcpTranscript(options.priorMessages, options.userPrompt)
+    // Settled here too, so a prompt that fails first leaves no unhandled rejection.
+    deliveredCheckpoint.catch(() => undefined)
     try {
       perfMark('ttft:acp-prompt-start', { fresh })
       const outcome = await runAcpSessionPrompt(
@@ -1113,7 +1115,7 @@ async function runAcpAgentTurn(
       // the last confirmed prefix on cancellation or a transport failure so a
       // retry conservatively includes context the agent may never have seen.
       if (outcome.stopReason !== 'cancelled') {
-        const checkpoint = checkpointAcpTranscript(options.priorMessages, options.userPrompt)
+        const checkpoint = await deliveredCheckpoint
         entry.transcriptCheckpoint = checkpoint
         // A saved session link keeps it too, so the first turn after a relaunch
         // resumes without resending what the session already holds.

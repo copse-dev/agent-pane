@@ -14,6 +14,7 @@ import {
   closeSync,
 } from 'node:fs'
 import { promises as fsPromises } from 'node:fs'
+import { setImmediate as yieldToEventLoop } from 'node:timers/promises'
 import { basename, dirname, join, relative, resolve as resolvePath, sep } from 'node:path'
 import type { LLMMessage } from '@copse/llm/wire-types.ts'
 import type {
@@ -38,6 +39,7 @@ import {
 import { parseOkfMessage } from './okf-message.ts'
 import type { TurnOutcome } from './turn-outcome.ts'
 import { withImmutableMessageFiles } from './immutable-message-files.ts'
+import { jsonArrayElements } from './json-array-elements.ts'
 import { parseThreadMetaValue, parseThreadValue } from './thread-boundary.ts'
 import {
   parseSpine,
@@ -266,7 +268,14 @@ function writeStoreFileSync(path: string, data: string, mode?: number): void {
   }
 }
 
-async function writeStoreFileAsync(path: string, data: string, mode?: number): Promise<void> {
+/** A string, or pieces written in turn so that main can run between them. */
+type StoreFileData = string | Iterable<string>
+
+async function writeStoreFileAsync(
+  path: string,
+  data: StoreFileData,
+  mode?: number,
+): Promise<void> {
   assertStorePath(path)
   markIndexSourceWrite(path)
   await fsPromises.writeFile(path, data, {
@@ -331,7 +340,11 @@ function atomicWriteFile(path: string, data: string, mode?: number): void {
 }
 
 /** Async atomic replace with an operation-unique temp path, safe across yielded writes. */
-async function atomicWriteFileAsync(path: string, data: string, mode?: number): Promise<void> {
+async function atomicWriteFileAsync(
+  path: string,
+  data: StoreFileData,
+  mode?: number,
+): Promise<void> {
   assertStorePath(path)
   const tmp = `${path}.copse-${String(process.pid)}-${randomUUID()}.tmp`
   try {
@@ -409,11 +422,6 @@ function isAgentHistoryMessage(value: unknown): value is LLMMessage {
   )
 }
 
-/**
- * Parse `agent-history.json`. Corrupt JSON, missing fields, or a future
- * `v` fail closed to `null` (callers treat that as fresh provider history)
- * without touching the human transcript.
- */
 const providerStateMessageSchema = z.object({
   role: z.literal('provider_state'),
   state: z.object({
@@ -426,6 +434,59 @@ const providerStateMessageSchema = z.object({
   }),
 })
 
+/**
+ * `agent-history.json` as {@link agentHistoryFileChunks} writes it:
+ * `{"v":1,"messages":[…]}` and a newline, with no other whitespace.
+ */
+const AGENT_HISTORY_FILE_PREFIX = `{"v":${String(AGENT_HISTORY_VERSION)},"messages":[`
+const AGENT_HISTORY_FILE_PREFIX_BYTES = Buffer.from(AGENT_HISTORY_FILE_PREFIX)
+const AGENT_HISTORY_FILE_SUFFIX = ']}\n'
+/**
+ * Serialized history gathered into each write when saving. A thread whose
+ * history holds prompt images can reach tens of megabytes, so the save writes
+ * it in pieces this size and main runs between them.
+ */
+const AGENT_HISTORY_WRITE_CHUNK_CHARS = 1 << 20
+/** Bytes of history parsed between turns of the event loop when loading. */
+const AGENT_HISTORY_PARSE_SLICE_BYTES = 2 << 20
+
+/**
+ * The exact bytes of `agent-history.json`, in pieces of about
+ * {@link AGENT_HISTORY_WRITE_CHUNK_CHARS}. Each message is stringified on its
+ * own, which is byte for byte what one `JSON.stringify` of the whole envelope
+ * gives, but no single call or string spans the whole history.
+ */
+function* agentHistoryFileChunks(messages: readonly LLMMessage[]): Generator<string> {
+  let chunk = AGENT_HISTORY_FILE_PREFIX
+  for (const [index, message] of messages.entries()) {
+    chunk += `${index === 0 ? '' : ','}${JSON.stringify(message)}`
+    if (chunk.length >= AGENT_HISTORY_WRITE_CHUNK_CHARS) {
+      yield chunk
+      chunk = ''
+    }
+  }
+  yield `${chunk}${AGENT_HISTORY_FILE_SUFFIX}`
+}
+
+/**
+ * One stored history message, `'drop'` for provider state that no longer
+ * decodes, or null when the value is not a message at all, which makes the
+ * whole file invalid.
+ */
+function decodeAgentHistoryEntry(value: unknown): LLMMessage | 'drop' | null {
+  if (isRecord(value) && value['role'] === 'provider_state') {
+    // Invalid opaque state must not break the retained neutral fallback.
+    const decoded = providerStateMessageSchema.safeParse(value)
+    return decoded.success ? decoded.data : 'drop'
+  }
+  return isAgentHistoryMessage(value) ? value : null
+}
+
+/**
+ * Parse `agent-history.json`. Corrupt JSON, missing fields, or a future
+ * `v` fail closed to `null` (callers treat that as fresh provider history)
+ * without touching the human transcript.
+ */
 function parseAgentHistoryFile(raw: string): LLMMessage[] | null {
   const parsed = safeJsonParse(
     raw,
@@ -435,14 +496,50 @@ function parseAgentHistoryFile(raw: string): LLMMessage[] | null {
   )
   if (!parsed) return null
   const messages: LLMMessage[] = []
-  for (const message of parsed.messages) {
-    if (isRecord(message) && message['role'] === 'provider_state') {
-      // Invalid opaque state must not break the retained neutral fallback.
-      const decoded = providerStateMessageSchema.safeParse(message)
-      if (decoded.success) messages.push(decoded.data)
-    } else {
-      if (!isAgentHistoryMessage(message)) return null
-      messages.push(message)
+  for (const value of parsed.messages) {
+    const entry = decodeAgentHistoryEntry(value)
+    if (entry === null) return null
+    if (entry !== 'drop') messages.push(entry)
+  }
+  return messages
+}
+
+/** True when only `}` and whitespace follow the messages array, as the writer leaves it. */
+function endsAgentHistoryEnvelope(bytes: Buffer, from: number): boolean {
+  let closed = false
+  for (let at = from; at < bytes.length; at++) {
+    const byte = bytes[at]
+    if (byte === 0x7d && !closed) closed = true
+    else if (byte !== 0x20 && byte !== 0x0a && byte !== 0x0d && byte !== 0x09) return false
+  }
+  return closed
+}
+
+/**
+ * {@link parseAgentHistoryFile} from the file's bytes, one message at a time,
+ * letting the event loop run every {@link AGENT_HISTORY_PARSE_SLICE_BYTES}. A
+ * file in the layout the writer produces is split without decoding it whole;
+ * any other layout (hand-edited, say) takes the whole-file parse. Both give the
+ * same messages and fail closed the same way.
+ */
+async function parseAgentHistoryBytes(bytes: Buffer): Promise<LLMMessage[] | null> {
+  const prefixLength = AGENT_HISTORY_FILE_PREFIX_BYTES.length
+  const array = bytes.subarray(0, prefixLength).equals(AGENT_HISTORY_FILE_PREFIX_BYTES)
+    ? jsonArrayElements(bytes, prefixLength - 1)
+    : null
+  if (array === null || !endsAgentHistoryEnvelope(bytes, array.end)) {
+    return parseAgentHistoryFile(bytes.toString('utf8'))
+  }
+  const messages: LLMMessage[] = []
+  let sinceYield = 0
+  for (const [start, end] of array.elements) {
+    const entry = safeJsonParse(bytes.toString('utf8', start, end), decodeAgentHistoryEntry)
+    if (entry === null) return null
+    if (entry !== 'drop') messages.push(entry)
+    sinceYield += end - start
+    if (sinceYield >= AGENT_HISTORY_PARSE_SLICE_BYTES) {
+      sinceYield = 0
+      await yieldToEventLoop()
     }
   }
   return messages
@@ -667,6 +764,21 @@ async function readOrNull(path: string, strict = false): Promise<string | null> 
     }
   } catch (error) {
     if (strict && !(isRecord(error) && error['code'] === 'ENOENT')) throw error
+    return null
+  }
+}
+
+/** {@link readOrNull} as bytes, for a file the caller decodes in pieces. */
+async function readBytesOrNull(path: string): Promise<Buffer | null> {
+  try {
+    assertStorePath(path)
+    const handle = await fsPromises.open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+    try {
+      return await handle.readFile()
+    } finally {
+      await handle.close()
+    }
+  } catch {
     return null
   }
 }
@@ -2953,7 +3065,7 @@ function writeAgentHistorySnapshot(
 ): void {
   const dir = threadDir(projectId, threadId)
   mkdirSync(dir, { recursive: true })
-  const body = `${JSON.stringify({ v: AGENT_HISTORY_VERSION, messages: stripToolResultImages(messages) })}\n`
+  const body = [...agentHistoryFileChunks(stripToolResultImages(messages))].join('')
   atomicWriteFile(join(dir, AGENT_HISTORY_FILE), body)
 }
 
@@ -3587,27 +3699,45 @@ export function readThreadDirectory(
   })
 }
 
-/** Load provider history for a thread. Missing/corrupt/future-version → `[]`. */
-export function loadAgentHistory(projectId: string, threadId: string): Promise<LLMMessage[]> {
-  return runSerialized(queueKey(projectId), () => {
+/**
+ * Load provider history for a thread. Missing/corrupt/future-version → `[]`.
+ *
+ * A history that carries prompt images can be tens of megabytes, so the read is
+ * asynchronous and the parse goes a message at a time, letting main run between
+ * slices. Only the read holds the project's write queue: the parse works on the
+ * bytes it got, and other writes to the project need not wait for it.
+ */
+export async function loadAgentHistory(projectId: string, threadId: string): Promise<LLMMessage[]> {
+  const bytes = await runSerialized(queueKey(projectId), () => {
     recoverPendingHistoryEdit(projectId, threadId)
-    const raw = safeRead(agentHistoryPath(projectId, threadId))
-    if (raw === null) return []
-    return parseAgentHistoryFile(raw) ?? []
+    return readBytesOrNull(agentHistoryPath(projectId, threadId))
   })
+  if (bytes === null) return []
+  return (await parseAgentHistoryBytes(bytes)) ?? []
 }
 
-/** Atomically replace the provider-history snapshot for a thread. */
+/**
+ * Atomically replace the provider-history snapshot for a thread: the new file
+ * is written beside the old one and renamed over it, so a crash leaves either
+ * version whole. The write is asynchronous and in pieces, so a large history
+ * does not hold main for the whole serialize-and-write.
+ */
 export function saveAgentHistory(
   projectId: string,
   threadId: string,
-  messages: LLMMessage[],
+  messages: readonly LLMMessage[],
 ): Promise<void> {
-  return runSerialized(queueKey(projectId), () => {
-    // Images a tool produced (video frames) are regenerable from the paths its
-    // text result names, so they never reach the sidecar — see
-    // `stripToolResultImages` for why that matters to file size.
-    writeAgentHistorySnapshot(projectId, threadId, messages)
+  // Images a tool produced (video frames) are regenerable from the paths its
+  // text result names, so they never reach the sidecar — see
+  // `stripToolResultImages` for why that matters to file size. The copy it
+  // returns is taken now, so a caller that goes on to extend its array cannot
+  // change what this save writes while it waits for the queue.
+  const snapshot = stripToolResultImages(messages)
+  return runSerialized(queueKey(projectId), async () => {
+    const dir = threadDir(projectId, threadId)
+    assertStorePath(dir)
+    await fsPromises.mkdir(dir, { recursive: true })
+    await atomicWriteFileAsync(join(dir, AGENT_HISTORY_FILE), agentHistoryFileChunks(snapshot))
   })
 }
 

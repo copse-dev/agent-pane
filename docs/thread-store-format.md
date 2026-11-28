@@ -220,7 +220,16 @@ Source files remain authoritative; deleting this cache is safe.
 - **`agent-history.json`** is a versioned snapshot of the provider-format
   `LLMMessage[]` used to resume the agent loop after a restart (issue #993).
   Shape: `{ "v": 1, "messages": [ … ] }`. It is **not** append-only — context
-  trimming replaces the whole file via an atomic write. Corrupt JSON, a missing
+  trimming replaces the whole file via an atomic write. Copse writes exactly
+  `{"v":1,"messages":[…]}` and a newline, with no other whitespace, in pieces of
+  about 1 MB to a temporary file that is then renamed over the old one, so a
+  crash leaves one version or the other whole and main runs between pieces. A
+  read of that layout splits it into messages and parses one at a time, so a
+  history of tens of megabytes never holds main for long; any other valid JSON
+  layout (a hand edit, say) is still read, by one whole-file parse. Tool-result
+  images are stripped before the write (the tool can regenerate them), but
+  user-prompt images stay inline as data URLs, so a thread that generates images
+  carries them all here. Corrupt JSON, a missing
   file, or an unsupported future `v` fail closed to fresh provider history
   without damaging the human transcript in `events.jsonl` / `messages/`. Do not
   log history values. Besides conversational messages it may hold

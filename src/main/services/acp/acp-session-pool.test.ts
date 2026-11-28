@@ -854,7 +854,7 @@ describe('acp-session-pool', () => {
     const first = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
     first.entry.open.handlers.current = sink([])
     await runAcpSessionPrompt(first.entry.open, 'one', undefined)
-    const checkpoint = checkpointAcpTranscript([], 'one')
+    const checkpoint = await checkpointAcpTranscript([], 'one')
     first.entry.transcriptCheckpoint = checkpoint
     const originalSessionId = first.entry.open.session.sessionId
 

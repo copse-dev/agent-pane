@@ -534,6 +534,110 @@ describe('AgentDispatcher', () => {
     assert.equal(recoverCount, 1)
   })
 
+  it('shares one sidecar load between callers that miss the cache together', async () => {
+    const stored: LLMMessage[] = [{ role: 'assistant', content: 'prior' }]
+    let loadCount = 0
+    let release: (messages: LLMMessage[]) => void = () => undefined
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        loadHistory: () => {
+          loadCount += 1
+          return new Promise((resolve) => {
+            release = resolve
+          })
+        },
+      }),
+    )
+
+    // A context estimate, a second estimate and a dispatch all arrive while
+    // the first read of a large sidecar is still parsing.
+    const reads = [
+      dispatcher.history('project-1', 'thread-1'),
+      dispatcher.history('project-1', 'thread-1'),
+      dispatcher.history('project-1', 'thread-1'),
+    ]
+    await settle()
+    release(stored)
+    const [first, second, third] = await Promise.all(reads)
+
+    assert.equal(loadCount, 1)
+    assert.equal(first, stored)
+    assert.equal(second, stored)
+    assert.equal(third, stored)
+    assert.equal(await dispatcher.history('project-1', 'thread-1'), stored)
+    assert.equal(loadCount, 1)
+  })
+
+  it('does not cache a load that was forgotten while it read', async () => {
+    let loadCount = 0
+    const releases: Array<(messages: LLMMessage[]) => void> = []
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        loadHistory: () => {
+          loadCount += 1
+          return new Promise((resolve) => releases.push(resolve))
+        },
+      }),
+    )
+
+    const stale = dispatcher.history('project-1', 'thread-1')
+    await settle()
+    // A history edit replaced the sidecar while the old file was being read.
+    dispatcher.forgetHistory('project-1', 'thread-1')
+    releases[0]?.([{ role: 'assistant', content: 'before the edit' }])
+    await stale
+
+    const fresh = dispatcher.history('project-1', 'thread-1')
+    await settle()
+    releases[1]?.([{ role: 'assistant', content: 'after the edit' }])
+    assert.deepEqual(await fresh, [{ role: 'assistant', content: 'after the edit' }])
+    assert.equal(loadCount, 2)
+  })
+
+  it('does not start a turn on an empty history a load read before the prompt was saved', async () => {
+    const recovered: LLMMessage[] = [{ role: 'user', content: 'the question a dead turn lost' }]
+    const saved: LLMMessage[][] = []
+    let release: () => void = () => undefined
+    let recoveries = 0
+    let promptSaved = false
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        loadHistory: async () => [],
+        // The transcript only has something to give once the prompt is saved;
+        // the first rebuild reads it before then and finishes later.
+        recoverHistory: async () => {
+          recoveries += 1
+          const sawPrompt = promptSaved
+          if (recoveries === 1) await new Promise<void>((resolve) => (release = resolve))
+          return sawPrompt ? recovered : []
+        },
+        saveHistory: async (_projectId, _threadId, messages) => {
+          saved.push(messages)
+        },
+      }),
+    )
+
+    // A context estimate starts loading before the outgoing prompt is saved;
+    // the dispatch then joins that read.
+    const estimate = dispatcher.history('project-1', 'thread-1')
+    await settle()
+    const dispatched = dispatcher.dispatch(request())
+    await settle()
+    promptSaved = true
+    release()
+    assert.deepEqual(await estimate, [])
+    await dispatched
+
+    assert.equal(recoveries, 2)
+    assert.deepEqual(saved, [[...recovered, { role: 'user', content: 'continue' }]])
+  })
+
   it('persists each mid-turn checkpoint and finishes on the committed history', async () => {
     const saved: LLMMessage[][] = []
     const dispatcher = new AgentDispatcher(
