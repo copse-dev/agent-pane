@@ -162,7 +162,15 @@ import { senderProjectId } from './ipc/sender-project-root.ts'
 import { diffAcceptancePrompt, setDiffAcceptanceHandler } from './services/diff-acceptance-wake.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
 import { setRemoteWatcherInstallApprover } from './services/ssh-workspace/remote-watcher-install-approval.ts'
+import { storageGet } from './services/storage/storage.ts'
 import { setSshWorkerInstallApprover } from './services/ssh-worker/ssh-worker-install-approval.ts'
+import { SSH_THREAD_BUSY } from './services/ssh-worker/ssh-worker-seed.ts'
+import { SshThreadRefused } from '@shared/ssh-thread-refused.ts'
+import {
+  createSshTurnHosts,
+  sshProjectOf,
+  type SshTurnHosts,
+} from './services/ssh-worker/ssh-turn-hosts.ts'
 import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-watcher.ts'
 import {
   reapOversizedGortexDaemon,
@@ -974,6 +982,11 @@ app
       }
       const link = createTurnHostLink(launch)
       turnHostLink = link
+      // An SSH project's turns run on its host's worker, which keeps the
+      // thread there (docs/plans/harness-worker-roadmap.md, R3 step 3).
+      sshTurnHosts = createSshTurnHosts(launch, (message) => {
+        foreignTurnDependencies.deliver?.(message)
+      })
       // The host re-reads the profile before its next turn once the app wrote
       // it; one notice for every write made in the same tick.
       let profileNoticePending = false
@@ -1426,15 +1439,39 @@ app
         // With the turn host on, a turn runs there unless the host provably
         // never ran it (`turn-host-link.ts`). Delegated prompts stay in main,
         // where their grant is checked.
+        // A thread the app is already running stays in the app, so the copy
+        // here and the host's never go apart.
+        // A delegated prompt runs here, so not while the host runs the thread.
+        if (delegation && sshTurnHosts?.runningThreadIds().includes(threadId) === true)
+          throw new SshThreadRefused(SSH_THREAD_BUSY)
+        const onSshHost =
+          !delegation && sshTurnHosts && !listRunningThreadIds().includes(threadId)
+            ? sshProjectOf(storageGet('projects'), projectId)
+            : null
+        const ranOnSshHost =
+          onSshHost !== null && sshTurnHosts
+            ? (await sshTurnHosts.run(
+                onSshHost.hostId,
+                onSshHost.project,
+                threadId,
+                rawPrompt,
+                // The host runs its own commands, which the app does not confine.
+                {
+                  ...(await turnNeeds(projectId, threadId, request.payload.model)),
+                  sandbox: false,
+                },
+              )) === 'host'
+            : false
         const ranInHost =
-          !delegation && turnHostLink?.ready === true
+          ranOnSshHost ||
+          (!delegation && turnHostLink?.ready === true
             ? (await turnHostLink.run(
                 projectId,
                 threadId,
                 rawPrompt,
                 await turnNeeds(projectId, threadId, request.payload.model),
               )) === 'host'
-            : false
+            : false)
         // The host gives the thread's lease back before its last transcript
         // write lands, so the follower's repaint at the release can still read
         // the turn as running. `ended` comes after that write: paint it again.
@@ -1588,11 +1625,8 @@ app
       transcriptWriter.noteUserAbort(threadId, reason ?? 'stop')
       abortAgent(threadId, reason)
       // A turn a worker or the turn host runs stops there.
-      if (
-        !foreignTurns.requestStop(threadId) &&
-        turnHostLink?.runningThreadIds().includes(threadId)
-      )
-        turnHostLink.stop(threadId)
+      if (foreignTurns.requestStop(threadId) || sshTurnHosts?.stop(threadId) === true) return
+      if (turnHostLink?.runningThreadIds().includes(threadId)) turnHostLink.stop(threadId)
     })
 
     // Thread ids with a live in-process run, so a renderer that's just loaded a
@@ -1602,7 +1636,8 @@ app
     ipcMain.handle('agent:running-thread-ids', async (event) => {
       assertMainFrameSender(event, win)
       const foreign = await foreignTurns.discover()
-      return [...new Set([...listRunningThreadIds(), ...foreign])]
+      const onSshHosts = sshTurnHosts?.runningThreadIds() ?? []
+      return [...new Set([...listRunningThreadIds(), ...foreign, ...onSshHosts])]
     })
 
     // Re-run just the post-turn review for a thread — the retry action on a
@@ -1882,6 +1917,8 @@ let listActiveTurns: (() => HandOffTarget[]) | undefined
 let stopFollowingForeignTurns: (() => void) | undefined
 /** The line to the resident turn host, when `turnsRunInHost` is on. */
 let turnHostLink: TurnHostLink | undefined
+/** SSH projects' turn hosts, when `turnsRunInHost` is on. */
+let sshTurnHosts: SshTurnHosts | undefined
 
 /**
  * Start a turn worker for each turn this quit cut off, so it continues now
@@ -1917,10 +1954,14 @@ async function cleanupBeforeQuit(): Promise<void> {
   // A stopped host turn ends as a quit-interrupted one (Retry on the next
   // launch); the quit waits for its commands to drain, as for in-process turns.
   const hostLink = turnHostLink
-  const hostTurnsStopped =
+  const hostTurnsStopped = Promise.all([
     hostLink && (!quitHandsOff || quitInstallsUpdate())
       ? hostLink.stopAllForQuit(HOST_TURN_QUIT_DRAIN_MS)
-      : Promise.resolve()
+      : undefined,
+    // An SSH host's turns cannot go on without this app to make their model
+    // calls: every quit stops them.
+    sshTurnHosts?.stopAllForQuit(HOST_TURN_QUIT_DRAIN_MS),
+  ])
   stopFollowingForeignTurns?.()
   const transcriptDrain = interruptTurnTranscripts?.()
   // Host-side default-branch fetches run in their own process group and would

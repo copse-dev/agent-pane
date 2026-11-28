@@ -17,6 +17,7 @@ import { buildRemoteArgvCommand, buildRemoteShellCommand } from './remote-exec.t
 import type { SshConnectOptions, SshExecOptions, SshTransport } from './transport.ts'
 import {
   appendFlatCapped,
+  FlatCappedText,
   COMMAND_OUTPUT_MAX_BYTES,
   COMMAND_RUNNER_DEFAULT_TIMEOUT_MS,
 } from '../exec/subprocess-output-cap.ts'
@@ -142,8 +143,8 @@ async function runLocalSsh(
       return
     }
 
-    let stdout = ''
-    let stderr = ''
+    const stdout = new FlatCappedText(maxBytes)
+    const stderr = new FlatCappedText(maxBytes)
     let settled = false
 
     const settle = (fn: () => void): void => {
@@ -186,10 +187,10 @@ async function runLocalSsh(
     const stdoutDecoder = new StringDecoder('utf8')
     const stderrDecoder = new StringDecoder('utf8')
     proc.stdout?.on('data', (chunk: Buffer) => {
-      stdout = appendFlatCapped(stdout, stdoutDecoder.write(chunk), maxBytes)
+      stdout.append(stdoutDecoder.write(chunk))
     })
     proc.stderr?.on('data', (chunk: Buffer) => {
-      stderr = appendFlatCapped(stderr, stderrDecoder.write(chunk), maxBytes)
+      stderr.append(stderrDecoder.write(chunk))
     })
 
     proc.on('close', (code) => {
@@ -199,10 +200,10 @@ async function runLocalSsh(
       askpass.release()
       if (settled) return
       settled = true
-      stdout = appendFlatCapped(stdout, stdoutDecoder.end(), maxBytes)
-      stderr = appendFlatCapped(stderr, stderrDecoder.end(), maxBytes)
+      stdout.append(stdoutDecoder.end())
+      stderr.append(stderrDecoder.end())
       settle(() => {
-        resolve({ stdout, stderr, code: code ?? 1 })
+        resolve({ stdout: stdout.text(), stderr: stderr.text(), code: code ?? 1 })
       })
     })
 

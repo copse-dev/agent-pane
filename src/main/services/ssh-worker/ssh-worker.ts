@@ -71,6 +71,8 @@ export type SshWorkerStart =
       remoteSocket: string
       uploaded: boolean
       hello: SshWorkerHello
+      /** The host's Node, which runs the worker and its helper scripts. */
+      node: RemoteNode
     }
   | { ok: false; reason: string }
 
@@ -202,7 +204,7 @@ async function startOnce(hostId: string, deps: SshWorkerDependencies): Promise<S
     const hello = await say(localSocket, true)
     if (hello?.version === deps.version) {
       await prune(connection, node, worker.id)
-      return { ok: true, localSocket, remoteSocket, uploaded, hello }
+      return { ok: true, localSocket, remoteSocket, uploaded, hello, node }
     }
     if (hello !== null && newer(hello.version, deps.version)) {
       await connection.transport.closeSocketForward(localSocket)
