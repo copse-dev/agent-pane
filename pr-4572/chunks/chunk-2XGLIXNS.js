@@ -27416,6 +27416,22 @@ var init_agent_turn_busy = __esm({
   }
 });
 
+// src/shared/ssh-thread-refused.ts
+function sshThreadRefusal(reason) {
+  if (reason instanceof Error && reason.name === SSH_THREAD_REFUSED_ERROR_NAME)
+    return reason.message;
+  const text = errorMessage(reason);
+  const at3 = text.indexOf(`${SSH_THREAD_REFUSED_ERROR_NAME}: `);
+  return at3 < 0 ? null : text.slice(at3 + SSH_THREAD_REFUSED_ERROR_NAME.length + 2);
+}
+var SSH_THREAD_REFUSED_ERROR_NAME;
+var init_ssh_thread_refused = __esm({
+  "src/shared/ssh-thread-refused.ts"() {
+    init_errors4();
+    SSH_THREAD_REFUSED_ERROR_NAME = "SshThreadRefused";
+  }
+});
+
 // src/shared/thread-prompt.ts
 function isSubthreadPromptHeldError(reason) {
   if (reason instanceof Error && reason.name === SUBTHREAD_PROMPT_HELD_ERROR_NAME) return true;
@@ -27568,13 +27584,27 @@ function dispatchAgentRun(store, api, threadId, payload, queued) {
         if (!isSubthreadPromptHeldError(err)) throw err;
       }
     }
-    holdRevokedSubthreadPrompt(store, threadId, queued);
+    holdQueuedPrompt(store, threadId, queued);
   });
+  const refused = (err) => {
+    const reason = sshThreadRefusal(err);
+    if (reason === null) return false;
+    setThreadStatus(store, threadId, "idle");
+    syncAgentActivity(store, threadId, false);
+    showToast(reason, { variant: "error" });
+    return true;
+  };
   if (!queued) {
-    void run;
+    void run.catch((err) => {
+      if (!refused(err)) throw err;
+    });
     return;
   }
   void run.catch((err) => {
+    if (refused(err)) {
+      holdQueuedPrompt(store, threadId, queued);
+      return;
+    }
     if (!isAgentTurnBusyError(err)) throw err;
     requeueBusyMessage(store, api, threadId, queued);
   }).finally(() => {
@@ -27588,7 +27618,7 @@ function subthreadParentOf(item) {
   const operationId = item.origin?.kind === "machine" ? item.origin.operationId : "";
   return operationId.startsWith(SUBTHREAD_OPERATION_PREFIX) ? operationId.slice(SUBTHREAD_OPERATION_PREFIX.length) : void 0;
 }
-function holdRevokedSubthreadPrompt(store, threadId, item) {
+function holdQueuedPrompt(store, threadId, item) {
   patchThreadAnywhere(store, threadId, (thread) => ({
     ...thread,
     status: "idle",
@@ -27930,6 +27960,8 @@ var init_message_queue = __esm({
     init_thread_hydration();
     init_perf();
     init_agent_turn_busy();
+    init_ssh_thread_refused();
+    init_toast();
     init_thread_prompt();
     init_send_now_aborts();
     init_persistence();
