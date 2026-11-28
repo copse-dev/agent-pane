@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import type { ReviewedTurn } from './reviewed-turn.ts'
 import type { TurnWorkerConnection, WorkerToApp } from '../turn-worker/turn-worker-socket.ts'
 import type { SshPromptResponse } from '../ssh-workspace/ssh-prompt.ts'
 import type { ThreadPromptResult } from '@shared/thread-prompt.ts'
@@ -222,14 +223,15 @@ export class TurnHostLink {
   }
 
   /**
-   * Run a turn in the host. Resolves `app` when the host cannot run what the
-   * turn needs, refused it or provably never ran it, and `host` once the host
-   * has run it (or the follower has it).
+   * Run a turn main's protected review approved in the host. Resolves `app`
+   * when the host cannot run what the turn needs, refused it or provably never
+   * ran it, and `host` once the host has run it (or the follower has it).
    */
   async run(
     projectId: string,
     threadId: string,
     payload: string,
+    reviewed: ReviewedTurn,
     needs: TurnNeeds,
   ): Promise<TurnPlacement> {
     if (!(await this.ensureConnected())) return 'app'
@@ -254,7 +256,7 @@ export class TurnHostLink {
       },
       done: ended.promise,
     })
-    this.send({ t: 'dispatch', id, projectId, threadId, payload })
+    this.send({ t: 'dispatch', id, projectId, threadId, payload, reviewed })
     const placement = await placed.promise
     if (placement === 'host') await ended.promise
     this.pending.delete(id)

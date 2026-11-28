@@ -10,7 +10,8 @@ import {
 
 export const HOST_INFERENCE_TARGET = 'inference.copse.internal:443'
 export const INFERENCE_MESSAGE_LIMIT = 4 * 1024 * 1024
-const message: z.ZodType<LLMMessage> = z.discriminatedUnion('role', [
+/** One provider-history message, as the agent loop keeps it. */
+export const llmMessageSchema: z.ZodType<LLMMessage> = z.discriminatedUnion('role', [
   z.object({ role: z.literal('system'), content: z.string() }),
   z.object({ role: z.literal('developer'), content: z.string() }),
   z.object({
@@ -55,7 +56,7 @@ const message: z.ZodType<LLMMessage> = z.discriminatedUnion('role', [
 ])
 export const inferenceRequestSchema = z
   .object({
-    messages: z.array(message).max(1024),
+    messages: z.array(llmMessageSchema).max(1024),
     tools: z
       .array(
         z.object({

@@ -4,7 +4,7 @@ import type { TodoItem } from './wire-types.ts'
 import { z } from 'zod'
 import { isRecord } from '@copse/std/unknown-value.ts'
 
-const userContentSchema = z.union([
+export const userContentSchema = z.union([
   z.string(),
   z.array(
     z.discriminatedUnion('type', [
