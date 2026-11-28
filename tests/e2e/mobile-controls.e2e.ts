@@ -382,7 +382,16 @@ describe('Mobile Companion control over verified local HTTPS', function () {
     // provider request and final checkpoint must retain the answer/tool result
     // and assistant completion appended after admission, not replace the
     // sidecar with the earlier frozen prefix.
-    const queuedHistory = persistedProviderHistory(threadId)
+    // The sidecar is committed when the run finishes, which can land just
+    // after the transcript shows the reply, so wait for the queued run's commit.
+    let queuedHistory = ''
+    await browser.waitUntil(
+      () => {
+        queuedHistory = persistedProviderHistory(threadId)
+        return queuedHistory.includes('Your phone started this chat and queued this follow-up.')
+      },
+      { timeout: 10_000, timeoutMsg: 'the queued run committed its provider history' },
+    )
     assert.match(queuedHistory, /Focused tests/)
     assert.match(queuedHistory, /The focused tests passed\./)
     assert.match(queuedHistory, /Your phone started this chat and queued this follow-up\./)
