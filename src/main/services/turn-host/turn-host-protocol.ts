@@ -9,6 +9,10 @@ import {
   type LocalLineServer,
 } from '../local-socket.ts'
 import type { StreamChunk, TranscriptSnapshot, TranscriptStamp } from '@shared/types'
+import type { LLMMessage, LLMTool, ProviderStreamChunk } from '@copse/llm/wire-types.ts'
+import { providerStreamChunkSchema } from '@copse/llm/provider-stream-schema.ts'
+import { REASONING_LEVELS, type ReasoningLevel } from '@copse/llm/model-parameters.ts'
+import { inferenceRequestSchema } from '../container-runtime/host-inference-wire.ts'
 import type { ThreadPromptCommand, ThreadPromptResult } from '@shared/thread-prompt.ts'
 import type { AskUserRequest, AskUserResult } from '../ask-user.ts'
 import {
@@ -68,11 +72,16 @@ import {
  *   model scenario in the host, where host turns claim their responses; the
  *   host answers `test-scenario-result`. A release build's host refuses it.
  *
+ * - `infer` asks the app to make a model call for a worker that holds no keys
+ *   (`host-inference-relay.ts`); the app streams the reply as `infer-chunk`,
+ *   then `infer-end` or `infer-error`, with `infer-alive` each minute while
+ *   it is still working on one. `infer-cancel` stops it.
+ *
  * Written for any transport: nothing here assumes the two ends share a machine
  * beyond the profile path (`harness-worker-roadmap.md` R2).
  */
 
-export const TURN_HOST_PROTOCOL = 2
+export const TURN_HOST_PROTOCOL = 3
 
 export type AppToHost =
   | { t: 'hello'; version: string; protocol: number }
@@ -100,6 +109,35 @@ export type AppToHost =
       threadId: string
     }
   | { t: 'processes'; id: string }
+  | { t: 'infer-chunk'; id: string; chunk: ProviderStreamChunk }
+  | { t: 'infer-end'; id: string }
+  | { t: 'infer-error'; id: string; error: string }
+  | { t: 'infer-alive'; id: string }
+
+/** The provider settings a relayed model call is made with (`BuildProviderOptions`). */
+export interface RelayedProviderOptions {
+  reasoning?: ReasoningLevel | undefined
+  maxReasoning?: ReasoningLevel | undefined
+  maxOutputTokens?: number | undefined
+}
+
+/** A worker's model call, which the app makes with its own keys. */
+export interface HostInferRequest {
+  t: 'infer'
+  id: string
+  model: string
+  promptCacheKey?: string | undefined
+  providerOptions: RelayedProviderOptions
+  messages: LLMMessage[]
+  tools: LLMTool[]
+  options?:
+    | {
+        toolChoice?: { name: string } | undefined
+        compactAtTokens?: number | undefined
+        suppressReasoning?: boolean | undefined
+      }
+    | undefined
+}
 
 /** A scripted model scenario operation, for e2e builds (`mock-script.ts`). */
 export type TestScenarioOp =
@@ -198,6 +236,8 @@ export type HostToApp =
   | { t: 'taken'; projectId: string; threadId: string }
   | { t: 'process-result'; id: string; ok: boolean; logs?: HostProcessLogs | null | undefined }
   | { t: 'processes-result'; id: string; processes: HostProcessRoot[] }
+  | HostInferRequest
+  | { t: 'infer-cancel'; id: string }
   /** Every turn running when `stop-all` came has ended. */
   | { t: 'stopped-all' }
   | { t: 'approval-cancel'; id: string }
@@ -260,6 +300,11 @@ export const appToHostSchema = z.discriminatedUnion('t', [
     threadId: id,
   }),
   z.object({ t: z.literal('processes'), id }),
+  // Made by the app's own provider for a call this worker asked for.
+  z.object({ t: z.literal('infer-chunk'), id, chunk: providerStreamChunkSchema }),
+  z.object({ t: z.literal('infer-end'), id }),
+  z.object({ t: z.literal('infer-error'), id, error: z.string().max(8_000) }),
+  z.object({ t: z.literal('infer-alive'), id }),
   z.object({
     t: z.literal('ask-user-answer'),
     id,
@@ -361,6 +406,43 @@ export const HOST_CHECKED_SHAPES: ReadonlyMap<z.core.$ZodType, z.ZodType> = new 
 
 // Chunks and snapshots come from this user's own host, written by the same
 // code that writes them in-process; the envelope is checked, the payload is not.
+/**
+ * A worker's model call. Both ends check it: the worker before it sends, so a
+ * call too big for the line fails at once instead of being dropped, and the
+ * app before it spends anything on it. The messages are those a container
+ * run's guest may send (`host-inference-wire.ts`), with room for a long thread.
+ */
+/**
+ * The model calls a worker keeps open at once; it holds later ones until one
+ * ends. The app refuses more than twice this, which only a broken or hostile
+ * worker would send.
+ */
+export const MAX_OPEN_INFERENCES = 8
+
+/** How often the app says it is still working on a call that sends nothing. */
+export const INFER_ALIVE_MS = 60_000
+
+export const hostInferRequestSchema = z.object({
+  t: z.literal('infer'),
+  id,
+  model: z.string().min(1).max(512),
+  promptCacheKey: z.string().max(512).optional(),
+  providerOptions: z.object({
+    reasoning: z.enum(REASONING_LEVELS).optional(),
+    maxReasoning: z.enum(REASONING_LEVELS).optional(),
+    maxOutputTokens: z.number().int().positive().max(10_000_000).optional(),
+  }),
+  messages: z.array(inferenceRequestSchema.shape.messages.element).max(20_000),
+  tools: z.array(inferenceRequestSchema.shape.tools.element).max(2_000),
+  options: z
+    .object({
+      toolChoice: z.object({ name: z.string().max(256) }).optional(),
+      compactAtTokens: z.number().int().positive().optional(),
+      suppressReasoning: z.boolean().optional(),
+    })
+    .optional(),
+})
+
 export const hostToAppSchema = z.discriminatedUnion('t', [
   z.object({
     t: z.literal('hello'),
@@ -488,6 +570,8 @@ export const hostToAppSchema = z.discriminatedUnion('t', [
       .max(10_000),
   }),
   z.object({ t: z.literal('stopped-all') }),
+  hostInferRequestSchema,
+  z.object({ t: z.literal('infer-cancel'), id }),
   z.object({ t: z.literal('taken'), projectId: id, threadId: id }),
   z.object({ t: z.literal('approval-cancel'), id }),
   z.object({
@@ -552,7 +636,7 @@ export type TurnHostServer = LocalLineServer<HostToApp>
 export function serveTurnHost(
   path: string,
   onMessage: (message: AppToHost, client: TurnHostClient) => void,
-  onLeave: () => void,
+  onLeave: (client: TurnHostClient) => void,
 ): Promise<TurnHostServer> {
   return serveLocalLine<AppToHost, HostToApp>(path, appToHostSchema, onMessage, onLeave)
 }

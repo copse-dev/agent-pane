@@ -148,7 +148,7 @@ cd "$dir" || exit 1
 # The worker outlives this connection: it must not hold a forwarded agent.
 unset SSH_AUTH_SOCK
 if command -v setsid >/dev/null 2>&1; then detach=setsid; else detach=; fi
-$detach nohup "$node" ${SSH_WORKER_BUNDLE} --user-data "$dir/profile" --app-version "$version" --ready-file "$ready" >"$dir/worker.log" 2>&1 </dev/null &
+$detach nohup "$node" ${SSH_WORKER_BUNDLE} --user-data "$dir/profile" --app-version "$version" --ready-file "$ready" --relay-inference >"$dir/worker.log" 2>&1 </dev/null &
 pid=$!
 tries=0
 while [ ! -s "$ready" ]; do

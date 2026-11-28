@@ -312,6 +312,7 @@ export async function buildProvider(
       throw new Error('This isolated desktop can use only the approved parent model')
     return desktopGuestProvider()
   }
+  if (inferenceRelay !== null) return inferenceRelay(model, promptCacheKey, opts)
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return createProvider(model, {}, promptCacheKey)
   const chatGpt = parseChatGptPlanModel(model)
   if (chatGpt) {
@@ -326,6 +327,23 @@ export async function buildProvider(
   }
   const description = await describeProvider(model, opts)
   return buildResolvedProvider(description, apiKeyForDescription(description), promptCacheKey)
+}
+
+type InferenceRelay = (
+  model: string,
+  promptCacheKey: string | undefined,
+  opts: BuildProviderOptions,
+) => LLMProvider
+
+let inferenceRelay: InferenceRelay | null = null
+
+/**
+ * Make every model call through `relay` instead of with this process's own
+ * keys: a worker on an SSH host has the attached app make them
+ * (`turn-host/host-inference-relay.ts`). Only that worker's entry sets it.
+ */
+export function setInferenceRelay(relay: InferenceRelay | null): void {
+  inferenceRelay = relay
 }
 
 /** Captured generation parameters with credentials refreshed only for this selection. */

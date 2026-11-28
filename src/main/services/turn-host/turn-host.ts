@@ -1,3 +1,4 @@
+import type { HostInferenceRelay } from './host-inference-relay.ts'
 import { randomUUID } from 'node:crypto'
 import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
 import type { StreamChunk } from '@shared/types'
@@ -94,6 +95,11 @@ export interface TurnHostDependencies {
    * claim their responses here. Throws what the scenario store throws.
    */
   testScenario?: (op: TestScenarioOp) => TestScenarioStatus | undefined
+  /**
+   * Model calls made by the attached app, for a worker that holds no keys
+   * (`host-inference-relay.ts`). A host on the app's own machine has none.
+   */
+  inferenceRelay?: HostInferenceRelay
 }
 
 interface ClientState {
@@ -302,6 +308,12 @@ export class TurnHost {
       case 'test-scenario':
         client.send({ t: 'test-scenario-result', id: message.id, ...this.testScenario(message.op) })
         return
+      case 'infer-chunk':
+      case 'infer-end':
+      case 'infer-error':
+      case 'infer-alive':
+        this.deps.inferenceRelay?.receive(message, client)
+        return
     }
   }
 
@@ -478,7 +490,8 @@ export class TurnHost {
   }
 
   /** An attached app's line closed. */
-  left(): void {
+  left(client?: TurnHostClient): void {
+    if (client !== undefined) this.deps.inferenceRelay?.left(client)
     this.joined = Math.max(0, this.joined - 1)
     this.armIdle()
   }
@@ -491,6 +504,7 @@ export class TurnHost {
       this.attachedClients.add(client)
       this.joined += 1
       this.armIdle()
+      this.deps.inferenceRelay?.attach(client)
     }
     const byProject = new Map<string, string[]>()
     for (const turn of this.running.values()) {
