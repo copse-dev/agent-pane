@@ -26,7 +26,11 @@ import { reasoningReplayFor, type ReplayableReasoning } from './reasoning-replay
 import { prepareStrictTools } from './strict-tool-schema.ts'
 import { toolCallIdOrSynthesized } from './tool-call-id.ts'
 import { toolResultImageFollowUp } from './tool-result-images.ts'
-import { compactionReplayStart, type CompactionIdentity } from './provider-state.ts'
+import {
+  compactionReplayStart,
+  instructionsAheadOfCompaction,
+  type CompactionIdentity,
+} from './provider-state.ts'
 import type {
   LLMMessage,
   LLMProvider,
@@ -580,7 +584,8 @@ export function toResponsesInput(
   chatGptPlan = false,
 ): ResponseInput {
   // The compaction item stands in for everything before it, so those turns are
-  // not sent. Instructions are not turns and stay, ahead of the item.
+  // not sent. Instructions are not turns and stay, ahead of the item (only the
+  // newest developer steering: see instructionsAheadOfCompaction).
   const start = compactionReplayStart(messages, compaction)
   const stateFree = (list: readonly LLMMessage[]): LLMMessage[] =>
     list.filter((m) => m.role !== 'provider_state')
@@ -589,7 +594,7 @@ export function toResponsesInput(
     start === -1 || replayed === undefined
       ? stateFree(messages)
       : [
-          ...messages.slice(0, start).filter((m) => m.role === 'system' || m.role === 'developer'),
+          ...instructionsAheadOfCompaction(messages, start),
           replayed,
           ...stateFree(messages.slice(start + 1)),
         ]
