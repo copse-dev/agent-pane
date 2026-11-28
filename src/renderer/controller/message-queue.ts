@@ -14,9 +14,7 @@ import {
   addMessage,
   clearContextSnapshot,
   getThreadById,
-  getThreadProjectId,
   patchThreadAnywhere,
-  setMessageContent,
   setQueuePaused,
   setThreadStatus,
 } from '@shared/store/thread-helpers.ts'
@@ -37,7 +35,53 @@ import { sshThreadRefusal } from '@shared/ssh-thread-refused.ts'
 import { showToast } from '../views/toast.ts'
 import { isSubthreadPromptHeldError } from '@shared/thread-prompt.ts'
 import { markSendNowAbort } from './send-now-aborts.ts'
-import { afterThreadWrites, flushPendingThreadPersistence } from './persistence.ts'
+import {
+  afterThreadWrites,
+  flushPendingThreadPersistence,
+  loadPersistedThread,
+  persistThreadMetadataNow,
+  persistThreadMessageNow,
+} from './persistence.ts'
+import { ipcErrorMessage } from '../ipc-error-message.ts'
+
+const steeringPersistenceInFlight = new WeakMap<AppStore, Set<string>>()
+
+function steeringPersistenceKey(projectId: string, threadId: string, messageId: string): string {
+  return `${projectId}\0${threadId}\0${messageId}`
+}
+
+function beginSteeringPersistence(
+  store: AppStore,
+  projectId: string,
+  threadId: string,
+  messageId: string,
+): () => void {
+  let inFlight = steeringPersistenceInFlight.get(store)
+  if (!inFlight) {
+    inFlight = new Set()
+    steeringPersistenceInFlight.set(store, inFlight)
+  }
+  const key = steeringPersistenceKey(projectId, threadId, messageId)
+  inFlight.add(key)
+  return (): void => {
+    inFlight.delete(key)
+    if (inFlight.size === 0) steeringPersistenceInFlight.delete(store)
+  }
+}
+
+export function queuedSteeringIsBusy(
+  store: AppStore,
+  projectId: string,
+  thread: Thread,
+  item: QueuedUserMessage,
+): boolean {
+  return (
+    steeringPersistenceInFlight
+      .get(store)
+      ?.has(steeringPersistenceKey(projectId, thread.id, item.messageId)) === true ||
+    queuedSteeringIsPending(thread, item)
+  )
+}
 
 /**
  * A **held** queued message (decisions 5 & 16): `autoDispatch: false` means the
@@ -788,52 +832,63 @@ function withPayloadText(content: UserContent, text: string): UserContent {
  * Persist an inline edit to a queued message: updates both the run payload (what
  * the agent receives) and the displayed bubble text.
  */
+function replaceQueuedMessageText(
+  store: AppStore,
+  projectId: string,
+  threadId: string,
+  messageId: string,
+  text: string,
+): void {
+  patchQueuedMessageOwner(store, projectId, threadId, (current) =>
+    replaceQueuedMessageTextInThread(current, messageId, text),
+  )
+  store.emit('threads_changed')
+}
+
+function replaceQueuedMessageTextInThread(thread: Thread, messageId: string, text: string): Thread {
+  const item = thread.pendingMessages?.find((pending) => pending.messageId === messageId)
+  if (!item) return thread
+  const editedByUser = item.origin?.kind === 'hook'
+  return {
+    ...thread,
+    pendingMessages: (thread.pendingMessages ?? []).map((pending) => {
+      if (pending.messageId !== messageId) return pending
+      // Editing requires fresh desktop review. An authenticated phone grant
+      // authorizes only the exact text that crossed the HTTP boundary.
+      const {
+        mobilePromptGrantId: _mobilePromptGrantId,
+        threadPromptGrantId: _threadPromptGrantId,
+        ...editable
+      } = pending
+      return {
+        ...editable,
+        payload: {
+          ...pending.payload,
+          content: withPayloadText(pending.payload.content, text),
+        },
+        // Editing a hook-originated message keeps `kind: 'hook'` but
+        // flips `editedByUser` so the spine stays honest (decision 10).
+        ...(editedByUser ? { editedByUser: true } : {}),
+      }
+    }),
+    messages: thread.messages.map((message) =>
+      message.id !== messageId
+        ? message
+        : { ...message, content: text, ...(editedByUser ? { editedByUser: true } : {}) },
+    ),
+    updatedAt: Date.now(),
+  }
+}
+
 export function updateQueuedMessageText(
   store: AppStore,
   threadId: string,
   messageId: string,
   text: string,
 ): void {
-  const thread = store.getState().threads.find((t) => t.id === threadId)
-  const item = thread?.pendingMessages?.find((p) => p.messageId === messageId)
-  if (!item) return
-  const threads = store.getState().threads.map((t) =>
-    t.id !== threadId
-      ? t
-      : {
-          ...t,
-          pendingMessages: (t.pendingMessages ?? []).map((p) => {
-            if (p.messageId !== messageId) return p
-            // Editing requires fresh desktop review. An authenticated phone grant
-            // authorizes only the exact text that crossed the HTTP boundary.
-            const {
-              mobilePromptGrantId: _mobilePromptGrantId,
-              threadPromptGrantId: _threadPromptGrantId,
-              ...editable
-            } = p
-            return {
-              ...editable,
-              payload: { ...p.payload, content: withPayloadText(p.payload.content, text) },
-              // Editing a hook-originated message keeps `kind: 'hook'` but
-              // flips `editedByUser` so the spine stays honest (decision 10).
-              ...(p.origin?.kind === 'hook' ? { editedByUser: true } : {}),
-            }
-          }),
-          updatedAt: Date.now(),
-        },
-  )
-  store.setState({ threads })
-  setMessageContent(store, messageId, text)
-  // Keep the message honest: editing a hook-originated message flips
-  // `editedByUser` on the bubble too (decision 10), matching the queued item.
-  if (item.origin?.kind === 'hook') {
-    const withEdit = store.getState().threads.map((t) => ({
-      ...t,
-      messages: t.messages.map((m) => (m.id !== messageId ? m : { ...m, editedByUser: true })),
-    }))
-    store.setState({ threads: withEdit })
-  }
-  store.emit('threads_changed')
+  const owner = getQueuedMessageOwner(store, threadId, messageId)
+  if (!owner || queuedSteeringIsBusy(store, owner.projectId, owner.thread, owner.item)) return
+  replaceQueuedMessageText(store, owner.projectId, threadId, messageId, text)
 }
 
 /**
@@ -849,7 +904,10 @@ function patchQueuedMessageOwner(
   patch: (thread: Thread) => Thread,
 ): void {
   const state = store.getState()
-  if (state.activeProjectId === projectId) {
+  if (
+    state.activeProjectId === projectId &&
+    state.threads.some((thread) => thread.id === threadId)
+  ) {
     store.setState({
       threads: state.threads.map((thread) => (thread.id === threadId ? patch(thread) : thread)),
     })
@@ -865,6 +923,57 @@ function patchQueuedMessageOwner(
   store.emit('threads_changed')
 }
 
+function getProjectThread(
+  store: AppStore,
+  projectId: string,
+  threadId: string,
+): Thread | undefined {
+  const state = store.getState()
+  if (state.activeProjectId === projectId) {
+    const active = state.threads.find((thread) => thread.id === threadId)
+    if (active) return active
+  }
+  return state.backgroundThreads.find(
+    (entry) => entry.projectId === projectId && entry.thread.id === threadId,
+  )?.thread
+}
+
+function getQueuedMessageOwner(
+  store: AppStore,
+  threadId: string,
+  messageId: string,
+): { projectId: string; thread: Thread; item: QueuedUserMessage } | undefined {
+  const state = store.getState()
+  const active = state.threads.find((thread) => thread.id === threadId)
+  const activeItem = active?.pendingMessages?.find((item) => item.messageId === messageId)
+  if (state.activeProjectId && active && activeItem) {
+    return { projectId: state.activeProjectId, thread: active, item: activeItem }
+  }
+  for (const entry of state.backgroundThreads) {
+    if (entry.thread.id !== threadId) continue
+    const item = entry.thread.pendingMessages?.find(
+      (candidate) => candidate.messageId === messageId,
+    )
+    if (item) return { projectId: entry.projectId, thread: entry.thread, item }
+  }
+  return undefined
+}
+
+function withProjectMessage(thread: Thread, role: Message['role'], content: string): Thread {
+  const message: Message = {
+    id: globalThis.crypto.randomUUID(),
+    role,
+    content,
+    toolCalls: [],
+    createdAt: Date.now(),
+  }
+  return {
+    ...thread,
+    messages: [...thread.messages, message],
+    updatedAt: Date.now(),
+  }
+}
+
 /** Hold against automatic draining, then await the durable deletion before hiding it. */
 export async function deleteQueuedMessage(
   store: AppStore,
@@ -872,9 +981,9 @@ export async function deleteQueuedMessage(
   threadId: string,
   messageId: string,
 ): Promise<void> {
-  const projectId = getThreadProjectId(store, threadId)
-  const thread = getThreadById(store, threadId)
-  if (!projectId || !thread?.pendingMessages?.some((item) => item.messageId === messageId)) return
+  const owner = getQueuedMessageOwner(store, threadId, messageId)
+  if (!owner || queuedSteeringIsBusy(store, owner.projectId, owner.thread, owner.item)) return
+  const { projectId } = owner
   patchQueuedMessageOwner(store, projectId, threadId, (current) => ({
     ...current,
     pendingMessages: (current.pendingMessages ?? []).map((item) =>
@@ -970,6 +1079,259 @@ function prioritizeQueuedMessage(
   }
 }
 
+export function queuedSteeringIsPending(thread: Thread, item: QueuedUserMessage): boolean {
+  return (
+    thread.status === 'running' &&
+    thread.nativeSteeringRunId !== undefined &&
+    item.steeringRequested === thread.nativeSteeringRunId
+  )
+}
+
+export function canSteerQueuedMessage(thread: Thread, item: QueuedUserMessage): boolean {
+  return (
+    thread.status === 'running' &&
+    !!thread.nativeSteeringRunId &&
+    !queuedSteeringIsPending(thread, item) &&
+    item.origin === undefined &&
+    typeof item.payload.content === 'string' &&
+    item.payload.content.trim().length > 0 &&
+    item.payload.content.length <= 16_000 &&
+    (item.payload.invokedSkills?.length ?? 0) === 0 &&
+    item.payload.invokedAgent === undefined
+  )
+}
+
+/** Hold before crossing IPC, so a late boundary/Stop can never auto-submit the note. */
+export async function steerQueuedMessage(
+  store: AppStore,
+  api: Pick<ApiClient, 'agent' | 'threads'>,
+  threadId: string,
+  messageId: string,
+): Promise<void> {
+  const owner = getQueuedMessageOwner(store, threadId, messageId)
+  if (!owner || !canSteerQueuedMessage(owner.thread, owner.item)) return
+  const { item, projectId, thread } = owner
+  const originalMessage = thread.messages.find((message) => message.id === messageId)
+  const runId = thread.nativeSteeringRunId
+  if (!runId) return
+  let sourceSnapshot = thread
+  let sourceAvailable = true
+  const hasCapturedPending = (candidate: Thread): boolean => {
+    const pending = candidate.pendingMessages?.find((entry) => entry.messageId === messageId)
+    const snapshotPending = sourceSnapshot.pendingMessages?.find(
+      (entry) => entry.messageId === messageId,
+    )
+    const payload = pending && JSON.stringify(pending.payload)
+    return (
+      candidate.createdAt === thread.createdAt &&
+      pending?.createdAt === item.createdAt &&
+      (payload === JSON.stringify(item.payload) ||
+        payload === (snapshotPending && JSON.stringify(snapshotPending.payload)))
+    )
+  }
+  const hasCapturedNote = (candidate: Thread): boolean => {
+    const message = candidate.messages.find((entry) => entry.id === messageId)
+    const snapshotMessage = sourceSnapshot.messages.find((entry) => entry.id === messageId)
+    const messageContent = message?.content
+    return (
+      hasCapturedPending(candidate) &&
+      messageContent !== undefined &&
+      (messageContent === originalMessage?.content || messageContent === snapshotMessage?.content)
+    )
+  }
+  const withCapturedNote = (candidate: Thread): Thread => {
+    const capturedMessage = sourceSnapshot.messages.find((entry) => entry.id === messageId)
+    const capturedPending = sourceSnapshot.pendingMessages?.find(
+      (entry) => entry.messageId === messageId,
+    )
+    if (!capturedMessage || !capturedPending) return candidate
+    const pendingMessages = candidate.pendingMessages?.map((entry) =>
+      entry.messageId === messageId ? capturedPending : entry,
+    )
+    return {
+      ...candidate,
+      messages: candidate.messages.map((entry) =>
+        entry.id === messageId ? capturedMessage : entry,
+      ),
+      ...(pendingMessages ? { pendingMessages } : {}),
+    }
+  }
+  const patchSource = (patch: (current: Thread) => Thread): void => {
+    if (!sourceAvailable) return
+    const live = getProjectThread(store, projectId, threadId)
+    if (live) {
+      if (!hasCapturedNote(live)) {
+        sourceAvailable = false
+        return
+      }
+      sourceSnapshot = patch(withCapturedNote(live))
+      patchQueuedMessageOwner(store, projectId, threadId, () => sourceSnapshot)
+      return
+    }
+    sourceSnapshot = patch(sourceSnapshot)
+  }
+  const refreshSourceAfterHostWait = async (): Promise<boolean> => {
+    const live = getProjectThread(store, projectId, threadId)
+    if (live) {
+      if (!hasCapturedNote(live)) return false
+      sourceSnapshot = live
+      return true
+    }
+    try {
+      const persisted = await loadPersistedThread(api, projectId, threadId)
+      if (!persisted || !hasCapturedPending(persisted)) return false
+      const messages = await api.threads.loadMessages(projectId, threadId)
+      const hydrated: Thread = {
+        ...persisted,
+        messages,
+        messagesLoaded: true,
+      }
+      if (!hasCapturedNote(hydrated)) return false
+      sourceSnapshot = hydrated
+      return true
+    } catch {
+      return false
+    }
+  }
+  const finishPersistence = beginSteeringPersistence(store, projectId, threadId, messageId)
+  const persistMetadata = async (): Promise<void> => {
+    if (!sourceAvailable) throw new Error('The steering note source thread is no longer available')
+    await persistThreadMetadataNow(api, projectId, sourceSnapshot)
+  }
+  try {
+    patchSource((current) => ({
+      ...current,
+      pendingMessages: (current.pendingMessages ?? []).map((entry) =>
+        entry.messageId === messageId
+          ? { ...entry, autoDispatch: false as const, steeringRequested: runId }
+          : entry,
+      ),
+    }))
+    store.emit('threads_changed')
+    try {
+      await persistMetadata()
+      const result = await afterThreadWrites(projectId, threadId, () =>
+        api.agent.steer(projectId, threadId, messageId, runId),
+      )
+      sourceAvailable = await refreshSourceAfterHostWait()
+      if (!sourceAvailable) return
+      if (result.state === 'applied') {
+        patchSource((current) => ({
+          ...current,
+          pendingMessages: (current.pendingMessages ?? []).filter(
+            (entry) => entry.messageId !== messageId,
+          ),
+        }))
+        store.emit('threads_changed')
+        return
+      }
+      if (result.draft !== undefined) {
+        const draft = result.draft
+        patchSource((current) => replaceQueuedMessageTextInThread(current, messageId, draft))
+      }
+      try {
+        if (result.draft !== undefined) {
+          const message = sourceSnapshot.messages.find((candidate) => candidate.id === messageId)
+          if (!message) throw new Error('The interrupted steering note is no longer available')
+          await persistThreadMessageNow(api, projectId, threadId, message)
+        }
+      } catch (error) {
+        if (result.draft !== undefined && originalMessage) {
+          const { steeringRequested: _requested, ...originalHeld } = item
+          patchSource((current) => ({
+            ...current,
+            messages: current.messages.map((message) =>
+              message.id === messageId ? originalMessage : message,
+            ),
+            pendingMessages: (current.pendingMessages ?? []).map((entry) =>
+              entry.messageId === messageId
+                ? { ...originalHeld, autoDispatch: false as const, steeringRequested: runId }
+                : entry,
+            ),
+            updatedAt: Date.now(),
+          }))
+          store.emit('threads_changed')
+          try {
+            await persistThreadMessageNow(api, projectId, threadId, originalMessage)
+          } catch {
+            // Keep the original note visible and held. The following metadata
+            // flush retains a retryable local write intent without claiming that
+            // the interrupted edit was saved.
+          }
+        }
+        patchSource((current) => ({
+          ...current,
+          pendingMessages: (current.pendingMessages ?? []).map((entry) => {
+            if (entry.messageId !== messageId) return entry
+            const { steeringRequested: _requested, ...held } = entry
+            return held
+          }),
+        }))
+        store.emit('threads_changed')
+        try {
+          await persistMetadata()
+        } catch {
+          // The local held note remains visible for an explicit retry.
+        }
+        patchSource((current) =>
+          withProjectMessage(
+            current,
+            'error',
+            ipcErrorMessage(error, 'Steering failed. Your note remains held.'),
+          ),
+        )
+        return
+      }
+      patchSource((current) => ({
+        ...current,
+        pendingMessages: (current.pendingMessages ?? []).map((entry) => {
+          if (entry.messageId !== messageId) return entry
+          const { steeringRequested: _requested, ...held } = entry
+          return held
+        }),
+      }))
+      store.emit('threads_changed')
+      await persistMetadata()
+      patchSource((current) =>
+        withProjectMessage(
+          current,
+          'error',
+          result.draft === undefined
+            ? 'Your steering note was not delivered. It remains held for you to release or edit.'
+            : 'The turn ended during review. Your edits were saved as a held note; Release will open a new protected review.',
+        ),
+      )
+    } catch (error) {
+      sourceAvailable = await refreshSourceAfterHostWait()
+      if (!sourceAvailable) return
+      patchSource((current) => ({
+        ...current,
+        pendingMessages: (current.pendingMessages ?? []).map((entry) => {
+          if (entry.messageId !== messageId) return entry
+          const { steeringRequested: _requested, ...held } = entry
+          return held
+        }),
+      }))
+      store.emit('threads_changed')
+      try {
+        await persistMetadata()
+      } catch {
+        // The note remains held locally and can be retried explicitly.
+      }
+      patchSource((current) =>
+        withProjectMessage(
+          current,
+          'error',
+          ipcErrorMessage(error, 'Steering failed. Your note remains held.'),
+        ),
+      )
+    }
+  } finally {
+    finishPersistence()
+    store.emit('threads_changed')
+  }
+}
+
 /** An async hook's `queueMessage` output, bridged from the host (decision 4). */
 export interface HookQueueMessageInput {
   /** The hook-authored message text. */
@@ -1044,9 +1406,16 @@ export function releaseHeldMessage(
   threadId: string,
   messageId: string,
 ): void {
-  const thread = store.getState().threads.find((t) => t.id === threadId)
+  const state = store.getState()
+  const thread = state.threads.find((t) => t.id === threadId)
   const item = thread?.pendingMessages?.find((p) => p.messageId === messageId)
-  if (!thread || !item) return
+  if (
+    !state.activeProjectId ||
+    !thread ||
+    !item ||
+    queuedSteeringIsBusy(store, state.activeProjectId, thread, item)
+  )
+    return
 
   const epoch = newEpoch()
   const threads = store.getState().threads.map((t) => {

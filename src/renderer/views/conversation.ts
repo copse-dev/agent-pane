@@ -225,6 +225,9 @@ import {
 } from './tool-card-refresh.ts'
 import {
   drainMessageQueue,
+  steerQueuedMessage,
+  canSteerQueuedMessage,
+  queuedSteeringIsBusy,
   isHeldMessage,
   queuedMessageIds,
   queuedPayloadText,
@@ -3082,6 +3085,16 @@ export function mountConversation(
   function buildHeldActions(messageId: string): HTMLElement {
     const deleting = deletionStatus(messageId)
     if (deleting) return deleting
+    const thread = getThreadById(store, store.getState().activeThreadId ?? '')
+    const queued = thread?.pendingMessages?.find((item) => item.messageId === messageId)
+    const projectId = store.getState().activeProjectId
+    if (projectId && thread && queued && queuedSteeringIsBusy(store, projectId, thread, queued)) {
+      return el(
+        'div',
+        { class: 'message-queued-ui steering-pending', role: 'status' },
+        'Waiting for the next agent step…',
+      )
+    }
     const releaseBtn = el(
       'button',
       { class: 'queued-action queued-release', type: 'button' },
@@ -3119,6 +3132,21 @@ export function mountConversation(
   function buildQueuedActions(messageId: string): HTMLElement {
     const deleting = deletionStatus(messageId)
     if (deleting) return deleting
+    const thread = getThreadById(store, store.getState().activeThreadId ?? '')
+    const queued = thread?.pendingMessages?.find((item) => item.messageId === messageId)
+    const steerBtn = el(
+      'button',
+      {
+        class: 'queued-action queued-steer',
+        type: 'button',
+        title: 'Add this note at the next native agent step without interrupting the turn',
+      },
+      'Steer',
+    )
+    steerBtn.addEventListener('click', () => {
+      const threadId = store.getState().activeThreadId
+      if (threadId) void steerQueuedMessage(store, api, threadId, messageId)
+    })
     const editBtn = el('button', { class: 'queued-action queued-edit', type: 'button' }, 'Edit')
     editBtn.addEventListener('click', () => {
       startEditing(messageId)
@@ -3149,6 +3177,7 @@ export function mountConversation(
         buildQueuedModelPicker(messageId),
         editBtn,
         sendNowBtn,
+        ...(thread && queued && canSteerQueuedMessage(thread, queued) ? [steerBtn] : []),
         deleteBtn,
       ),
     )

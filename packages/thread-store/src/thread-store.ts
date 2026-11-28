@@ -20,6 +20,7 @@ import { isDeepStrictEqual } from 'node:util'
 import type { LLMMessage } from '@copse/llm/wire-types.ts'
 import type {
   Message,
+  QueuedUserMessage,
   OrphanProjectStore,
   Thread,
   ThreadCatalogEntry,
@@ -89,6 +90,7 @@ import {
 import { isRecord, parseJsonUnknown } from '@copse/std/unknown-value.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { z } from 'zod'
+import { userSteeringReceiptSchema, type UserSteeringReceipt } from './user-steering.ts'
 import {
   ThreadPrRelationshipIndex,
   prProductionSchema,
@@ -222,6 +224,7 @@ function metaOf(thread: Thread): ThreadMeta {
     messages: _messages,
     messagesLoaded: _messagesLoaded,
     hasSavedPlan: _hasSavedPlan,
+    nativeSteeringRunId: _nativeSteeringRunId,
     ...meta
   } = thread
   return meta
@@ -806,8 +809,11 @@ function readMeta(dir: string): ThreadMeta | null {
 function parseMeta(raw: string | null): ThreadMeta | null {
   if (raw === null) return null
   try {
-    const parsed: unknown = JSON.parse(raw)
-    return parseThreadMetaValue(parsed)
+    const parsed = safeJsonParse(raw, decodeWithSchema(z.unknown()))
+    const meta = parseThreadMetaValue(parsed)
+    if (!meta) return null
+    const { nativeSteeringRunId: _nativeSteeringRunId, ...durable } = meta
+    return durable
   } catch {
     return null
   }
@@ -2832,6 +2838,103 @@ export function acceptReviewedUserMessage(
   })
 }
 
+export interface QueuedUserMessageSnapshot {
+  message: Omit<Message, 'hookCards'>
+  queued: QueuedUserMessage
+}
+
+/** Hook cards are derived audit records, not part of the saved human prompt revision. */
+function queuedPromptSource(message: Message): Omit<Message, 'hookCards'> {
+  const { hookCards: _derivedAudit, ...source } = message
+  return source
+}
+
+/** Freeze the saved, still-unaccepted identity; queue metadata alone grants no authority. */
+export function freezeQueuedUserMessage(
+  projectId: string,
+  threadId: string,
+  messageId: string,
+): Promise<QueuedUserMessageSnapshot> {
+  return runSerialized(queueKey(projectId), async () => {
+    const dir = threadDir(projectId, threadId)
+    const known = await knownMessageIdsFor(dir)
+    const thread = await readThread(projectId, threadId, {}, true)
+    const message = thread?.messages.find((entry) => entry.id === messageId)
+    const queued = thread?.pendingMessages?.find((entry) => entry.messageId === messageId)
+    if (
+      known.deleted.has(messageId) ||
+      known.userStates.get(messageId) !== 'unaccepted' ||
+      message?.role !== 'user' ||
+      !queued
+    )
+      throw new Error('Only a saved, unaccepted queued user message can be steered')
+    return { message: queuedPromptSource(message), queued }
+  })
+}
+
+/**
+ * Strict acceptance for an existing queued identity: never allocate a replacement ID.
+ * Retirement, revision validation, canonical body and acceptance share the project queue.
+ */
+export function acceptReviewedQueuedUserMessage(
+  projectId: string,
+  threadId: string,
+  snapshot: QueuedUserMessageSnapshot,
+  text: string,
+  canAccept: () => boolean,
+  claim: () => boolean,
+): Promise<boolean> {
+  return runStoreWrite(projectId, async () => {
+    const dir = threadDir(projectId, threadId)
+    const events = join(dir, EVENTS_FILE)
+    const entries = parseSpineEntries((await readOrNull(events, true)) ?? '')
+    const known = messageIdsFromSpine(serializeSpineEntries(entries))
+    const current = await readThread(projectId, threadId, {}, true)
+    const messageId = snapshot.message.id
+    const message = current?.messages.find((entry) => entry.id === messageId)
+    const queued = current?.pendingMessages?.find((entry) => entry.messageId === messageId)
+    if (
+      !message ||
+      known.deleted.has(messageId) ||
+      known.userStates.get(messageId) !== 'unaccepted' ||
+      !isDeepStrictEqual(queuedPromptSource(message), snapshot.message) ||
+      !isDeepStrictEqual(queued, snapshot.queued) ||
+      !canAccept()
+    )
+      return false
+    const index = entries.findIndex(
+      (entry) =>
+        entry.line?.type === 'message' && entry.line.id === messageId && entry.line.role === 'user',
+    )
+    if (index < 0) return false
+    const reviewed: Message = { ...message, content: text }
+    const exploded = explodeMessage(reviewed, sha256Hex)
+    const { line, files } = withImmutableMessageFiles(exploded)
+    const body = files.find((file) => file.ref === line.content.ref)
+    if (!body) throw new Error('Cannot prepare the reviewed steering body')
+    const previousRefs = new Set(exploded.files.map((file) => file.ref))
+    // Never overwrite a strictly validated file referenced by the old spine.
+    // A cancelled write or failed spine rename leaves only unreachable new
+    // revisions; readers keep the complete original message until the atomic
+    // spine commit. Tool-call blobs retain their old refs and need no rewrite.
+    for (const file of files) {
+      if (!previousRefs.has(file.ref))
+        await writeFileEnsuringDirAsync(contentFilePathForWrite(dir, file.ref), file.contents)
+    }
+    // Keep the sender-bound one-use proof available while immutable body files
+    // are prepared. Stop can still win until this synchronous final cutover;
+    // once the claim succeeds, acceptance owns the atomic spine commit.
+    if (!canAccept() || !claim()) return false
+    entries[index] = { raw: serializeSpineLine(line), line }
+    const accepted = userMessageLifecycleLine(messageId, 'accepted')
+    entries.push({ raw: serializeSpineLine(accepted), line: accepted })
+    await atomicWriteFileAsync(events, serializeSpineEntries(entries))
+    invalidateKnownMessageIds(dir)
+    await mergePrRefsIntoMeta(projectId, threadId, reviewed)
+    return true
+  })
+}
+
 /**
  * Accept a separately reviewed prompt only while its related Main-owned
  * authority is live at the exact store-write cutover. An optimistic receipt is
@@ -3035,6 +3138,30 @@ export function deleteQueuedMessage(
   })
 }
 
+/** Place an applied steering note after its completed step, retaining spine attachments. */
+export function placeMessageAfter(
+  projectId: string,
+  threadId: string,
+  messageId: string,
+  previousMessageId: string,
+): Promise<void> {
+  return runStoreWrite(projectId, async () => {
+    const path = join(threadDir(projectId, threadId), EVENTS_FILE)
+    const raw = (await readOrNull(path)) ?? ''
+    const messages = parseSpineEntries(raw).flatMap((entry) =>
+      entry.line?.type === 'message' ? [entry.line] : [],
+    )
+    const note = messages.find((message) => message.id === messageId)
+    const ordered = messages.filter((message) => message.id !== messageId)
+    const previousIndex = ordered.findIndex((message) => message.id === previousMessageId)
+    if (!note || previousIndex < 0)
+      throw new Error('Cannot place the steering note beside its completed step.')
+    ordered.splice(previousIndex + 1, 0, note)
+    const { body } = rebuildSpinePreservingNonMessageLines(raw, ordered)
+    await atomicWriteFileAsync(path, body)
+  })
+}
+
 /**
  * Append one hook execution record (decision 6: always-on spine recording).
  * Blobs (raw stdout/stderr, toolset fingerprint) are written before the line so
@@ -3226,7 +3353,7 @@ export function updateMeta(
   threadId: string,
   patch: Partial<ThreadMeta>,
 ): Promise<void> {
-  return runStoreWrite(projectId, () => {
+  return runStoreWrite(projectId, async () => {
     const dir = threadDir(projectId, threadId)
     const current = readMeta(dir)
     // updateMeta only patches an existing thread; `createThread` writes the
@@ -3242,10 +3369,8 @@ export function updateMeta(
       ...(current.commitProductions ? { commitProductions: current.commitProductions } : {}),
       ...mergedLinksField(current, patch),
     }
-    atomicWriteFile(
-      join(dir, META_FILE),
-      `${JSON.stringify(withoutDeletedQueueFromDisk(merged, dir))}\n`,
-    )
+    const durable = await withoutAppliedSteering(dir, withoutDeletedQueueFromDisk(merged, dir))
+    atomicWriteFile(join(dir, META_FILE), `${JSON.stringify(durable)}\n`)
     refreshCatalogLine(projectId, threadId)
   })
 }
@@ -3295,7 +3420,7 @@ export function updateMetaOrThrow(
   threadId: string,
   patch: Partial<ThreadMeta>,
 ): Promise<void> {
-  return runStoreWrite(projectId, () => {
+  return runStoreWrite(projectId, async () => {
     const dir = threadDir(projectId, threadId)
     const current = readMeta(dir)
     if (current === null) throw new Error('Thread is not persisted yet; retry sending the message')
@@ -3309,10 +3434,8 @@ export function updateMetaOrThrow(
       ...(current.commitProductions ? { commitProductions: current.commitProductions } : {}),
       ...mergedLinksField(current, patch),
     }
-    atomicWriteFile(
-      join(dir, META_FILE),
-      `${JSON.stringify(withoutDeletedQueueFromDisk(merged, dir))}\n`,
-    )
+    const durable = await withoutAppliedSteering(dir, withoutDeletedQueueFromDisk(merged, dir))
+    atomicWriteFile(join(dir, META_FILE), `${JSON.stringify(durable)}\n`)
     refreshCatalogLine(projectId, threadId)
   })
 }
@@ -4116,6 +4239,75 @@ export function saveAgentHistory(
     // `stripToolResultImages` for why that matters to file size.
     writeAgentHistorySnapshot(projectId, threadId, messages)
   })
+}
+
+/** Ordered human-steering evidence. These receipts never schedule work. */
+export function appendUserSteeringReceipt(
+  projectId: string,
+  threadId: string,
+  receipt: UserSteeringReceipt,
+): Promise<void> {
+  return runStoreWrite(projectId, async () => {
+    const validated = userSteeringReceiptSchema.parse(receipt)
+    const dir = threadDir(projectId, threadId)
+    if (validated.state === 'applied') {
+      const current = readMeta(dir)
+      if (!current) throw new Error('Cannot settle steering for a missing thread.')
+      // History is already durable. Remove the held item before publishing an
+      // applied receipt, without depending on a connected renderer. Both writes
+      // share the project queue, so an autosave cannot interleave here.
+      const pendingMessages = (current.pendingMessages ?? []).filter(
+        (item) => item.messageId !== validated.messageId,
+      )
+      atomicWriteFile(join(dir, META_FILE), `${JSON.stringify({ ...current, pendingMessages })}\n`)
+      refreshCatalogLine(projectId, threadId)
+    }
+    const path = join(dir, 'user-steering.jsonl')
+    await appendJsonlLine(path, JSON.stringify(validated))
+  })
+}
+
+async function readUserSteeringReceipts(
+  dir: string,
+  skipInvalidLines = false,
+): Promise<UserSteeringReceipt[]> {
+  const raw = await readOrNull(join(dir, 'user-steering.jsonl'), true)
+  if (raw === null) return []
+  return raw
+    .split('\n')
+    .filter((line) => line.trim())
+    .flatMap((line) => {
+      const result = safeJsonParse(line, decodeWithSchema(userSteeringReceiptSchema))
+      if (result === null) {
+        if (skipInvalidLines) return []
+        throw new Error('Cannot read the steering delivery receipts.')
+      }
+      return [result]
+    })
+}
+
+/** A late renderer autosave must not resurrect an already delivered note. */
+async function withoutAppliedSteering(dir: string, meta: ThreadMeta): Promise<ThreadMeta> {
+  const { nativeSteeringRunId: _nativeSteeringRunId, ...durable } = meta
+  if (!durable.pendingMessages?.length) return durable
+  const applied = new Set(
+    (await readUserSteeringReceipts(dir, true))
+      .filter((receipt) => receipt.state === 'applied')
+      .map((receipt) => receipt.messageId),
+  )
+  return {
+    ...durable,
+    pendingMessages: durable.pendingMessages.filter((item) => !applied.has(item.messageId)),
+  }
+}
+
+export function loadUserSteeringReceipts(
+  projectId: string,
+  threadId: string,
+): Promise<UserSteeringReceipt[]> {
+  return runSerialized(queueKey(projectId), () =>
+    readUserSteeringReceipts(threadDir(projectId, threadId)),
+  )
 }
 
 /**

@@ -6,7 +6,8 @@ declare global {
     protectedPrompt: {
       onSeed(handler: (seed: ProtectedPromptSeed) => void): () => void
       submit(submission: ProtectedPromptSubmission): Promise<void>
-      cancel(): Promise<void>
+      cancel(draft: ProtectedPromptSubmission): Promise<void>
+      onInterrupt(handler: () => ProtectedPromptSubmission): () => void
     }
   }
 }
@@ -113,6 +114,11 @@ window.protectedPrompt.onSeed((next) => {
   text.setSelectionRange(text.value.length, text.value.length)
 })
 
+window.protectedPrompt.onInterrupt(() => {
+  setSettling(true)
+  return { text: text.value }
+})
+
 form.addEventListener('submit', (event) => {
   event.preventDefault()
   if (!seed || settling) return
@@ -129,7 +135,7 @@ form.addEventListener('submit', (event) => {
 cancel.addEventListener('click', () => {
   if (settling) return
   setSettling(true)
-  void window.protectedPrompt.cancel().catch(() => {
+  void window.protectedPrompt.cancel({ text: text.value }).catch(() => {
     setSettling(false)
   })
 })

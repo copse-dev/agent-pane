@@ -45,6 +45,7 @@
       "agent:retry-review",
       "agent:run",
       "agent:run-machine",
+      "agent:steer",
       "agent:suggest-command-summary",
       "agent:suggest-pr-body",
       "agent:suggest-terminal-title",

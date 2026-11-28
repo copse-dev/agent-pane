@@ -19,6 +19,7 @@ import { getSetting } from '../storage/settings.ts'
 import {
   acceptReviewedUserMessage,
   appendMessage,
+  placeMessageAfter,
   getProjectThread,
   threadDirectoryPath,
   updateMeta,
@@ -159,6 +160,7 @@ export class TurnHost {
       },
       loadThread: getProjectThread,
       appendMessage,
+      placeMessageAfter,
       updateMeta,
       defaultModel: (): string | undefined => {
         const model = getSetting<unknown>('model', undefined)

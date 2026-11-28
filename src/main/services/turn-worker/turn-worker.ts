@@ -17,6 +17,7 @@ import { beginDeferralMode, endDeferralMode } from '../security/deferral-mode.ts
 import { getSetting } from '../storage/settings.ts'
 import {
   appendMessage,
+  placeMessageAfter,
   getProjectThread,
   loadProjectThreadMetas,
   loadThreadMessages,
@@ -305,6 +306,7 @@ async function continueTurn(
     },
     loadThread: getProjectThread,
     appendMessage,
+    placeMessageAfter,
     updateMeta,
     defaultModel: (): string | undefined => {
       const model = getSetting<unknown>('model', undefined)

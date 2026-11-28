@@ -24,6 +24,7 @@ import { createStore } from '@shared/store/store.ts'
 import { transcriptMeta } from '@shared/store/transcript-state.ts'
 import type {
   Message,
+  NativeSteeringResult,
   ReviewFindingRecord,
   StreamChunk,
   Thread,
@@ -40,7 +41,13 @@ import { dismissReviewFinding, dismissReviewReport, startReview } from './review
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { optionalRecord } from '@shared/unknown-value.ts'
-import { deleteQueuedMessage } from './message-queue.ts'
+import {
+  deleteQueuedMessage,
+  queuedSteeringIsBusy,
+  releaseHeldMessage,
+  steerQueuedMessage,
+  updateQueuedMessageText,
+} from './message-queue.ts'
 import { startProposedThread } from './thread-proposals.ts'
 import {
   createThread,
@@ -75,6 +82,7 @@ function fakeApi(
   handlers: {
     set?: (key: string, value: unknown) => Promise<void>
     create?: (projectId: string, thread: Thread) => Promise<void>
+    appendMessage?: (projectId: string, threadId: string, message: Message) => Promise<void>
     updateMeta?: (projectId: string, threadId: string, patch: unknown) => Promise<void>
     delete?: (projectId: string, threadId: string) => Promise<void>
   } = {},
@@ -114,13 +122,11 @@ function fakeApi(
           (async (projectId: string, thread: Thread): Promise<void> => {
             calls.creates.push({ projectId, thread })
           }),
-        appendMessage: async (
-          projectId: string,
-          threadId: string,
-          message: Message,
-        ): Promise<void> => {
-          calls.appends.push({ projectId, threadId, message })
-        },
+        appendMessage:
+          handlers.appendMessage ??
+          (async (projectId: string, threadId: string, message: Message): Promise<void> => {
+            calls.appends.push({ projectId, threadId, message })
+          }),
         updateMeta:
           handlers.updateMeta ??
           (async (projectId: string, threadId: string, patch: unknown): Promise<void> => {
@@ -1181,6 +1187,495 @@ test('a turn starts only after the thread writes queued before it', async () => 
     ranSync = true
   })
   assert.equal(ranSync, true)
+  autosave.detach()
+})
+
+test('steering flushes a debounced hold and waits for its durable acknowledgement', async () => {
+  __resetPersistenceForTest()
+  let release: () => void = () => undefined
+  const durable = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const order: string[] = []
+  const { api, calls } = fakeApi({
+    updateMeta: async (_project, _thread, patch) => {
+      const record = expectRecord(patch)
+      assert.equal(Object.hasOwn(record, 'nativeSteeringRunId'), false)
+      if (!Object.hasOwn(record, 'pendingMessages')) return
+      order.push('holding')
+      await durable
+      order.push('held')
+    },
+  })
+  api.agent.steer = async (_p, _t, _m, runId): Promise<NativeSteeringResult> => {
+    assert.equal(runId, 'run')
+    order.push('steer')
+    return { state: 'held', draft: 'Edited in the protected review.' }
+  }
+  const store = createStore({
+    activeProjectId: 'p',
+    threads: [
+      thread('t', {
+        status: 'running',
+        nativeSteeringRunId: 'run',
+        currentEpoch: 'human',
+        continuationUsed: 5,
+        messages: [
+          {
+            id: 'note',
+            role: 'user',
+            content: 'Correction',
+            toolCalls: [],
+            createdAt: 1,
+          },
+        ],
+        pendingMessages: [{ messageId: 'note', payload: { content: 'Correction' }, createdAt: 1 }],
+      }),
+    ],
+  })
+  const autosave = attachAutosave(store, api)
+  store.emit('threads_changed')
+  await autosave.flush()
+  assert.ok(calls.creates.every((call) => call.thread.nativeSteeringRunId === undefined))
+  const steering = steerQueuedMessage(store, api, 't', 'note')
+  await tick()
+  assert.deepEqual(order, ['holding'])
+  release()
+  await steering
+  assert.deepEqual(order, ['holding', 'held', 'steer', 'holding', 'held'])
+  const restored = store.getState().threads[0]
+  assert.ok(restored)
+  assert.equal(
+    restored.messages.find((message) => message.id === 'note')?.content,
+    'Edited in the protected review.',
+  )
+  const restoredPending = restored.pendingMessages?.[0]
+  assert.ok(restoredPending)
+  assert.deepEqual(restoredPending.payload.content, 'Edited in the protected review.')
+  assert.equal(restoredPending.steeringRequested, undefined)
+  const error = restored.messages.find((message) => message.role === 'error')
+  assert.ok(error)
+  assert.match(error.content, /saved as a held note/)
+  autosave.detach()
+})
+
+test('an interrupted steering draft is durable before immediate reload', async () => {
+  __resetPersistenceForTest()
+  let markBodyStarted = (): void => {}
+  const bodyStarted = new Promise<void>((resolve) => {
+    markBodyStarted = resolve
+  })
+  let finishBodyWrite = (): void => {}
+  const releaseBody = new Promise<void>((resolve) => {
+    finishBodyWrite = resolve
+  })
+  let persistedMessage: Message | undefined
+  let persistedPending: unknown
+  const initial = thread('t', {
+    status: 'running',
+    nativeSteeringRunId: 'run',
+    messages: [
+      {
+        id: 'note',
+        role: 'user',
+        content: 'Correction',
+        toolCalls: [],
+        createdAt: 1,
+      },
+    ],
+    pendingMessages: [{ messageId: 'note', payload: { content: 'Correction' }, createdAt: 1 }],
+  })
+  const { api } = fakeApi({
+    appendMessage: async (_projectId, _threadId, message): Promise<void> => {
+      markBodyStarted()
+      await releaseBody
+      persistedMessage = structuredClone(message)
+    },
+    updateMeta: async (_projectId, _threadId, patch): Promise<void> => {
+      const record = expectRecord(patch)
+      if (Object.hasOwn(record, 'pendingMessages')) {
+        persistedPending = structuredClone(record['pendingMessages'])
+      }
+    },
+  })
+  api.agent.steer = async (): Promise<NativeSteeringResult> => ({
+    state: 'held',
+    draft: 'Edited immediately before Stop.',
+  })
+  let releaseRuns = 0
+  api.agent.run = async (): Promise<void> => {
+    releaseRuns++
+  }
+  let deleteRuns = 0
+  api.threads.deleteQueuedMessage = async (): Promise<void> => {
+    deleteRuns++
+  }
+  const store = createStore({ activeProjectId: 'p', threads: [initial] })
+  const autosave = attachAutosave(store, api)
+  store.emit('threads_changed')
+  await autosave.flush()
+
+  let settled = false
+  const steering = steerQueuedMessage(store, api, 't', 'note').then(() => {
+    settled = true
+  })
+  await bodyStarted
+  assert.equal(settled, false, 'the saved-draft result waits for its canonical body write')
+  store.setState({
+    threads: store.getState().threads.map((current) => {
+      if (current.id !== 't') return current
+      const { nativeSteeringRunId: _endedRun, ...ended } = current
+      return { ...ended, status: 'idle' as const }
+    }),
+  })
+  store.emit('threads_changed')
+  updateQueuedMessageText(store, 't', 'note', 'Racing local edit')
+  releaseHeldMessage(store, api, 't', 'note')
+  await deleteQueuedMessage(store, api, 't', 'note')
+  const inProgress = store.getState().threads[0]?.pendingMessages?.[0]
+  assert.ok(inProgress)
+  assert.equal(inProgress.payload.content, 'Edited immediately before Stop.')
+  assert.equal(inProgress.steeringRequested, 'run')
+  assert.equal(releaseRuns, 0, 'Release stays blocked until body and metadata are durable')
+  assert.equal(deleteRuns, 0, 'Delete stays blocked until body and metadata are durable')
+  assert.equal(
+    store
+      .getState()
+      .threads[0]?.messages.some(
+        (message) => message.role === 'error' && /edits were saved/.test(message.content),
+      ),
+    false,
+    'the UI must not report saved before the body is durable',
+  )
+
+  finishBodyWrite()
+  await steering
+  releaseHeldMessage(store, api, 't', 'note')
+  assert.equal(releaseRuns, 1, 'Release becomes available after durability settles')
+  autosave.detach()
+  assert.ok(persistedMessage)
+  const persisted = parseThreadValue({
+    ...initial,
+    messages: [persistedMessage],
+    pendingMessages: persistedPending,
+  })
+  assert.ok(persisted)
+  api.threads.loadProject = async (): Promise<Thread[]> => [persisted]
+  invalidateProjectThreadLoads(api, 'p')
+  const reloaded = await loadPersistedThread(api, 'p', 't')
+  assert.ok(reloaded)
+  assert.equal(reloaded.messages[0]?.content, 'Edited immediately before Stop.')
+  const reloadedPending = reloaded.pendingMessages?.[0]
+  assert.ok(reloadedPending)
+  assert.equal(reloadedPending.payload.content, 'Edited immediately before Stop.')
+  assert.equal(reloadedPending.steeringRequested, undefined)
+})
+
+test('an interrupted draft persists from its captured owner after the source leaves live state', async () => {
+  __resetPersistenceForTest()
+  const initial = thread('source-thread', {
+    status: 'running',
+    nativeSteeringRunId: 'source-run',
+    messages: [
+      {
+        id: 'source-note',
+        role: 'user',
+        content: 'Original source note',
+        toolCalls: [],
+        createdAt: 1,
+      },
+    ],
+    pendingMessages: [
+      { messageId: 'source-note', payload: { content: 'Original source note' }, createdAt: 1 },
+    ],
+  })
+  const { api, calls } = fakeApi()
+  let markReviewStarted = (): void => {}
+  const reviewStarted = new Promise<void>((resolve) => {
+    markReviewStarted = resolve
+  })
+  let finishReview = (_result: NativeSteeringResult): void => {}
+  const reviewResult = new Promise<NativeSteeringResult>((resolve) => {
+    finishReview = resolve
+  })
+  api.agent.steer = async (): Promise<NativeSteeringResult> => {
+    markReviewStarted()
+    return reviewResult
+  }
+  const store = createStore({
+    activeProjectId: 'source-project',
+    activeThreadId: 'source-thread',
+    threads: [initial],
+  })
+  const autosave = attachAutosave(store, api)
+  store.emit('threads_changed')
+  await autosave.flush()
+  calls.appends.length = 0
+  calls.metas.length = 0
+
+  const steering = steerQueuedMessage(store, api, 'source-thread', 'source-note')
+  await reviewStarted
+  const source = store.getState().threads[0]
+  assert.ok(source)
+  const { nativeSteeringRunId: _endedRun, ...sourceWithoutRun } = source
+  const stoppedSource: Thread = { ...sourceWithoutRun, status: 'idle' }
+  const stoppedMetadata: Thread = { ...stoppedSource, messages: [], messagesLoaded: false }
+  let messageLoads = 0
+  api.threads.loadProject = async (projectId): Promise<Thread[]> =>
+    projectId === 'source-project' ? [stoppedMetadata] : []
+  api.threads.loadMessages = async (projectId, threadId): Promise<Message[]> => {
+    messageLoads++
+    return projectId === 'source-project' && threadId === 'source-thread' ? source.messages : []
+  }
+  invalidateProjectThreadLoads(api, 'source-project')
+  const foreground = thread('source-thread', {
+    messages: [
+      {
+        id: 'source-note',
+        role: 'user',
+        content: 'Other project note',
+        toolCalls: [],
+        createdAt: 2,
+      },
+    ],
+    pendingMessages: [
+      { messageId: 'source-note', payload: { content: 'Other project note' }, createdAt: 2 },
+    ],
+  })
+  store.setState({
+    activeProjectId: 'other-project',
+    activeThreadId: 'source-thread',
+    threads: [foreground],
+    backgroundThreads: [],
+  })
+  store.emit('threads_changed')
+  const backgroundItem = source.pendingMessages?.[0]
+  const foregroundItem = foreground.pendingMessages?.[0]
+  assert.ok(backgroundItem)
+  assert.ok(foregroundItem)
+  assert.equal(
+    queuedSteeringIsBusy(store, 'source-project', source, backgroundItem),
+    true,
+    'the source project keeps its durability lease',
+  )
+  assert.equal(
+    queuedSteeringIsBusy(store, 'other-project', foreground, foregroundItem),
+    false,
+    'the colliding foreground ids do not inherit the source project lease',
+  )
+  finishReview({ state: 'held', draft: 'Reviewed background draft' })
+  await steering
+  autosave.detach()
+
+  const foregroundAfter = store.getState().threads[0]
+  assert.ok(foregroundAfter)
+  assert.equal(foregroundAfter.messages[0]?.content, 'Other project note')
+  assert.equal(foregroundAfter.pendingMessages?.[0]?.payload.content, 'Other project note')
+  assert.deepEqual(store.getState().backgroundThreads, [])
+  assert.equal(messageLoads, 1)
+
+  const bodyWrite = calls.appends.find(
+    (call) => call.projectId === 'source-project' && call.threadId === 'source-thread',
+  )
+  assert.ok(bodyWrite)
+  assert.equal(bodyWrite.message.content, 'Reviewed background draft')
+  const metadataWrite = calls.metas
+    .filter((call) => call.projectId === 'source-project' && call.threadId === 'source-thread')
+    .at(-1)
+  assert.ok(metadataWrite)
+  assert.equal(
+    calls.appends.some(
+      (call) => call.projectId === 'other-project' && call.threadId === 'source-thread',
+    ),
+    false,
+  )
+  assert.equal(
+    calls.metas.some(
+      (call) => call.projectId === 'other-project' && call.threadId === 'source-thread',
+    ),
+    false,
+  )
+  const pending = expectRecord(metadataWrite.patch)['pendingMessages']
+  const persisted = parseThreadValue({
+    ...stoppedSource,
+    messages: [bodyWrite.message],
+    pendingMessages: pending,
+  })
+  assert.ok(persisted)
+  api.threads.loadProject = async (): Promise<Thread[]> => [persisted]
+  invalidateProjectThreadLoads(api, 'source-project')
+  const reloaded = await loadPersistedThread(api, 'source-project', 'source-thread')
+  assert.ok(reloaded)
+  const reloadedPending = reloaded.pendingMessages?.[0]
+  assert.ok(reloadedPending)
+  assert.equal(reloaded.messages[0]?.content, 'Reviewed background draft')
+  assert.equal(reloadedPending.payload.content, 'Reviewed background draft')
+  assert.equal(reloadedPending.steeringRequested, undefined)
+  assert.equal(queuedSteeringIsBusy(store, 'source-project', reloaded, reloadedPending), false)
+})
+
+test('an interrupted draft does not recreate a source thread deleted during review', async () => {
+  __resetPersistenceForTest()
+  const initial = thread('deleted-thread', {
+    status: 'running',
+    nativeSteeringRunId: 'deleted-run',
+    messages: [
+      {
+        id: 'deleted-note',
+        role: 'user',
+        content: 'Delete with source',
+        toolCalls: [],
+        createdAt: 1,
+      },
+    ],
+    pendingMessages: [
+      { messageId: 'deleted-note', payload: { content: 'Delete with source' }, createdAt: 1 },
+    ],
+  })
+  const { api, calls } = fakeApi()
+  let markReviewStarted = (): void => {}
+  const reviewStarted = new Promise<void>((resolve) => {
+    markReviewStarted = resolve
+  })
+  let finishReview = (_result: NativeSteeringResult): void => {}
+  const reviewResult = new Promise<NativeSteeringResult>((resolve) => {
+    finishReview = resolve
+  })
+  api.agent.steer = async (): Promise<NativeSteeringResult> => {
+    markReviewStarted()
+    return reviewResult
+  }
+  const store = createStore({
+    activeProjectId: 'source-project',
+    activeThreadId: 'deleted-thread',
+    threads: [initial],
+  })
+  const autosave = attachAutosave(store, api)
+  store.emit('threads_changed')
+  await autosave.flush()
+
+  const steering = steerQueuedMessage(store, api, 'deleted-thread', 'deleted-note')
+  await reviewStarted
+  const source = store.getState().threads[0]
+  assert.ok(source)
+  let messageLoads = 0
+  api.threads.loadProject = async (): Promise<Thread[]> => []
+  api.threads.loadMessages = async (): Promise<Message[]> => {
+    messageLoads++
+    return source.messages
+  }
+  invalidateProjectThreadLoads(api, 'source-project')
+  store.setState({
+    activeProjectId: 'other-project',
+    activeThreadId: 'other-thread',
+    threads: [thread('other-thread')],
+    backgroundThreads: [],
+  })
+  calls.creates.length = 0
+  calls.appends.length = 0
+  calls.metas.length = 0
+  finishReview({ state: 'held', draft: 'Must not be restored' })
+  await steering
+  autosave.detach()
+
+  assert.equal(
+    calls.creates.some((call) => call.projectId === 'source-project'),
+    false,
+  )
+  assert.equal(
+    calls.appends.some((call) => call.projectId === 'source-project'),
+    false,
+  )
+  assert.equal(
+    calls.metas.some((call) => call.projectId === 'source-project'),
+    false,
+  )
+  assert.equal(messageLoads, 0)
+  assert.equal(store.getState().threads[0]?.id, 'other-thread')
+  assert.deepEqual(store.getState().backgroundThreads, [])
+  const { nativeSteeringRunId: _endedRun, ...sourceWithoutRun } = source
+  const stoppedSource: Thread = { ...sourceWithoutRun, status: 'idle' }
+  const stoppedPending = stoppedSource.pendingMessages?.[0]
+  assert.ok(stoppedPending)
+  assert.equal(queuedSteeringIsBusy(store, 'source-project', stoppedSource, stoppedPending), false)
+})
+
+test('a failed interrupted-draft write rolls back locally and a later retry succeeds', async () => {
+  __resetPersistenceForTest()
+  const initialMessage: Message = {
+    id: 'note',
+    role: 'user',
+    content: 'Original held note',
+    toolCalls: [],
+    createdAt: 1,
+  }
+  let persistedMessage = structuredClone(initialMessage)
+  let appendAttempts = 0
+  const { api } = fakeApi({
+    appendMessage: async (_projectId, _threadId, message): Promise<void> => {
+      appendAttempts++
+      if (appendAttempts === 1) throw new Error('simulated draft write failure')
+      persistedMessage = structuredClone(message)
+    },
+  })
+  let reviews = 0
+  api.agent.steer = async (): Promise<NativeSteeringResult> => {
+    reviews++
+    return {
+      state: 'held',
+      draft: reviews === 1 ? 'Unsaved interrupted edit' : 'Saved retry edit',
+    }
+  }
+  const store = createStore({
+    activeProjectId: 'p',
+    threads: [
+      thread('t', {
+        status: 'running',
+        nativeSteeringRunId: 'run',
+        messages: [initialMessage],
+        pendingMessages: [
+          { messageId: 'note', payload: { content: 'Original held note' }, createdAt: 1 },
+        ],
+      }),
+    ],
+  })
+  const autosave = attachAutosave(store, api)
+  store.emit('threads_changed')
+  await autosave.flush()
+
+  await steerQueuedMessage(store, api, 't', 'note')
+  const rolledBack = store.getState().threads[0]
+  assert.ok(rolledBack)
+  assert.equal(
+    rolledBack.messages.find((message) => message.id === 'note')?.content,
+    'Original held note',
+  )
+  const rolledBackPending = rolledBack.pendingMessages?.[0]
+  assert.ok(rolledBackPending)
+  assert.equal(rolledBackPending.payload.content, 'Original held note')
+  assert.equal(rolledBackPending.steeringRequested, undefined)
+  assert.equal(persistedMessage.content, 'Original held note')
+  assert.equal(
+    rolledBack.messages.some(
+      (message) =>
+        message.role === 'error' && /simulated draft write failure/.test(message.content),
+    ),
+    true,
+  )
+
+  await steerQueuedMessage(store, api, 't', 'note')
+  const retried = store.getState().threads[0]
+  assert.ok(retried)
+  assert.equal(
+    retried.messages.find((message) => message.id === 'note')?.content,
+    'Saved retry edit',
+  )
+  const retriedPending = retried.pendingMessages?.[0]
+  assert.ok(retriedPending)
+  assert.equal(retriedPending.payload.content, 'Saved retry edit')
+  assert.equal(retriedPending.steeringRequested, undefined)
+  assert.equal(persistedMessage.content, 'Saved retry edit')
+  assert.equal(appendAttempts, 3, 'failed edit, original rollback, then successful retry')
   autosave.detach()
 })
 
