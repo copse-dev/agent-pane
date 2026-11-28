@@ -370,6 +370,21 @@ load unchanged, and their next whole-thread rewrite moves them to the new names
 (pruning the old ones). Every ref the store writes or prefetches must resolve
 inside the thread directory; one that would escape it is not followed.
 
+A read leaves large tool images on disk. When the store folds a thread, each
+top-level `images[]` blob of at least 64 KiB (`STORED_IMAGE_MIN_BYTES`) is
+sized, not read, and the folded `dataUrl` holds a `copse-stored-image:`
+reference (thread, spine ref and sha256) instead; the ACP `content` image block
+that repeats the same bytes gets the same reference. Smaller images and
+subagent images are inlined as before. A window reads one image at a time with
+`threads:stored-tool-image` as it nears the viewport, and the paired phone's
+image request reads it the same way. Every store write reads references back
+into image bytes before it explodes a message, so the on-disk format never holds
+one; a reference whose blob is gone or no longer matches is dropped, as a fold
+drops a tool blob that fails its hash check. A thread of a hundred generated
+images folded to over a gigabyte of data URLs: sending it to a window hung the
+main process, and folding it for several readers at once ran main out of heap
+([`stored-tool-image.ts`](../packages/thread-store/src/stored-tool-image.ts)).
+
 `commandPhase` is the last stage a `run_shell` or `run_background` command
 reached (#3956): `queued`, `awaiting_approval`, `starting`, `running`, or a
 terminal `exited` (with `exitCode`), `timed_out`, `cancelled` or

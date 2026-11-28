@@ -1,4 +1,5 @@
 import type { AcpContentBlock, AcpToolCallContent, ToolCall } from '@shared/types'
+import { isStoredToolImageUrl } from '@shared/threads/stored-tool-image.ts'
 
 type ImageMessage = {
   images?: readonly string[]
@@ -8,7 +9,11 @@ type ImageMessage = {
 
 const IMAGE_DATA_URL = /^data:image\/(?:png|jpeg|webp|gif);base64,/i
 
-/** Keep image bytes out of the polled thread response; fetch each visible image on demand. */
+/**
+ * Keep image bytes out of the polled thread response; fetch each visible image
+ * on demand. A large stored tool image is listed by its `copse-stored-image:`
+ * reference, which the image request reads back from the store.
+ */
 export function mobileMessageImages(message: ImageMessage): string[] {
   const urls = [
     ...(message.images ?? []),
@@ -22,5 +27,7 @@ export function mobileMessageImages(message: ImageMessage): string[] {
       ),
     ]),
   ]
-  return [...new Set(urls)].filter((url) => url.length <= 20_000_000 && IMAGE_DATA_URL.test(url))
+  return [...new Set(urls)].filter(
+    (url) => isStoredToolImageUrl(url) || (url.length <= 20_000_000 && IMAGE_DATA_URL.test(url)),
+  )
 }

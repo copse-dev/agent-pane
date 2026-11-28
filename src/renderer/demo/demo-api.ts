@@ -1143,6 +1143,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           incomplete: false,
         }),
       cancelRequestSearch: () => resolvedVoid(),
+      // Demo transcripts carry their images inline; there is no thread store.
+      storedToolImage: () => Promise.resolve(null),
       loadMessages: (_projectId: string, threadId: string) =>
         scenario.holdThreadHydration === true
           ? new Promise<never>(() => undefined)

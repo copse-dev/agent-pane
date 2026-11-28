@@ -606,6 +606,28 @@ export interface FoldOptions {
    * hash check. The fold degrades that one tool card instead of throwing.
    */
   onIntegrityFailure?: (ref: string) => void
+  /**
+   * Tool images to leave on disk (`stored-tool-image.ts`): the byte size of
+   * each top-level image blob not read for this fold, by spine ref, and the
+   * reference its folded `dataUrl` holds instead. The ACP content block that
+   * repeats one of them, the same bytes, gets the same reference.
+   */
+  storedImages?: {
+    readonly sizes: ReadonlyMap<string, number>
+    readonly reference: (ref: ContentRef) => string
+    /**
+     * ACP display content the store already read, checked and slimmed with
+     * {@link slimToolContent}, by content ref. A call whose images stay on disk
+     * repeats them here, so a read that kept the raw files would still hold
+     * every image once.
+     */
+    readonly content?: ReadonlyMap<string, AcpToolCallContent[]>
+  }
+}
+
+/** What a fold threads through its reads: a subagent's refs are relative to its own directory. */
+interface FoldContext extends FoldOptions {
+  readonly nested?: true
 }
 
 function verify(ref: ContentRef, body: string, hash: HashFn | undefined): void {
@@ -680,7 +702,7 @@ function foldToolCall(
   spine: SpineToolCall,
   slot: ToolCallSlot,
   resolve: RefResolver,
-  ctx: FoldOptions,
+  ctx: FoldContext,
 ): ToolCall {
   // Each tool-call blob that fails its hash check degrades just its own field.
   let result: string | null = null
@@ -699,8 +721,18 @@ function foldToolCall(
     args = raw === undefined ? {} : parseToolArgsJson(raw)
   }
 
+  // Each image left on disk, so its ACP repeat below can share the reference.
+  const leftOnDisk: StoredImageOnDisk[] = []
   const images = spine.images?.flatMap((image) => {
-    const dataUrl = resolveToolBlob(image.dataUrl, resolve, ctx)
+    const stored = ctx.nested === true ? undefined : ctx.storedImages
+    const size = stored?.sizes.get(image.dataUrl.ref)
+    let dataUrl: string | undefined
+    if (stored !== undefined && size !== undefined) {
+      dataUrl = stored.reference(image.dataUrl)
+      leftOnDisk.push({ ref: image.dataUrl, size, reference: dataUrl })
+    } else {
+      dataUrl = resolveToolBlob(image.dataUrl, resolve, ctx)
+    }
     if (dataUrl === undefined) return []
     return [
       {
@@ -726,9 +758,17 @@ function foldToolCall(
       : commandPhaseSchema.safeParse(spine.commandPhase).data
 
   let content: AcpToolCallContent[] | undefined
-  if (spine.content !== undefined) {
+  const prepared =
+    spine.content === undefined || ctx.nested === true
+      ? undefined
+      : ctx.storedImages?.content?.get(spine.content.ref)
+  if (prepared !== undefined) {
+    content = prepared
+  } else if (spine.content !== undefined) {
     const serialized = resolveToolBlob(spine.content, resolve, ctx)
-    if (serialized !== undefined) content = parseAcpToolCallContent(serialized)
+    if (serialized !== undefined) {
+      content = withRepeatsReferenced(parseAcpToolCallContent(serialized), leftOnDisk, ctx.hash)
+    }
   }
 
   const tc: ToolCall = {
@@ -757,18 +797,68 @@ function foldToolCall(
   return tc
 }
 
+/** An image a read left on disk: its spine ref, byte size and the reference standing in for it. */
+export interface StoredImageOnDisk {
+  readonly ref: ContentRef
+  readonly size: number
+  readonly reference: string
+}
+
+/**
+ * A tool call's ACP display content, from its serialized blob, with each image
+ * block that repeats one of `leftOnDisk` pointing at that image's reference, or
+ * null when the blob no longer hashes to `contentRef`. The store calls this as
+ * it reads each blob, so it never holds every repeated image at once; the fold
+ * then takes the result through `storedImages.content`.
+ */
+export function slimToolContent(
+  serialized: string,
+  contentRef: ContentRef,
+  leftOnDisk: ReadonlyArray<StoredImageOnDisk>,
+  hash: HashFn,
+): AcpToolCallContent[] | null {
+  if (hash(serialized) !== contentRef.sha256) return null
+  return withRepeatsReferenced(parseAcpToolCallContent(serialized), leftOnDisk, hash)
+}
+
+/**
+ * `content` with each image block that repeats an image left on disk pointing
+ * at that image's reference, so the fold does not keep a second copy of it. A
+ * repeat is the same bytes: same length, and (checked only when lengths match)
+ * the same sha256 the spine recorded for the image blob. Without a hash to
+ * check, nothing is replaced.
+ */
+function withRepeatsReferenced(
+  content: AcpToolCallContent[],
+  leftOnDisk: ReadonlyArray<StoredImageOnDisk>,
+  hash: HashFn | undefined,
+): AcpToolCallContent[] {
+  if (leftOnDisk.length === 0 || hash === undefined) return content
+  return content.map((item) => {
+    if (item.type !== 'content' || item.content.type !== 'image') return item
+    const { dataUrl } = item.content
+    const repeat = leftOnDisk.find(
+      (image) => image.size === dataUrl.length && hash(dataUrl) === image.ref.sha256,
+    )
+    return repeat === undefined
+      ? item
+      : { ...item, content: { ...item.content, dataUrl: repeat.reference } }
+  })
+}
+
 function foldSubagent(
   ref: SpineSubagentRef,
   resolve: RefResolver,
-  ctx: FoldOptions,
+  ctx: FoldContext,
 ): SubagentSession {
   const nested: RefResolver = (r) => resolve(ref.ref + r)
   const report = ctx.onIntegrityFailure
-  const nestedCtx: FoldOptions =
+  const nestedCtx: FoldContext =
     report === undefined
-      ? ctx
+      ? { ...ctx, nested: true }
       : {
           ...ctx,
+          nested: true,
           onIntegrityFailure: (r: string): void => {
             report(ref.ref + r)
           },
@@ -802,7 +892,7 @@ function foldSubagent(
   }
 }
 
-function foldOne(line: SpineMessageLine, resolve: RefResolver, ctx: FoldOptions): MessageLike {
+function foldOne(line: SpineMessageLine, resolve: RefResolver, ctx: FoldContext): MessageLike {
   const hash = ctx.hash
   const content = readBody(line.content.ref, resolve)
   verify(line.content, content, hash)

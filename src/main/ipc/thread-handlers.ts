@@ -29,6 +29,7 @@ import {
   backfillThreadPrRefs,
   loadProjectThreadMetas,
   loadThreadMessages,
+  readStoredToolImage,
   createThread,
   appendMessage,
   updateMeta,
@@ -163,6 +164,10 @@ export function registerThreadHandlers(
     assertMainFrameSender(event, win)
     const [id, thread] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
     return loadThreadMessages(id, thread)
+  })
+  ipcMain.handle('threads:stored-tool-image', (event, url: unknown) => {
+    assertMainFrameSender(event, win)
+    return readStoredToolImage(parseIpcArgs(z.string().max(4096), [url]))
   })
   // Canvas artefacts saved by earlier sessions. The renderer holds artefacts
   // only as live tabs and an in-memory thumbnail map, so after a restart these

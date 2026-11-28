@@ -19,6 +19,7 @@
     "storage:get",
     "threads:load-messages",
     "threads:load-project",
+    "threads:stored-tool-image",
     "usage:get-plan-usage",
     "workspace:get",
     "workspace:is-trusted"

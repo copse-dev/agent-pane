@@ -4,7 +4,13 @@ import { listRunningThreadIds } from '../agent-service.ts'
 import { pendingApprovalCountForThread, pendingApprovalRequestsForThread } from '../approval.ts'
 import { pendingAskUserCountForThread, pendingAskUserQuestionsForThread } from '../ask-user.ts'
 import { storageGet } from '../storage/storage.ts'
-import { loadProjectThreadMetas, loadThreadMessages, threadReadRevision } from '../thread-store.ts'
+import {
+  loadProjectThreadMetas,
+  loadThreadMessages,
+  readStoredToolImage,
+  threadReadRevision,
+} from '../thread-store.ts'
+import { isStoredToolImageUrl } from '@shared/threads/stored-tool-image.ts'
 import { inspectThreadCheckoutRoot } from '../thread-execution-context.ts'
 import { threadHasUncommittedChanges } from '../thread-dirty-status.ts'
 import { getProjectRoot } from '../workspace.ts'
@@ -200,5 +206,9 @@ export async function mobileThreadImage(
   const message = (await threadReads.read(projectId, threadId)).find(
     (item) => item.id === messageId,
   )
-  return message ? (mobileMessageImages(message)[index] ?? null) : null
+  const image = message ? mobileMessageImages(message)[index] : undefined
+  if (image === undefined) return null
+  // A large stored image stays on disk until the phone asks for it.
+  const dataUrl = isStoredToolImageUrl(image) ? await readStoredToolImage(image) : image
+  return dataUrl !== null && dataUrl.length <= 20_000_000 ? dataUrl : null
 }

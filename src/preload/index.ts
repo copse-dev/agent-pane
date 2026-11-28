@@ -1037,6 +1037,7 @@ const api: ApiClient = {
     cancelRequestSearch: () => ipcRenderer.invoke('threads:cancel-request-search'),
     loadMessages: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:load-messages', projectId, threadId),
+    storedToolImage: (url: string) => ipcRenderer.invoke('threads:stored-tool-image', url),
     onPrRefs: (
       handler: (
         projectId: string,

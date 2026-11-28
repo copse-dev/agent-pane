@@ -10,9 +10,15 @@ import { connectLocalLine, localSocketPath, serveLocalLine } from './local-socke
 const ping = z.object({ t: z.literal('ping') })
 type Ping = z.infer<typeof ping>
 
-async function until(check: () => boolean): Promise<void> {
-  for (let i = 0; i < 1_000 && !check(); i++)
-    await new Promise<void>((resolve) => setImmediate(resolve))
+/**
+ * Wait for `check` until a deadline in time, not for a count of event-loop
+ * turns: on a busy machine a socket's bytes take more turns than a fixed count
+ * allows. Each turn yields to timers and I/O without sleeping.
+ */
+async function until(check: () => boolean, timeoutMs = 10_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (!check() && Date.now() < deadline)
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
   assert.ok(check(), 'condition never held')
 }
 

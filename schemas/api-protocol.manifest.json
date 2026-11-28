@@ -2677,6 +2677,13 @@
           2
         ]
       },
+      "threads:stored-tool-image": {
+        "api": "threads.storedToolImage",
+        "args": [
+          1,
+          1
+        ]
+      },
       "threads:undo-history-edit": {
         "api": "threads.undoHistoryEdit",
         "args": [

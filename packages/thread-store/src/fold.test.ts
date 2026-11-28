@@ -10,6 +10,7 @@ import {
   idPathSegment,
   isToolArgsBlobRef,
   refsOfLine,
+  slimToolContent,
   type FileToWrite,
   type RefResolver,
 } from './fold.ts'
@@ -442,6 +443,152 @@ test('round-trips tool-result images through referenced blobs', () => {
     'the spine must not inline base64 data',
   )
   deepStrictEqual(foldThread(meta(), spine, resolverFor(files), { hash }).messages, messages)
+})
+
+test('leaves the tool images it is told to on disk, with their ACP repeats', () => {
+  const large = `data:image/png;base64,${'QkFER0U'.repeat(20)}`
+  const small = 'data:image/png;base64,aWNvbg=='
+  const call = (id: string, dataUrl: string): Message['toolCalls'][number] => ({
+    id,
+    name: 'image_gen',
+    args: {},
+    status: 'done',
+    result: 'Generated.',
+    images: [{ dataUrl, kind: 'screenshot' }],
+    content: [
+      { type: 'content', content: { type: 'text', text: 'Revised prompt' } },
+      { type: 'content', content: { type: 'image', dataUrl, mimeType: 'image/png' } },
+    ],
+  })
+  const messages: Message[] = [
+    {
+      id: 'a1',
+      role: 'assistant',
+      content: '',
+      toolCalls: [call('tc-large', large), call('tc-small', small)],
+      createdAt: 5,
+    },
+  ]
+  const { spine, files } = explodeThread(messages, hash)
+  const largeRef = 'blobs/a1.tool-0-img-0.dataurl'
+  // The store sizes this blob instead of reading it: the resolver never has it.
+  const resolve = resolverFor(files.filter((file) => file.ref !== largeRef))
+  const references: string[] = []
+  const folded = foldThread(meta(), spine, resolve, {
+    hash,
+    storedImages: {
+      sizes: new Map([[largeRef, large.length]]),
+      reference: (ref) => {
+        references.push(ref.ref)
+        return `copse-stored-image:${ref.ref}#${ref.sha256}`
+      },
+    },
+  })
+  const expected = `copse-stored-image:${largeRef}#${hash(large)}`
+  const [largeCall, smallCall] = folded.messages[0]?.toolCalls ?? []
+  ok(largeCall)
+  strictEqual(largeCall.images?.[0]?.dataUrl, expected)
+  deepStrictEqual(largeCall.content?.[1], {
+    type: 'content',
+    content: { type: 'image', dataUrl: expected, mimeType: 'image/png' },
+  })
+  deepStrictEqual(largeCall.content[0], {
+    type: 'content',
+    content: { type: 'text', text: 'Revised prompt' },
+  })
+  // An image the store read is inlined, and its repeat with it.
+  deepStrictEqual(smallCall, messages[0]?.toolCalls[1])
+  deepStrictEqual(references, [largeRef])
+})
+
+test('slims a content blob that repeats an image left on disk, and refuses a changed one', () => {
+  const image = `data:image/png;base64,${'U0xJTQ'.repeat(16)}`
+  const other = `data:image/png;base64,${'T1RIRVI'.repeat(16)}`
+  const serialized = JSON.stringify([
+    { type: 'content', content: { type: 'text', text: 'Revised prompt' } },
+    { type: 'content', content: { type: 'image', dataUrl: image, mimeType: 'image/png' } },
+    { type: 'content', content: { type: 'image', dataUrl: other, mimeType: 'image/png' } },
+  ])
+  const contentRef = { ref: 'blobs/a1.tool-0.acp-content.json', sha256: hash(serialized) }
+  const leftOnDisk = [
+    {
+      ref: { ref: 'blobs/a1.tool-0-img-0.dataurl', sha256: hash(image) },
+      size: image.length,
+      reference: 'copse-stored-image:a1',
+    },
+  ]
+  deepStrictEqual(slimToolContent(serialized, contentRef, leftOnDisk, hash), [
+    { type: 'content', content: { type: 'text', text: 'Revised prompt' } },
+    {
+      type: 'content',
+      content: { type: 'image', dataUrl: 'copse-stored-image:a1', mimeType: 'image/png' },
+    },
+    // Not a repeat of anything left on disk: kept as it is.
+    { type: 'content', content: { type: 'image', dataUrl: other, mimeType: 'image/png' } },
+  ])
+  strictEqual(
+    slimToolContent(serialized, { ...contentRef, sha256: hash('changed') }, leftOnDisk, hash),
+    null,
+  )
+})
+
+test('a subagent image is read even when its ref is listed to stay on disk', () => {
+  const nestedUrl = 'data:image/png;base64,bmVzdGVkLWltYWdl'
+  const messages: Message[] = [
+    {
+      id: 'a1',
+      role: 'assistant',
+      content: '',
+      toolCalls: [
+        {
+          id: 'tc-sub',
+          name: 'explore',
+          args: {},
+          status: 'done',
+          result: 'summary',
+          subagent: {
+            id: 'sub1',
+            kind: 'explore',
+            status: 'done',
+            prompt: 'p',
+            summary: 'found',
+            messages: [
+              {
+                id: 'sm1',
+                role: 'assistant',
+                content: '',
+                toolCalls: [
+                  {
+                    id: 'call_0',
+                    name: 'screenshot',
+                    args: {},
+                    status: 'done',
+                    result: 'ok',
+                    images: [{ dataUrl: nestedUrl }],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+      createdAt: 5,
+    },
+  ]
+  const { spine, files } = explodeThread(messages, hash)
+  // A subagent's refs are relative to its own directory, so the sizes a store
+  // gathers for the thread's top-level blobs never apply to them.
+  const folded = foldThread(meta(), spine, resolverFor(files), {
+    hash,
+    storedImages: {
+      sizes: new Map([['blobs/sm1.tool-0-img-0.dataurl', nestedUrl.length]]),
+      reference: () => 'copse-stored-image:unexpected',
+    },
+  })
+  strictEqual(
+    folded.messages[0]?.toolCalls[0]?.subagent?.messages[0]?.toolCalls[0]?.images?.[0]?.dataUrl,
+    nestedUrl,
+  )
 })
 
 test('round-trips visual evidence through content-addressed blobs', () => {

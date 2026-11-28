@@ -28,6 +28,8 @@ function invokeRead(request: RemoteRead): Promise<unknown> {
       return ipcRenderer.invoke('threads:load-project', ...args)
     case 'threads:load-messages':
       return ipcRenderer.invoke('threads:load-messages', ...args)
+    case 'threads:stored-tool-image':
+      return ipcRenderer.invoke('threads:stored-tool-image', ...args)
     case 'agent:running-thread-ids':
       return ipcRenderer.invoke('agent:running-thread-ids', ...args)
     case 'agent:suggest-next-step':

@@ -783,6 +783,11 @@ export interface ApiClient {
       projectId: string,
       threadId: string,
     ) => Promise<import('@shared/types').Message[]>
+    /**
+     * The image a `copse-stored-image:` reference names (see
+     * `@shared/threads/stored-tool-image.ts`), or null when it is gone.
+     */
+    storedToolImage: (url: string) => Promise<string | null>
     onPrRefs: (
       handler: (
         projectId: string,
