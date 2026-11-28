@@ -10336,6 +10336,202 @@
       "indexVersion": "v5",
       "source": "Artificial Analysis API (index v5), model 'qwen4-max', fetched 2026-11-17",
       "asOf": "2026-11-17"
+    },
+    {
+      "modelId": "gemini-4-neon-low",
+      "value": 44.1,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gemini-4-neon-low', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "granite-4-2-30b",
+      "value": 5.5,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'granite-4-2-30b', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "k2-horizon-7b",
+      "value": 10.6,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'k2-horizon-7b', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "gpt-6-2-sol-xhigh",
+      "value": 55.7,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-2-sol-xhigh', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "lfm3-vl-2b",
+      "value": 1.7,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'lfm3-vl-2b', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "gemini-4-neon-medium",
+      "value": 54.9,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gemini-4-neon-medium', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "k2-horizon-3-7b",
+      "value": 8,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'k2-horizon-3-7b', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "k2-horizon-mova-36b-a4b",
+      "value": 13.8,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'k2-horizon-mova-36b-a4b', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "gpt-6-2-astra-xhigh",
+      "value": 61.6,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-2-astra-xhigh', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "joyai-vl",
+      "value": 28,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'joyai-vl', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "gpt-6-2-astra",
+      "value": 62.1,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-2-astra', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "gemini-4-neon",
+      "value": 61.4,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gemini-4-neon', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "a-x-k2",
+      "value": 9,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'a-x-k2', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "gpt-6-2-sol-medium",
+      "value": 52.7,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-2-sol-medium', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "gpt-6-2-astra-medium",
+      "value": 57,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-2-astra-medium', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "k2-horizon-32b",
+      "value": 13.9,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'k2-horizon-32b', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "gemini-4-neon-high",
+      "value": 59.6,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gemini-4-neon-high', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "k2-horizon-0-9b",
+      "value": 2.7,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'k2-horizon-0-9b', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "gpt-6-2-sol",
+      "value": 57.3,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-2-sol', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "gpt-6-2-sol-low",
+      "value": 40.6,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-2-sol-low', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "inkling-high",
+      "value": 11,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'inkling-high', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "lfm3-1-7b",
+      "value": 6,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'lfm3-1-7b', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "gpt-6-2-astra-low",
+      "value": 45.7,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-2-astra-low', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "gpt-6-2-sol-high",
+      "value": 54.9,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-2-sol-high', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "inkling-2-mini",
+      "value": 20.1,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'inkling-2-mini', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "ling-3-2-air",
+      "value": 23.4,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'ling-3-2-air', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "inkling-small-high",
+      "value": 9.6,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'inkling-small-high', fetched 2026-11-24",
+      "asOf": "2026-11-24"
+    },
+    {
+      "modelId": "gpt-6-2-astra-high",
+      "value": 60.1,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-2-astra-high', fetched 2026-11-24",
+      "asOf": "2026-11-24"
     }
   ],
   "wanted": [

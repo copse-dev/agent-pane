@@ -3,7 +3,7 @@
 // cross-version equating maps. Source of truth: scripts/data/intellect-scores.json.
 // Absent models mean "no sourced measurement yet", not zero.
 // Intelligence Index data from Artificial Analysis (https://artificialanalysis.ai)
-// Last synced: 2026-11-17
+// Last synced: 2026-11-24
 
 import type { EquatingMap } from './intellect-equating.ts'
 
@@ -74,6 +74,12 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       indexVersion: 'v4.3',
       source: "Artificial Analysis API (index v4.3), model 'a-x-k2', fetched 2026-10-06",
       asOf: '2026-10-06',
+    },
+    {
+      value: 9,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'a-x-k2', fetched 2026-11-24",
+      asOf: '2026-11-24',
     },
   ],
   'agnes-2-5-pro-alpha': [
@@ -2981,6 +2987,39 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-11-17',
     },
   ],
+  'gemini-4-neon': [
+    {
+      value: 61.4,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'gemini-4-neon', fetched 2026-11-24",
+      asOf: '2026-11-24',
+    },
+  ],
+  'gemini-4-neon-high': [
+    {
+      value: 59.6,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'gemini-4-neon-high', fetched 2026-11-24",
+      asOf: '2026-11-24',
+    },
+  ],
+  'gemini-4-neon-low': [
+    {
+      value: 44.1,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'gemini-4-neon-low', fetched 2026-11-24",
+      asOf: '2026-11-24',
+    },
+  ],
+  'gemini-4-neon-medium': [
+    {
+      value: 54.9,
+      indexVersion: 'v5',
+      source:
+        "Artificial Analysis API (index v5), model 'gemini-4-neon-medium', fetched 2026-11-24",
+      asOf: '2026-11-24',
+    },
+  ],
   'gemma-3-1b': [
     {
       value: 1,
@@ -4800,6 +4839,87 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-11-10',
     },
   ],
+  'gpt-6-2-astra': [
+    {
+      value: 62.1,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'gpt-6-2-astra', fetched 2026-11-24",
+      asOf: '2026-11-24',
+    },
+  ],
+  'gpt-6-2-astra-high': [
+    {
+      value: 60.1,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'gpt-6-2-astra-high', fetched 2026-11-24",
+      asOf: '2026-11-24',
+    },
+  ],
+  'gpt-6-2-astra-low': [
+    {
+      value: 45.7,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'gpt-6-2-astra-low', fetched 2026-11-24",
+      asOf: '2026-11-24',
+    },
+  ],
+  'gpt-6-2-astra-medium': [
+    {
+      value: 57,
+      indexVersion: 'v5',
+      source:
+        "Artificial Analysis API (index v5), model 'gpt-6-2-astra-medium', fetched 2026-11-24",
+      asOf: '2026-11-24',
+    },
+  ],
+  'gpt-6-2-astra-xhigh': [
+    {
+      value: 61.6,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'gpt-6-2-astra-xhigh', fetched 2026-11-24",
+      asOf: '2026-11-24',
+    },
+  ],
+  'gpt-6-2-sol': [
+    {
+      value: 57.3,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'gpt-6-2-sol', fetched 2026-11-24",
+      asOf: '2026-11-24',
+    },
+  ],
+  'gpt-6-2-sol-high': [
+    {
+      value: 54.9,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'gpt-6-2-sol-high', fetched 2026-11-24",
+      asOf: '2026-11-24',
+    },
+  ],
+  'gpt-6-2-sol-low': [
+    {
+      value: 40.6,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'gpt-6-2-sol-low', fetched 2026-11-24",
+      asOf: '2026-11-24',
+    },
+  ],
+  'gpt-6-2-sol-medium': [
+    {
+      value: 52.7,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'gpt-6-2-sol-medium', fetched 2026-11-24",
+      asOf: '2026-11-24',
+    },
+  ],
+  'gpt-6-2-sol-xhigh': [
+    {
+      value: 55.7,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'gpt-6-2-sol-xhigh', fetched 2026-11-24",
+      asOf: '2026-11-24',
+    },
+  ],
   'gpt-6-astra': [
     {
       value: 52.7,
@@ -5245,6 +5365,12 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       indexVersion: 'v4.3',
       source: "Artificial Analysis API (index v4.3), model 'granite-4-2-30b', fetched 2026-10-13",
       asOf: '2026-10-13',
+    },
+    {
+      value: 5.5,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'granite-4-2-30b', fetched 2026-11-24",
+      asOf: '2026-11-24',
     },
   ],
   'granite-4-2-3b': [
@@ -5885,12 +6011,28 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-10-29',
     },
   ],
+  'inkling-2-mini': [
+    {
+      value: 20.1,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'inkling-2-mini', fetched 2026-11-24",
+      asOf: '2026-11-24',
+    },
+  ],
   'inkling-2-small': [
     {
       value: 30.6,
       indexVersion: 'v5',
       source: "Artificial Analysis API (index v5), model 'inkling-2-small', fetched 2026-11-10",
       asOf: '2026-11-10',
+    },
+  ],
+  'inkling-high': [
+    {
+      value: 11,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'inkling-high', fetched 2026-11-24",
+      asOf: '2026-11-24',
     },
   ],
   'inkling-small': [
@@ -5911,6 +6053,14 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       indexVersion: 'v5',
       source: "Artificial Analysis API (index v5), model 'inkling-small', fetched 2026-10-29",
       asOf: '2026-10-29',
+    },
+  ],
+  'inkling-small-high': [
+    {
+      value: 9.6,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'inkling-small-high', fetched 2026-11-24",
+      asOf: '2026-11-24',
     },
   ],
   'intellect-3': [
@@ -6025,6 +6175,14 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       source:
         "Artificial Analysis API (index v4.3), model 'jamba-reasoning-3b', fetched 2026-09-11",
       asOf: '2026-09-11',
+    },
+  ],
+  'joyai-vl': [
+    {
+      value: 28,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'joyai-vl', fetched 2026-11-24",
+      asOf: '2026-11-24',
     },
   ],
   'jt-35b-flash': [
@@ -6176,6 +6334,12 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       source: "Artificial Analysis API (index v4.3), model 'k2-horizon-0-9b', fetched 2026-09-22",
       asOf: '2026-09-22',
     },
+    {
+      value: 2.7,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'k2-horizon-0-9b', fetched 2026-11-24",
+      asOf: '2026-11-24',
+    },
   ],
   'k2-horizon-3-7b': [
     {
@@ -6183,6 +6347,20 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       indexVersion: 'v4.3',
       source: "Artificial Analysis API (index v4.3), model 'k2-horizon-3-7b', fetched 2026-09-22",
       asOf: '2026-09-22',
+    },
+    {
+      value: 8,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'k2-horizon-3-7b', fetched 2026-11-24",
+      asOf: '2026-11-24',
+    },
+  ],
+  'k2-horizon-32b': [
+    {
+      value: 13.9,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'k2-horizon-32b', fetched 2026-11-24",
+      asOf: '2026-11-24',
     },
   ],
   'k2-horizon-375b-a23b': [
@@ -6208,6 +6386,12 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       source: "Artificial Analysis API (index v4.3), model 'k2-horizon-7b', fetched 2026-09-22",
       asOf: '2026-09-22',
     },
+    {
+      value: 10.6,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'k2-horizon-7b', fetched 2026-11-24",
+      asOf: '2026-11-24',
+    },
   ],
   'k2-horizon-mova-36b-a4b': [
     {
@@ -6216,6 +6400,13 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       source:
         "Artificial Analysis API (index v4.3), model 'k2-horizon-mova-36b-a4b', fetched 2026-09-22",
       asOf: '2026-09-22',
+    },
+    {
+      value: 13.8,
+      indexVersion: 'v5',
+      source:
+        "Artificial Analysis API (index v5), model 'k2-horizon-mova-36b-a4b', fetched 2026-11-24",
+      asOf: '2026-11-24',
     },
   ],
   'k2-mova-36b-mid5': [
@@ -6614,6 +6805,22 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-09-11',
     },
   ],
+  'lfm3-1-7b': [
+    {
+      value: 6,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'lfm3-1-7b', fetched 2026-11-24",
+      asOf: '2026-11-24',
+    },
+  ],
+  'lfm3-vl-2b': [
+    {
+      value: 1.7,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'lfm3-vl-2b', fetched 2026-11-24",
+      asOf: '2026-11-24',
+    },
+  ],
   'ling-1t': [
     {
       value: 12.7,
@@ -6728,6 +6935,14 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       indexVersion: 'v5',
       source: "Artificial Analysis API (index v5), model 'ling-3-1-flash-1019', fetched 2026-11-10",
       asOf: '2026-11-10',
+    },
+  ],
+  'ling-3-2-air': [
+    {
+      value: 23.4,
+      indexVersion: 'v5',
+      source: "Artificial Analysis API (index v5), model 'ling-3-2-air', fetched 2026-11-24",
+      asOf: '2026-11-24',
     },
   ],
   'ling-flash-2-0': [
