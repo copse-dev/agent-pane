@@ -295,7 +295,9 @@ export async function seedSshWorker(
   if (copied.code === THREAD_HELD_EXIT) throw new SshThreadRefused(SSH_THREAD_BUSY)
   if (copied.code !== 0)
     throw new Error(`could not give the worker the thread: ${lastLines(copied.stderr)}`)
-  await writeSyncMark(local, threadId, (await localEvents(local, WHOLE)).prefixHash)
+  // The events as they went, not as they may be by now.
+  const pushed = entries.find((entry) => entry.path === 'events.jsonl')
+  if (pushed !== undefined) await writeSyncMark(local, threadId, sha256(pushed.data))
   return typeof seeded?.['title'] === 'string' ? { title: seeded['title'] } : {}
 }
 
