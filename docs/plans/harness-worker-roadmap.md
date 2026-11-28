@@ -145,9 +145,15 @@ _State._ R3 is built in five steps:
    8 calls open and holds the rest; a call too large for the line fails before it is
    sent. The app answers only a host of its own version that said hello on that line,
    and redacts known keys from any error it sends back.
-   Still open, for step 3: a relayed provider carries no compaction identity, an error's
-   provider status does not cross the line, model calls that bypass `buildProvider` are
-   not relayed, and the app makes a call for any model it can build (no allow-list).
+   Each call names the thread whose turn makes it (protocol 4); a call outside a turn is
+   not sent. A call goes to the app that sent the turn while that app is attached, else
+   to the latest app of the worker's own version: one that only asked the version, or
+   never said hello, gets no calls and no turns. The line reader scans each chunk once,
+   so a long call costs its length.
+   Still open, for step 3: the app side answers a call only for a turn it sent that
+   host, for that turn's models, within a budget and a time limit (with SSH turns); a
+   relayed provider carries no compaction identity, an error's provider status does not
+   cross the line, and model calls that bypass `buildProvider` are not relayed.
 3. **SSH thread turns run on the host**, with the thread store there and a mirror kept on
    the laptop (the user's choice, 2026-11-28). In parts:
    - **A profile that outlives builds (done).** Every build serves

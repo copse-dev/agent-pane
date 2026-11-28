@@ -104,6 +104,8 @@ export interface TurnHostDependencies {
 
 interface ClientState {
   version: string | null
+  /** It only asked which version serves here. */
+  probe: boolean
 }
 
 export class TurnHost {
@@ -228,7 +230,7 @@ export class TurnHost {
   handle(message: AppToHost, client: TurnHostClient): void {
     switch (message.t) {
       case 'hello':
-        this.clients.set(client, { version: message.version })
+        this.clients.set(client, { version: message.version, probe: message.probe === true })
         // An app of another version means an update was installed: finish the
         // turns here and make way for a host of the app's own version. An app
         // that is only asking which version serves here changes nothing.
@@ -245,7 +247,8 @@ export class TurnHost {
         })
         return
       case 'attach':
-        this.attach(client)
+        // Only an app that said which version it is sees this host's turns.
+        if (this.clients.has(client)) this.attach(client)
         return
       case 'stop':
         this.stop(message.threadId, message.reason)
@@ -359,6 +362,8 @@ export class TurnHost {
     if (this.running.has(turnKey) || this.claimed.has(turnKey)) return 'stale'
     const stopped = new AbortController()
     this.running.set(turnKey, { projectId, threadId, stopped })
+    // No app sent this turn: its calls go to whichever is attached.
+    this.deps.inferenceRelay?.placed(threadId, null)
     this.armIdle()
     this.deps.log(`thread ${threadId}: background command finished, waking its turn`)
     this.broadcastTo({ t: 'taken', projectId, threadId })
@@ -505,7 +510,11 @@ export class TurnHost {
       this.attachedClients.add(client)
       this.joined += 1
       this.armIdle()
-      this.deps.inferenceRelay?.attach(client)
+      // Model calls go only to an app of this host's version, never to one
+      // that only asked which version serves here.
+      const state = this.clients.get(client)
+      if (state?.version === this.deps.version && !state.probe)
+        this.deps.inferenceRelay?.attach(client)
     }
     const byProject = new Map<string, string[]>()
     for (const turn of this.running.values()) {
@@ -601,6 +610,8 @@ export class TurnHost {
     const turnKey = key(projectId, threadId)
     const stopped = new AbortController()
     this.running.set(turnKey, { projectId, threadId, stopped })
+    // The turn's model calls go to the app that sent it while it is attached.
+    this.deps.inferenceRelay?.placed(threadId, client)
     this.armIdle()
     this.deps.log(`thread ${threadId}: turn starting`)
     const turn = { accepted: false }
