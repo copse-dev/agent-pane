@@ -10,7 +10,10 @@
 //                                                         # (default: dist/schemas/…)
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
+import { API_PROTOCOL_VERSION } from '../src/shared/api-protocol.mts'
+import { generateApiProtocol } from './lib/api-protocol.mts'
 import { loadWorkerProtocol } from './lib/worker-protocol.mts'
+import { withPayloadTypes } from './lib/worker-protocol-payloads.mts'
 
 const args = process.argv.slice(2)
 const protocol = await loadWorkerProtocol()
@@ -45,6 +48,9 @@ if (schemaAt !== -1) {
     next && !next.startsWith('--') ? next : protocol.WORKER_PROTOCOL_SCHEMA_BUILD_PATH,
   )
   mkdirSync(dirname(out), { recursive: true })
-  writeFileSync(out, protocol.serializeWorkerProtocol(document))
+  // The payloads the line passes on unread take their shapes from the API
+  // protocol's types, which the TypeScript compiler reads (a few seconds).
+  const api = generateApiProtocol({ version: API_PROTOCOL_VERSION })
+  writeFileSync(out, protocol.serializeWorkerProtocol(withPayloadTypes({ ...document }, api.$defs)))
   console.log(`wrote ${out}`)
 }

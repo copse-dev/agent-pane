@@ -340,6 +340,25 @@ const threadPromptCommandShape = z.looseObject({
   thread: z.looseObject({ id }),
 })
 
+/**
+ * A host turn's thread prompt and task call, checked by the fields the app
+ * reads first. Exported with those shapes so the published schema can say
+ * what the checks accept (`worker-protocol-document.ts`).
+ */
+export const hostThreadPromptCommandSchema = z.custom<HostThreadPromptCommand>(
+  (value) => threadPromptCommandShape.safeParse(value).success,
+)
+export const hostTaskCallSchema = z.custom<HostTaskCall>(
+  (value) => hostTaskCallShape.safeParse(value).success,
+)
+export const HOST_CHECKED_SHAPES: ReadonlyMap<z.core.$ZodType, z.ZodType> = new Map<
+  z.core.$ZodType,
+  z.ZodType
+>([
+  [hostThreadPromptCommandSchema, threadPromptCommandShape],
+  [hostTaskCallSchema, hostTaskCallShape],
+])
+
 // Chunks and snapshots come from this user's own host, written by the same
 // code that writes them in-process; the envelope is checked, the payload is not.
 export const hostToAppSchema = z.discriminatedUnion('t', [
@@ -433,9 +452,7 @@ export const hostToAppSchema = z.discriminatedUnion('t', [
     threadId: id,
     // Built by the same tool code as an in-process prompt; the window checks
     // the destination and the grant again before it submits.
-    command: z.custom<HostThreadPromptCommand>(
-      (value) => threadPromptCommandShape.safeParse(value).success,
-    ),
+    command: hostThreadPromptCommandSchema,
   }),
   z.object({
     t: z.literal('task-call'),
@@ -444,7 +461,7 @@ export const hostToAppSchema = z.discriminatedUnion('t', [
     threadId: id,
     // Made by the same supervised-command code as an in-process call; the
     // app's supervisor checks the record as it writes it.
-    call: z.custom<HostTaskCall>((value) => hostTaskCallShape.safeParse(value).success),
+    call: hostTaskCallSchema,
   }),
   z.object({
     t: z.literal('process-result'),
