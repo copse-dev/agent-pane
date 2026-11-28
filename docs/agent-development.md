@@ -111,6 +111,23 @@ With fnm, run `fnm install && fnm use` from the repository root instead.
 
 Confirm with `node -v` before debugging a tooling failure.
 
+**A desktop app's `node` can break installs on macOS.** Some apps bundle a Node and add its
+directory to `PATH`; the ChatGPT app adds `/Applications/ChatGPT.app/Contents/Resources`. That
+binary is signed with the hardened runtime and library validation, so it refuses unsigned or
+third-party native modules. The Corepack `pnpm` shim starts with `#!/usr/bin/env node`, so when that
+directory comes first, pnpm and every install script run on it, and each native step fails with
+`ERR_DLOPEN_FAILED` (`… not valid for use in process: mapping process and mapped file
+(non-platform) have different Team IDs`). The nodejs.org build that nvm and fnm install, and
+Homebrew's Node, load the same files. `scripts/check-node-version.cjs` catches this on macOS. It runs
+as `pnpm:devPreinstall`, because pnpm builds allowed dependencies (electron-chromedriver's install
+loads a native addon) before the root `preinstall`, and again as `preinstall` and the first
+postinstall step. It loads a native addon from the dependency tree, or,
+before one is installed, reads the binary's `codesign` flags, then stops with the binary's path.
+Run `which -a node`, put nvm's or Homebrew's Node first on `PATH` (or drop the app's directory),
+and rerun `pnpm install`. When a postinstall step itself fails to load a native module,
+`prepare-native-artifacts.mts` restates dyld's full reason on short lines, because pnpm's reporter
+cuts long lines at the terminal width.
+
 ### Claude Code cloud sessions
 
 Claude Code cloud containers run as root on Linux, default to Node 22, and lack the packages CI
