@@ -16,9 +16,11 @@ import {
 import { promises as fsPromises } from 'node:fs'
 import { basename, dirname, join, relative, resolve as resolvePath, sep } from 'node:path'
 import type { LLMMessage } from '@copse/llm/wire-types.ts'
+import type { AcpToolCallContent } from '@copse/agent/wire-types.ts'
 import type {
   Message,
   OrphanProjectStore,
+  ToolCall,
   Thread,
   ThreadCatalogEntry,
   ThreadCatalogHit,
@@ -32,12 +34,19 @@ import {
   explodeThread,
   foldThread,
   refsOfLine,
+  slimToolContent,
   type FileToWrite,
   type RefResolver,
+  type StoredImageOnDisk,
 } from './fold.ts'
 import { parseOkfMessage } from './okf-message.ts'
 import type { TurnOutcome } from './turn-outcome.ts'
 import { withImmutableMessageFiles } from './immutable-message-files.ts'
+import {
+  isStoredToolImageUrl,
+  parseStoredToolImageUrl,
+  storedToolImageUrl,
+} from './stored-tool-image.ts'
 import { parseThreadMetaValue, parseThreadValue } from './thread-boundary.ts'
 import {
   parseSpine,
@@ -570,7 +579,7 @@ function writeThread(projectId: string, thread: Thread): void {
   for (const contentDir of REF_DIRS) assertStorePath(join(dir, contentDir))
   mkdirSync(dir, { recursive: true })
 
-  const { spine, files } = explodeThread(thread.messages, sha256Hex)
+  const { spine, files } = explodeThread(thread.messages.map(withStoredImagesRead), sha256Hex)
   // Resolve every path before writing any, so a bad ref leaves nothing behind.
   const targets = files.map((file) => ({
     path: contentFilePathForWrite(dir, file.ref),
@@ -656,6 +665,26 @@ async function mapConcurrent<T, R>(
   return results
 }
 
+/**
+ * The size from which a stored tool image is left on disk when a thread is
+ * read: a screenshot or generated image, not an icon. Below it the image is
+ * inlined as before, which keeps small fixtures and thumbnails self-contained.
+ */
+export const STORED_IMAGE_MIN_BYTES = 64 * 1024
+
+/** How many ACP content blobs that repeat a stored image a read slims at once. */
+const SLIM_CONTENT_CONCURRENCY = 4
+
+async function fileSizeOrNull(path: string): Promise<number | null> {
+  try {
+    assertStorePath(path)
+    const stats = await fsPromises.lstat(path)
+    return stats.isFile() ? stats.size : null
+  } catch {
+    return null
+  }
+}
+
 async function readOrNull(path: string, strict = false): Promise<string | null> {
   try {
     assertStorePath(path)
@@ -685,19 +714,37 @@ async function readOrNull(path: string, strict = false): Promise<string | null> 
  * then throws exactly the `Missing thread file` error the synchronous resolver
  * used to throw, so a corrupt thread is still skipped rather than half-loaded.
  */
-async function prefetchThreadFiles(dir: string, spineRaw: string): Promise<Map<string, string>> {
+async function prefetchThreadFiles(
+  dir: string,
+  spineRaw: string,
+  reference: (ref: ContentRef) => string,
+): Promise<{
+  contents: Map<string, string>
+  storedImageSizes: Map<string, number>
+  storedImageContent: Map<string, AcpToolCallContent[]>
+}> {
   const contents = new Map<string, string>()
+  // Large top-level tool images stay on disk (`stored-tool-image.ts`): sized,
+  // not read. The ACP content that repeats one is slimmed as it is read.
+  const storedImageSizes = new Map<string, number>()
+  const storedImageContent = new Map<string, AcpToolCallContent[]>()
   // Directory prefixes still to walk, paired with the spine already read for them.
   let frontier: Array<{ prefix: string; raw: string }> = [{ prefix: '', raw: spineRaw }]
 
   while (frontier.length > 0) {
     const fileRefs: string[] = []
     const nested: string[] = []
+    const imageCalls: Array<{ images: ContentRef[]; content: ContentRef | undefined }> = []
     for (const { prefix, raw } of frontier) {
       for (const line of parseSpine(raw)) {
         const { files, subagentDirs } = refsOfLine(line)
         for (const ref of files) fileRefs.push(prefix + ref)
         for (const sub of subagentDirs) nested.push(prefix + sub)
+        if (prefix !== '') continue
+        for (const call of line.toolCalls) {
+          const images = (call.images ?? []).map((image) => image.dataUrl)
+          if (images.length > 0) imageCalls.push({ images, content: call.content })
+        }
       }
     }
 
@@ -708,11 +755,45 @@ async function prefetchThreadFiles(dir: string, spineRaw: string): Promise<Map<s
       const path = contentFilePath(dir, prefix + EVENTS_FILE)
       return { prefix, raw: path === null ? null : await readOrNull(path) }
     })
-    await mapConcurrent(fileRefs, async (ref) => {
-      const path = contentFilePath(dir, ref)
-      const body = path === null ? null : await readOrNull(path)
-      if (body !== null) contents.set(ref, body)
-    })
+    await mapConcurrent(
+      imageCalls.flatMap((call) => call.images),
+      async (image) => {
+        const path = contentFilePath(dir, image.ref)
+        const size = path === null ? null : await fileSizeOrNull(path)
+        if (size !== null && size >= STORED_IMAGE_MIN_BYTES) storedImageSizes.set(image.ref, size)
+      },
+    )
+    const slimmed = new Map<string, { content: ContentRef; leftOnDisk: StoredImageOnDisk[] }>()
+    for (const call of imageCalls) {
+      const leftOnDisk = call.images.flatMap((ref) => {
+        const size = storedImageSizes.get(ref.ref)
+        return size === undefined ? [] : [{ ref, size, reference: reference(ref) }]
+      })
+      if (call.content !== undefined && leftOnDisk.length > 0)
+        slimmed.set(call.content.ref, { content: call.content, leftOnDisk })
+    }
+    await mapConcurrent(
+      fileRefs.filter((ref) => !storedImageSizes.has(ref) && !slimmed.has(ref)),
+      async (ref) => {
+        const path = contentFilePath(dir, ref)
+        const body = path === null ? null : await readOrNull(path)
+        if (body !== null) contents.set(ref, body)
+      },
+    )
+    // A few at a time: each of these holds a repeated image until it is slimmed.
+    await mapConcurrent(
+      [...slimmed.entries()],
+      async ([ref, { content, leftOnDisk }]) => {
+        const path = contentFilePath(dir, ref)
+        const body = path === null ? null : await readOrNull(path)
+        if (body === null) return
+        const slim = slimToolContent(body, content, leftOnDisk, sha256Hex)
+        // A blob that fails its hash goes to the fold as read, which reports it.
+        if (slim === null) contents.set(ref, body)
+        else storedImageContent.set(ref, slim)
+      },
+      SLIM_CONTENT_CONCURRENCY,
+    )
 
     frontier = []
     for (const { prefix, raw } of nestedSpines) {
@@ -721,7 +802,7 @@ async function prefetchThreadFiles(dir: string, spineRaw: string): Promise<Map<s
       frontier.push({ prefix, raw })
     }
   }
-  return contents
+  return { contents, storedImageSizes, storedImageContent }
 }
 
 /**
@@ -774,7 +855,13 @@ async function readThread(
     // threads a span each would swamp the trace, while the totals (calls, ms,
     // bytes) are what actually identify the cost.
     const prefetchStart = process.hrtime.bigint()
-    const contents = await prefetchThreadFiles(dir, raw)
+    const reference = (ref: ContentRef): string =>
+      storedToolImageUrl({ projectId, threadId, ref: ref.ref, sha256: ref.sha256 })
+    const { contents, storedImageSizes, storedImageContent } = await prefetchThreadFiles(
+      dir,
+      raw,
+      reference,
+    )
     let prefetchedBytes = 0
     for (const body of contents.values()) prefetchedBytes += body.length
     threadStoreEnvironment().perf.count(
@@ -790,6 +877,7 @@ async function readThread(
     try {
       const thread = foldThread(meta, spine, resolve, {
         hash: sha256Hex,
+        storedImages: { sizes: storedImageSizes, reference, content: storedImageContent },
         onIntegrityFailure: (ref) => {
           console.warn(
             `[thread-store] Thread ${threadId}: ${ref} failed its hash check; showing that tool call as unavailable`,
@@ -2392,7 +2480,7 @@ async function appendMessageUnqueued(
   const dir = threadDir(projectId, threadId)
   const knownIds = await knownMessageIdsFor(dir)
   await fsPromises.mkdir(dir, { recursive: true })
-  const exploded = explodeMessage(message, sha256Hex)
+  const exploded = explodeMessage(withStoredImagesRead(message), sha256Hex)
   const { line, files } = knownIds.has(message.id) ? withImmutableMessageFiles(exploded) : exploded
   const targets = files.map((file) => ({
     path: contentFilePathForWrite(dir, file.ref),
@@ -2630,31 +2718,104 @@ export function readHookRun(
 }
 
 /**
- * One tool image the thread stored, by the spine ref a fold read it from
- * (`storedToolImageRef` in `fold.ts`), or null when it is gone or no longer matches.
- *
- * The ref comes back from a window, so it is checked like a ref read off disk:
- * a `.dataurl` file directly in the thread's own `blobs/`, whose content still
- * hashes to what the spine recorded and is an image data URL. It reads off the
- * project's write queue: a blob that is mid-rewrite fails the hash check, and
- * the window shows it unavailable rather than wait behind a turn's writes.
+ * Where a stored-image reference's blob lives, or null for anything but a
+ * `.dataurl` file directly in that thread's own `blobs/`. A reference can come
+ * back from a window, so it is checked like a ref read off disk.
  */
-export async function readStoredToolImage(
-  projectId: string,
-  threadId: string,
-  ref: ContentRef,
-): Promise<string | null> {
-  const [top, name, ...rest] = ref.ref.split('/')
+const STORED_IMAGE_ID = /^[\w-]{1,128}$/
+
+function storedImagePath(projectId: string, threadId: string, ref: string): string | null {
+  if (!STORED_IMAGE_ID.test(projectId) || !STORED_IMAGE_ID.test(threadId)) return null
+  const [top, name, ...rest] = ref.split('/')
   if (top !== 'blobs' || name === undefined || rest.length > 0 || !name.endsWith('.dataurl')) {
     return null
   }
-  const path = contentFilePath(threadDir(projectId, threadId), ref.ref)
-  if (path === null) return null
-  const body = await readOrNull(path)
-  if (body === null || !body.startsWith('data:image/') || sha256Hex(body) !== ref.sha256) {
+  try {
+    return contentFilePath(threadDir(projectId, threadId), ref)
+  } catch {
+    // An id that does not name a thread directory under its project.
     return null
   }
-  return body
+}
+
+/** `body` when it is still the image the spine recorded, else null. */
+function storedImageBody(body: string | null, sha256: string): string | null {
+  return body !== null && body.startsWith('data:image/') && sha256Hex(body) === sha256 ? body : null
+}
+
+/**
+ * The image a `copse-stored-image:` reference names, or null when the reference
+ * is malformed or the blob is gone or no longer hashes to what it recorded. It
+ * reads off the project's write queue: a blob that is mid-rewrite fails the
+ * hash check, and a window shows it unavailable rather than wait behind a
+ * turn's writes.
+ */
+export async function readStoredToolImage(reference: string): Promise<string | null> {
+  const address = parseStoredToolImageUrl(reference)
+  if (address === null) return null
+  const path = storedImagePath(address.projectId, address.threadId, address.ref)
+  return path === null ? null : storedImageBody(await readOrNull(path), address.sha256)
+}
+
+function callHoldsReference(call: ToolCall): boolean {
+  return (
+    (call.images ?? []).some((image) => isStoredToolImageUrl(image.dataUrl)) ||
+    (call.content ?? []).some(
+      (item) =>
+        item.type === 'content' &&
+        item.content.type === 'image' &&
+        isStoredToolImageUrl(item.content.dataUrl),
+    )
+  )
+}
+
+/**
+ * `message` with each stored-image reference read back into the image it names,
+ * so a write stores bytes and never a reference. A message folded from this
+ * store, edited, or copied from another thread can carry them. An image whose
+ * blob is gone is dropped, as a fold drops one that fails its hash check.
+ */
+function withStoredImagesRead(message: Message): Message {
+  if (!message.toolCalls.some(callHoldsReference)) return message
+  const read = new Map<string, string | null>()
+  const image = (reference: string): string | null => {
+    if (!read.has(reference)) {
+      const address = parseStoredToolImageUrl(reference)
+      const path =
+        address === null ? null : storedImagePath(address.projectId, address.threadId, address.ref)
+      read.set(
+        reference,
+        address === null || path === null ? null : storedImageBody(safeRead(path), address.sha256),
+      )
+    }
+    return read.get(reference) ?? null
+  }
+  const toolCalls = message.toolCalls.map((call): ToolCall => {
+    if (!callHoldsReference(call)) return call
+    const images = (call.images ?? []).flatMap((entry) => {
+      if (!isStoredToolImageUrl(entry.dataUrl)) return [entry]
+      const dataUrl = image(entry.dataUrl)
+      return dataUrl === null ? [] : [{ ...entry, dataUrl }]
+    })
+    const content = call.content?.flatMap((item) => {
+      if (
+        item.type !== 'content' ||
+        item.content.type !== 'image' ||
+        !isStoredToolImageUrl(item.content.dataUrl)
+      ) {
+        return [item]
+      }
+      const dataUrl = image(item.content.dataUrl)
+      return dataUrl === null ? [] : [{ ...item, content: { ...item.content, dataUrl } }]
+    })
+    const { images: _images, content: _content, ...rest } = call
+    return {
+      ...rest,
+      ...(images.length > 0 ? { images } : {}),
+      ...(content !== undefined ? { content } : {}),
+    }
+  })
+  return { ...message, toolCalls }
 }
 
 /** Append one control-plane decision (and optional detail blob) to the thread spine. */

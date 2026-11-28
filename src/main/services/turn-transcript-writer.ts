@@ -16,7 +16,6 @@ import {
   setThreadStatus,
 } from '@shared/store/thread-helpers.ts'
 import type { CommandPhase } from '@copse/agent/wire-types.ts'
-import { threadWithStoredToolImageRefs } from './stored-tool-images.ts'
 import type {
   Message,
   StreamChunk,
@@ -199,7 +198,7 @@ export class TurnTranscriptWriter {
           this.deps.snapshot?.({
             projectId,
             source: 'disk',
-            thread: threadWithStoredToolImageRefs(projectId, thread),
+            thread,
             checkpoint: { stream: null, pendingTurn: null },
           })
         break
@@ -209,14 +208,12 @@ export class TurnTranscriptWriter {
 
   private sendSnapshot(session: Session): void {
     const thread = getThreadById(session.store, session.threadId)
-    // References replace the stored images before the clone, which would
-    // otherwise copy every image the thread holds (`stored-tool-images.ts`).
     if (thread)
       this.deps.snapshot?.(
         structuredClone({
           projectId: session.projectId,
           source: 'runtime',
-          thread: threadWithStoredToolImageRefs(session.projectId, thread),
+          thread,
           checkpoint: session.reducer.checkpoint(session.threadId),
         }),
       )

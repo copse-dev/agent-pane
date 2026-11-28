@@ -34,4 +34,24 @@ describe('mobile message images', () => {
       [user, assistant, tool],
     )
   })
+
+  it('lists a stored tool image by its reference, for the image request to read', () => {
+    const stored = 'copse-stored-image:p/t/blobs%2Fa1.tool-0-img-0.dataurl/' + 'a'.repeat(64)
+    assert.deepEqual(
+      mobileMessageImages({
+        toolCalls: [
+          {
+            images: [{ dataUrl: stored }],
+            content: [
+              {
+                type: 'content',
+                content: { type: 'image', dataUrl: stored, mimeType: 'image/png' },
+              },
+            ],
+          },
+        ],
+      }),
+      [stored],
+    )
+  })
 })

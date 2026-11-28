@@ -2,12 +2,14 @@ import '../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from '@shared/array-utils.ts'
-import type { Thread } from '@shared/types'
+import type { Thread, ToolCall } from '@shared/types'
+import { storedToolImageUrl } from '@shared/threads/stored-tool-image.ts'
 import {
   downloadThreadArchive,
   threadExportBaseName,
   threadHasExportableContent,
   threadToJsonl,
+  threadWithStoredImages,
 } from './export-thread.ts'
 import { createFakeApi } from './fake-api.test-support.ts'
 import {
@@ -408,5 +410,61 @@ describe('downloadThreadArchive', () => {
       new Uint8Array(await downloaded.blob.arrayBuffer()),
       new Uint8Array([80, 75, 5, 6]),
     )
+  })
+})
+
+describe('threadWithStoredImages', () => {
+  const stored = storedToolImageUrl({
+    projectId: 'p1',
+    threadId: 't1',
+    ref: 'blobs/a1.tool-0-img-0.dataurl',
+    sha256: 'c'.repeat(64),
+  })
+  const gone = storedToolImageUrl({
+    projectId: 'p1',
+    threadId: 't1',
+    ref: 'blobs/a1.tool-1-img-0.dataurl',
+    sha256: 'd'.repeat(64),
+  })
+  const image = 'data:image/png;base64,c3RvcmVk'
+  const call = (id: string, dataUrl: string): ToolCall => ({
+    id,
+    name: 'image_gen',
+    args: {},
+    status: 'done',
+    result: 'ok',
+    images: [{ dataUrl, kind: 'screenshot' }],
+    content: [{ type: 'content', content: { type: 'image', dataUrl, mimeType: 'image/png' } }],
+  })
+
+  it('exports the images a reference names, read once, and leaves out one that is gone', async () => {
+    const reads: string[] = []
+    const t: Thread = {
+      id: 't1',
+      title: 'Badges',
+      status: 'idle',
+      messages: [
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: '',
+          toolCalls: [call('c1', stored), call('c2', gone)],
+          createdAt: 1,
+        },
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    const complete = await threadWithStoredImages(t, (url) => {
+      reads.push(url)
+      return Promise.resolve(url === stored ? image : null)
+    })
+    assert.deepEqual(reads, [stored, gone])
+    const [kept, dropped] = complete.messages[0]?.toolCalls ?? []
+    assert.deepEqual(kept, call('c1', image))
+    assert.equal(dropped?.images, undefined)
+    assert.deepEqual(dropped?.content, [])
+    assert.equal(threadToJsonl(complete).includes('copse-stored-image:'), false)
   })
 })

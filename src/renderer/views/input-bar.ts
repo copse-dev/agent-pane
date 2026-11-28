@@ -504,7 +504,10 @@ export function mountInputBar(
         !store.getState().developerMode || !threadHasExportableContent(getActiveThread(store)),
       onClick: (): void => {
         const thread = getActiveThread(store)
-        if (threadHasExportableContent(thread)) downloadThreadJsonl(thread)
+        if (!threadHasExportableContent(thread)) return
+        void downloadThreadJsonl(api, thread).catch((error: unknown) => {
+          showErrorToast('Export conversation failed', error)
+        })
       },
     },
     {
@@ -765,7 +768,9 @@ export function mountInputBar(
   function shareTrace(): void {
     const thread = getActiveThread(store)
     if (!threadHasExportableContent(thread)) return
-    downloadThreadJsonl(thread)
+    void downloadThreadJsonl(api, thread).catch((error: unknown) => {
+      showErrorToast('Export conversation failed', error)
+    })
     void api.shell.openExternal(buildShareTraceIssueUrl(thread)).catch((error: unknown) => {
       showErrorToast('Share trace failed', error)
     })
