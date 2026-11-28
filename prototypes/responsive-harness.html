@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Responsive check: one review surface</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 12px;
+        font:
+          12px/1.4 -apple-system,
+          sans-serif;
+        background: #111;
+        color: #ddd;
+      }
+      table {
+        border-collapse: collapse;
+        margin-bottom: 14px;
+      }
+      td,
+      th {
+        border: 1px solid #333;
+        padding: 3px 7px;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        background: #1d1d1d;
+      }
+      .bad {
+        color: #ff7b72;
+      }
+      .ok {
+        color: #7ee787;
+      }
+      .frames {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        align-items: flex-start;
+      }
+      .fw {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      iframe {
+        border: 1px solid #444;
+        background: #1e1e1e;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="report">Measuring…</div>
+    <div class="frames" id="frames"></div>
+    <script>
+      // Real host sizes: side dock (default 480px, dragged narrow), bottom dock (wide but ~360px tall), pop-out window.
+      const SIZES = [
+        { name: 'side dock, narrow', w: 340, h: 760 },
+        { name: 'side dock, default', w: 480, h: 760 },
+        { name: 'side dock, wide', w: 760, h: 760 },
+        { name: 'bottom dock', w: 1180, h: 360 },
+        { name: 'pop-out', w: 1280, h: 800 },
+      ]
+      const STATES = [
+        {
+          name: 'conflict menu open',
+          js: "S.sel='c1';S.stage='local';S.tab='files';S.pend={};S.merged={};S.redone={};S.cxOpen='p3';S.cxEdit=null;renderAll();document.querySelector('.cx-wrap').scrollIntoView({block:'center'})",
+        },
+        {
+          name: 'combining a conflict by hand',
+          js: "S.sel='c1';S.stage='local';S.tab='files';S.pend={};S.merged={};S.redone={};S.cxOpen=null;S.cxEdit='p3';renderAll()",
+        },
+        {
+          name: '⋯ menu open',
+          js: "S.sel='c1';S.stage='local';S.tab='checks';S.cxOpen=null;S.cxEdit=null;S.more=true;renderAll()",
+        },
+        {
+          name: 'your PR',
+          js: "S.sel='c1';S.stage='pr';S.tab='files';S.pend={};S.merged={};S.redone={};S.cxOpen=null;S.cxEdit=null;renderAll()",
+        },
+        {
+          name: 'after push (outdated + resolved rows)',
+          js: "S.sel='c1';S.stage='pr';S.tab='files';S.pend.p1='accepted';S.pend.p2='rejected';S.pend.p3='rejected';S.pushed.p1=true;S.pushedHead=true;S.th.c1.forEach(t=>{if(t.id==='t1')t.outdated=true});renderAll()",
+        },
+      ]
+      const host = document.getElementById('frames')
+      const results = []
+      let pending = SIZES.length * STATES.length
+      function measure(win, size, state) {
+        const d = win.document,
+          W = size.w,
+          H = size.h
+        const vis = (el) =>
+          el && el.offsetParent !== null && getComputedStyle(el).display !== 'none'
+        // Past the pane's edge and not inside an ancestor that clips or scrolls it.
+        const clipped = (el) => {
+          for (let a = el.parentElement; a && a !== d.body; a = a.parentElement) {
+            const o = getComputedStyle(a).overflowX
+            if (o !== 'visible') {
+              const r = a.getBoundingClientRect()
+              if (r.right <= W + 1 && r.left >= -1) return true
+            }
+          }
+          return false
+        }
+        const over = [...d.querySelectorAll('body *')].filter((el) => {
+          const r = el.getBoundingClientRect()
+          return (
+            r.width > 0 &&
+            (r.right > W + 1 || r.left < -1) &&
+            getComputedStyle(el).position !== 'fixed' &&
+            !clipped(el)
+          )
+        })
+        const outermost = over
+          .filter((el) => !over.includes(el.parentElement))
+          .slice(0, 4)
+          .map((el) => (el.className || el.tagName).toString().split(' ')[0])
+        const ch = d.querySelector('.ch'),
+          center = d.getElementById('center'),
+          side = d.getElementById('side')
+        const tabs = d.querySelector('.tabs'),
+          title = d.querySelector('.title-row')
+        const sideShown = vis(side) && side.getBoundingClientRect().width > 0
+        return {
+          size: size.name + ` ${W}×${H}`,
+          state: state.name,
+          pageScrollX: d.documentElement.scrollWidth > W + 1,
+          overflowing: over.length,
+          where: outermost.join(', '),
+          headerPct: ch ? Math.round((ch.getBoundingClientRect().height / H) * 100) : 0,
+          centerW: center ? Math.round(center.getBoundingClientRect().width) : 0,
+          side: sideShown ? Math.round(side.getBoundingClientRect().width) + 'px' : 'hidden',
+          mergeReachable:
+            !!d.querySelector('[data-side="merge"]') &&
+            (sideShown || vis(d.querySelector('.status-btn'))),
+          hiddenClip: [...d.querySelectorAll('.dfile,.thread,.thread-min,.cx-opt,.cx-ed')].filter(
+            (el) => el.scrollWidth > el.clientWidth + 1,
+          ).length,
+          headerSticky: ch ? getComputedStyle(ch).position === 'sticky' : false,
+          tabsClipped: tabs ? tabs.scrollWidth > tabs.clientWidth + 1 : false,
+          menuOff: (() => {
+            const b = d.getElementById('root').getBoundingClientRect()
+            return [...d.querySelectorAll('#root .switch')].filter((m) => {
+              const r = m.getBoundingClientRect()
+              return (
+                r.width > 0 &&
+                (r.left < b.left - 1 ||
+                  r.right > b.right + 1 ||
+                  r.bottom > b.bottom + 1 ||
+                  r.top < b.top - 1)
+              )
+            }).length
+          })(),
+          titleClipped: title ? title.scrollWidth > title.clientWidth + 1 : false,
+        }
+      }
+      for (const size of SIZES)
+        for (const state of STATES) {
+          const wrap = document.createElement('div')
+          wrap.className = 'fw'
+          wrap.innerHTML = `<div>${size.name} · ${size.w}×${size.h} · ${state.name}</div>`
+          const f = document.createElement('iframe')
+          f.width = size.w
+          f.height = size.h
+          f.src =
+            new URLSearchParams(location.search).get('file') ||
+            'unified-change-review.html?t=' + Date.now()
+          f.onload = () => {
+            try {
+              f.contentWindow.sessionStorage.clear()
+            } catch {}
+            f.contentWindow.eval(state.js)
+            setTimeout(() => {
+              results.push(measure(f.contentWindow, size, state))
+              if (--pending === 0) report()
+            }, 150)
+          }
+          wrap.appendChild(f)
+          host.appendChild(wrap)
+        }
+      function report() {
+        const cell = (v, bad) => `<td class="${bad ? 'bad' : 'ok'}">${v}</td>`
+        document.getElementById('report').innerHTML =
+          `<table><tr><th>Size</th><th>State</th><th>Page scrolls sideways</th><th>Elements past the edge</th><th>Content clipped inside a box</th><th>Header height (pinned?)</th><th>Diff column</th><th>Side panel</th><th>Merge reachable (side or Status)</th><th>Tabs scroll</th><th>Title row clipped</th><th>Menu off the panel</th></tr>` +
+          results
+            .map(
+              (r) =>
+                `<tr><td>${r.size}</td><td>${r.state}</td>${cell(r.pageScrollX ? 'yes' : 'no', r.pageScrollX)}${cell(r.overflowing ? `${r.overflowing} (${r.where})` : '0', r.overflowing)}${cell(r.hiddenClip, r.hiddenClip)}${cell(r.headerPct + '%' + (r.headerSticky ? ' pinned' : ' scrolls'), r.headerPct > 35 && r.headerSticky)}${cell(r.centerW + 'px', r.centerW < 360)}${cell(r.side, false)}${cell(r.state === 'your PR' ? (r.mergeReachable ? 'yes' : 'no') : 'n/a', r.state === 'your PR' && !r.mergeReachable)}${cell(r.tabsClipped ? 'yes' : 'no', false)}${cell(r.titleClipped ? 'yes' : 'no', r.titleClipped)}${cell(String(r.menuOff), r.menuOff)}</tr>`,
+            )
+            .join('') +
+          '</table>'
+        document.title = 'done'
+      }
+    </script>
+  </body>
+</html>
