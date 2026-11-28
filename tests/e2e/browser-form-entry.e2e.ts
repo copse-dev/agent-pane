@@ -5,7 +5,11 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { prepareMockTurn, expectAssistantReply } from './helpers/mock-scenario.ts'
 import { submitComposer } from './helpers/composer.ts'
-import { e2eWorkspaceDir, resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import {
+  removeAllProjectStoresOnRelaunch,
+  resetUserData,
+  seedEmptyProject,
+} from './helpers/seed-config.ts'
 import { saveAppScreenshot, saveAppViewportScreenshot } from './helpers/screenshot.ts'
 import { frameInTranscript } from './helpers/sticky-prompt.ts'
 import { waitForTranscriptScrollSettled } from './helpers/scroll-to-bottom.ts'
@@ -83,7 +87,7 @@ describe('native browser form entry', () => {
           : PAGE,
     )
     resetUserData()
-    removeE2eTree(e2eWorkspaceDir())
+    removeAllProjectStoresOnRelaunch()
     projectId = `browser-form-entry-${String(++caseNumber)}`
     seedEmptyProject(root, projectId, {
       subagentsEnabled: false,

@@ -1,6 +1,9 @@
 import { $, browser, expect } from '@wdio/globals'
 import {
+  removeProjectStoreOnRelaunch,
   resetUserData,
+  SCROLL_STREAMING_PROJECT_ID,
+  SCROLL_TO_BOTTOM_PROJECT_ID,
   seedScrollStreamingFixture,
   seedScrollToBottomFixture,
   seedStableWorkspace,
@@ -147,6 +150,11 @@ describe('scroll to bottom', () => {
 
   afterEach(() => {
     resetUserData()
+    // The running app still holds these thread stores open. Mark them so the
+    // launcher removes them once that app has exited, instead of leaving them
+    // to appear as recoverable threads in a later spec's fixture.
+    removeProjectStoreOnRelaunch(SCROLL_TO_BOTTOM_PROJECT_ID)
+    removeProjectStoreOnRelaunch(SCROLL_STREAMING_PROJECT_ID)
     if (ownedWorkspaceRoot !== null) {
       removeE2eTree(ownedWorkspaceRoot)
       ownedWorkspaceRoot = null

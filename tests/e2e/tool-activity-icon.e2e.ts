@@ -3,7 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
-  e2eWorkspaceDir,
+  removeProjectStoreOnRelaunch,
   readSeededSettings,
   resetUserData,
   seedEmptyProject,
@@ -20,7 +20,6 @@ import { setComposerValue } from './helpers/composer.ts'
 import { approveShellCommandIfPrompted } from './helpers/shell-approval.ts'
 import { startConversationServer, type ConversationServer } from './helpers/conversation-server.ts'
 import { waitForAgentIdle } from './helpers.ts'
-import { removeE2eTree } from './helpers/remove-tree.ts'
 
 async function submitToolPrompt(): Promise<void> {
   await $('.submit-btn').click()
@@ -53,7 +52,7 @@ describe('tool activity icon', function () {
       'e2e-tool-activity-icon-project',
       'e2e-tool-activity-icon-nested-project',
     ]) {
-      removeE2eTree(join(e2eWorkspaceDir(), projectId))
+      removeProjectStoreOnRelaunch(projectId)
     }
     // A shallow source checkout need not have local main. Use real fixture
     // refs for both footer discovery and first-send checkout, never fake names.
@@ -219,7 +218,7 @@ describe('tool activity icon — nested rollup row', function () {
       'e2e-tool-activity-icon-project',
       'e2e-tool-activity-icon-nested-project',
     ]) {
-      removeE2eTree(join(e2eWorkspaceDir(), projectId))
+      removeProjectStoreOnRelaunch(projectId)
     }
     // A shallow source checkout need not have local main. Use real fixture
     // refs for both footer discovery and first-send checkout, never fake names.
