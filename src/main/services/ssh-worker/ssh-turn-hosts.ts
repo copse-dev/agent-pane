@@ -101,8 +101,13 @@ const HELD_RECHECK_MS = 15_000
  * as a container run's are past its time limit.
  */
 const TURN_WALL_CLOCK_MS = 4 * 60 * 60_000
-/** The most one host turn's calls may send, estimated at four characters a token. */
+/**
+ * The most one host turn's calls may cost: what each sends (messages and
+ * tools, at four characters a token) and the most it may get back.
+ */
 const TURN_TOKEN_BUDGET = 40_000_000
+/** The output a call that names no limit is charged for. */
+const UNSTATED_OUTPUT_TOKENS = 64_000
 /** Settings that name a model a turn may call for one of its roles. */
 const ROLE_MODEL_SETTINGS = [
   'model',
@@ -119,6 +124,8 @@ const HELD_UNREAD_LIMIT = 20
 
 export class SshTurnHosts {
   private readonly hosts = new Map<string, Promise<Host | null>>()
+  /** The hosts whose worker started, which a quit stops; a start in progress is not waited for. */
+  private readonly opened = new Map<string, Host>()
 
   private readonly running = new Map<string, RunningThread>()
 
@@ -128,6 +135,8 @@ export class SshTurnHosts {
    * as the window knows, so Stop can reach them when the host is back.
    */
   private readonly heldThere = new Map<string, { hostId: string; projectId: string }>()
+  /** Held threads a Stop is reaching now, so a second Stop starts no second one. */
+  private readonly stopping = new Set<string>()
 
   private readonly deps: SshTurnHostDependencies
 
@@ -189,7 +198,9 @@ export class SshTurnHosts {
       return `This turn does not use ${request.model}, so the app does not call it for the host.`
     if (this.deps.now() - thread.startedAt > TURN_WALL_CLOCK_MS)
       return 'This turn has run past its time limit on the host.'
-    const tokens = Math.ceil(JSON.stringify(request.messages).length / 4)
+    const sent = JSON.stringify(request.messages).length + JSON.stringify(request.tools).length
+    const tokens =
+      Math.ceil(sent / 4) + (request.providerOptions.maxOutputTokens ?? UNSTATED_OUTPUT_TOKENS)
     if (thread.spent + tokens > TURN_TOKEN_BUDGET)
       return 'This turn has spent its token budget on the host.'
     thread.spent += tokens
@@ -200,7 +211,16 @@ export class SshTurnHosts {
   stop(threadId: string): boolean {
     const held = this.heldThere.get(threadId)
     if (held !== undefined) {
-      void this.stopHeld(threadId, held.hostId, held.projectId)
+      if (!this.stopping.has(threadId)) {
+        this.stopping.add(threadId)
+        void this.stopHeld(threadId, held.hostId, held.projectId)
+          .catch((error: unknown) => {
+            this.deps.log(`[ssh-worker] could not stop ${threadId} on its host: ${String(error)}`)
+          })
+          .finally(() => {
+            this.stopping.delete(threadId)
+          })
+      }
       return true
     }
     const thread = this.running.get(threadId)
@@ -215,10 +235,11 @@ export class SshTurnHosts {
    * no one to make them, so they would only wait. Each ends interrupted.
    */
   async stopAllForQuit(timeoutMs: number): Promise<void> {
-    const hosts = await Promise.all([...this.hosts.values()])
     await Promise.all(
-      hosts.map((host) =>
-        host === null ? Promise.resolve() : host.link.stopAllForQuit(timeoutMs),
+      [...this.opened.values()].map((host) =>
+        host.link.stopAllForQuit(timeoutMs).catch((error: unknown) => {
+          this.deps.log(`[ssh-worker] could not stop the turns on a host: ${String(error)}`)
+        }),
       ),
     )
   }
@@ -376,12 +397,25 @@ export class SshTurnHosts {
       if (await opened.link.ensureConnected()) return opened
       // The forward or the worker went away: start it again next time.
       this.hosts.delete(hostId)
+      this.opened.delete(hostId)
       opened.link.close()
       return null
     })
   }
 
+  /** Start a host's worker; null, and logged, when it cannot be, so the turn runs here. */
   private async open(hostId: string): Promise<Host | null> {
+    try {
+      const host = await this.startHost(hostId)
+      if (host !== null) this.opened.set(hostId, host)
+      return host
+    } catch (error) {
+      this.deps.log(`[ssh-worker] turns on ${hostId} run in the app: ${String(error)}`)
+      return null
+    }
+  }
+
+  private async startHost(hostId: string): Promise<Host | null> {
     const started = await this.deps.start(hostId)
     if (!started.ok) {
       this.deps.log(`[ssh-worker] turns on ${hostId} run in the app: ${started.reason}`)

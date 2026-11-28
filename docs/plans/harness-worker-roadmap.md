@@ -186,7 +186,8 @@ _State._ R3 is built in five steps:
      app as before.
    - **What the app answers for the host (done).** The app answers a host's model call
      only for a turn it sent that host, on that turn's model or one of the role models
-     its settings name, within 40M estimated tokens and four hours a turn. Questions,
+     its settings name, within 40M estimated tokens a turn (what each call sends and the
+     most it may get back) and four hours. Questions,
      diff reviews and instruction notices are answered only for that turn's thread and
      project; a question cannot offer workspace trust, and shell output the host sends is
      dropped. A worker that says it cannot run the turn (`turnCannotRunOn`) is given
@@ -195,7 +196,9 @@ _State._ R3 is built in five steps:
      commands are refused with a message saying to run them in the foreground. A thread
      the host still holds after its line went stays running in the list; Stop reaches it
      there, and quitting the app stops every SSH turn. A refused prompt shows why in a
-     toast and keeps a queued prompt queued. The two copies are matched by a sync mark
+     toast and keeps a queued prompt queued, and a delegated prompt for a thread running
+     there is refused. The copy back keeps the laptop's model choices, and the host's
+     copy can only raise the thread's usage counts. The two copies are matched by a sync mark
      (`ssh-host-sync.json`): the side that moved since the last copy wins, and both moving
      is refused as a fork.
    - **Still open in step 3:**
@@ -203,6 +206,11 @@ _State._ R3 is built in five steps:
        live, and a line that reconnects mid-turn does not stream the rest of it;
      - a lost line cannot check the worker's pid, so such a turn is left to the user
        (Continue) rather than guessed;
+     - a prompt refused because the host is running a turn it started by itself is
+       still in the laptop's copy, so once that turn ends the two copies have both moved
+       and the thread is refused as forked until the user forks it;
+     - a thread the host holds after its line went shows running until Stop reaches the
+       host, or the app restarts;
      - each turn copies the whole thread history both ways, not only what changed;
      - a thread deleted on the laptop stays in the host's store;
      - commands on the host run unconfined once the user allows them, as an SSH thread's

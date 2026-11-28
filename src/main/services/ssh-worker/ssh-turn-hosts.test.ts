@@ -22,13 +22,18 @@ const NEEDS = { model: 'm', pluginRuntimes: false, sandbox: false }
 /** The time the hosts see, which a test moves on. */
 const clock = { now: 1_000 }
 
-function call(threadId: string, model: string, text = 'hi'): HostInferRequest {
+function call(
+  threadId: string,
+  model: string,
+  text = 'hi',
+  maxOutputTokens?: number,
+): HostInferRequest {
   return {
     t: 'infer',
     id: 'c1',
     threadId,
     model,
-    providerOptions: {},
+    providerOptions: maxOutputTokens === undefined ? {} : { maxOutputTokens },
     messages: [{ role: 'user', content: text }],
     tools: [],
   }
@@ -72,7 +77,7 @@ function connection(
 function hosts(
   conn: SshConnection,
   placement: TurnPlacement | Promise<TurnPlacement>,
-  started = true,
+  started: boolean | 'throws' = true,
   onRun?: () => void,
   settings: Promise<Record<string, unknown>> = Promise.resolve({
     model: 'm',
@@ -105,18 +110,20 @@ function hosts(
   }
   const deps: SshTurnHostDependencies = {
     start: () =>
-      Promise.resolve(
-        started
-          ? {
-              ok: true,
-              localSocket: '/l.sock',
-              remoteSocket: '/r.sock',
-              uploaded: false,
-              hello: { version: '1', pid: 1, capabilities },
-              node: NODE,
-            }
-          : { ok: false, reason: 'the user kept turns on this computer' },
-      ),
+      started === 'throws'
+        ? Promise.reject(new Error('the line dropped'))
+        : Promise.resolve(
+            started
+              ? {
+                  ok: true,
+                  localSocket: '/l.sock',
+                  remoteSocket: '/r.sock',
+                  uploaded: false,
+                  hello: { version: '1', pid: 1, capabilities },
+                  node: NODE,
+                }
+              : { ok: false, reason: 'the user kept turns on this computer' },
+          ),
     connection: () => conn,
     settings: () => settings,
     link: () => link,
@@ -172,6 +179,11 @@ describe("an SSH thread's turns on its host", () => {
       turnHosts.refuseCall('dev', call('t1', 'm', 'x'.repeat(200_000_000))) ?? '',
       /token budget/,
     )
+    // What a call may get back counts too.
+    assert.match(
+      turnHosts.refuseCall('dev', call('t1', 'm', 'hi', 39_900_000)) ?? '',
+      /token budget/,
+    )
     clock.now += 5 * 60 * 60_000
     assert.match(turnHosts.refuseCall('dev', call('t1', 'm')) ?? '', /time limit/)
     ended.resolve('host')
@@ -190,6 +202,12 @@ describe("an SSH thread's turns on its host", () => {
     const declined = hosts(connection().connection, 'host', false)
     assert.equal(await declined.hosts.run('dev', PROJECT, 't1', '{}', NEEDS), 'app')
     assert.deepEqual(declined.events, [])
+
+    // A start that fails outright runs the turn here too, and is tried again.
+    const failed = hosts(connection().connection, 'host', 'throws')
+    assert.equal(await failed.hosts.run('dev', PROJECT, 't1', '{}', NEEDS), 'app')
+    assert.equal(await failed.hosts.run('dev', PROJECT, 't1', '{}', NEEDS), 'app')
+    await failed.hosts.stopAllForQuit(10)
 
     const full = hosts(connection(true).connection, 'host')
     assert.equal(await full.hosts.run('dev', PROJECT, 't1', '{}', NEEDS), 'app')

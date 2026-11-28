@@ -405,7 +405,6 @@ export function truncateToolOutput(
   return acc.toString()
 }
 
-/** Append to a string field without exceeding max UTF-8 bytes (head/tail truncation). */
 /**
  * Text gathered chunk by chunk, capped as {@link appendFlatCapped} caps it, in
  * time linear in what arrives: within the cap the chunks are only kept, and
@@ -443,6 +442,7 @@ export class FlatCappedText {
   }
 }
 
+/** Append to a string field without exceeding max UTF-8 bytes (head/tail truncation). */
 export function appendFlatCapped(target: string, chunk: string, maxBytes: number): string {
   const combined = target + chunk
   if (utf8ByteLength(combined) <= maxBytes) return combined

@@ -164,6 +164,8 @@ import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
 import { setRemoteWatcherInstallApprover } from './services/ssh-workspace/remote-watcher-install-approval.ts'
 import { storageGet } from './services/storage/storage.ts'
 import { setSshWorkerInstallApprover } from './services/ssh-worker/ssh-worker-install-approval.ts'
+import { SSH_THREAD_BUSY } from './services/ssh-worker/ssh-worker-seed.ts'
+import { SshThreadRefused } from '@shared/ssh-thread-refused.ts'
 import {
   createSshTurnHosts,
   sshProjectOf,
@@ -1439,6 +1441,9 @@ app
         // where their grant is checked.
         // A thread the app is already running stays in the app, so the copy
         // here and the host's never go apart.
+        // A delegated prompt runs here, so not while the host runs the thread.
+        if (delegation && sshTurnHosts?.runningThreadIds().includes(threadId) === true)
+          throw new SshThreadRefused(SSH_THREAD_BUSY)
         const onSshHost =
           !delegation && sshTurnHosts && !listRunningThreadIds().includes(threadId)
             ? sshProjectOf(storageGet('projects'), projectId)

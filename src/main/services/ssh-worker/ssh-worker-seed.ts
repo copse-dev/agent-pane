@@ -369,7 +369,14 @@ const LAPTOP_META_FIELDS = new Set([
   'proposedBy',
   'archives',
   'archivedAt',
+  // The models a turn may call: the app allows the host only these.
+  'model',
+  'reasoning',
+  'modelSelections',
 ])
+
+/** Counts of what the thread used, which the host's copy may only raise. */
+const LAPTOP_COUNT_FIELDS = ['continuationUsed', 'crossThreadPromptsUsed']
 
 /** The host's meta with this computer's own fields kept. */
 function mergedMeta(
@@ -386,6 +393,12 @@ function mergedMeta(
   if (here !== null) {
     for (const field of LAPTOP_META_FIELDS)
       if (Object.hasOwn(here, field)) merged[field] = here[field]
+    for (const field of LAPTOP_COUNT_FIELDS) {
+      const mine = here[field]
+      const theirs = merged[field]
+      if (typeof mine === 'number' && !(typeof theirs === 'number' && theirs > mine))
+        merged[field] = mine
+    }
     if (here['title'] !== seeded.title && typeof here['title'] === 'string')
       merged['title'] = here['title']
   }
