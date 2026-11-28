@@ -31,6 +31,9 @@
           "protocol",
           "version"
         ],
+        "infer-alive": [
+          "id"
+        ],
         "infer-chunk": [
           "chunk",
           "id"

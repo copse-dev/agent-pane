@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict'
-import { describe, it } from 'node:test'
+import { describe, it, mock } from 'node:test'
 import type { LLMProvider, ProviderStreamChunk } from '@copse/llm/wire-types.ts'
 import { HostInferenceRelay } from './host-inference-relay.ts'
 import { TurnHostLink } from './turn-host-link.ts'
-import type {
-  AppToHost,
-  HostInferRequest,
-  HostToApp,
-  TurnHostClient,
-  TurnHostConnection,
+import {
+  MAX_OPEN_INFERENCES,
+  type AppToHost,
+  type HostInferRequest,
+  type HostToApp,
+  type TurnHostClient,
+  type TurnHostConnection,
 } from './turn-host-protocol.ts'
 
 const VERSION = '1.0.0'
@@ -246,5 +247,67 @@ describe("a worker's model calls, made by the app", () => {
     )
     await assert.rejects(collect(relay.provider('m')), /only for a worker of its own version/)
     assert.equal(asked, 0)
+  })
+
+  it('holds calls past the limit until one ends, instead of failing them', async () => {
+    const relay = new HostInferenceRelay()
+    let started = 0
+    let open = 0
+    let most = 0
+    let onStart: (() => void) | null = null
+    const gates: (() => void)[] = []
+    const startedAtLeast = async (count: number): Promise<void> => {
+      while (started < count)
+        await new Promise<void>((resolve) => {
+          onStart = resolve
+        })
+    }
+    await joined(relay, async function* () {
+      started++
+      open++
+      most = Math.max(most, open)
+      const gate = Promise.withResolvers<undefined>()
+      gates.push(() => {
+        gate.resolve(undefined)
+      })
+      onStart?.()
+      await gate.promise
+      open--
+      yield { type: 'text', text: 'done' }
+    })
+    const total = MAX_OPEN_INFERENCES + 2
+    const calls = Array.from({ length: total }, () => collect(relay.provider('m')))
+    await startedAtLeast(MAX_OPEN_INFERENCES)
+    for (let next = 0; next < total; next++) {
+      gates[next]?.()
+      await startedAtLeast(Math.min(total, MAX_OPEN_INFERENCES + next + 1))
+    }
+    const results = await Promise.all(calls)
+    assert.ok(results.every((chunks) => chunks.length === 1))
+    assert.equal(most, MAX_OPEN_INFERENCES)
+  })
+
+  it('keeps a quiet call the app says is still alive', async () => {
+    mock.timers.enable({ apis: ['setTimeout'] })
+    try {
+      const relay = new HostInferenceRelay({ createId: (): string => 'call-1', quietLimitMs: 40 })
+      const started = Promise.withResolvers<undefined>()
+      const answer = Promise.withResolvers<undefined>()
+      const { app } = await joined(relay, async function* () {
+        started.resolve(undefined)
+        await answer.promise
+        yield { type: 'text', text: 'slow' }
+      })
+      const call = collect(relay.provider('m'))
+      await started.promise
+      for (let beat = 0; beat < 5; beat++) {
+        mock.timers.tick(30)
+        relay.receive({ t: 'infer-alive', id: 'call-1' }, app)
+      }
+      answer.resolve(undefined)
+      assert.deepEqual(await call, [{ type: 'text', text: 'slow' }])
+    } finally {
+      mock.timers.reset()
+    }
   })
 })

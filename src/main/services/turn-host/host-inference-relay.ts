@@ -7,8 +7,10 @@ import type {
   ProviderStreamChunk,
 } from '@copse/llm/wire-types.ts'
 import type { BuildProviderOptions } from '../providers/provider-selection.ts'
+import { MAX_LINE_CHARS } from '../local-socket.ts'
 import {
   hostInferRequestSchema,
+  MAX_OPEN_INFERENCES,
   type HostInferRequest,
   type TurnHostClient,
 } from './turn-host-protocol.ts'
@@ -27,8 +29,10 @@ import {
  * twice. With no app attached a call waits for one: a turn pauses while the
  * laptop sleeps and carries on when it wakes. An app that goes away during a
  * reply fails that call, as a dropped connection to a provider would, and so
- * does a reply that goes quiet for {@link QUIET_LIMIT_MS}: a line that stalled
- * without closing must not hold a turn for ever.
+ * does a reply that goes quiet for {@link QUIET_LIMIT_MS} (the app says
+ * `infer-alive` each minute while it works): a line that stalled without
+ * closing must not hold a turn for ever. At most {@link MAX_OPEN_INFERENCES}
+ * calls are open at once; later ones wait for one to end.
  */
 
 /** How long a reply may go without a chunk before its call fails. */
@@ -36,6 +40,7 @@ export const QUIET_LIMIT_MS = 10 * 60_000
 
 interface OpenCall {
   client: TurnHostClient
+  alive: () => void
   push: (chunk: ProviderStreamChunk) => void
   end: (error?: Error) => void
 }
@@ -61,6 +66,9 @@ export class HostInferenceRelay {
   private readonly apps: TurnHostClient[] = []
   private readonly calls = new Map<string, OpenCall>()
   private readonly appWaiters = new Set<() => void>()
+  /** Calls holding a slot, and the calls waiting for one. */
+  private open = 0
+  private readonly slotWaiters = new Set<() => void>()
   private readonly createId: () => string
   private readonly quietLimitMs: number
 
@@ -92,11 +100,16 @@ export class HostInferenceRelay {
     message:
       | { t: 'infer-chunk'; id: string; chunk: ProviderStreamChunk }
       | { t: 'infer-end'; id: string }
-      | { t: 'infer-error'; id: string; error: string },
+      | { t: 'infer-error'; id: string; error: string }
+      | { t: 'infer-alive'; id: string },
     from: TurnHostClient,
   ): void {
     const call = this.calls.get(message.id)
     if (call === undefined || call.client !== from) return
+    if (message.t === 'infer-alive') {
+      call.alive()
+      return
+    }
     if (message.t === 'infer-chunk') {
       call.push(message.chunk)
       return
@@ -113,11 +126,16 @@ export class HostInferenceRelay {
     }
   }
 
-  private async waitForApp(signal: AbortSignal | undefined): Promise<TurnHostClient> {
+  /** Resolve once `ready` gives a value, or reject when `signal` aborts. */
+  private async waitFor<T>(
+    ready: () => T | undefined,
+    waiters: Set<() => void>,
+    signal: AbortSignal | undefined,
+  ): Promise<T> {
     for (;;) {
       signal?.throwIfAborted()
-      const app = this.apps.at(-1)
-      if (app !== undefined) return app
+      const value = ready()
+      if (value !== undefined) return value
       const { promise, resolve, reject } = Promise.withResolvers<undefined>()
       const abort = (): void => {
         reject(signal?.reason instanceof Error ? signal.reason : new Error('Cancelled'))
@@ -126,13 +144,28 @@ export class HostInferenceRelay {
         resolve(undefined)
       }
       signal?.addEventListener('abort', abort, { once: true })
-      this.appWaiters.add(wake)
+      waiters.add(wake)
       try {
         await promise
       } finally {
         signal?.removeEventListener('abort', abort)
-        this.appWaiters.delete(wake)
+        waiters.delete(wake)
       }
+    }
+  }
+
+  private takeSlot(): true | undefined {
+    if (this.open >= MAX_OPEN_INFERENCES) return undefined
+    this.open++
+    return true
+  }
+
+  private release(): void {
+    this.open--
+    const [next] = this.slotWaiters
+    if (next !== undefined) {
+      this.slotWaiters.delete(next)
+      next()
     }
   }
 
@@ -147,7 +180,28 @@ export class HostInferenceRelay {
     },
     signal: AbortSignal | undefined,
   ): AsyncIterable<ProviderStreamChunk> {
-    const client = await this.waitForApp(signal)
+    // Taken where it is checked: a check and a later take would let every
+    // caller waiting in the same tick through.
+    await this.waitFor(() => this.takeSlot(), this.slotWaiters, signal)
+    try {
+      yield* this.relay(call, signal)
+    } finally {
+      this.release()
+    }
+  }
+
+  private async *relay(
+    call: {
+      model: string
+      promptCacheKey: string | undefined
+      opts: BuildProviderOptions
+      messages: LLMMessage[]
+      tools: LLMTool[]
+      options: LLMStreamOptions | undefined
+    },
+    signal: AbortSignal | undefined,
+  ): AsyncIterable<ProviderStreamChunk> {
+    const client = await this.waitFor(() => this.apps.at(-1), this.appWaiters, signal)
     const id = this.createId()
     if (this.calls.has(id)) throw new Error('A model call with this id is already open.')
     const queue: ProviderStreamChunk[] = []
@@ -172,6 +226,7 @@ export class HostInferenceRelay {
     }
     this.calls.set(id, {
       client,
+      alive: heard,
       push: (chunk) => {
         queue.push(chunk)
         heard()
@@ -208,11 +263,15 @@ export class HostInferenceRelay {
     }
     try {
       const checked = hostInferRequestSchema.safeParse(request)
-      if (!checked.success) {
+      // A line the app would not read closes it, and every call on it.
+      const problem = !checked.success
+        ? (checked.error.issues[0]?.message ?? 'it is malformed')
+        : JSON.stringify(request).length >= MAX_LINE_CHARS
+          ? 'it is too large'
+          : null
+      if (problem !== null) {
         this.calls.delete(id)
-        throw new Error(
-          `This model call cannot be sent to the app: ${checked.error.issues[0]?.message ?? 'it is malformed'}`,
-        )
+        throw new Error(`This model call cannot be sent to the app: ${problem}`)
       }
       client.send(request)
       heard()

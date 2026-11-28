@@ -93,7 +93,7 @@ function isPrivateEndpoint(path: string): boolean {
  * is not speaking the protocol, and holding it all would only grow memory, so
  * its connection is closed.
  */
-const MAX_LINE_CHARS = 128 * 1024 * 1024
+export const MAX_LINE_CHARS = 128 * 1024 * 1024
 
 function readLines(socket: Socket, onLine: (line: string) => void): void {
   let buffered = ''

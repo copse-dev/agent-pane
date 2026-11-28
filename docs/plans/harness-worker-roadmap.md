@@ -140,9 +140,11 @@ _State._ R3 is built in five steps:
    attached last, which builds the provider with its own keys and streams the reply back
    (`turn-host/host-inference-relay.ts`, `turn-host/app-inference.ts`; turn host
    protocol 3). With no app attached a call waits for one, so a turn pauses while the
-   laptop sleeps; an app that goes away mid-reply, or goes quiet for 10 minutes, fails
-   that call. The app answers only a host of its own version that said hello on that
-   line, at most 8 calls at once, and redacts known keys from any error it sends back.
+   laptop sleeps; an app that goes away mid-reply, or goes quiet for 10 minutes (it says
+   `infer-alive` each minute while it works), fails that call. The worker keeps at most
+   8 calls open and holds the rest; a call too large for the line fails before it is
+   sent. The app answers only a host of its own version that said hello on that line,
+   and redacts known keys from any error it sends back.
    Still open, for step 3: a relayed provider carries no compaction identity, an error's
    provider status does not cross the line, model calls that bypass `buildProvider` are
    not relayed, and the app makes a call for any model it can build (no allow-list).

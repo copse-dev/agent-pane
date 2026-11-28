@@ -8,6 +8,8 @@ import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
 import type { HostTaskCall, HostTaskCallResult } from './host-task-supervisor.ts'
 import type { HostDispatchRecord } from './host-dispatch-record.ts'
 import {
+  INFER_ALIVE_MS,
+  MAX_OPEN_INFERENCES,
   TURN_HOST_PROTOCOL,
   type AppToHost,
   type DispatchState,
@@ -126,9 +128,6 @@ type PromptKinds = {
 
 /** How many answered prompts the link remembers, to answer a replay the same way. */
 const ANSWERED_LIMIT = 256
-
-/** The model calls one host may have open in this app at once. */
-const MAX_INFERENCES = 8
 
 /** A host answers hello at once; one that does not in this time is not one. */
 const HELLO_TIMEOUT_MS = 10_000
@@ -630,7 +629,7 @@ export class TurnHostLink {
       ? 'This app makes model calls only for a worker of its own version.'
       : this.inferences.has(request.id)
         ? 'A model call with this id is already open.'
-        : this.inferences.size >= MAX_INFERENCES
+        : this.inferences.size >= 2 * MAX_OPEN_INFERENCES
           ? 'Too many model calls are open at once; try again.'
           : this.deps.infer === undefined
             ? 'This app makes no model calls for a worker.'
@@ -642,6 +641,12 @@ export class TurnHostLink {
     }
     const controller = new AbortController()
     this.inferences.set(request.id, controller)
+    // Retries and long silent reasoning send nothing for minutes: say the call
+    // is still alive, so the worker does not take it for a stalled line.
+    const alive = setInterval(() => {
+      reply({ t: 'infer-alive', id: request.id })
+    }, INFER_ALIVE_MS)
+    alive.unref()
     try {
       for await (const chunk of infer(request, controller.signal)) {
         if (controller.signal.aborted) return
@@ -656,6 +661,7 @@ export class TurnHostLink {
         reply({ t: 'infer-error', id: request.id, error: redact(text).slice(0, 8_000) })
       }
     } finally {
+      clearInterval(alive)
       this.inferences.delete(request.id)
     }
   }

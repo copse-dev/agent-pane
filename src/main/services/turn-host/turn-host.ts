@@ -311,6 +311,7 @@ export class TurnHost {
       case 'infer-chunk':
       case 'infer-end':
       case 'infer-error':
+      case 'infer-alive':
         this.deps.inferenceRelay?.receive(message, client)
         return
     }

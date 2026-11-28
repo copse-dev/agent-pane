@@ -74,7 +74,8 @@ import {
  *
  * - `infer` asks the app to make a model call for a worker that holds no keys
  *   (`host-inference-relay.ts`); the app streams the reply as `infer-chunk`,
- *   then `infer-end` or `infer-error`. `infer-cancel` stops it.
+ *   then `infer-end` or `infer-error`, with `infer-alive` each minute while
+ *   it is still working on one. `infer-cancel` stops it.
  *
  * Written for any transport: nothing here assumes the two ends share a machine
  * beyond the profile path (`harness-worker-roadmap.md` R2).
@@ -111,6 +112,7 @@ export type AppToHost =
   | { t: 'infer-chunk'; id: string; chunk: ProviderStreamChunk }
   | { t: 'infer-end'; id: string }
   | { t: 'infer-error'; id: string; error: string }
+  | { t: 'infer-alive'; id: string }
 
 /** The provider settings a relayed model call is made with (`BuildProviderOptions`). */
 export interface RelayedProviderOptions {
@@ -302,6 +304,7 @@ export const appToHostSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('infer-chunk'), id, chunk: providerStreamChunkSchema }),
   z.object({ t: z.literal('infer-end'), id }),
   z.object({ t: z.literal('infer-error'), id, error: z.string().max(8_000) }),
+  z.object({ t: z.literal('infer-alive'), id }),
   z.object({
     t: z.literal('ask-user-answer'),
     id,
@@ -409,6 +412,16 @@ export const HOST_CHECKED_SHAPES: ReadonlyMap<z.core.$ZodType, z.ZodType> = new 
  * app before it spends anything on it. The messages are those a container
  * run's guest may send (`host-inference-wire.ts`), with room for a long thread.
  */
+/**
+ * The model calls a worker keeps open at once; it holds later ones until one
+ * ends. The app refuses more than twice this, which only a broken or hostile
+ * worker would send.
+ */
+export const MAX_OPEN_INFERENCES = 8
+
+/** How often the app says it is still working on a call that sends nothing. */
+export const INFER_ALIVE_MS = 60_000
+
 export const hostInferRequestSchema = z.object({
   t: z.literal('infer'),
   id,
