@@ -420,6 +420,7 @@ describe('riso avatars in agent chat', () => {
     expect(
       await browser.execute(() => document.querySelectorAll('[data-avatar-animating]').length),
     ).toBe(0)
+    await parkPointer()
     await saveAppScreenshot('agent-avatars-motion-disabled.png')
     await $('.stop-btn').click()
     await waitForAgentIdle(15_000)

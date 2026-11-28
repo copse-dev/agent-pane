@@ -2110,8 +2110,8 @@
       "bytes": 5341
     },
     "footer-branch-bisect-in-progress.png": {
-      "sha256": "8f71b9bb53be4011b2121979a052dce3c1416d157e0f5347a0e8c98c53f8e580",
-      "bytes": 35775
+      "sha256": "f43f233315a7e48d1e91290475a5c68fa70c4bd65336c55e971513cafaaf1002",
+      "bytes": 29734
     },
     "footer-branch-detached-worktree.png": {
       "sha256": "518d87a419a9545d8d66b1372abee9b5c8a12a036be3fb0b9f701ef61f2b4d7d",
@@ -2130,8 +2130,8 @@
       "bytes": 18419
     },
     "footer-branch-on-base-branch.png": {
-      "sha256": "3c2405abb5daaa1c5ab4d5c9021d9b5ff84a3cfa47fc774b69d46c5ffbaa5038",
-      "bytes": 24020
+      "sha256": "732a45676804a01f4a18c07edc7f78ae6b35889d52ffcca28c809979e4add34b",
+      "bytes": 23361
     },
     "footer-branch-picker-compact-220.png": {
       "sha256": "b9f1536f4cb6056300b54f218512b6d1e29e96440b5479386ac31c4219bd2bea",
@@ -3113,6 +3113,30 @@
       "sha256": "cea24060e3d7f2de2c348c489cc801318800f0498242938a0e8c0b0aad42d667",
       "bytes": 287063
     },
+    "native-steering-applied-with-queued.png": {
+      "sha256": "c449186df1ebff508500a855e7e9dffd79d30dc558b8e8e1a9ed51bf73d4c52b",
+      "bytes": 328634
+    },
+    "native-steering-applied.png": {
+      "sha256": "da76dac2d44e4bcc458082b732e3857bd3140090073a90996a3fad2e5b60f36d",
+      "bytes": 295537
+    },
+    "native-steering-pending.png": {
+      "sha256": "506255793eb5058c2e7be3f212264ba851501f225c26382ce0d0ab53d6f2adf1",
+      "bytes": 321897
+    },
+    "native-steering-protected-review-actions.png": {
+      "sha256": "0fc23e4430b83108ba46a43695032551bc188b89b48f6816f00d41030b0704f6",
+      "bytes": 173662
+    },
+    "native-steering-protected-review.png": {
+      "sha256": "58e145b310cc301f6610e42d4399a268a809ccfd3b8b7d531c4b5cd528e3603c",
+      "bytes": 182675
+    },
+    "native-steering-stopped.png": {
+      "sha256": "fb170572a4996ed3c31fa8ab943618eb9d86a4743a63d5584258ac3bb415c80b",
+      "bytes": 284817
+    },
     "native-worker-isolation-unavailable.png": {
       "sha256": "34265facd62f4b1fe650db84d8e428990945a569f679b96d7b76b58131c2d469",
       "bytes": 350357
@@ -3910,16 +3934,16 @@
       "bytes": 281325
     },
     "queued-actions-row-hover-dark.png": {
-      "sha256": "9e65ec0ff55fa8a194a29debc81aa329dc4a07795add2a3d1536ea15b42007e4",
-      "bytes": 14537
+      "sha256": "e5e626d8c8831f9ad142e8a43563e5a524ec720b7fc0ecc2704c0a3a5b4d2164",
+      "bytes": 16112
     },
     "queued-actions-row-hover-light.png": {
-      "sha256": "0649fe22dbb6a7cd714d0ed8529b8b83674fc654c42d13ac8c7ba46ade505b27",
-      "bytes": 14003
+      "sha256": "c40a3717b22f7474f5586ce5c6190afbfd3c1c7cb2910a23ef0c90a489aaed0b",
+      "bytes": 15566
     },
     "queued-actions-row.png": {
-      "sha256": "9e65ec0ff55fa8a194a29debc81aa329dc4a07795add2a3d1536ea15b42007e4",
-      "bytes": 14537
+      "sha256": "e5e626d8c8831f9ad142e8a43563e5a524ec720b7fc0ecc2704c0a3a5b4d2164",
+      "bytes": 16112
     },
     "queued-badge-sentence-case.png": {
       "sha256": "046d7e634c6dfd6b6facce3e52af9b6996b123bd2c350a3a6a3455d9154526eb",

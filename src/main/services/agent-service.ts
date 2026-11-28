@@ -2837,6 +2837,7 @@ async function runAgentWithInlineCanvas(
                                 type: 'steering_applied',
                                 messageId: item.messageId,
                                 text,
+                                promptRepresentation: 'canonical-provider',
                               })
                             },
                             (text) =>

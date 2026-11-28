@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedCanvasArtefactThreadFixture } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, parkPointer, saveAppScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 
@@ -251,6 +251,9 @@ describe('canvas artefact refresh', () => {
     // Same tabs as before: the prototype the user is looking at became v2 rather
     // than a second "Sales Dashboard" appearing beside it.
     expect(await tabLabels()).toEqual(labelsAfterFirstRender)
+    // submitComposer() leaves the pointer over the transcript, where it would
+    // catch a message's hover actions.
+    await parkPointer()
     await saveStableCanvasScreenshot('canvas-artefact-refresh.png')
   })
 

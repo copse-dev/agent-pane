@@ -188,10 +188,10 @@ describe('rebuildAgentHistory', () => {
     assert.deepEqual(history, [{ role: 'user', content: canonical }])
   })
 
-  it('preserves exact zero-chip canonical bytes when rebuilding fork history', () => {
+  it('preserves exact zero-chip steering bytes when rebuilding fork history', () => {
     const exact = '  Keep literal \uFFFC in the note.  \n\n'
     const history = rebuildAgentHistory([
-      userMsg('canonical-note', exact, undefined, undefined, 'canonical-provider'),
+      userMsg('steering-note', exact, undefined, undefined, 'canonical-provider'),
     ])
 
     assert.deepEqual(history, [{ role: 'user', content: exact }])

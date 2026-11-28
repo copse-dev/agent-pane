@@ -142,6 +142,12 @@ describe('agent eval maintenance interactions', function () {
     await assertNoErrorToasts('eval branch selection')
     // Only this test's project and thread: nothing carried over from the last test.
     await expect($('.orphans-section')).not.toBeExisting()
+    const changes = $('.follow-up-bubble-changes')
+    await expect(changes).toBeDisplayed()
+    await expect(changes.$('.follow-up-label')).toHaveText('Changes')
+    await expect(changes.$('.follow-up-stat-add')).toHaveText('+2')
+    await expect(changes.$('.follow-up-stat-del')).toHaveText('-0')
+    await expect($('.prompt-input')).toHaveAttribute('data-placeholder', 'Send follow-up')
     await saveAppScreenshot('agent-eval-existing-branch.png')
   })
 })

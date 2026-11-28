@@ -2907,7 +2907,24 @@ export function acceptReviewedQueuedUserMessage(
         entry.line?.type === 'message' && entry.line.id === messageId && entry.line.role === 'user',
     )
     if (index < 0) return false
-    const reviewed: Message = { ...message, content: text }
+    // Native steering reviews plain text only. Its admission path rejects
+    // images and attachment-bearing notes, so no optimistic media descriptor
+    // is part of the reviewed provider payload at this durable boundary.
+    // Drop any stale descriptor defensively instead of letting a changed review
+    // inherit display claims that Main did not authenticate.
+    const {
+      attachments: _optimisticAttachments,
+      images: _optimisticImages,
+      ...reviewedSource
+    } = message
+    const reviewed: Message = {
+      ...reviewedSource,
+      content: text,
+      // Only Main reaches this atomic acceptance after protected review and
+      // the live claim both succeed. Crash recovery and later replay must not
+      // reinterpret authored U+FFFC bytes as optimistic attachment sentinels.
+      promptRepresentation: 'canonical-provider',
+    }
     const exploded = explodeMessage(reviewed, sha256Hex)
     const { line, files } = withImmutableMessageFiles(exploded)
     const body = files.find((file) => file.ref === line.content.ref)

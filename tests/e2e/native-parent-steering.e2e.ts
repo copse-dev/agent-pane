@@ -35,7 +35,8 @@ import { removeE2eTree } from './helpers/remove-tree.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
 const PROJECT = 'e2e-native-steering'
-const NOTE = 'Keep the existing public API and report both file reads.'
+const NOTE_SOURCE = 'Keep the existing public API and report both file reads.'
+const NOTE = 'Keep the existing \uFFFC public API and report both file reads.'
 const LATER_NOTE = 'Keep this follow-up queued until the current task finishes.'
 const STOP_NOTE = 'Leave this correction held if I stop the run.'
 const requestSchema = z.object({
@@ -130,6 +131,7 @@ describe('native parent steering through the real provider and IPC', function ()
         (entry) => entry.line?.type === 'message' && entry.line.id === noteId,
       )?.line
       assert.ok(note?.type === 'message')
+      assert.equal(note.promptRepresentation, 'canonical-provider')
       // A full save may replace the spine and prune its superseded revision
       // between two raw filesystem reads. Use Main's serialized production
       // reader, retaining the exact accepted identity and canonical-body check
@@ -478,7 +480,7 @@ describe('native parent steering through the real provider and IPC', function ()
     assert.ok(!readFileSync(join(directory(), 'agent-history.json'), 'utf8').includes(denied))
     await $('.conversation-queued .queued-delete').click()
     await expect($('.conversation-queued .msg-queued')).not.toExist()
-    await queueNote('Preserve the initial API draft.', NOTE)
+    await queueNote(NOTE_SOURCE, NOTE)
     const before = meta()
     assert.equal(before.pendingMessages?.[0]?.autoDispatch, false)
     assert.equal(calls, 1)
@@ -521,6 +523,16 @@ describe('native parent steering through the real provider and IPC', function ()
     await expect($('.messages-list')).toHaveText(expect.stringContaining(NOTE))
     await expect($('.messages-list')).toHaveText(expect.stringContaining('Both files were read.'))
     await expect($('.conversation-queued .msg-queued')).not.toExist()
+    const renderedNote = await browser.execute((exact) => {
+      const message = [...document.querySelectorAll<HTMLElement>('.messages-list .msg-user')].find(
+        (candidate) => candidate.querySelector('.message-text')?.textContent.includes(exact),
+      )
+      return {
+        found: message !== undefined,
+        chips: message?.querySelectorAll('.transcript-attachment-chip').length ?? -1,
+      }
+    }, NOTE)
+    assert.deepEqual(renderedNote, { found: true, chips: 0 })
     const transcript = await $('.messages-list').getText()
     assert.ok(transcript.indexOf('I will read both project files') < transcript.indexOf(NOTE))
     assert.ok(transcript.indexOf(NOTE) < transcript.indexOf('Both files were read.'))
@@ -589,7 +601,7 @@ describe('native parent steering through the real provider and IPC', function ()
     await submitComposer()
     await browser.waitUntil(() => calls === 1, { timeout: 20_000 })
     await expect($('.chat-row.selected .chat-title')).toHaveText('Review API compatibility')
-    await queueNote(NOTE)
+    await queueNote(NOTE_SOURCE, NOTE)
     await setComposerValue(LATER_NOTE)
     await submitComposer()
     await expect($('.conversation-queued')).toHaveText(expect.stringContaining(LATER_NOTE))

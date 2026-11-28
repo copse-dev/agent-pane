@@ -250,11 +250,20 @@ export function createTranscriptReducer(
         if (!thread?.messages.some((message) => message.id === chunk.messageId)) {
           addMessage(store, threadId, 'user', chunk.text, undefined, undefined, {
             id: chunk.messageId,
+            promptRepresentation: chunk.promptRepresentation,
           })
         } else {
           // Main's protected review may have edited the queued text. Reconcile
           // both main and window copies before the writer saves this boundary.
-          setMessagePromptContent(store, threadId, chunk.messageId, chunk.text, undefined)
+          setMessagePromptContent(
+            store,
+            threadId,
+            chunk.messageId,
+            chunk.text,
+            undefined,
+            undefined,
+            chunk.promptRepresentation,
+          )
           store.emit('message_done', chunk.messageId)
         }
         patchThreadAnywhere(store, threadId, (current) => {
