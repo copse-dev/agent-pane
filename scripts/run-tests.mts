@@ -21,6 +21,7 @@ import {
   intentionalTestUpdates,
 } from './lib/tracked-test-tree.mts'
 import { reexecOutsideRootIfNeeded } from './lib/root-container-userns.mts'
+import { testFileConcurrency } from './lib/test-concurrency.mts'
 
 const userDataFilesShim = resolve('src/main/services/storage/user-data-files.test-shim.ts')
 const repoRoot = resolve('.')
@@ -341,15 +342,9 @@ async function cleanSuccessfulOutput(outputDir: string, keepReport: boolean): Pr
   }
 }
 
-// Several hook/process suites deliberately spawn subprocess trees. Letting
-// Node derive file concurrency from a large developer/runner host can put dozens
-// of short-lived children in flight and turn fixed 2s safety deadlines into
-// load-dependent failures. Four keeps independent file workers parallel while
-// bounding that shared OS pressure.
-// Apple integration files each drive the same host builder from a separate
-// process. Apple container 1.5.0 intermittently fails parallel context transfer;
-// the product's in-process image queue cannot serialize these test processes.
-const TEST_FILE_CONCURRENCY = process.env['COPSE_THREAD_CONTAINER_E2E'] === 'apple' ? 1 : 4
+// How many test files run at once: four on CI, the host's cores less two
+// locally. See `lib/test-concurrency.mts`.
+const TEST_FILE_CONCURRENCY = testFileConcurrency()
 
 // Bound each test so a hang fails fast and names itself. CI's unit job has hung
 // twice with no failing test: dots stopped, the runner waited until the job

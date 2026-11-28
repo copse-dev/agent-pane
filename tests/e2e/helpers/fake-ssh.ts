@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { writeE2eEnv } from './e2e-env.ts'
@@ -59,6 +59,15 @@ export function installFakeSshHost(options: FakeSshHostOptions = {}): FakeSshHos
     },
     remove: (): void => {
       writeE2eEnv({ PATH: originalPath, COPSE_E2E_FAKE_SSH_STATE: undefined })
+      // Socket forwards the app left open (the stub's relays).
+      for (const name of readdirSync(stateDir))
+        if (name.startsWith('relay-')) {
+          try {
+            process.kill(Number(readFileSync(join(stateDir, name), 'utf8').trim()))
+          } catch {
+            // already gone
+          }
+        }
       rmSync(stateDir, { recursive: true, force: true })
       rmSync(remoteRoot, { recursive: true, force: true })
       if (remoteHome !== undefined) rmSync(remoteHome, { recursive: true, force: true })

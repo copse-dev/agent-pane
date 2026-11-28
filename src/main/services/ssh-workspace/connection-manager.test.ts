@@ -88,6 +88,12 @@ describe('SshConnectionManager', () => {
         closeForward: async (): Promise<void> => {
           await Promise.resolve()
         },
+        openSocketForward: async (): Promise<void> => {
+          await Promise.resolve()
+        },
+        closeSocketForward: async (): Promise<void> => {
+          await Promise.resolve()
+        },
         fetchFile: async (): Promise<void> => {
           await Promise.resolve()
         },

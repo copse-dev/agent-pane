@@ -20,11 +20,19 @@ Main-process and `scripts/` suites only; renderer/settings tests are unaffected.
 - **macOS `/tmp` → `/private/tmp` realpath** — workspace-fs, video-attachment-store, and
   static-preview-server tests that assert on a literal `/tmp/...` path.
 - **2s hook-dispatch timeouts under suite load** — tests under `src/main/services/hooks/`; both
-  which file and which test inside it fails varies run to run.
+  which file and which test inside it fails varies run to run. They track how loaded the machine
+  is: a local run uses up to eight test files at once (`scripts/lib/test-concurrency.mts`), and
+  with other sessions' suites on the same Mac (load average over 100) a hook script took more than
+  2 s to spawn. Re-run the file; `COPSE_TEST_CONCURRENCY=4` matches CI on a busy host.
 - **fd exhaustion in fs watchers** (`EMFILE: too many open files, watch`) — execution-root-watcher;
   a host `ulimit -n` ceiling, reproduces in isolation too.
 - **A worktree with no `node_modules` of its own** — ACP conformance/adapter tests resolve an SDK
   example path from `process.cwd()`; a `pnpm install` in the worktree clears these.
+- **`node_modules` installed before a dependency patch changed** — a worktree whose install is
+  older than `patches/` runs the old patch. `sandbox-log-monitor-patch.test.ts` then times out
+  ("reports every violation in a chunk…") and misattributes the forged tag ("ignores a forged
+  violation…"). Compare `ls node_modules/.pnpm | grep sandbox-runtime` with the `patch_hash` in
+  `pnpm-lock.yaml`; `pnpm install --frozen-lockfile` clears it.
 - **SSH commit-signing tests** — fail with `could not create temporary file` when the host signing
   key/agent isn't set up the way the fixture expects.
 - **Root Linux containers** (`apply-seccomp: write /proc/self/uid_map: Operation not permitted`)
@@ -56,6 +64,23 @@ other. When you add a deterministic host difference here, add it there too.
   hash-locked wheel through pip without running source builds" fails preparation validation
   (`Hash-locked Python dependencies: .venv/bin/python failed (2): Usage:`). A venv made by macOS
   `/usr/bin/python3` (3.9.6) gets pip 21.2.4, which predates `pip install --dry-run` (pip 22.2).
+
+## Host-dependent tests to fix, not triage
+
+Some failures look like host noise but are a test that depends on the machine. Fix the test; do
+not add it above. Three that made a green full run impossible on a Mac were fixed this way:
+
+- **A fixture under the unresolved `tmpdir()`** compared with a child's `process.cwd()`, which is
+  resolved (`/var/folders/…` against `/private/var/folders/…`). Build the fixture under
+  `realpathSync(mkdtempSync(…))`, as tools such as c8 report resolved paths
+  (`scripts/coverage-gate.test.ts`).
+- **A test that reads the developer's real profile** (`~/.copse`), such as the renderer crash log
+  `/checkup` reports. Point `COPSE_DIR` at an empty temporary directory for the suite
+  (`src/main/services/diagnostics/checkup.test.ts`).
+- **A short fixed timer racing a child's start-up** under suite load: Node can take longer than a
+  100 ms yield to boot. Observe the parent-side state (here the live foreground-shell list) rather
+  than a file the child writes once it is running
+  (`src/main/services/exec/foreground-shell-yield.test.ts`).
 
 ## Triage procedure
 

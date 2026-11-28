@@ -2086,6 +2086,9 @@ if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') {
     requestRemoteWatcherInstallApproval() {
       return ipcRenderer.invoke('test:requestRemoteWatcherInstallApproval')
     },
+    startSshWorker(hostId: string) {
+      return ipcRenderer.invoke('test:startSshWorker', hostId)
+    },
     emitAgentChunks(threadId: string, chunks: unknown[]) {
       return ipcRenderer.invoke('test:emitAgentChunks', threadId, chunks)
     },

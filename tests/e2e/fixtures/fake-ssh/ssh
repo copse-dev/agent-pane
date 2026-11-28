@@ -26,6 +26,45 @@ case " $* " in
     exit 0
     ;;
   *" -O forward "* | *" -O cancel "*)
+    # A unix socket forward (`-L local.sock:remote.sock`) joins two paths on
+    # this one machine: a small relay listens on the local one, as OpenSSH's
+    # does, until it is cancelled. A TCP forward needs nothing.
+    action=
+    spec=
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -O) action="$2" ;;
+        -L) spec="$2" ;;
+      esac
+      shift
+    done
+    case "$spec" in
+      /*:/*)
+        local_socket="${spec%%:*}"
+        relay="$state/relay-$(printf %s "$local_socket" | cksum | cut -d' ' -f1)"
+        [ -e "$relay" ] && kill "$(cat "$relay")" 2>/dev/null
+        rm -f "$relay" "$local_socket"
+        if [ "$action" = forward ]; then
+          node -e '
+            const net = require("net")
+            const [local, remote] = process.argv.slice(1)
+            net.createServer((client) => {
+              const host = net.connect(remote)
+              client.pipe(host).on("error", () => host.destroy())
+              host.pipe(client).on("error", () => client.destroy())
+              client.on("error", () => host.destroy())
+              host.on("error", () => client.destroy())
+            }).listen(local)
+          ' "$local_socket" "${spec#*:}" </dev/null >/dev/null 2>&1 &
+          echo "$!" >"$relay"
+          tries=0
+          while [ ! -S "$local_socket" ] && [ "$tries" -lt 100 ]; do
+            tries=$((tries + 1))
+            sleep 0.05
+          done
+        fi
+        ;;
+    esac
     exit 0
     ;;
 esac

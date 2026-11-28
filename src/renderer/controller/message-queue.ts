@@ -33,6 +33,8 @@ import {
 import { ensureThreadMessages } from './thread-hydration.ts'
 import { mark as perfMark } from '../perf.ts'
 import { isAgentTurnBusyError } from '@shared/agent-turn-busy.ts'
+import { sshThreadRefusal } from '@shared/ssh-thread-refused.ts'
+import { showToast } from '../views/toast.ts'
 import { isSubthreadPromptHeldError } from '@shared/thread-prompt.ts'
 import { markSendNowAbort } from './send-now-aborts.ts'
 import { afterThreadWrites, flushPendingThreadPersistence } from './persistence.ts'
@@ -358,14 +360,30 @@ function dispatchAgentRunWithCharge(
         if (!isSubthreadPromptHeldError(err)) throw err
       }
     }
-    holdRevokedSubthreadPrompt(store, threadId, queued, charge)
+    holdQueuedPrompt(store, threadId, queued, charge)
   })
+  // An SSH thread's host would not take it: no turn ran, so the thread is idle
+  // again, the reason shows, and a queued prompt waits for the user.
+  const refused = (err: unknown): boolean => {
+    const reason = sshThreadRefusal(err)
+    if (reason === null) return false
+    setThreadStatus(store, threadId, 'idle')
+    syncAgentActivity(store, threadId, false)
+    showToast(reason, { variant: 'error' })
+    return true
+  }
   if (!queued) {
-    void run
+    void run.catch((err: unknown) => {
+      if (!refused(err)) throw err
+    })
     return
   }
   void run
     .catch((err: unknown) => {
+      if (refused(err)) {
+        holdQueuedPrompt(store, threadId, queued, charge)
+        return
+      }
       if (!isAgentTurnBusyError(err)) throw err
       requeueBusyMessage(store, api, threadId, queued, charge)
     })
@@ -415,11 +433,11 @@ function refundedQueuedBudget(
 }
 
 /**
- * Put a delegated prompt whose parent lost orchestration back at the queue
- * front, held: it never auto-drains, and the budget unit its drain charged is
- * returned because no turn ran.
+ * Put a prompt that no turn ran back at the queue front, held: a delegated one
+ * whose parent lost orchestration, or one an SSH host would not take. It never
+ * auto-drains, and the budget unit its drain charged is returned.
  */
-function holdRevokedSubthreadPrompt(
+function holdQueuedPrompt(
   store: AppStore,
   threadId: string,
   item: QueuedUserMessage,

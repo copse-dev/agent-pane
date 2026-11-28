@@ -5861,6 +5861,10 @@
       "sha256": "05f2c24c22023b9c5fcb8e26d5f2d65a1f43c0c61c24856cfab2841d477c801f",
       "bytes": 25524
     },
+    "ssh-worker-install-approval.png": {
+      "sha256": "57d4475710ca66382f76fe19b07eaaf9245df01a518807c0d9bd7231103df63b",
+      "bytes": 75268
+    },
     "staged-diff-css-accept-no-error.png": {
       "sha256": "b1077a5cc7fa6de02c3d34f376ada8202f1b4e3a2ddd83f3f394c14b94b9264c",
       "bytes": 407528

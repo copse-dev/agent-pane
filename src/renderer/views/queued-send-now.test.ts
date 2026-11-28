@@ -8,6 +8,11 @@ import { enqueueUserMessage } from '../controller/message-queue.ts'
 import { mountConversation } from './conversation.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 
+// A mounted conversation keeps timers of its own (the environment-setup offer
+// re-checks 30 s after a thread status change), so one left mounted holds this
+// file's test process open until they fire. Unmount each view after its test.
+const unmounts: (() => void)[] = []
+
 // Component-level port of tests/e2e/queued-send-now.e2e.ts. The queued-message
 // CONTROLLER (enqueue/reorder/abort/drain) is already exhaustively covered in
 // controller/message-queue.test.ts, so what the e2e uniquely exercised — and
@@ -63,7 +68,7 @@ function mountWithQueued(status: 'idle' | 'running'): {
   setThreadStatus(store, threadId, status)
   const host = document.createElement('div')
   document.body.append(host)
-  mountConversation(host, store, api)
+  unmounts.push(mountConversation(host, store, api))
   const messageId = addMessage(store, threadId, 'user', 'run me right now')
   enqueueUserMessage(store, threadId, {
     messageId,
@@ -74,6 +79,7 @@ function mountWithQueued(status: 'idle' | 'running'): {
 }
 
 afterEach(() => {
+  for (const unmount of unmounts.splice(0)) unmount()
   document.body.replaceChildren()
 })
 

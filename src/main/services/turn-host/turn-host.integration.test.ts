@@ -10,6 +10,10 @@ import { STANDALONE_MAIN_BUNDLES } from '../../../../scripts/main-bundles.mts'
 import { MAIN_EXTERNALS, MAIN_LOG_OVERRIDE } from '../../../../scripts/main-externals.mts'
 import { loadThreadMessages, saveProjectThread, threadDirectoryPath } from '../thread-store.ts'
 import { connectTurnHost, turnHostSocketPath, type HostToApp } from './turn-host-protocol.ts'
+import type { ReviewedTurn } from './reviewed-turn.ts'
+
+/** What main's protected review decided, for a prompt with no history or plan. */
+const reviewed = (content: string): ReviewedTurn => ({ content, history: [], plan: null })
 
 /**
  * H1's exit gate (`docs/plans/local-turn-worker.md`, "Every turn in a turn
@@ -127,13 +131,34 @@ describe('the bundled turn host', { skip: !E2E, timeout: 120_000 }, () => {
     assert.ok(line, `the host never served:\n${log}`)
     line.send({ t: 'hello', version: VERSION, protocol: 2 })
     line.send({ t: 'attach' })
-    line.send({ t: 'dispatch', id: 'op-a', projectId: 'p1', threadId: 'a', payload: 'One' })
-    line.send({ t: 'dispatch', id: 'op-b', projectId: 'p1', threadId: 'b', payload: 'Two' })
+    line.send({
+      t: 'dispatch',
+      id: 'op-a',
+      projectId: 'p1',
+      threadId: 'a',
+      payload: 'One',
+      reviewed: reviewed('One'),
+    })
+    line.send({
+      t: 'dispatch',
+      id: 'op-b',
+      projectId: 'p1',
+      threadId: 'b',
+      payload: 'Two',
+      reviewed: reviewed('Two'),
+    })
     await until(() =>
       ['op-a', 'op-b'].every((id) => received.some((m) => m.t === 'ended' && m.id === id)),
     )
     // The app lost the answer and sends the same operation again.
-    line.send({ t: 'dispatch', id: 'op-a', projectId: 'p1', threadId: 'a', payload: 'One' })
+    line.send({
+      t: 'dispatch',
+      id: 'op-a',
+      projectId: 'p1',
+      threadId: 'a',
+      payload: 'One',
+      reviewed: reviewed('One'),
+    })
     await until(() => received.some((m) => m.t === 'status' && m.id === 'op-a'))
     line.close()
 

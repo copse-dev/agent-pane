@@ -50,5 +50,10 @@ export async function readHostDispatchRecord(
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null
     throw error
   }
+  return parseHostDispatchRecord(text)
+}
+
+/** A record's text, as a host on another machine has it; throws when it does not parse. */
+export function parseHostDispatchRecord(text: string): HostDispatchRecord {
   return recordSchema.parse(JSON.parse(text))
 }
