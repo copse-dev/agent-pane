@@ -12,6 +12,7 @@ import {
   securitySettingsSchema,
 } from '../storage/settings-writable.ts'
 import { parseThreadMetaValue } from '@copse/thread-store/thread-boundary.ts'
+import { parseSpineLine } from '@copse/thread-store/spine-schema.ts'
 import { adoptThreadFiles, threadDirectoryPath } from '../thread-store.ts'
 import {
   packArchive,
@@ -155,19 +156,143 @@ function sha256(data: Buffer): string {
  */
 const SYNC_MARK_FILE = 'ssh-host-sync.json'
 
-const syncMarkSchema = z.object({ threadId: z.string(), eventsHash: z.string() })
+const syncMarkSchema = z.object({
+  threadId: z.string(),
+  eventsHash: z.string(),
+  // Left out by marks written before it was kept.
+  eventsSize: z.number().int().nonnegative().optional(),
+  // Prompts this computer added since, which the host refused as it ran a turn.
+  refused: z.array(z.string().max(256)).max(1_000).optional(),
+})
 
-async function readSyncMark(dir: string, threadId: string): Promise<string | null> {
+/**
+ * The events both copies last shared: their hash, their length when known,
+ * and the prompts added here since that the host refused.
+ */
+interface SyncMark {
+  hash: string
+  size: number | undefined
+  refused: string[]
+}
+
+async function readSyncMark(dir: string, threadId: string): Promise<SyncMark | null> {
   const text = await readFile(join(dir, SYNC_MARK_FILE), 'utf8').catch(() => null)
   const mark = text === null ? null : safeJsonParse(text, decodeWithSchema(syncMarkSchema))
   // A copy of the thread (a fork) is not the thread the mark was made for.
-  return mark?.threadId === threadId ? mark.eventsHash : null
+  return mark?.threadId === threadId
+    ? { hash: mark.eventsHash, size: mark.eventsSize, refused: mark.refused ?? [] }
+    : null
 }
 
-async function writeSyncMark(dir: string, threadId: string, eventsHash: string): Promise<void> {
+async function writeMark(dir: string, threadId: string, mark: SyncMark): Promise<void> {
   const file = join(dir, SYNC_MARK_FILE)
-  await writeFile(`${file}.tmp`, JSON.stringify({ threadId, eventsHash }))
+  await writeFile(
+    `${file}.tmp`,
+    JSON.stringify({
+      threadId,
+      eventsHash: mark.hash,
+      eventsSize: mark.size,
+      ...(mark.refused.length > 0 ? { refused: mark.refused } : {}),
+    }),
+  )
   await rename(`${file}.tmp`, file)
+}
+
+async function writeSyncMark(dir: string, threadId: string, events: Buffer): Promise<void> {
+  await writeMark(dir, threadId, { hash: sha256(events), size: events.length, refused: [] })
+}
+
+/**
+ * How much of these events is what both copies shared at the mark, or null
+ * when they do not begin with it. A mark from before lengths were kept is
+ * matched at each line's end.
+ */
+function sharedLength(events: Buffer, mark: SyncMark): number | null {
+  if (mark.size !== undefined)
+    return events.length >= mark.size && sha256(events.subarray(0, mark.size)) === mark.hash
+      ? mark.size
+      : null
+  const hash = createHash('sha256')
+  if (hash.copy().digest('hex') === mark.hash) return 0
+  let start = 0
+  for (let end = events.indexOf(10); end >= 0; end = events.indexOf(10, end + 1)) {
+    hash.update(events.subarray(start, end + 1))
+    start = end + 1
+    if (hash.copy().digest('hex') === mark.hash) return start
+  }
+  return null
+}
+
+/** The prompts these events hold past `from`. */
+function promptIds(events: Buffer, from: number): string[] {
+  return events
+    .subarray(from)
+    .toString('utf8')
+    .split('\n')
+    .map((line) => parseSpineLine(line))
+    .flatMap((line) => (line?.type === 'message' && line.role === 'user' ? [line.id] : []))
+}
+
+/** {@link markRefused}, whose failure must not stop the refusal it goes with. */
+async function markRefusedOrLog(dir: string, threadId: string): Promise<void> {
+  await markRefused(dir, threadId).catch((error: unknown) => {
+    console.warn(`[ssh-worker] could not keep ${threadId}'s refused prompt: ${String(error)}`)
+  })
+}
+
+/**
+ * The host would not take the thread while its turn ran there: the prompts
+ * added here since the sync are kept as refused, so once that turn ends they
+ * go after it rather than forking the thread.
+ */
+async function markRefused(dir: string, threadId: string): Promise<void> {
+  const mark = await readSyncMark(dir, threadId)
+  const events = await readFile(join(dir, 'events.jsonl')).catch(() => null)
+  if (mark === null || events === null) return
+  const shared = sharedLength(events, mark)
+  if (shared === null) return
+  // The prompt being sent now, which the store wrote before asking for the
+  // turn; an earlier one may have run here.
+  const refusedNow = promptIds(events, shared).at(-1)
+  if (refusedNow === undefined) return
+  const refused = [...new Set([...mark.refused, refusedNow])]
+  await writeMark(dir, threadId, { hash: mark.hash, size: shared, refused })
+}
+
+/**
+ * What this computer added to a thread's events since the sync, when that is
+ * only prompts no turn ran: a prompt refused while the host ran a turn of its
+ * own, kept here. Null when the copy here changed in any other way.
+ */
+function unrunPrompts(events: Buffer, mark: SyncMark, shared: number): Buffer | null {
+  const tail = events.subarray(shared)
+  const lines = tail
+    .toString('utf8')
+    .split('\n')
+    .filter((line) => line.trim() !== '')
+    .map((line) => parseSpineLine(line))
+  const prompts = lines.flatMap((line) =>
+    line?.type === 'message' && line.role === 'user' ? [line.id] : [],
+  )
+  // The prompt being sent now, and those the host refused; a prompt that is
+  // neither may have run here, cut off before any answer, so it is a fork.
+  const last = prompts.at(-1)
+  // A mark from before refusals were kept cannot tell: a thread stuck as
+  // forked before then takes every prompt it holds.
+  const unrun = (id: string): boolean =>
+    id === last || mark.refused.includes(id) || mark.size === undefined
+  for (const line of lines) {
+    const prompt = line?.type === 'message' && line.role === 'user' && unrun(line.id)
+    if (!prompt && line?.type !== 'model_selected') return null
+  }
+  return prompts.length > 0 ? tail : null
+}
+
+/** The events with their last line ended, so more can follow. */
+function withLineEnd(events: Buffer): Buffer {
+  return events.length === 0 || events.at(-1) === 10
+    ? events
+    : Buffer.concat([events, Buffer.from('\n')])
 }
 
 /** A turn runs the thread on the host. */
@@ -251,7 +376,10 @@ export async function seedSshWorker(
   const remote = remoteThreadDir(node, projectId, threadId)
   const local = threadDirectoryPath(projectId, threadId)
   const there = await hostThreadState(connection, node, projectId, threadId, WHOLE)
-  if (there.held) throw new SshThreadRefused(SSH_THREAD_BUSY)
+  if (there.held) {
+    await markRefusedOrLog(local, threadId)
+    throw new SshThreadRefused(SSH_THREAD_BUSY)
+  }
   if (there.size >= 0) {
     const here = await localEvents(local, WHOLE)
     const synced = await readSyncMark(local, threadId)
@@ -266,10 +394,13 @@ export async function seedSshWorker(
         if (there.size > here.size) await pullThreadMirror(connection, node, projectId, threadId)
       } else {
         // Only the side that moved since the last sync wins; both is a fork.
-        const hostMoved = there.prefixHash !== synced
-        const laptopMoved = here.prefixHash !== synced
-        if (hostMoved && laptopMoved) throw new SshThreadRefused(SSH_THREAD_FORKED)
-        if (hostMoved) await pullThreadMirror(connection, node, projectId, threadId)
+        const hostMoved = there.prefixHash !== synced.hash
+        const laptopMoved = here.prefixHash !== synced.hash
+        // Prompts here that no turn ran go after the host's turn rather than
+        // forking the thread; anything else here is a fork.
+        if (hostMoved && laptopMoved)
+          await pullThreadMirror(connection, node, projectId, threadId, {}, synced)
+        else if (hostMoved) await pullThreadMirror(connection, node, projectId, threadId)
       }
     }
   }
@@ -288,12 +419,15 @@ export async function seedSshWorker(
     stdin: history.archive.toString('base64'),
     timeoutMs: 600_000,
   })
-  if (copied.code === THREAD_HELD_EXIT) throw new SshThreadRefused(SSH_THREAD_BUSY)
+  if (copied.code === THREAD_HELD_EXIT) {
+    await markRefusedOrLog(local, threadId)
+    throw new SshThreadRefused(SSH_THREAD_BUSY)
+  }
   if (copied.code !== 0)
     throw new Error(`could not give the worker the thread: ${lastLines(copied.stderr)}`)
   // The events as they went, not as they may be by now.
   const pushed = entries.find((entry) => entry.path === 'events.jsonl')
-  if (pushed !== undefined) await writeSyncMark(local, threadId, sha256(pushed.data))
+  if (pushed !== undefined) await writeSyncMark(local, threadId, pushed.data)
   return typeof seeded?.['title'] === 'string' ? { title: seeded['title'] } : {}
 }
 
@@ -301,6 +435,10 @@ export async function seedSshWorker(
  * Bring the app's copy of a thread up to the host's, through the thread
  * store, so nothing here writes the thread meanwhile and its caches see the
  * copy. Resolves whether the host had the thread.
+ *
+ * With `keepPrompts`, both copies moved since that sync: the host's is taken
+ * only if it grew from the synced events, and the prompts added here go after
+ * it. Anything else is refused as a fork.
  */
 export async function pullThreadMirror(
   connection: SshConnection,
@@ -308,6 +446,7 @@ export async function pullThreadMirror(
   projectId: string,
   threadId: string,
   seeded: SeededThread = {},
+  keepPrompts?: SyncMark,
 ): Promise<boolean> {
   const packed = await connection.execArgv(
     packThreadArgv(node, remoteThreadDir(node, projectId, threadId)),
@@ -326,19 +465,42 @@ export async function pullThreadMirror(
   const stray = entries.find((entry) => !isThreadHistoryFile(entry.path))
   if (stray !== undefined)
     throw new Error(`the host's copy of the thread holds a file it should not: ${stray.path}`)
+  const hostEvents = entries.find((entry) => entry.path === 'events.jsonl')
   await adoptThreadFiles(projectId, threadId, async (dir) => {
+    let prompts: Buffer | null = null
+    if (keepPrompts !== undefined) {
+      const mine = await readFile(join(dir, 'events.jsonl')).catch(() => null)
+      const shared = mine === null ? null : sharedLength(mine, keepPrompts)
+      const grew =
+        hostEvents !== undefined &&
+        shared !== null &&
+        sharedLength(hostEvents.data, { ...keepPrompts, size: shared }) !== null
+      prompts = grew && mine !== null ? unrunPrompts(mine, keepPrompts, shared) : null
+      if (prompts === null) throw new SshThreadRefused(SSH_THREAD_FORKED)
+    }
     const here = await readLocalMeta(dir)
     for (const entry of entries) {
       const data =
-        entry.path === 'meta.json' ? mergedMeta(entry.data, here, seeded, threadId) : entry.data
+        entry.path === 'meta.json'
+          ? mergedMeta(entry.data, here, seeded, threadId)
+          : entry.path === 'events.jsonl' && prompts !== null
+            ? Buffer.concat([withLineEnd(entry.data), prompts])
+            : entry.data
       const file = join(dir, ...entry.path.split('/'))
       await mkdir(dirname(file), { recursive: true })
       const part = `${file}.mirror-${String(process.pid)}`
       await writeFile(part, data)
       await rename(part, file)
     }
-    const events = entries.find((entry) => entry.path === 'events.jsonl')
-    if (events !== undefined) await writeSyncMark(dir, threadId, sha256(events.data))
+    // The host's events are what both copies now share; prompts kept here
+    // are this copy's to send.
+    if (hostEvents !== undefined)
+      await writeMark(dir, threadId, {
+        hash: sha256(hostEvents.data),
+        size: hostEvents.data.length,
+        // Until they reach the host, the kept prompts are still refused ones.
+        refused: prompts === null ? [] : (keepPrompts?.refused ?? []),
+      })
   })
   return true
 }

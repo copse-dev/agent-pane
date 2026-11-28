@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { SshThreadRefused } from '@shared/ssh-thread-refused.ts'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
@@ -36,6 +37,18 @@ after(() => {
 
 function node(home: string): RemoteNode {
   return { version: process.versions.node, execPath: process.execPath, home: join(scratch, home) }
+}
+
+/** A user's prompt as `events.jsonl` holds it. */
+function userLine(id: string): Record<string, unknown> {
+  return {
+    v: 1,
+    type: 'message',
+    id,
+    role: 'user',
+    content: { ref: `messages/${id}.md`, sha256: 'x' },
+    toolCalls: [],
+  }
 }
 
 /** A thread's `meta.json` as the store writes one. */
@@ -283,10 +296,105 @@ describe('what the worker on an SSH host is given', () => {
       '{"n":1}\n{"n":"edited"}\n{"n":3}\n',
     )
 
+    // A prompt refused here while the host ran a turn of its own: the host's
+    // turn comes here, and the prompt after it goes there.
+    const synced = '{"n":1}\n{"n":"edited"}\n{"n":3}\n'
+    const prompt = `${JSON.stringify(userLine('m9'))}\n`
+    writeFileSync(join(remote, 'events.jsonl'), `${synced}{"n":4}\n`)
+    writeFileSync(join(local, 'events.jsonl'), synced + prompt)
+    await seedSshWorker(connection, host, input)
+    const joined = `${synced}{"n":4}\n${prompt}`
+    assert.equal(readFileSync(join(local, 'events.jsonl'), 'utf8'), joined)
+    assert.equal(readFileSync(join(remote, 'events.jsonl'), 'utf8'), joined)
+
+    // Anything else added here while the host moved is a fork.
+    writeFileSync(join(remote, 'events.jsonl'), `${joined}{"n":5}\n`)
+    writeFileSync(join(local, 'events.jsonl'), `${joined}{"n":"answer"}\n`)
+    await assert.rejects(seedSshWorker(connection, host, input), /went on both/)
+    writeFileSync(join(local, 'events.jsonl'), joined)
+
     // Both moved: refused.
     writeFileSync(join(remote, 'events.jsonl'), '{"n":"host"}\n')
     writeFileSync(join(local, 'events.jsonl'), '{"n":"laptop"}\n')
     await assert.rejects(seedSshWorker(connection, host, input), /went on both/)
+  })
+
+  it('sends a prompt the host refused after its own turn, and no prompt that may have run', async () => {
+    const host = node('home-refused')
+    const synced = '{"n":1}\n'
+    const local = localThread('t10', { 'meta.json': meta('t10'), 'events.jsonl': synced })
+    const remote = remoteThreadDir(host, 'p1', 't10')
+    const input = { settings: {}, project: PROJECT, threadId: 't10' }
+    const { connection } = localHost()
+    await seedSshWorker(connection, host, input)
+    const line = (id: string): string => `${JSON.stringify(userLine(id))}\n`
+
+    // The host runs a turn of its own: the prompt sent meanwhile is refused.
+    const lease = { heartbeatAt: Date.now(), ttlMs: 30_000, pid: process.pid }
+    writeFileSync(join(remote, 'writer.lease.1'), JSON.stringify(lease))
+    writeFileSync(join(local, 'events.jsonl'), synced + line('refused'))
+    await assert.rejects(seedSshWorker(connection, host, input), /still running/)
+
+    // Its turn ends; the next prompt takes it, then both prompts after it.
+    writeFileSync(join(remote, 'writer.lease.1'), JSON.stringify({ ...lease, releasedAt: 1 }))
+    writeFileSync(join(remote, 'events.jsonl'), `${synced}{"n":"wake"}`)
+    writeFileSync(join(local, 'events.jsonl'), synced + line('refused') + line('next'))
+    await seedSshWorker(connection, host, input)
+    const joined = `${synced}{"n":"wake"}\n${line('refused')}${line('next')}`
+    assert.equal(readFileSync(join(local, 'events.jsonl'), 'utf8'), joined)
+    assert.equal(readFileSync(join(remote, 'events.jsonl'), 'utf8'), joined)
+
+    // A prompt the host never refused, with nothing after it, may have run
+    // here and been cut off: with the host moved too, that is a fork.
+    writeFileSync(join(remote, 'events.jsonl'), `${joined}{"n":"wake2"}\n`)
+    writeFileSync(join(local, 'events.jsonl'), joined + line('cut') + line('now'))
+    await assert.rejects(seedSshWorker(connection, host, input), /went on both/)
+  })
+
+  it('keeps as refused only the prompt the host refused, not one before it', async () => {
+    const host = node('home-refused-one')
+    const synced = '{"n":1}\n'
+    const local = localThread('t12', { 'meta.json': meta('t12'), 'events.jsonl': synced })
+    const remote = remoteThreadDir(host, 'p1', 't12')
+    const input = { settings: {}, project: PROJECT, threadId: 't12' }
+    const { connection } = localHost()
+    await seedSshWorker(connection, host, input)
+    const line = (id: string): string => `${JSON.stringify(userLine(id))}\n`
+
+    // A prompt that ran here, cut off, then one the host refused.
+    const lease = { heartbeatAt: Date.now(), ttlMs: 30_000, pid: process.pid }
+    writeFileSync(join(remote, 'writer.lease.1'), JSON.stringify(lease))
+    writeFileSync(join(local, 'events.jsonl'), synced + line('ran') + line('refused'))
+    await assert.rejects(seedSshWorker(connection, host, input), /still running/)
+
+    writeFileSync(join(remote, 'writer.lease.1'), JSON.stringify({ ...lease, releasedAt: 1 }))
+    writeFileSync(join(remote, 'events.jsonl'), `${synced}{"n":"wake"}\n`)
+    writeFileSync(
+      join(local, 'events.jsonl'),
+      synced + line('ran') + line('refused') + line('next'),
+    )
+    await assert.rejects(seedSshWorker(connection, host, input), /went on both/)
+  })
+
+  it('reads a sync mark from before its length was kept', async () => {
+    const host = node('home-old-mark')
+    const synced = '{"n":1}\n{"n":2}\n'
+    const local = localThread('t11', { 'meta.json': meta('t11'), 'events.jsonl': synced })
+    const remote = remoteThreadDir(host, 'p1', 't11')
+    const input = { settings: {}, project: PROJECT, threadId: 't11' }
+    const { connection } = localHost()
+    await seedSshWorker(connection, host, input)
+    const hash = createHash('sha256').update(synced).digest('hex')
+    writeFileSync(
+      join(local, 'ssh-host-sync.json'),
+      JSON.stringify({ threadId: 't11', eventsHash: hash }),
+    )
+    // Stuck as forked: the refused prompt, and one refused as a fork since.
+    const prompt = `${JSON.stringify(userLine('m1'))}\n${JSON.stringify(userLine('m2'))}\n`
+    writeFileSync(join(remote, 'events.jsonl'), `${synced}{"n":3}\n`)
+    writeFileSync(join(local, 'events.jsonl'), synced + prompt)
+    await seedSshWorker(connection, host, input)
+    assert.equal(readFileSync(join(local, 'events.jsonl'), 'utf8'), `${synced}{"n":3}\n${prompt}`)
   })
 
   it("keeps what is this computer's in the thread's meta when it comes back", async () => {
