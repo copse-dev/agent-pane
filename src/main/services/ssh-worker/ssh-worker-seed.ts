@@ -133,10 +133,39 @@ async function localEvents(
     const { size } = await file.stat()
     const head = Buffer.alloc(Math.min(prefix, size))
     await file.read(head, 0, head.length, 0)
-    return { size, prefixHash: createHash('sha256').update(head).digest('hex') }
+    return { size, prefixHash: sha256(head) }
   } finally {
     await file.close()
   }
+}
+
+/** A prefix that takes in the whole of `events.jsonl`. */
+const WHOLE = Number.MAX_SAFE_INTEGER
+
+function sha256(data: Buffer): string {
+  return createHash('sha256').update(data).digest('hex')
+}
+
+/**
+ * Beside the app's copy of a thread, not part of its history: the hash of its
+ * `events.jsonl` when it was last the same here and on the host. A copy whose
+ * events changed since then moved (a turn, a rewind, an edit).
+ */
+const SYNC_MARK_FILE = 'ssh-host-sync.json'
+
+const syncMarkSchema = z.object({ threadId: z.string(), eventsHash: z.string() })
+
+async function readSyncMark(dir: string, threadId: string): Promise<string | null> {
+  const text = await readFile(join(dir, SYNC_MARK_FILE), 'utf8').catch(() => null)
+  const mark = text === null ? null : safeJsonParse(text, decodeWithSchema(syncMarkSchema))
+  // A copy of the thread (a fork) is not the thread the mark was made for.
+  return mark?.threadId === threadId ? mark.eventsHash : null
+}
+
+async function writeSyncMark(dir: string, threadId: string, eventsHash: string): Promise<void> {
+  const file = join(dir, SYNC_MARK_FILE)
+  await writeFile(`${file}.tmp`, JSON.stringify({ threadId, eventsHash }))
+  await rename(`${file}.tmp`, file)
 }
 
 /**
@@ -225,17 +254,28 @@ export async function seedSshWorker(
   const { threadId } = input
   const remote = remoteThreadDir(node, projectId, threadId)
   const local = threadDirectoryPath(projectId, threadId)
-  const first = await hostThreadState(connection, node, projectId, threadId)
-  if (first.held) throw new SshThreadRefused(SSH_THREAD_BUSY)
-  if (first.size >= 0) {
-    // Whichever copy is shorter must be where the longer one began.
-    const here = await localEvents(local, first.size)
-    const shared = Math.min(first.size, Math.max(here.size, 0))
-    const there = await hostThreadState(connection, node, projectId, threadId, shared)
-    const ours = await localEvents(local, shared)
-    if (there.prefixHash !== ours.prefixHash && here.size >= 0)
-      throw new SshThreadRefused(SSH_THREAD_FORKED)
-    if (first.size > here.size) await pullThreadMirror(connection, node, projectId, threadId)
+  const there = await hostThreadState(connection, node, projectId, threadId, WHOLE)
+  if (there.held) throw new SshThreadRefused(SSH_THREAD_BUSY)
+  if (there.size >= 0) {
+    const here = await localEvents(local, WHOLE)
+    const synced = await readSyncMark(local, threadId)
+    if (there.prefixHash !== here.prefixHash) {
+      if (synced === null) {
+        // No sync yet to tell which side moved: the shorter copy must be
+        // where the longer one began.
+        const shared = Math.min(there.size, Math.max(here.size, 0))
+        const head = await hostThreadState(connection, node, projectId, threadId, shared)
+        if (here.size >= 0 && head.prefixHash !== (await localEvents(local, shared)).prefixHash)
+          throw new SshThreadRefused(SSH_THREAD_FORKED)
+        if (there.size > here.size) await pullThreadMirror(connection, node, projectId, threadId)
+      } else {
+        // Only the side that moved since the last sync wins; both is a fork.
+        const hostMoved = there.prefixHash !== synced
+        const laptopMoved = here.prefixHash !== synced
+        if (hostMoved && laptopMoved) throw new SshThreadRefused(SSH_THREAD_FORKED)
+        if (hostMoved) await pullThreadMirror(connection, node, projectId, threadId)
+      }
+    }
   }
   const seeded = await readLocalMeta(local)
 
@@ -255,6 +295,7 @@ export async function seedSshWorker(
   if (copied.code === THREAD_HELD_EXIT) throw new SshThreadRefused(SSH_THREAD_BUSY)
   if (copied.code !== 0)
     throw new Error(`could not give the worker the thread: ${lastLines(copied.stderr)}`)
+  await writeSyncMark(local, threadId, (await localEvents(local, WHOLE)).prefixHash)
   return typeof seeded?.['title'] === 'string' ? { title: seeded['title'] } : {}
 }
 
@@ -297,6 +338,8 @@ export async function pullThreadMirror(
       await writeFile(part, data)
       await rename(part, file)
     }
+    const events = entries.find((entry) => entry.path === 'events.jsonl')
+    if (events !== undefined) await writeSyncMark(dir, threadId, sha256(events.data))
   })
   return true
 }
@@ -337,10 +380,10 @@ function mergedMeta(
 ): Buffer {
   const host = safeJsonParse(hostData.toString('utf8'))
   if (!isRecord(host)) throw new Error("the host's copy of the thread has a damaged meta.json")
-  if (here === null) return hostData
   const merged = Object.fromEntries(
     Object.entries(host).filter(([field]) => !LAPTOP_META_FIELDS.has(field)),
   )
+  if (here === null) return Buffer.from(JSON.stringify(merged))
   for (const field of LAPTOP_META_FIELDS)
     if (Object.hasOwn(here, field)) merged[field] = here[field]
   if (here['title'] !== seeded.title && typeof here['title'] === 'string')

@@ -293,12 +293,14 @@ const leaseHeld = async (dir) => {
   }
   const epochs = names.map((name) => /^writer\\.lease\\.(\\d+)$/.exec(name)).filter(Boolean).map((m) => Number(m[1]))
   if (epochs.length === 0) return false
+  const file = path.join(dir, 'writer.lease.' + Math.max(...epochs))
   let lease
   try {
-    lease = JSON.parse(await fs.promises.readFile(path.join(dir, 'writer.lease.' + Math.max(...epochs)), 'utf8'))
+    lease = JSON.parse(await fs.promises.readFile(file, 'utf8'))
   } catch {
-    // A lease being written is a lease being taken.
-    return true
+    // A lease being written is a lease being taken; one left damaged expires.
+    const info = await fs.promises.stat(file).catch(() => null)
+    return info !== null && Date.now() - info.mtimeMs < 30000
   }
   if (lease.releasedAt !== undefined || Date.now() - lease.heartbeatAt > lease.ttlMs) return false
   try {

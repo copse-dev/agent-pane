@@ -124,7 +124,7 @@ export function createTurnHostLink(
      * particular, a model call). Left out, it may for any; an SSH host only
      * for a turn this app sent it.
      */
-    admits?: (threadId: string | null) => boolean
+    admits?: (threadId: string | null, projectId?: string) => boolean
   } = {},
 ): TurnHostLink {
   const socketPath = turnHostSocketPath(deps.userDataPath)
@@ -190,7 +190,7 @@ const refused = (): Error => new Error('This host has no turn of that thread fro
 /** A link's handlers that act only for threads `admits` lets the host act for. */
 function admitted(
   deps: TurnHostLinkDependencies,
-  admits: (threadId: string | null) => boolean,
+  admits: (threadId: string | null, projectId?: string) => boolean,
 ): TurnHostLinkDependencies {
   const { askUser, askQuestions, reviewDiff, infer, onUnfollowedChunk, onInstructionActivation } =
     deps
@@ -198,15 +198,21 @@ function admitted(
     ...deps,
     ...(askUser && {
       askUser: (prompt, signal) =>
-        admits(prompt.threadId) ? askUser(prompt, signal) : Promise.reject(refused()),
+        admits(prompt.threadId, prompt.projectId)
+          ? askUser(prompt, signal)
+          : Promise.reject(refused()),
     }),
     ...(askQuestions && {
       askQuestions: (prompt, signal) =>
-        admits(prompt.threadId) ? askQuestions(prompt, signal) : Promise.resolve(null),
+        admits(prompt.threadId, prompt.projectId)
+          ? askQuestions(prompt, signal)
+          : Promise.resolve(null),
     }),
     ...(reviewDiff && {
       reviewDiff: (prompt, signal) =>
-        admits(prompt.threadId) ? reviewDiff(prompt, signal) : Promise.resolve(false),
+        admits(prompt.threadId, prompt.projectId)
+          ? reviewDiff(prompt, signal)
+          : Promise.resolve(false),
     }),
     ...(infer && {
       infer: (request, signal): AsyncIterable<ProviderStreamChunk> => {

@@ -215,6 +215,7 @@ describe('what the worker on an SSH host is given', () => {
       'events.jsonl',
       'messages',
       'meta.json',
+      'ssh-host-sync.json',
     ])
     assert.equal(readFileSync(join(local, 'events.jsonl'), 'utf8'), '{"n":1}\n{"n":2}\n')
     assert.equal(readFileSync(join(local, 'messages', 'm2.md'), 'utf8'), 'Done')
@@ -243,6 +244,36 @@ describe('what the worker on an SSH host is given', () => {
     writeFileSync(join(remote, 'writer.lease.1'), JSON.stringify({ ...lease, releasedAt: 1 }))
     writeFileSync(join(remote, 'events.jsonl'), '{"n":"there"}\n')
     await assert.rejects(seedSshWorker(localHost().connection, host, input), /went on both/)
+  })
+
+  it('lets the side that alone changed since the last sync win, even by a rewrite', async () => {
+    const host = node('home-rewind')
+    const local = localThread('t9', {
+      'meta.json': '{"id":"t9"}',
+      'events.jsonl': '{"n":1}\n{"n":2}\n',
+    })
+    const input = { settings: {}, project: PROJECT, threadId: 't9' }
+    const { connection } = localHost()
+    await seedSshWorker(connection, host, input)
+    const remote = remoteThreadDir(host, 'p1', 't9')
+
+    // A rewind here rewrites the events: the host's unchanged copy gives way.
+    writeFileSync(join(local, 'events.jsonl'), '{"n":1}\n{"n":"edited"}\n')
+    await seedSshWorker(connection, host, input)
+    assert.equal(readFileSync(join(remote, 'events.jsonl'), 'utf8'), '{"n":1}\n{"n":"edited"}\n')
+
+    // A turn there, unmirrored: the host's copy comes here first.
+    writeFileSync(join(remote, 'events.jsonl'), '{"n":1}\n{"n":"edited"}\n{"n":3}\n')
+    await seedSshWorker(connection, host, input)
+    assert.equal(
+      readFileSync(join(local, 'events.jsonl'), 'utf8'),
+      '{"n":1}\n{"n":"edited"}\n{"n":3}\n',
+    )
+
+    // Both moved: refused.
+    writeFileSync(join(remote, 'events.jsonl'), '{"n":"host"}\n')
+    writeFileSync(join(local, 'events.jsonl'), '{"n":"laptop"}\n')
+    await assert.rejects(seedSshWorker(connection, host, input), /went on both/)
   })
 
   it("keeps what is this computer's in the thread's meta when it comes back", async () => {
