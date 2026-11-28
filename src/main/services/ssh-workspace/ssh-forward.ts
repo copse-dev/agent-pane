@@ -2,15 +2,20 @@ import { createServer } from 'node:net'
 
 export type SshForwardAction = 'forward' | 'cancel'
 
-export interface SshForwardSpec {
-  localPort: number
-  remotePort: number
+/** A loopback TCP port, or a unix socket on each end. */
+export type SshForwardSpec =
+  | { localPort: number; remotePort: number }
+  | { localSocket: string; remoteSocket: string }
+
+function forwardSpec(spec: SshForwardSpec): string {
+  if ('localSocket' in spec) return `${spec.localSocket}:${spec.remoteSocket}`
+  return `127.0.0.1:${String(spec.localPort)}:127.0.0.1:${String(spec.remotePort)}`
 }
 
 /**
  * Build the control command for a forward attached to an existing multiplexed
- * SSH master. Both ends are loopback-bound so a remote desktop is never exposed
- * on either machine's network interfaces.
+ * SSH master. Both ends are loopback-bound, or unix sockets, so a remote
+ * desktop or worker is never exposed on either machine's network interfaces.
  */
 export function sshForwardControlArgs(
   controlPath: string,
@@ -18,15 +23,7 @@ export function sshForwardControlArgs(
   action: SshForwardAction,
   spec: SshForwardSpec,
 ): string[] {
-  return [
-    '-S',
-    controlPath,
-    '-O',
-    action,
-    '-L',
-    `127.0.0.1:${String(spec.localPort)}:127.0.0.1:${String(spec.remotePort)}`,
-    target,
-  ]
+  return ['-S', controlPath, '-O', action, '-L', forwardSpec(spec), target]
 }
 
 /** Reserve an ephemeral loopback port long enough to learn its number. */

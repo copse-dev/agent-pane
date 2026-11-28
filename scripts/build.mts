@@ -26,7 +26,7 @@ import { loadWorkerProtocol } from './lib/worker-protocol.mts'
 import { withPayloadTypes } from './lib/worker-protocol-payloads.mts'
 import { copyOptionalBinaries } from './lib/copy-optional-binaries.mts'
 import { markTreeNoindex } from './lib/noindex.mts'
-import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
+import { STANDALONE_MAIN_BUNDLES, type StandaloneMainBundle } from './main-bundles.mts'
 import { MAIN_EXTERNALS, MAIN_LOG_OVERRIDE } from './main-externals.mts'
 import {
   BUNDLED_CURSOR_SKILLS_VENDOR_DIR,
@@ -65,21 +65,18 @@ const sharedAlias = {
  * A standalone bundle's own `external`/`alias` on top of the shared options,
  * with repo-relative alias targets made absolute for esbuild.
  */
-function standaloneOverrides(entry: string): {
+function standaloneOverrides(bundle: StandaloneMainBundle): {
   external?: string[]
   alias: Record<string, string>
   logOverride?: Record<string, 'silent' | 'warning' | 'error'>
 } {
-  const bundle = STANDALONE_MAIN_BUNDLES.find((candidate) => candidate.entry === entry)
   const alias = Object.fromEntries(
-    Object.entries(bundle?.alias ?? {}).map(([from, to]) => [from, resolve(to)]),
+    Object.entries(bundle.alias ?? {}).map(([from, to]) => [from, resolve(to)]),
   )
   return {
-    ...(bundle?.external ? { external: bundle.external } : {}),
+    ...(bundle.external ? { external: bundle.external } : {}),
     alias: { ...sharedAlias, ...alias },
-    ...(bundle?.logOverride
-      ? { logOverride: { ...MAIN_LOG_OVERRIDE, ...bundle.logOverride } }
-      : {}),
+    ...(bundle.logOverride ? { logOverride: { ...MAIN_LOG_OVERRIDE, ...bundle.logOverride } } : {}),
   }
 }
 
@@ -237,12 +234,13 @@ if (!isDemo) {
   })
   // Every standalone main-process bundle, from the list `dev.mts` also builds
   // (see main-bundles.mts for why they are enumerated in one place).
-  for (const { entry, outfile, manifest } of STANDALONE_MAIN_BUNDLES) {
+  for (const standalone of STANDALONE_MAIN_BUNDLES) {
+    const { entry, outfile, manifest } = standalone
     await bundle({
       ...nodeOpts,
       entryPoints: [entry],
       outfile,
-      ...standaloneOverrides(entry),
+      ...standaloneOverrides(standalone),
     })
     assertParses(outfile)
     if (manifest) {

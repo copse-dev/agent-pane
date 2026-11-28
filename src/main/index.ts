@@ -162,6 +162,7 @@ import { senderProjectId } from './ipc/sender-project-root.ts'
 import { diffAcceptancePrompt, setDiffAcceptanceHandler } from './services/diff-acceptance-wake.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
 import { setRemoteWatcherInstallApprover } from './services/ssh-workspace/remote-watcher-install-approval.ts'
+import { setSshWorkerInstallApprover } from './services/ssh-worker/ssh-worker-install-approval.ts'
 import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-watcher.ts'
 import {
   reapOversizedGortexDaemon,
@@ -1057,6 +1058,16 @@ app
         body,
         type: 'shell',
         cause: 'ssh-watcher-install',
+        allowRemember: false,
+      })
+      return approved
+    })
+    setSshWorkerInstallApprover(async ({ title, body }) => {
+      const { approved } = await requestApproval({
+        title,
+        body,
+        type: 'shell',
+        cause: 'ssh-worker-install',
         allowRemember: false,
       })
       return approved
