@@ -286,9 +286,28 @@ describe('branch CI automations', () => {
     await service.poll()
     assert.equal(threads.size, 1)
 
+    // A genuinely unstarted first run still holds a later CI delivery.
+    snapshot = { headSha: SHA_A, runs: [run(3, SHA_A), run(2, SHA_A), run(1, SHA_A)] }
+    await service.poll()
+    await supervisor.waitForIdle()
+    assert.equal(threads.size, 1)
+
+    // Prior submission metadata makes this draft human follow-up work. It
+    // must neither auto-send nor keep the new failure out of the real inbox.
+    threads.set(created.id, {
+      ...created,
+      lastPromptAt: Date.parse('2026-09-29T10:05:00Z'),
+      draftPrompt: 'Ask about this CI failure later.',
+    })
+    await service.poll()
+    await supervisor.waitForIdle()
+    assert.equal(threads.size, 2)
+    assert.equal(threads.get(created.id)?.draftPrompt, 'Ask about this CI failure later.')
+    assert.match([...threads.values()].at(-1)?.draftPrompt ?? '', /"runId": 3/)
+
     snapshot = { headSha: SHA_B, runs: [run(3, SHA_A), run(2, SHA_A)] }
     await service.poll()
-    assert.equal(threads.size, 1)
+    assert.equal(threads.size, 2)
     assert.deepEqual(await service.canStart('project-a', created.id), {
       allowed: false,
       reason: 'A newer branch head superseded this failed CI run.',

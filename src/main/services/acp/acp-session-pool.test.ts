@@ -385,6 +385,33 @@ describe('acp-session-pool', () => {
     assert.equal(mutations, 1)
   })
 
+  it('discounts only its own idle mutation reservation for canonical liveness', async () => {
+    const threadId = 'maintenance-liveness'
+    const entered = Promise.withResolvers<undefined>()
+    const inspect = Promise.withResolvers<undefined>()
+    const mutation = withIdleAcpSession(threadId, async () => {
+      entered.resolve(undefined)
+      assert.equal(hasActiveAcpTurn(threadId), false, 'its maintenance lock is not an agent turn')
+      await inspect.promise
+      assert.equal(hasActiveAcpTurn(threadId), true, 'a later queued owner is still busy')
+      return 'checked'
+    })
+    try {
+      await entered.promise
+      assert.equal(hasActiveAcpTurn(threadId), true, 'external observers still see the reservation')
+      const replacement = acquireAcpSession({
+        threadId,
+        config: CONFIG,
+        createTransport: makeTransportFactory({ spawns: 0, promptSessions: [] }),
+      })
+      inspect.resolve(undefined)
+      assert.deepEqual(await mutation, { status: 'released', value: 'checked' })
+      await replacement
+    } finally {
+      inspect.resolve(undefined)
+    }
+  })
+
   it('keeps a replacement acquire behind the entire idle checkout mutation', async () => {
     const log = { spawns: 0, promptSessions: [] }
     const createTransport = makeTransportFactory(log)

@@ -1,6 +1,10 @@
 import type { Thread } from '@shared/types'
 import { automationRunBlock } from '@shared/automation-run-state.ts'
-import { getThreadMeta, updateMetaIfUnchanged } from '../thread-store.ts'
+import {
+  getThreadMetaWithRespondedPrompt,
+  getThreadMeta,
+  updateMetaIfUnchanged,
+} from '../thread-store.ts'
 
 /** Null means the runtime cannot currently prove whether the run still owns its turn. */
 export type AutomationRunLiveness = (projectId: string, threadId: string) => boolean | null
@@ -21,6 +25,38 @@ export function automationRunBlocksAdmission(
   }
 }
 
+/** A transient legacy admission view, reusable at checkout mutation rechecks. */
+export async function resolveLegacyAutomationRunMetadata(
+  projectId: string,
+  initial: Omit<Thread, 'messages'>,
+  isActive: AutomationRunLiveness | undefined,
+): Promise<Omit<Thread, 'messages'>> {
+  if (
+    !initial.automation ||
+    initial.messagesLoaded === true ||
+    initial.interruptedTurnAt !== undefined ||
+    automationRunBlock(initial) !== 'pending-start'
+  )
+    return initial
+  let observed = initial
+  const isAbsent = (): boolean => {
+    try {
+      return isActive?.(projectId, observed.id) === false
+    } catch {
+      return false
+    }
+  }
+  if (!isAbsent()) return { ...observed, status: 'running' }
+  const current = await getThreadMetaWithRespondedPrompt(projectId, observed.id)
+  if (current) observed = { ...current.meta, messagesLoaded: false }
+  if (!isAbsent()) return { ...observed, status: 'running' }
+  // Never persist inferred submission evidence: every future attempt repeats
+  // the legacy read and ownership proof, including at the mutation boundary.
+  return current?.lastPromptAt === undefined
+    ? observed
+    : { ...observed, lastPromptAt: current.lastPromptAt }
+}
+
 /**
  * Reconcile persisted running flags before an automation decides its run slot is busy.
  * A closed project has no renderer to perform the ordinary interrupted-turn repair.
@@ -33,7 +69,12 @@ export async function reconcileInterruptedAutomationRuns(
   now: () => number,
 ): Promise<Omit<Thread, 'messages'>[]> {
   const result = [...threads]
-  for (const [index, observed] of threads.entries()) {
+  for (const [index, initial] of threads.entries()) {
+    const observed =
+      initial.messagesLoaded === false
+        ? await resolveLegacyAutomationRunMetadata(projectId, initial, isActive)
+        : initial
+    result[index] = observed
     if (!observed.automation) continue
     const isAbsent = (): boolean => {
       try {
