@@ -6,6 +6,7 @@
  * These tests pin the other end of that pipe: what reaches the dialog is a
  * sentence about the command, and each distinct concern is stated once.
  */
+import { sandboxEscapeChangeSection } from './runtime-prompt.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { UNSANDBOXED_ACCESS_WARNING } from '@shared/approval-copy.ts'
@@ -33,7 +34,7 @@ describe('outside-sandbox approval copy', () => {
       bodyAdvice,
       'The project sandbox would block this command:\n' +
         "• Runs code written or built inside the command itself, so Copse can't tell what it does" +
-        `\n\n${UNSANDBOXED_ACCESS_WARNING}`,
+        `\n\n${sandboxEscapeChangeSection()}`,
     )
     assert.equal(bodyFooter, 'Allow running it once outside the sandbox?')
   })
@@ -50,7 +51,7 @@ describe('outside-sandbox approval copy', () => {
       '• Downloads from the internet (curl/wget)',
       '• Reads or writes in your home directory, outside the project',
       '',
-      UNSANDBOXED_ACCESS_WARNING,
+      ...sandboxEscapeChangeSection().split('\n'),
     ])
   })
 
@@ -59,7 +60,7 @@ describe('outside-sandbox approval copy', () => {
     assert.equal(
       bodyAdvice,
       'The project sandbox would block this command:\n• Needs network or outside-project access' +
-        `\n\n${UNSANDBOXED_ACCESS_WARNING}`,
+        `\n\n${sandboxEscapeChangeSection()}`,
     )
   })
 
@@ -80,7 +81,7 @@ describe('outside-sandbox approval copy', () => {
       'The agent expects the project sandbox to block this command:\n' +
         '• Runs the GitHub CLI, which may reach GitHub\n\n' +
         'It is asking to run outside the sandbox up front, rather than letting it fail inside first.' +
-        `\n\n${UNSANDBOXED_ACCESS_WARNING}`,
+        `\n\n${sandboxEscapeChangeSection()}`,
     )
     assert.match(bodyFooter ?? '', /not a confirmed sandbox block/)
   })
@@ -178,7 +179,9 @@ describe('shell execution boundary copy', () => {
       const parts = format('gh pr create --title "Fix" --body "Review"', [
         'GitHub CLI (may reach GitHub)',
       ])
-      assert.ok(parts.bodyAdvice?.includes(UNSANDBOXED_ACCESS_WARNING))
+      assert.ok(parts.bodyAdvice?.includes(sandboxEscapeChangeSection()))
+      assert.match(parts.bodyAdvice ?? '', /Files: this project only → everything your account/)
+      assert.match(parts.bodyAdvice ?? '', /Network: .* → any host/)
       assert.match(parts.bodyAdvice ?? '', /publishes a pull request/)
     }
   })

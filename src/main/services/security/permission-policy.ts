@@ -1,5 +1,10 @@
 import { ellipsize } from '@copse/std/one-line-text.ts'
 import type { McpToolAnnotations } from '@shared/types/mcp.ts'
+import {
+  runtimeLeadLine,
+  sandboxEscapeChangeSection,
+  type PromptRuntime,
+} from './runtime-prompt.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { gitPushApproval, UNSANDBOXED_ACCESS_WARNING } from '@shared/approval-copy.ts'
 import { githubShellActionAdvice } from './github-approval-copy.ts'
@@ -490,14 +495,14 @@ export function formatShellPromptParts(
   command: string,
   reasons: string[],
   sandboxed = true,
+  /** Where the command will run; an SSH target is named in the prompt. */
+  runtime: PromptRuntime = { kind: 'local', containment: sandboxed ? 'contained' : 'host' },
 ): ShellPromptParts {
   const action = githubShellActionAdvice(command)
   return {
     command,
     bodyAdvice: [
-      sandboxed
-        ? 'This runs inside the project sandbox. It can still change or delete project files.'
-        : `The project sandbox is unavailable for this command. ${UNSANDBOXED_ACCESS_WARNING}`,
+      runtimeLeadLine(runtime, UNSANDBOXED_ACCESS_WARNING),
       action,
       reasons.length ? `Why this needs approval:\n${reasonList(reasons)}` : null,
     ]
@@ -570,7 +575,9 @@ function buildOutsideSandboxAdvice(options: {
     `${options.leadIn}\n${reasonList(scopeReasons.length ? scopeReasons : NEEDS_OUTSIDE_ACCESS)}`,
   )
   if (options.trailing) sections.push(options.trailing)
-  sections.push(UNSANDBOXED_ACCESS_WARNING)
+  // The per-property list is the escape warning: it names what widens, where
+  // the general "your account's access" sentence only summarised it.
+  sections.push(sandboxEscapeChangeSection())
   return sections.join('\n\n')
 }
 
