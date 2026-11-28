@@ -78,7 +78,7 @@ export function installedArgv(dir: string): string[] {
 
 /**
  * Unpack the archive (`ssh-worker-package.ts`) read as base64 from stdin into
- * `dir`, after checking its hash: a damaged or altered upload is refused, and
+ * `dir`, after checking its hash: a damaged upload is refused, and
  * nothing is left half written, because it lands beside `dir` and is renamed
  * into place whole. Entry paths may not leave `dir`.
  */
@@ -94,25 +94,36 @@ process.stdin.on('end', () => {
     process.exit(3)
   }
   const part = dir + '.part-' + process.pid
-  fs.rmSync(part, { recursive: true, force: true })
-  fs.mkdirSync(part, { recursive: true, mode: 0o700 })
-  let at = 0
-  while (at < archive.length) {
-    const end = archive.indexOf(10, at)
-    const entry = JSON.parse(archive.subarray(at, end).toString('utf8'))
-    at = end + 1
-    const relative = path.normalize(entry.path)
-    if (path.isAbsolute(relative) || relative.split(path.sep).includes('..')) {
-      console.error('the upload names a path outside its directory')
-      process.exit(4)
+  let code = 0
+  try {
+    fs.mkdirSync(part, { recursive: true, mode: 0o700 })
+    let at = 0
+    while (at < archive.length) {
+      const end = archive.indexOf(10, at)
+      const entry = JSON.parse(archive.subarray(at, end).toString('utf8'))
+      at = end + 1
+      const relative = path.normalize(String(entry.path))
+      if (relative === '.' || path.isAbsolute(relative) || relative.split(path.sep).includes('..')) {
+        console.error('the upload names a path outside its directory')
+        code = 4
+        break
+      }
+      const file = path.join(part, relative)
+      fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 })
+      fs.writeFileSync(file, archive.subarray(at, at + entry.size), { mode: entry.mode & 0o755 })
+      at += entry.size
     }
-    const file = path.join(part, relative)
-    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 })
-    fs.writeFileSync(file, archive.subarray(at, at + entry.size), { mode: entry.mode & 0o755 })
-    at += entry.size
+    if (code === 0) {
+      fs.rmSync(dir, { recursive: true, force: true })
+      fs.renameSync(part, dir)
+    }
+  } catch (error) {
+    console.error(String(error))
+    code = 5
+  } finally {
+    fs.rmSync(part, { recursive: true, force: true })
   }
-  fs.rmSync(dir, { recursive: true, force: true })
-  fs.renameSync(part, dir)
+  process.exit(code)
 })
 `
 
@@ -129,9 +140,13 @@ export function unpackArgv(node: RemoteNode, dir: string, hash: string): string[
  */
 const START_SH = `
 node="$1"; dir="$2"; version="$3"
-ready="$dir/ready"
+# One ready file per start, so two starts at once cannot read or remove each
+# other's.
+ready="$dir/ready-$$"
 rm -f "$ready"
 cd "$dir" || exit 1
+# The worker outlives this connection: it must not hold a forwarded agent.
+unset SSH_AUTH_SOCK
 if command -v setsid >/dev/null 2>&1; then detach=setsid; else detach=; fi
 $detach nohup "$node" ${SSH_WORKER_BUNDLE} --user-data "$dir/profile" --app-version "$version" --ready-file "$ready" >"$dir/worker.log" 2>&1 </dev/null &
 pid=$!
@@ -146,6 +161,7 @@ while [ ! -s "$ready" ]; do
   sleep 0.2
 done
 cat "$ready"
+rm -f "$ready"
 `
 
 export function startArgv(node: RemoteNode, dir: string, version: string): string[] {

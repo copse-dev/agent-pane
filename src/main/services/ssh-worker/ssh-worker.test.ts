@@ -48,7 +48,9 @@ function deps(connection: SshConnection, approve = true): SshWorkerDependencies 
     connection: () => connection,
     approve: () => Promise.resolve(approve),
     workerPackage: () =>
-      packageFromArchive(packArchive([{ path: 'a', mode: 0o644, data: Buffer.from('a') }])),
+      Promise.resolve(
+        packageFromArchive(packArchive([{ path: 'a', mode: 0o644, data: Buffer.from('a') }])),
+      ),
   }
 }
 
@@ -89,6 +91,54 @@ describe('starting the worker on an SSH host', () => {
     const started = await startSshWorker('dev', deps(connection, false))
     assert.deepEqual(started, { ok: false, reason: 'the user kept turns on this computer' })
     assert.deepEqual(ran, ['node'])
+  })
+
+  it('shares one start between two callers, and asks once', async () => {
+    const { connection, ran } = await host({
+      node: { stdout: NODE },
+      sh: { stdout: '/run/w.sock\n' },
+    })
+    let asked = 0
+    const shared = {
+      ...deps(connection),
+      approve: (): Promise<boolean> => {
+        asked++
+        return Promise.resolve(true)
+      },
+    }
+    const [first, second] = await Promise.all([
+      startSshWorker('dev', shared),
+      startSshWorker('dev', shared),
+    ])
+    assert.equal(first, second)
+    assert.equal(asked, 1)
+    assert.deepEqual(ran, ['node', 'test', 'sh'])
+  })
+
+  it('remembers a refusal for the rest of the run', async () => {
+    const { connection } = await host({ node: { stdout: NODE } })
+    let asked = 0
+    const declining = {
+      ...deps(connection),
+      approve: (): Promise<boolean> => {
+        asked++
+        return Promise.resolve(false)
+      },
+    }
+    await startSshWorker('dev', declining)
+    const again = await startSshWorker('dev', declining)
+    assert.ok(!again.ok)
+    assert.equal(asked, 1)
+  })
+
+  it('says why when the worker cannot be packed', async () => {
+    const { connection } = await host({ node: { stdout: NODE } })
+    const started = await startSshWorker('dev', {
+      ...deps(connection),
+      workerPackage: () => Promise.reject(new Error('ENOENT: apply-seccomp')),
+    })
+    assert.ok(!started.ok)
+    assert.match(started.reason, /could not pack the worker: .*apply-seccomp/)
   })
 
   it('says so when the host has no Node new enough', async () => {

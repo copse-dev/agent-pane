@@ -80,7 +80,12 @@ describe('Copse worker on an SSH host', () => {
   })
 
   after(() => {
-    if (workerPid !== undefined) process.kill(workerPid)
+    if (workerPid !== undefined)
+      try {
+        process.kill(workerPid)
+      } catch {
+        // already gone
+      }
     host.remove()
     resetUserData()
   })

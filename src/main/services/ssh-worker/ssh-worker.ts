@@ -42,14 +42,14 @@ export interface SshWorkerDependencies {
   connection: (hostId: string) => SshConnection | null
   approve: (hostLabel: string) => Promise<boolean>
   /** This build's worker, packed (`ssh-worker-package.ts`). */
-  workerPackage: () => SshWorkerPackage
+  workerPackage: () => Promise<SshWorkerPackage>
 }
 
 export type SshWorkerStart =
   | { ok: true; localSocket: string; remoteSocket: string; uploaded: boolean }
   | { ok: false; reason: string }
 
-let cachedPackage: SshWorkerPackage | null = null
+let cachedPackage: Promise<SshWorkerPackage> | null = null
 
 export function defaultSshWorkerDependencies(
   version: string,
@@ -60,25 +60,42 @@ export function defaultSshWorkerDependencies(
     userDataPath,
     connection: (hostId) => getSshConnectionManager().getConnection(hostId),
     approve: (hostLabel) => approveSshWorkerInstall(formatSshWorkerInstallApproval(hostLabel)),
-    workerPackage: () => (cachedPackage ??= buildSshWorkerPackage()),
+    workerPackage: () =>
+      (cachedPackage ??= buildSshWorkerPackage().catch((error: unknown) => {
+        cachedPackage = null
+        throw error
+      })),
   }
 }
 
-/** Hosts the user let run the worker in this app run. */
-const approvedHosts = new Set<string>()
+/** What the user said about each host in this app run: asked once, either way. */
+const answers = new Map<string, boolean>()
+
+/** One start per host at a time: a second caller shares the first's. */
+const starting = new Map<string, Promise<SshWorkerStart>>()
 
 export function forgetSshWorkerApprovals(): void {
-  approvedHosts.clear()
+  answers.clear()
 }
 
 function tail(text: string): string {
   return text.trim().split('\n').slice(-5).join('\n')
 }
 
-export async function startSshWorker(
+export function startSshWorker(
   hostId: string,
   deps: SshWorkerDependencies,
 ): Promise<SshWorkerStart> {
+  const running = starting.get(hostId)
+  if (running !== undefined) return running
+  const start = startOnce(hostId, deps).finally(() => {
+    starting.delete(hostId)
+  })
+  starting.set(hostId, start)
+  return start
+}
+
+async function startOnce(hostId: string, deps: SshWorkerDependencies): Promise<SshWorkerStart> {
   const connection = deps.connection(hostId)
   if (connection === null) return { ok: false, reason: 'the host is not connected' }
 
@@ -91,20 +108,27 @@ export async function startSshWorker(
       reason: `the host's Node is ${node.version}; the worker needs ${MIN_NODE} or later`,
     }
 
-  if (!approvedHosts.has(hostId)) {
-    if (!(await deps.approve(connection.host.label)))
-      return { ok: false, reason: 'the user kept turns on this computer' }
-    approvedHosts.add(hostId)
+  let approved = answers.get(hostId)
+  if (approved === undefined) {
+    approved = await deps.approve(connection.host.label)
+    answers.set(hostId, approved)
   }
+  if (!approved) return { ok: false, reason: 'the user kept turns on this computer' }
 
-  const worker = deps.workerPackage()
+  let worker: SshWorkerPackage
+  try {
+    worker = await deps.workerPackage()
+  } catch (error) {
+    return { ok: false, reason: `could not pack the worker: ${String(error)}` }
+  }
   const dir = installDir(node, worker.id)
   const present = await connection.execArgv(installedArgv(dir), { timeoutMs: 30_000 })
   const uploaded = present.code !== 0
   if (uploaded) {
     const unpack = await connection.execArgv(unpackArgv(node, dir, worker.hash), {
       stdin: worker.archive.toString('base64'),
-      timeoutMs: 300_000,
+      // About 45 MB of base64: minutes on a slow uplink.
+      timeoutMs: 1_200_000,
     })
     if (unpack.code !== 0)
       return { ok: false, reason: `the upload failed: ${tail(unpack.stderr) || 'no output'}` }

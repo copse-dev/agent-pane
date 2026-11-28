@@ -136,7 +136,9 @@ _State._ R3 is built in five steps:
      the worker's hello over the forward.
    - Nothing sends it turns yet.
 2. **The inference relay** over the forward.
-3. **SSH thread turns run on the host**, with the thread store there.
+3. **SSH thread turns run on the host**, with the thread store there. The store moves to
+   a profile that outlives builds (step 1 keeps one per build), and old builds are removed
+   once no worker runs from them.
 4. **The opt-in key lease.**
 5. **The exit gate** as an e2e.
 

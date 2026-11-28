@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, relative, sep } from 'node:path'
 import { stageSandboxRuntime } from '../container-runtime/thread-container.ts'
@@ -33,16 +33,16 @@ interface Entry {
   data: Buffer
 }
 
-function walk(root: string, dir: string, into: Entry[]): void {
-  for (const name of readdirSync(dir).sort()) {
+async function walk(root: string, dir: string, into: Entry[]): Promise<void> {
+  for (const name of (await readdir(dir)).sort()) {
     const full = join(dir, name)
-    const stat = statSync(full)
-    if (stat.isDirectory()) walk(root, full, into)
-    else if (stat.isFile())
+    const info = await stat(full)
+    if (info.isDirectory()) await walk(root, full, into)
+    else if (info.isFile())
       into.push({
         path: relative(root, full).split(sep).join('/'),
-        mode: stat.mode & 0o755,
-        data: readFileSync(full),
+        mode: info.mode & 0o755,
+        data: await readFile(full),
       })
   }
 }
@@ -62,15 +62,17 @@ export function packageFromArchive(archive: Buffer): SshWorkerPackage {
 }
 
 /** Pack the worker from the app's own build, next to the main bundle by default. */
-export function buildSshWorkerPackage(fromDir: string = __dirname): SshWorkerPackage {
+export async function buildSshWorkerPackage(
+  fromDir: string = __dirname,
+): Promise<SshWorkerPackage> {
   const bundle = join(fromDir, SSH_WORKER_BUNDLE)
-  const entries: Entry[] = [{ path: SSH_WORKER_BUNDLE, mode: 0o644, data: readFileSync(bundle) }]
-  const staging = mkdtempSync(join(tmpdir(), 'copse-ssh-worker-'))
+  const entries: Entry[] = [{ path: SSH_WORKER_BUNDLE, mode: 0o644, data: await readFile(bundle) }]
+  const staging = await mkdtemp(join(tmpdir(), 'copse-ssh-worker-'))
   try {
     stageSandboxRuntime(staging, fromDir)
-    walk(staging, staging, entries)
+    await walk(staging, staging, entries)
   } finally {
-    rmSync(staging, { recursive: true, force: true })
+    await rm(staging, { recursive: true, force: true })
   }
   return packageFromArchive(packArchive(entries))
 }
