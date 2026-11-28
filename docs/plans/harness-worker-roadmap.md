@@ -150,8 +150,8 @@ _State._ R3 is built in five steps:
    to the latest app of the worker's own version: one that only asked the version, or
    never said hello, gets no calls and no turns. The line reader scans each chunk once,
    so a long call costs its length.
-   Still open: a relayed provider carries no compaction identity, an error's provider status does not
-   cross the line, and model calls that bypass `buildProvider` are not relayed.
+   Still open: a relayed provider carries no compaction identity, an error's provider
+   status does not cross the line, and model calls that bypass `buildProvider` are not relayed.
 3. **SSH thread turns run on the host**, with the thread store there and a mirror kept on
    the laptop (the user's choice, 2026-11-28). In parts:
    - **A profile that outlives builds (done).** Every build serves
