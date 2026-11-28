@@ -45,21 +45,83 @@ export interface ScenarioHandle {
   /** Wait until the first `count` scripted user turns have finished. */
   waitForTurns(count: number, timeoutMs?: number): Promise<void>
   assertComplete(): Promise<void>
+  /** Where the scripted conversation is, for failure output. */
+  status(): Promise<ScenarioStatus>
 }
 
 const installed: string[] = []
 const verified = new Set<string>()
 
+/**
+ * What the transcript shows right now: the last assistant text, every tool card
+ * that has not finished cleanly, and any scripted-model failure. Failure
+ * artifacts are not always reachable, so a timed-out wait prints this to the
+ * job log instead of only naming the text it expected.
+ */
+export async function describeTranscript(): Promise<string> {
+  const state = await browser.execute(() => {
+    const replies = document.querySelectorAll<HTMLElement>('.msg-assistant .message-text')
+    const last = replies.length > 0 ? replies.item(replies.length - 1).innerText.trim() : null
+    const cards = Array.from(
+      document.querySelectorAll<HTMLElement>('.messages-list [data-tool-id][data-status]'),
+    ).map((card) => ({
+      name: card.querySelector('.tool-name')?.textContent.trim() ?? '(unnamed)',
+      status: card.dataset['status'] ?? '',
+    }))
+    const text = document.querySelector<HTMLElement>('.messages-list')?.innerText ?? ''
+    const failures = text.split('\n').filter((line) => /mock scenario/i.test(line))
+    // A collapsed card builds its body only when opened, so an error's message
+    // is not in the DOM until then. Open each errored card the way a user
+    // does, by clicking its header, and read what it shows.
+    const errors = Array.from(
+      document.querySelectorAll<HTMLDetailsElement>(
+        '.messages-list details[data-tool-id][data-status="error"]',
+      ),
+    ).map((card) => {
+      const summary = card.querySelector<HTMLElement>(':scope > summary')
+      if (!card.open) summary?.click()
+      const body = Array.from(card.children)
+        .filter((child) => child !== summary)
+        .map((child) => (child instanceof HTMLElement ? child.innerText : child.textContent))
+        .join('\n')
+        .trim()
+      return {
+        name: summary?.querySelector('.tool-name')?.textContent.trim() ?? '(unnamed)',
+        body: body.slice(0, 2000),
+      }
+    })
+    return { replies: replies.length, last, cards, failures, errors }
+  })
+  const unfinished = state.cards.filter((card) => card.status !== 'done')
+  return [
+    `assistant bubbles: ${String(state.replies)}; last text: ${JSON.stringify(state.last)}`,
+    `tool cards: ${String(state.cards.length)} (${state.cards.map((c) => `${c.name}=${c.status}`).join(', ')})`,
+    `unfinished tool cards: ${unfinished.length > 0 ? unfinished.map((c) => `${c.name}=${c.status}`).join(', ') : 'none'}`,
+    `mock scenario messages: ${state.failures.length > 0 ? state.failures.join(' | ') : 'none'}`,
+    ...state.errors.map((card) => `errored tool card ${card.name}: ${JSON.stringify(card.body)}`),
+  ].join('\n')
+}
+
 /** Tool rounds can create empty assistant bubbles before the final text reply. */
 export async function expectAssistantReply(text: string): Promise<void> {
-  await browser.waitUntil(
-    async () =>
-      (await browser.execute(() => {
-        const replies = document.querySelectorAll<HTMLElement>('.msg-assistant .message-text')
-        return replies.item(replies.length - 1).innerText.trim()
-      })) === text,
-    { timeout: 15_000, interval: 100, timeoutMsg: `Expected assistant reply: ${text}` },
-  )
+  try {
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(() => {
+          const replies = document.querySelectorAll<HTMLElement>('.msg-assistant .message-text')
+          return replies.item(replies.length - 1).innerText.trim()
+        })) === text,
+      { timeout: 15_000, interval: 100, timeoutMsg: `Expected assistant reply: ${text}` },
+    )
+  } catch (error) {
+    const detail = await describeTranscript().catch(
+      (cause: unknown) =>
+        `transcript unavailable: ${cause instanceof Error ? cause.message : String(cause)}`,
+    )
+    // stdout reaches the CI job log even when the artifact upload cannot be read.
+    console.log(`[expectAssistantReply] ${text}\n${detail}`)
+    throw new Error(`Expected assistant reply: ${text}\n${detail}`, { cause: error })
+  }
 }
 
 /**
@@ -159,6 +221,13 @@ export async function installMockScenario(
         await bridge.assertMockScenarioComplete(scenarioId)
       }, id)
       verified.add(id)
+    },
+    async status(): Promise<ScenarioStatus> {
+      return browser.execute(async (scenarioId) => {
+        const bridge = window.__copseE2e
+        if (!bridge) throw new Error('The test scenario bridge is unavailable')
+        return bridge.mockScenarioStatus(scenarioId)
+      }, id)
     },
   }
 }
