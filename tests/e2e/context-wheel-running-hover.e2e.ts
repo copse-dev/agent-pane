@@ -7,6 +7,7 @@ import {
   seedStableWorkspace,
 } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { submitComposer } from './helpers/composer.ts'
 
 // While a run is in flight the caller passes `breakdown: null` on purpose — the
 // pre-send estimate describes the *next* prompt, so the live snapshot is the
@@ -46,7 +47,7 @@ describe('context wheel hover while running', () => {
       ],
       true,
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     // Displayed, not present. input-bar.ts creates the stop button once at mount
     // with `hidden` and toggles `stopBtn.hidden = !running`, so an existence
     // check is true from app start and this wait returned immediately — leaving

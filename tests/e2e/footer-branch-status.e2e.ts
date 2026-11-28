@@ -14,8 +14,9 @@ import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { acceptProtectedPrompt, setComposerValue, submitComposer } from './helpers/composer.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
+import { waitForAgentIdle } from './helpers.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -111,7 +112,14 @@ describe('footer branch status for a detached thread worktree', function () {
     expect(buttonAt.x).toBeGreaterThan(label.x + labelSize.width - 1)
   }
 
-  before(async function () {
+  async function selectDetachedThread(): Promise<void> {
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await $(`[data-thread-id="${detachedThreadId}"]`).click()
+    await expect($(`[data-thread-id="${detachedThreadId}"]`)).toHaveElementClass('selected')
+    await expect($('.footer-branch-label')).toHaveText(detachedBranch)
+  }
+
+  beforeEach(async function () {
     this.timeout(120_000)
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
@@ -119,6 +127,7 @@ describe('footer branch status for a detached thread worktree', function () {
 
     const worktreesRoot = process.env['COPSE_WORKTREES_DIR']
     if (!worktreesRoot) throw new Error('COPSE_WORKTREES_DIR is not configured for e2e')
+    if (worktreeRoot) removeE2eTree(worktreeRoot)
     projectRoot = join(dirname(worktreesRoot), 'footer-detached-project-checkout')
     removeE2eTree(projectRoot)
     mkdirSync(projectRoot, { recursive: true })
@@ -195,6 +204,10 @@ describe('footer branch status for a detached thread worktree', function () {
     await browser.reloadSession()
   })
 
+  afterEach(async () => {
+    await waitForAgentIdle()
+  })
+
   after(() => {
     writeE2eEnv({})
     resetUserData()
@@ -205,9 +218,7 @@ describe('footer branch status for a detached thread worktree', function () {
   })
 
   it('switches threads without showing an unexpected-error toast', async () => {
-    await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await $(`[data-thread-id="${detachedThreadId}"]`).click()
-    await expect($(`[data-thread-id="${detachedThreadId}"]`)).toHaveElementClass('selected')
+    await selectDetachedThread()
 
     const branchBtn = await $('.footer-branch-status').getElement()
     await expect(branchBtn).toBeDisplayed()
@@ -227,6 +238,8 @@ describe('footer branch status for a detached thread worktree', function () {
   })
 
   it('reattaches the checkout to its branch from the footer', async () => {
+    await selectDetachedThread()
+    await expect($('.footer-branch-status')).toHaveElementClass('is-detached')
     await $('.branch-reattach-button').click()
 
     await expect($('.branch-reattach-button')).not.toBeDisplayed({ wait: 10_000 })
@@ -245,6 +258,8 @@ describe('footer branch status for a detached thread worktree', function () {
 
   it('offers to continue a rebase that stopped part-way', async function () {
     this.timeout(90_000)
+    await selectDetachedThread()
+    git(worktreeRoot, ['checkout', detachedBranch])
     await $('.toast').waitForExist({ reverse: true, timeout: 10_000 })
     // A conflicting rebase stops with HEAD detached and its sequencer state on
     // disk: the state a signing failure or conflict leaves an agent's checkout in.
@@ -284,7 +299,7 @@ describe('footer branch status for a detached thread worktree', function () {
       ],
     })
     await setComposerValue('Inspect the paused rebase.')
-    await $('.submit-btn').click()
+    await submitComposer()
     await scenario.waitForHold('paused-rebase')
     await expect($('.chat-row.selected')).toHaveElementClass('is-running')
     await expect($('.footer-branch-status')).toHaveElementClass('is-detached')
@@ -327,18 +342,20 @@ describe('footer branch status for a detached thread worktree', function () {
     })
     await continueBtn.click()
     await approveUnsandboxedTerminalIfPrompted()
+    await acceptProtectedPrompt()
     await expect($('.branch-reattach-button')).not.toBeDisplayed({ wait: 30_000 })
     await expect($('.msg-machine-origin')).toBeDisplayed({ wait: 30_000 })
+    const machinePrompt = await $('.msg-machine-origin .message-text').getElement()
+    expect(await machinePrompt.getText()).not.toContain('```')
+    await expect(machinePrompt.$('.msg-user-fold-toggle')).not.toExist()
+    await expect(machinePrompt.$('.transcript-attachment-shell')).toBeDisplayed()
     await saveElementScreenshot('#conversation', 'footer-branch-recovery-continued.png')
   })
 
   it('commits a pick that failed to sign before continuing the rebase', async function () {
     this.timeout(90_000)
-    // Start from main so the conflicting commit from the previous case does
-    // not stop this rebase first. The previous case may have completed it.
-    if (git(worktreeRoot, ['status']).includes('rebase in progress')) {
-      git(worktreeRoot, ['rebase', '--abort'])
-    }
+    await selectDetachedThread()
+    git(worktreeRoot, ['checkout', detachedBranch])
     const baseBranch = git(projectRoot, ['branch', '--show-current'])
     git(worktreeRoot, ['reset', '-q', '--hard', baseBranch])
     writeFileSync(join(worktreeRoot, 'thread.txt'), 'thread\n')
@@ -411,17 +428,22 @@ describe('footer branch status for a detached thread worktree', function () {
     })
     await button.click()
     await approveUnsandboxedTerminalIfPrompted()
+    await acceptProtectedPrompt()
     await expect($('.branch-reattach-button')).not.toBeDisplayed({ wait: 30_000 })
     await expect($('.msg-machine-origin')).toBeDisplayed({ wait: 30_000 })
   })
 
   it('offers to reset an active bisect without stranding it', async function () {
     this.timeout(90_000)
-    if (git(worktreeRoot, ['status']).includes('rebase in progress')) {
-      git(worktreeRoot, ['rebase', '--abort'])
-    }
+    await selectDetachedThread()
+    git(worktreeRoot, ['checkout', detachedBranch])
     const baseBranch = git(projectRoot, ['branch', '--show-current'])
     git(worktreeRoot, ['reset', '-q', '--hard', baseBranch])
+    for (const revision of [1, 2]) {
+      writeFileSync(join(worktreeRoot, 'bisect.txt'), `revision ${String(revision)}\n`)
+      git(worktreeRoot, ['add', 'bisect.txt'])
+      git(worktreeRoot, ['commit', '-qm', `bisect revision ${String(revision)}`])
+    }
     git(worktreeRoot, ['bisect', 'start', 'HEAD', 'HEAD~2'])
     expect(git(worktreeRoot, ['branch', '--show-current'])).toBe('')
 
@@ -439,7 +461,6 @@ describe('footer branch status for a detached thread worktree', function () {
 
   it('restores an externally removed checkout inside the same thread', async function () {
     this.timeout(90_000)
-    git(worktreeRoot, ['bisect', 'reset'])
     git(worktreeRoot, ['checkout', detachedBranch])
     const tip = git(worktreeRoot, ['rev-parse', 'HEAD'])
     removeE2eTree(worktreeRoot)

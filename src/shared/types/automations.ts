@@ -69,6 +69,10 @@ export interface AutomationSchedule {
   updatedAt: number
   lastRunAt?: number
   lastCreatedThreadId?: string
+  /** Main-owned digest of the exact prompt and model used to create the latest run. */
+  lastRunPromptDigest?: string
+  /** Main-owned one-time claim for that run's unattended permission scope. */
+  lastRunGrantClaimed?: boolean
   /** Most recent trigger skipped because retained worktrees filled the limit. */
   lastWorktreeLimitAt?: number
   /** The runs that held the worktree slots at that skip, so the user can act on them. */

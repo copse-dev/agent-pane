@@ -4,6 +4,7 @@ import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { expectAssistantReply, prepareMockTurn } from './helpers/mock-scenario.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { submitComposer } from './helpers/composer.ts'
 
 const PROJECT_ID = 'e2e-thread-sidebar-live-sort'
 const RECENT_THREAD_ID = 'recent-thread'
@@ -78,7 +79,7 @@ describe('live sidebar thread ordering', () => {
 
     const reply = 'I am ready to continue where we left off in this thread.'
     await prepareMockTurn('Continue this older thread', [{ text: reply }])
-    await $('.submit-btn').click()
+    await submitComposer()
     await browser.waitUntil(async () => (await sidebarTitles())[0] === OLDER_TITLE, {
       timeout: 10_000,
       timeoutMsg: 'prompted thread did not move to the front of the sidebar',

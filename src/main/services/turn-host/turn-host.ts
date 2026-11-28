@@ -7,6 +7,7 @@ import { AgentTurnBusyError } from '@shared/agent-turn-busy.ts'
 import {
   AgentDispatcher,
   defaultAgentDispatcherDependencies,
+  type AgentDispatchRequest,
   type AgentDispatcherDependencies,
 } from '../agent-dispatcher.ts'
 import { abortAgent } from '../agent-service.ts'
@@ -16,6 +17,7 @@ import { runWithStagedDiffResolver } from '../diff-queue.ts'
 import { runWithSshPromptHandler } from '../ssh-workspace/ssh-prompt.ts'
 import { getSetting } from '../storage/settings.ts'
 import {
+  acceptReviewedUserMessage,
   appendMessage,
   getProjectThread,
   threadDirectoryPath,
@@ -54,6 +56,7 @@ import {
   type TurnHostClient,
 } from './turn-host-protocol.ts'
 import { NO_CAPABILITIES, type WorkerCapabilities } from '../worker-protocol/worker-capabilities.ts'
+import type { ReviewedTurn } from './reviewed-turn.ts'
 
 /**
  * The resident turn host (`docs/plans/local-turn-worker.md`, "Every turn in a
@@ -631,7 +634,7 @@ export class TurnHost {
     const settled = Promise.withResolvers<undefined>()
     try {
       await this.withPrompts(projectId, threadId, stopped.signal, () =>
-        this.dispatcher.dispatch({ projectId, threadId, payload }),
+        this.dispatcher.dispatch(reviewedRequest(projectId, threadId, payload, message.reviewed)),
       )
       accept()
       this.settling.set(turnKey, settled.promise)
@@ -742,4 +745,44 @@ function hostProcessRoots(): HostProcessRoot[] {
       }),
     ),
   ]
+}
+
+/**
+ * The turn main's protected review approved, as the dispatcher runs it in
+ * process: the approved prompt, the history and plan frozen before review,
+ * and acceptance of the prompt once this host owns the thread. Main already
+ * claimed the optimistic bubble's one-use receipt, so acceptance keeps that
+ * bubble when the transcript still holds it unaccepted.
+ */
+export function reviewedRequest(
+  projectId: string,
+  threadId: string,
+  payload: ReturnType<typeof parseAgentRunPayload>,
+  reviewed: ReviewedTurn,
+): AgentDispatchRequest {
+  const optimisticMessageId = reviewed.optimisticMessageId
+  return {
+    projectId,
+    threadId,
+    payload: { ...payload, userContent: reviewed.content },
+    protectedHistory: reviewed.history,
+    protectedPlan: reviewed.plan,
+    protectedHumanStart: {
+      content: reviewed.content,
+      ...(reviewed.preserveOptimisticDisplay === true
+        ? { preserveOptimisticDisplay: true as const }
+        : {}),
+      ...(reviewed.preserveOptimisticDisplay === true && reviewed.attachments !== undefined
+        ? { attachments: reviewed.attachments }
+        : {}),
+      acceptMessageId: () =>
+        acceptReviewedUserMessage(
+          projectId,
+          threadId,
+          optimisticMessageId !== undefined
+            ? { messageId: optimisticMessageId, claim: () => true }
+            : undefined,
+        ),
+    },
+  }
 }

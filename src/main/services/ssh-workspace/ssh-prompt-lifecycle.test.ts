@@ -52,7 +52,12 @@ it('accepts an answer once, ignores late responses and clears its deadline', asy
       'id' in request &&
       typeof request.id === 'string',
   )
+  assert.deepEqual(lifecycle.requestFor(request.id), {
+    prompt: 'Host key?',
+    kind: 'confirm',
+  })
   lifecycle.settle(request.id, { value: 'yes' })
+  assert.equal(lifecycle.requestFor(request.id), undefined)
   lifecycle.settle(request.id, { value: '' })
   assert.deepEqual(await result, { value: 'yes' })
   t.mock.timers.tick(60_000)

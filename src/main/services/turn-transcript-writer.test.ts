@@ -16,8 +16,10 @@ import {
   threadWith,
 } from '@shared/store/transcript-stream.test-support.ts'
 import { AgentDispatcher, type AgentDispatcherDependencies } from './agent-dispatcher.ts'
+import { recoverAgentHistory } from './history-recovery.ts'
 import type { ThreadExecutionContext } from './thread-execution-context.ts'
 import {
+  acceptReviewedUserMessage,
   appendMessage,
   createThread,
   getProjectThread,
@@ -236,6 +238,102 @@ describe('TurnTranscriptWriter', () => {
       'usage from both calls',
     )
     assert.equal(thread.todos?.[0]?.content, 'Ship it')
+  })
+
+  it('persists the accepted main identity when protected review cannot reuse a bubble', async () => {
+    const turn = harness(() => [{ type: 'done' }])
+    let acceptedId = ''
+    await turn.dispatcher.dispatch({
+      projectId: PROJECT,
+      threadId: THREAD,
+      payload: { userContent: 'Reviewed exact prompt', invokedSkills: [], priorTodos: [] },
+      protectedHumanStart: {
+        content: 'Reviewed exact prompt',
+        acceptMessageId: async () => {
+          acceptedId = await acceptReviewedUserMessage(PROJECT, THREAD)
+          return acceptedId
+        },
+      },
+    })
+    await turn.writer.settled(THREAD)
+
+    assert.match(acceptedId, /^[0-9a-f-]{36}$/)
+    const accepted = (await stored()).messages.find((message) => message.id === acceptedId)
+    assert.ok(accepted)
+    assert.equal(accepted.role, 'user')
+    assert.equal(accepted.content, 'Reviewed exact prompt')
+  })
+
+  it('persists reviewed text while forwarding an unchanged optimistic display hint', async () => {
+    const optimistic = humanPrompt('u1', 'Unreviewed renderer text')
+    optimistic.attachments = [
+      {
+        kind: 'paste',
+        placement: 'inline',
+        label: 'Reviewed notes',
+        content: 'exact snapshot',
+      },
+    ]
+    await appendMessage(PROJECT, THREAD, optimistic)
+    const deliveries: Delivery[] = []
+    const turn = harness(
+      () => [{ type: 'done' }],
+      (delivery) => deliveries.push(delivery),
+    )
+    await turn.dispatcher.dispatch({
+      projectId: PROJECT,
+      threadId: THREAD,
+      payload: { userContent: 'Reviewed safe text', invokedSkills: [], priorTodos: [] },
+      protectedHumanStart: {
+        content: 'Reviewed safe text',
+        preserveOptimisticDisplay: true,
+        attachments: [
+          {
+            kind: 'paste',
+            placement: 'inline',
+            label: 'Reviewed notes',
+            content: 'exact snapshot',
+            projection: 'canonical-block',
+          },
+        ],
+        acceptMessageId: async () => 'u1',
+      },
+    })
+    await turn.writer.settled(THREAD)
+
+    const accepted = (await stored()).messages.find((message) => message.id === 'u1')
+    assert.ok(accepted)
+    assert.equal(accepted.content, 'Reviewed safe text')
+    assert.equal(accepted.promptRepresentation, 'canonical-provider')
+    assert.deepEqual(accepted.attachments, [
+      {
+        kind: 'paste',
+        placement: 'inline',
+        label: 'Reviewed notes',
+        content: 'exact snapshot',
+        projection: 'canonical-block',
+      },
+    ])
+    assert.deepEqual(recoverAgentHistory([accepted, humanPrompt('pending', 'Continue')]), [
+      { role: 'user', content: 'Reviewed safe text' },
+    ])
+    const start = deliveries.find(({ chunk }) => chunk.type === 'protected_human_turn_start')
+    assert.deepEqual(start?.chunk, {
+      type: 'protected_human_turn_start',
+      content: 'Reviewed safe text',
+      messageId: 'u1',
+      promptRepresentation: 'canonical-provider',
+      preserveOptimisticDisplay: true,
+      attachments: [
+        {
+          kind: 'paste',
+          placement: 'inline',
+          label: 'Reviewed notes',
+          content: 'exact snapshot',
+          projection: 'canonical-block',
+        },
+      ],
+    })
   })
 
   for (const retryId of ['call_0', 'retry_1']) {

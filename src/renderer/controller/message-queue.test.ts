@@ -2,11 +2,18 @@ import { takeSendNowAbort } from './send-now-aborts.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import type { Message, Thread, ThreadReviewReport } from '@shared/types'
+import type {
+  Message,
+  ProtectedHumanTurnDisplay,
+  QueuedUserMessage,
+  Thread,
+  ThreadReviewReport,
+} from '@shared/types'
 import { at } from '@shared/array-utils.ts'
 import {
   addMessage,
   createThread,
+  getThreadById,
   setMessageReviewReport,
   setQueuePaused,
   setThreadStatus,
@@ -27,6 +34,7 @@ import {
   queuedPayloadText,
   releaseHeldMessage,
   removeQueuedMessage,
+  deleteQueuedMessage,
   resumePendingQueues,
   sendQueuedMessageNow,
   startHumanTurnTree,
@@ -142,8 +150,8 @@ test('only delegated subthread prompts mark their run for main to recheck', asyn
   setCurrentEpoch(store, threadId, 'destination-task')
   const api = fakeApi()
   const delegations: unknown[] = []
-  api.agent.run = (_projectId, _threadId, _payload, ...rest): Promise<void> => {
-    delegations.push(rest)
+  api.agent.run = (_projectId, _threadId, _payload, delegation): Promise<void> => {
+    delegations.push(delegation)
     return Promise.resolve()
   }
   enqueueUserMessage(store, threadId, {
@@ -154,7 +162,34 @@ test('only delegated subthread prompts mark their run for main to recheck', asyn
   })
   drainMessageQueue(store, api, threadId)
   await new Promise<void>((resolve) => setImmediate(resolve))
-  assert.deepEqual(delegations, [[]])
+  assert.deepEqual(delegations, [undefined])
+})
+
+test('a delegated subthread prompt forwards only its opaque Main grant', async () => {
+  const store = createProjectStore()
+  const threadId = createThread(store)
+  const api = fakeApi()
+  api.threadPrompts.canDispatch = (): Promise<boolean> => Promise.resolve(true)
+  const delegations: unknown[] = []
+  api.agent.run = (_projectId, _threadId, _payload, delegation): Promise<void> => {
+    delegations.push(delegation)
+    return Promise.resolve()
+  }
+  enqueueUserMessage(store, threadId, {
+    messageId: 'child',
+    payload: { content: 'Inspect the build.' },
+    createdAt: 1,
+    origin: { kind: 'machine', operationId: 'subthread:parent' },
+    threadPromptGrantId: '4ea18b6c-aac5-477a-8603-85a943631e93',
+  })
+  drainMessageQueue(store, api, threadId)
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  assert.deepEqual(delegations, [
+    {
+      parentThreadId: 'parent',
+      promptGrantId: '4ea18b6c-aac5-477a-8603-85a943631e93',
+    },
+  ])
 })
 
 const HOOK_ORIGIN: QueuedMessageOrigin = { kind: 'hook', hookId: 'todo-closeout', event: 'stop' }
@@ -557,6 +592,260 @@ test('dispatchAgentRun marks the thread running and sends payload', () => {
   assert.equal(api.runs.length, 1)
 })
 
+test('composer dispatch identifies only its exact optimistic image prompt', async () => {
+  const store = createProjectStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  const image = 'data:image/png;base64,abc'
+  const attachment = { kind: 'file' as const, label: 'report.txt', content: 'exact bytes' }
+  const messageId = addMessage(store, threadId, 'user', 'visible review', [image], [attachment])
+  let display: ProtectedHumanTurnDisplay | undefined
+  api.agent.run = (_projectId, _threadId, _payload, _delegation, candidate): Promise<void> => {
+    display = candidate
+    return Promise.resolve()
+  }
+
+  dispatchAgentRun(
+    store,
+    api,
+    threadId,
+    {
+      content: [
+        { type: 'image', dataUrl: image },
+        { type: 'text', text: 'expanded model prompt\n\n```\nexact bytes\n```' },
+      ],
+    },
+    {
+      messageId,
+      payload: {
+        content: [
+          { type: 'image', dataUrl: image },
+          { type: 'text', text: 'expanded model prompt\n\n```\nexact bytes\n```' },
+        ],
+      },
+      createdAt: 1,
+    },
+  )
+  await new Promise<void>((resolve) => setImmediate(resolve))
+
+  assert.deepEqual(display, {
+    messageId,
+    snapshot: {
+      content: 'visible review',
+      attachments: [attachment],
+    },
+  })
+})
+
+test('cancelling protected entry returns the optimistic prompt as held', async () => {
+  const store = createProjectStore()
+  const api = fakeApi()
+  api.agent.run = (): Promise<unknown> => Promise.resolve('cancelled')
+  const threadId = createThread(store)
+  const item: QueuedUserMessage = {
+    messageId: 'review-me',
+    payload: { content: 'Do not run yet' },
+    createdAt: 1,
+  }
+
+  dispatchAgentRun(store, api, threadId, item.payload, item)
+  await new Promise<void>((resolve) => setImmediate(resolve))
+
+  const thread = getThreadById(store, threadId)
+  assert.equal(thread?.status, 'idle')
+  assert.deepEqual(thread.pendingMessages, [{ ...item, autoDispatch: false }])
+})
+
+test('a rejected protected grant is held without reusable authority', async () => {
+  const store = createProjectStore()
+  const api = fakeApi()
+  api.agent.run = (): Promise<unknown> => Promise.resolve('cancelled')
+  const threadId = createThread(store)
+  const item: QueuedUserMessage = {
+    messageId: 'phone-message',
+    payload: { content: 'Phone prompt' },
+    createdAt: 1,
+    mobilePromptGrantId: 'expired-grant',
+    threadPromptGrantId: 'expired-thread-grant',
+  }
+
+  dispatchAgentRun(store, api, threadId, item.payload, item)
+  await new Promise<void>((resolve) => setImmediate(resolve))
+
+  const thread = getThreadById(store, threadId)
+  assert.equal(thread?.status, 'idle')
+  assert.deepEqual(thread.pendingMessages, [
+    {
+      messageId: 'phone-message',
+      payload: { content: 'Phone prompt' },
+      createdAt: 1,
+      autoDispatch: false,
+    },
+  ])
+})
+
+for (const scope of [undefined, JSON.stringify(['source', 'sender-turn'])]) {
+  test(`cancelled protected peer entry refunds only its ${scope === undefined ? 'legacy' : 'scoped'} charge`, async () => {
+    const store = createProjectStore()
+    const api = fakeApi()
+    let calls = 0
+    api.agent.run = (): Promise<unknown> => {
+      calls += 1
+      return Promise.resolve('cancelled')
+    }
+    const threadId = createThread(store)
+    store.setState({
+      threads: store.getState().threads.map((thread) => ({
+        ...thread,
+        continuationUsed: 3,
+        crossThreadPromptsUsed: 2,
+        crossThreadPromptCounts: { [scope ?? 'unused']: 2, otherSender: 4 },
+      })),
+    })
+    const messageId = addMessage(store, threadId, 'user', 'Review this peer prompt')
+    enqueueUserMessage(store, threadId, {
+      messageId,
+      payload: { content: 'Review this peer prompt' },
+      createdAt: 1,
+      origin: {
+        kind: 'machine',
+        operationId: 'thread:source',
+        ...(scope === undefined ? {} : { crossThreadScope: scope }),
+      },
+      mobilePromptGrantId: 'expired-mobile',
+      threadPromptGrantId: 'expired-thread',
+    })
+    drainMessageQueue(store, api, threadId)
+    const charged = getThread(store, threadId)
+    assert.equal(charged.continuationUsed, 3)
+    assert.equal(charged.crossThreadPromptsUsed, scope === undefined ? 3 : 2)
+    assert.equal(charged.crossThreadPromptCounts?.[scope ?? 'unused'], scope === undefined ? 2 : 3)
+    await settle()
+
+    const held = getThread(store, threadId)
+    assert.equal(held.continuationUsed, 3)
+    assert.equal(held.crossThreadPromptsUsed, 2)
+    assert.deepEqual(held.crossThreadPromptCounts, { [scope ?? 'unused']: 2, otherSender: 4 })
+    assert.equal(held.pendingMessages?.[0]?.autoDispatch, false)
+    assert.equal(held.pendingMessages[0].mobilePromptGrantId, undefined)
+    assert.equal(held.pendingMessages[0].threadPromptGrantId, undefined)
+    drainMessageQueue(store, api, threadId)
+    await settle()
+    assert.equal(calls, 1, 'cancelled review remains held rather than draining again')
+  })
+}
+
+for (const failure of ['cancelled', 'busy']) {
+  test(`direct manual ${failure} dispatch cannot refund unspent machine budgets`, async () => {
+    const origins: NonNullable<QueuedUserMessage['origin']>[] = [
+      HOOK_ORIGIN,
+      { kind: 'machine', operationId: 'thread:source' },
+      {
+        kind: 'machine',
+        operationId: 'thread:source',
+        crossThreadScope: JSON.stringify(['source', 'sender-turn']),
+      },
+    ]
+    for (const origin of origins) {
+      const store = createProjectStore()
+      const api = failure === 'busy' ? busyOnceApi() : fakeApi()
+      if (failure === 'cancelled')
+        api.agent.run = (): Promise<unknown> => Promise.resolve('cancelled')
+      const threadId = createThread(store)
+      const counters = {
+        continuationUsed: 3,
+        crossThreadPromptsUsed: 2,
+        crossThreadPromptCounts: { [JSON.stringify(['source', 'sender-turn'])]: 2, otherSender: 4 },
+      }
+      store.setState({
+        threads: store.getState().threads.map((thread) => ({ ...thread, ...counters })),
+      })
+      const item: QueuedUserMessage = {
+        messageId: addMessage(store, threadId, 'user', 'A manual retry'),
+        payload: { content: 'A manual retry' },
+        createdAt: 1,
+        origin,
+        autoDispatch: false,
+      }
+      dispatchAgentRun(store, api, threadId, item.payload, item)
+      await settle()
+      const current = getThread(store, threadId)
+      assert.equal(current.continuationUsed, counters.continuationUsed)
+      assert.equal(current.crossThreadPromptsUsed, counters.crossThreadPromptsUsed)
+      assert.deepEqual(current.crossThreadPromptCounts, counters.crossThreadPromptCounts)
+      assert.equal(current.pendingMessages?.[0]?.messageId, item.messageId)
+    }
+  })
+}
+
+test('cancelled protected hook entry returns only its recorded continuation charge', async () => {
+  const store = createProjectStore()
+  const api = fakeApi()
+  api.agent.run = (): Promise<unknown> => Promise.resolve('cancelled')
+  const threadId = createThread(store)
+  store.setState({
+    threads: store.getState().threads.map((thread) => ({
+      ...thread,
+      continuationUsed: 2,
+      crossThreadPromptsUsed: 4,
+      crossThreadPromptCounts: { otherSender: 5 },
+    })),
+  })
+  enqueueUserMessage(store, threadId, {
+    messageId: addMessage(store, threadId, 'user', 'A hook follow-up'),
+    payload: { content: 'A hook follow-up' },
+    createdAt: 1,
+    origin: HOOK_ORIGIN,
+  })
+  drainMessageQueue(store, api, threadId)
+  assert.equal(getThread(store, threadId).continuationUsed, 3)
+  await settle()
+  const thread = getThread(store, threadId)
+  assert.equal(thread.continuationUsed, 2)
+  assert.equal(thread.crossThreadPromptsUsed, 4)
+  assert.deepEqual(thread.crossThreadPromptCounts, { otherSender: 5 })
+  assert.equal(thread.pendingMessages?.[0]?.autoDispatch, false)
+})
+
+test('late protected cancellation does not refund a replacement epoch or changed scoped count', async () => {
+  const origins: NonNullable<QueuedUserMessage['origin']>[] = [
+    HOOK_ORIGIN,
+    { kind: 'machine', operationId: 'thread:source', crossThreadScope: 'sender-turn' },
+  ]
+  for (const origin of origins) {
+    const store = createProjectStore()
+    const api = fakeApi()
+    let complete: ((result: string) => void) | undefined
+    api.agent.run = (): Promise<string> =>
+      new Promise((resolve) => {
+        complete = resolve
+      })
+    const threadId = createThread(store)
+    enqueueUserMessage(store, threadId, {
+      messageId: addMessage(store, threadId, 'user', 'Review this follow-up'),
+      payload: { content: 'Review this follow-up' },
+      createdAt: 1,
+      origin,
+    })
+    drainMessageQueue(store, api, threadId)
+    await settle()
+    assert.ok(complete)
+    store.setState({
+      threads: store.getState().threads.map((thread) => ({
+        ...thread,
+        currentEpoch: 'replacement-epoch',
+        continuationUsed: 2,
+        crossThreadPromptCounts: { 'sender-turn': 4, otherSender: 5 },
+      })),
+    })
+    complete('cancelled')
+    await settle()
+    const thread = getThread(store, threadId)
+    assert.equal(thread.continuationUsed, 2)
+    assert.deepEqual(thread.crossThreadPromptCounts, { 'sender-turn': 4, otherSender: 5 })
+  }
+})
+
 test('resumePendingQueues drains idle threads with pending messages', async () => {
   const store = createProjectStore()
   const api = fakeApi()
@@ -621,12 +910,16 @@ test('updateQueuedMessageText edits the payload text and the displayed bubble', 
     messageId,
     payload: { content: 'original', invokedSkills: [] },
     createdAt: 1,
+    mobilePromptGrantId: 'phone-grant',
+    threadPromptGrantId: 'thread-grant',
   })
 
   updateQueuedMessageText(store, threadId, messageId, 'edited prompt')
 
   const thread = getThread(store, threadId)
   assert.equal(thread.pendingMessages?.[0]?.payload.content, 'edited prompt')
+  assert.equal(thread.pendingMessages[0].mobilePromptGrantId, undefined)
+  assert.equal(thread.pendingMessages[0].threadPromptGrantId, undefined)
   assert.equal(thread.messages.find((m) => m.id === messageId)?.content, 'edited prompt')
 })
 
@@ -1678,5 +1971,91 @@ test('a busy rejection refunds the continuation unit its drain charged', async (
   assert.deepEqual(
     thread.pendingMessages?.map((entry) => entry.messageId),
     ['hook-1'],
+  )
+})
+
+test('deleteQueuedMessage holds synchronously and removes the bubble only after durable acknowledgement', async () => {
+  const store = createProjectStore()
+  const tid = createThread(store)
+  const mid = addMessage(store, tid, 'user', 'queued')
+  enqueueUserMessage(store, tid, { messageId: mid, payload: { content: 'queued' }, createdAt: 1 })
+  const api = fakeApi()
+  let release = (): void => undefined
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let called = false
+  api.threads.deleteQueuedMessage = (pid, threadId, messageId): Promise<void> => {
+    assert.deepEqual([pid, threadId, messageId], ['project-1', tid, mid])
+    called = true
+    return gate
+  }
+  const deleting = deleteQueuedMessage(store, api, tid, mid)
+  assert.equal(getThread(store, tid).pendingMessages?.[0]?.autoDispatch, false)
+  drainMessageQueue(store, api, tid)
+  assert.equal(api.runs.length, 0)
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  assert.equal(called, true)
+  assert.equal(
+    getThread(store, tid).messages.some((message) => message.id === mid),
+    true,
+  )
+  release()
+  await deleting
+  assert.equal(getThread(store, tid).pendingMessages, undefined)
+  assert.equal(
+    getThread(store, tid).messages.some((message) => message.id === mid),
+    false,
+  )
+})
+
+test('failed durable queued deletion keeps the note held and visible', async () => {
+  const store = createProjectStore()
+  const tid = createThread(store)
+  const mid = addMessage(store, tid, 'user', 'queued')
+  enqueueUserMessage(store, tid, { messageId: mid, payload: { content: 'queued' }, createdAt: 1 })
+  const api = fakeApi()
+  api.threads.deleteQueuedMessage = (): Promise<void> =>
+    Promise.reject(new Error('disk unavailable'))
+  await assert.rejects(deleteQueuedMessage(store, api, tid, mid), /disk unavailable/)
+  drainMessageQueue(store, api, tid)
+  assert.equal(api.runs.length, 0)
+  assert.equal(getThread(store, tid).pendingMessages?.[0]?.autoDispatch, false)
+  assert.equal(
+    getThread(store, tid).messages.some((message) => message.id === mid),
+    true,
+  )
+})
+
+test('late queued deletion only patches its original project after a switch', async () => {
+  const store = createProjectStore()
+  const tid = createThread(store)
+  const mid = addMessage(store, tid, 'user', 'queued')
+  enqueueUserMessage(store, tid, { messageId: mid, payload: { content: 'queued' }, createdAt: 1 })
+  const api = fakeApi()
+  let release = (): void => undefined
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  api.threads.deleteQueuedMessage = (): Promise<void> => gate
+  const deleting = deleteQueuedMessage(store, api, tid, mid)
+  const original = getThread(store, tid)
+  const other: Thread = {
+    ...original,
+    title: 'other project',
+    pendingMessages: [...(original.pendingMessages ?? [])],
+  }
+  store.setState({
+    activeProjectId: 'other-project',
+    threads: [other],
+    backgroundThreads: [{ projectId: 'project-1', thread: original }],
+  })
+  release()
+  await deleting
+  assert.equal(store.getState().threads[0], other)
+  assert.equal(store.getState().backgroundThreads[0]?.thread.pendingMessages, undefined)
+  assert.equal(
+    store.getState().backgroundThreads[0]?.thread.messages.some((message) => message.id === mid),
+    false,
   )
 })

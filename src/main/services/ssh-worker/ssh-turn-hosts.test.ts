@@ -14,6 +14,10 @@ import {
   type SshTurnHostDependencies,
   type SshTurnHostLink,
 } from './ssh-turn-hosts.ts'
+import type { ReviewedTurn } from '../turn-host/reviewed-turn.ts'
+
+/** What main's protected review decided, for a prompt with no history or plan. */
+const reviewed = (content: string): ReviewedTurn => ({ content, history: [], plan: null })
 
 const NODE = { version: '24.1.0', execPath: '/usr/bin/node', home: '/home/me' }
 const PROJECT = { id: 'p1', name: 'Site', path: '/srv/site' }
@@ -146,7 +150,7 @@ describe("an SSH thread's turns on its host", () => {
   it('gives the worker the thread, follows the turn and copies it back', async () => {
     const { connection: conn, ran } = connection()
     const { hosts: turnHosts, events } = hosts(conn, 'host')
-    assert.equal(await turnHosts.run('dev', PROJECT, 't1', '{}', NEEDS), 'host')
+    assert.equal(await turnHosts.run('dev', PROJECT, 't1', '{}', reviewed(''), NEEDS), 'host')
     assert.deepEqual(events, ['profile-changed', 'follow', 'run', 'settle t1', 'unfollow'])
     // Stores, what the host has of the thread, whether the turn still holds
     // it there, then the copy back.
@@ -159,8 +163,11 @@ describe("an SSH thread's turns on its host", () => {
     const { hosts: turnHosts, events } = hosts(connection().connection, ended.promise, true, () => {
       running.resolve(undefined)
     })
-    const first = turnHosts.run('dev', PROJECT, 't1', '{}', NEEDS)
-    await assert.rejects(turnHosts.run('dev', PROJECT, 't1', '{}', NEEDS), /still running/)
+    const first = turnHosts.run('dev', PROJECT, 't1', '{}', reviewed(''), NEEDS)
+    await assert.rejects(
+      turnHosts.run('dev', PROJECT, 't1', '{}', reviewed(''), NEEDS),
+      /still running/,
+    )
     await running.promise
     assert.deepEqual(turnHosts.runningThreadIds(), ['t1'])
     assert.equal(turnHosts.stop('t1'), true)
@@ -194,29 +201,29 @@ describe("an SSH thread's turns on its host", () => {
   it('copies nothing back for a turn the app runs', async () => {
     const { connection: conn, ran } = connection()
     const { hosts: turnHosts } = hosts(conn, 'app')
-    assert.equal(await turnHosts.run('dev', PROJECT, 't1', '{}', NEEDS), 'app')
+    assert.equal(await turnHosts.run('dev', PROJECT, 't1', '{}', reviewed(''), NEEDS), 'app')
     assert.ok(!ran.includes('mirror'))
   })
 
   it('runs the turn in the app when the worker cannot start or be given the thread', async () => {
     const declined = hosts(connection().connection, 'host', false)
-    assert.equal(await declined.hosts.run('dev', PROJECT, 't1', '{}', NEEDS), 'app')
+    assert.equal(await declined.hosts.run('dev', PROJECT, 't1', '{}', reviewed(''), NEEDS), 'app')
     assert.deepEqual(declined.events, [])
 
     // A start that fails outright runs the turn here too, and is tried again.
     const failed = hosts(connection().connection, 'host', 'throws')
-    assert.equal(await failed.hosts.run('dev', PROJECT, 't1', '{}', NEEDS), 'app')
-    assert.equal(await failed.hosts.run('dev', PROJECT, 't1', '{}', NEEDS), 'app')
+    assert.equal(await failed.hosts.run('dev', PROJECT, 't1', '{}', reviewed(''), NEEDS), 'app')
+    assert.equal(await failed.hosts.run('dev', PROJECT, 't1', '{}', reviewed(''), NEEDS), 'app')
     await failed.hosts.stopAllForQuit(10)
 
     const full = hosts(connection(true).connection, 'host')
-    assert.equal(await full.hosts.run('dev', PROJECT, 't1', '{}', NEEDS), 'app')
+    assert.equal(await full.hosts.run('dev', PROJECT, 't1', '{}', reviewed(''), NEEDS), 'app')
     assert.ok(!full.events.includes('run'))
 
     // A worker that says it runs no turns is given nothing of the thread.
     const { connection: conn, ran } = connection()
     const unable = hosts(conn, 'host', true, undefined, undefined, NO_CAPABILITIES)
-    assert.equal(await unable.hosts.run('dev', PROJECT, 't1', '{}', NEEDS), 'app')
+    assert.equal(await unable.hosts.run('dev', PROJECT, 't1', '{}', reviewed(''), NEEDS), 'app')
     assert.deepEqual(ran, [])
     assert.ok(!unable.events.includes('run'))
   })
@@ -225,7 +232,7 @@ describe("an SSH thread's turns on its host", () => {
     const { connection: conn } = connection()
     const gate = Promise.withResolvers<Record<string, unknown>>()
     const { hosts: turnHosts, events } = hosts(conn, 'host', true, undefined, gate.promise)
-    const run = turnHosts.run('dev', PROJECT, 't1', '{}', NEEDS)
+    const run = turnHosts.run('dev', PROJECT, 't1', '{}', reviewed(''), NEEDS)
     assert.equal(turnHosts.stop('t1'), true)
     gate.resolve({})
     assert.equal(await run, 'host')
@@ -249,10 +256,13 @@ describe("an SSH thread's turns on its host", () => {
       looks.held = true
       looks.unreadable = true
     })
-    assert.equal(await turnHosts.run('dev', PROJECT, 't1', '{}', NEEDS), 'host')
+    assert.equal(await turnHosts.run('dev', PROJECT, 't1', '{}', reviewed(''), NEEDS), 'host')
     assert.deepEqual(turnHosts.runningThreadIds(), ['t1'])
     assert.ok(!events.includes('settle t1'))
-    await assert.rejects(turnHosts.run('dev', PROJECT, 't1', '{}', NEEDS), /still running/)
+    await assert.rejects(
+      turnHosts.run('dev', PROJECT, 't1', '{}', reviewed(''), NEEDS),
+      /still running/,
+    )
 
     // The host is back: Stop reaches it, and once it lets go the thread comes back.
     looks.unreadable = false

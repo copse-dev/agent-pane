@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
@@ -63,7 +63,7 @@ describe('thread running status dots', () => {
       ],
     })
     await setComposerValue('Continue the refactor and call out any risky changes.')
-    await $('.submit-btn').click()
+    await submitComposer()
     await scenario.waitForHold('refactor-status')
 
     const runningRow = await $('.chat-row.is-running').getElement()

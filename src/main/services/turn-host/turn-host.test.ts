@@ -25,6 +25,10 @@ import { readHostDispatchRecord } from './host-dispatch-record.ts'
 import { HostInferenceRelay } from './host-inference-relay.ts'
 import { TurnHost } from './turn-host.ts'
 import { runTestScenarioOp } from './turn-host-test-scenarios.ts'
+import type { ReviewedTurn } from './reviewed-turn.ts'
+
+/** What main's protected review decided, for a prompt with no history or plan. */
+const reviewed = (content: string): ReviewedTurn => ({ content, history: [], plan: null })
 
 let root = ''
 const savedDir = process.env['COPSE_DIR']
@@ -165,11 +169,25 @@ describe('TurnHost', { timeout: 30_000 }, () => {
     turnHost.handle({ t: 'hello', version: VERSION, protocol: 2 }, peer.client)
     turnHost.handle({ t: 'attach' }, peer.client)
     turnHost.handle(
-      { t: 'dispatch', id: 'd1', projectId: 'p1', threadId: 'a', payload: 'Summarise PLAN.md' },
+      {
+        t: 'dispatch',
+        id: 'd1',
+        projectId: 'p1',
+        threadId: 'a',
+        payload: 'Summarise PLAN.md',
+        reviewed: reviewed('Summarise PLAN.md'),
+      },
       peer.client,
     )
     turnHost.handle(
-      { t: 'dispatch', id: 'd2', projectId: 'p1', threadId: 'b', payload: 'List the steps' },
+      {
+        t: 'dispatch',
+        id: 'd2',
+        projectId: 'p1',
+        threadId: 'b',
+        payload: 'List the steps',
+        reviewed: reviewed('List the steps'),
+      },
       peer.client,
     )
     // An attached app hears it with every other attached app.
@@ -185,9 +203,9 @@ describe('TurnHost', { timeout: 30_000 }, () => {
     }
     for (const threadId of ['a', 'b']) {
       const roles = (await loadThreadMessages('p1', threadId)).map((m) => m.role)
-      // The window saves the user's message before it sends the turn, as it
-      // does for a turn main runs; the host writes the reply.
-      assert.deepEqual(roles, ['assistant'], `thread ${threadId}`)
+      // No optimistic bubble was claimed, so the host accepts the reviewed
+      // prompt under a fresh id, as main does in process, then writes the reply.
+      assert.deepEqual(roles, ['user', 'assistant'], `thread ${threadId}`)
       const meta = (await loadProjectThreadMetas('p1')).find((m) => m.id === threadId)
       assert.equal(meta?.status, 'idle')
       assert.equal(existsSync(join(threadDirectoryPath('p1', threadId), WRITER_LEASE_FILE)), false)
@@ -221,7 +239,14 @@ describe('TurnHost', { timeout: 30_000 }, () => {
     turnHost.handle({ t: 'hello', version: VERSION, protocol: 2 }, first.client)
     turnHost.handle({ t: 'attach' }, first.client)
     turnHost.handle(
-      { t: 'dispatch', id: 'd9', projectId: 'p1', threadId: 'q', payload: 'List files' },
+      {
+        t: 'dispatch',
+        id: 'd9',
+        projectId: 'p1',
+        threadId: 'q',
+        payload: 'List files',
+        reviewed: reviewed('List files'),
+      },
       first.client,
     )
     await until(() => broadcast.some((m) => m.t === 'approval'), 'the prompt')
@@ -273,13 +298,27 @@ describe('TurnHost', { timeout: 30_000 }, () => {
 
     turnHost.handle({ t: 'profile-changed' }, peer.client)
     turnHost.handle(
-      { t: 'dispatch', id: 'd11', projectId: 'p1', threadId: 'w', payload: 'Hello' },
+      {
+        t: 'dispatch',
+        id: 'd11',
+        projectId: 'p1',
+        threadId: 'w',
+        payload: 'Hello',
+        reviewed: reviewed('Hello'),
+      },
       peer.client,
     )
     await until(() => ended(broadcast, 'd11'), 'the turn')
     assert.equal(reloads, 1)
     turnHost.handle(
-      { t: 'dispatch', id: 'd12', projectId: 'p1', threadId: 'w', payload: 'Again' },
+      {
+        t: 'dispatch',
+        id: 'd12',
+        projectId: 'p1',
+        threadId: 'w',
+        payload: 'Again',
+        reviewed: reviewed('Again'),
+      },
       peer.client,
     )
     await until(() => ended(broadcast, 'd12'), 'the second turn')
@@ -293,7 +332,14 @@ describe('TurnHost', { timeout: 30_000 }, () => {
     const peer = app()
     turnHost.handle({ t: 'hello', version: VERSION, protocol: 2 }, peer.client)
     turnHost.handle(
-      { t: 'dispatch', id: 'dq', projectId: 'p1', threadId: 'q', payload: 'Hello' },
+      {
+        t: 'dispatch',
+        id: 'dq',
+        projectId: 'p1',
+        threadId: 'q',
+        payload: 'Hello',
+        reviewed: reviewed('Hello'),
+      },
       peer.client,
     )
     turnHost.handle({ t: 'stop-all', reason: 'quit' }, peer.client)
@@ -317,6 +363,7 @@ describe('TurnHost', { timeout: 30_000 }, () => {
       projectId: 'p1',
       threadId: 'g',
       payload: 'Hello',
+      reviewed: reviewed('Hello'),
     }
     turnHost.handle(dispatch, peer.client)
     await until(() => ended(peer.sent, 'd7'), 'the turn')
@@ -333,7 +380,11 @@ describe('TurnHost', { timeout: 30_000 }, () => {
         ['never-sent', 'unknown'],
       ],
     )
-    assert.equal((await loadThreadMessages('p1', 'g')).length, 1, 'one reply, not two')
+    assert.deepEqual(
+      (await loadThreadMessages('p1', 'g')).map((message) => message.role),
+      ['user', 'assistant'],
+      'one prompt and one reply, not two',
+    )
     turnHost.dispose()
   })
 
@@ -351,7 +402,14 @@ describe('TurnHost', { timeout: 30_000 }, () => {
       peer.client,
     )
     turnHost.handle(
-      { t: 'dispatch', id: 'd-s', projectId: 'p1', threadId: 's', payload: 'Hello scripted' },
+      {
+        t: 'dispatch',
+        id: 'd-s',
+        projectId: 'p1',
+        threadId: 's',
+        payload: 'Hello scripted',
+        reviewed: reviewed('Hello scripted'),
+      },
       peer.client,
     )
     await until(() => ended(peer.sent, 'd-s'), 'the scripted turn')
@@ -400,7 +458,14 @@ describe('TurnHost', { timeout: 30_000 }, () => {
     const peer = app()
     turnHost.handle({ t: 'hello', version: '9.9.9', protocol: 2 }, peer.client)
     turnHost.handle(
-      { t: 'dispatch', id: 'd3', projectId: 'p1', threadId: 'c', payload: 'Hello' },
+      {
+        t: 'dispatch',
+        id: 'd3',
+        projectId: 'p1',
+        threadId: 'c',
+        payload: 'Hello',
+        reviewed: reviewed('Hello'),
+      },
       peer.client,
     )
     await until(() => peer.sent.some((m) => m.t === 'refused'), 'the refusal')
@@ -419,7 +484,14 @@ describe('TurnHost', { timeout: 30_000 }, () => {
     const peer = app()
     turnHost.handle({ t: 'hello', version: VERSION, protocol: 2 }, peer.client)
     turnHost.handle(
-      { t: 'dispatch', id: 'd4', projectId: 'p1', threadId: 'd', payload: 'Hello' },
+      {
+        t: 'dispatch',
+        id: 'd4',
+        projectId: 'p1',
+        threadId: 'd',
+        payload: 'Hello',
+        reviewed: reviewed('Hello'),
+      },
       peer.client,
     )
     turnHost.handle(
@@ -429,6 +501,7 @@ describe('TurnHost', { timeout: 30_000 }, () => {
         projectId: 'p1',
         threadId: 'e',
         payload: JSON.stringify({ content: 'Hello', model: 'acp:claude-acp' }),
+        reviewed: reviewed('Hello'),
       },
       peer.client,
     )
@@ -455,7 +528,14 @@ describe('TurnHost', { timeout: 30_000 }, () => {
     const peer = app()
     turnHost.handle({ t: 'hello', version: VERSION, protocol: 2 }, peer.client)
     turnHost.handle(
-      { t: 'dispatch', id: 'd6', projectId: 'p1', threadId: 'f', payload: 'Hello' },
+      {
+        t: 'dispatch',
+        id: 'd6',
+        projectId: 'p1',
+        threadId: 'f',
+        payload: 'Hello',
+        reviewed: reviewed('Hello'),
+      },
       peer.client,
     )
     await until(() => peer.sent.some((m) => m.t === 'refused' || m.t === 'ended'), 'an answer')

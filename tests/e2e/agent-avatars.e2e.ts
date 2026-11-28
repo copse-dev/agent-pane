@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { withFrozenAnimations } from './helpers/frozen-animations.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { $, browser, expect } from '@wdio/globals'
@@ -253,7 +253,7 @@ describe('riso avatars in agent chat', () => {
     })
     await loadedAvatarSources()
     await setComposerValue('Review the next section.')
-    await $('.submit-btn').click()
+    await submitComposer()
     await expect($('.messages-list')).toHaveText(
       expect.stringContaining('I’m reviewing the next section.'),
     )
@@ -384,6 +384,11 @@ describe('riso avatars in agent chat', () => {
 
   it('restores the disabled preference after relaunch and keeps a working agent static', async function () {
     this.timeout(60_000)
+    // This case runs alone during burn-in too. Seed the live named agent it
+    // exercises instead of relying on the preceding motion case to do so.
+    seedAgentAvatars(true)
+    await browser.reloadSession()
+    await loadedAvatarSources()
     await openMotionSettings()
     await $('input[name="animateAgentAvatars"]').click()
     await saveMotionSettings()
@@ -400,7 +405,7 @@ describe('riso avatars in agent chat', () => {
       () => document.querySelectorAll('.msg-assistant').length,
     )
     await setComposerValue('Review one final section.')
-    await $('.submit-btn').click()
+    await submitComposer()
     await $('.stop-btn').waitForDisplayed()
     await browser.waitUntil(
       async () =>

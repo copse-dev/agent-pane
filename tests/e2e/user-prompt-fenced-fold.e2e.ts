@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import {
   FOLDED_CODE_PAYLOAD,
@@ -43,7 +43,7 @@ describe('fenced user prompt mid-fold accordion', () => {
     })
     await setComposerValue(FOLDED_CODE_PROMPT)
     await $('.submit-btn').waitForEnabled({ timeout: 30_000 })
-    await $('.submit-btn').click()
+    await submitComposer()
     await scenario.waitForComplete()
     await waitForAgentIdle()
     await scenario.assertComplete()
@@ -121,7 +121,7 @@ describe('fenced user prompt mid-fold accordion', () => {
     })
     await setComposerValue(source)
     await $('.submit-btn').waitForEnabled({ timeout: 30_000 })
-    await $('.submit-btn').click()
+    await submitComposer()
     await scenario.waitForComplete()
     await waitForAgentIdle()
     await scenario.assertComplete()

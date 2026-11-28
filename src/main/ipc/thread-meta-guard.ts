@@ -1,3 +1,5 @@
+import { expectArray, isRecord } from '@copse/std/unknown-value.ts'
+
 /**
  * Thread fields only the main process may write.
  *
@@ -8,7 +10,10 @@
  *
  * `worktree` belongs to main's checkout lifecycle. Renderer copies of prepare,
  * rename or completion results cannot allocate or revive a checkout through
- * create/autosave. Explicit native restore/adopt/clear operations write directly.
+ * create/autosave. Its policy choice, deferred allocation marker and resolved
+ * branch are equally main-owned: renderer values must not steer a pending
+ * automation back into the shared project checkout. Explicit native
+ * restore/adopt/clear operations write directly.
  *
  * `importedSession` records which external session main imported a thread from;
  * the renderer must not be able to claim or forge that provenance.
@@ -17,8 +22,30 @@ const MAIN_OWNED_THREAD_FIELDS: readonly string[] = [
   'remoteAgentLink',
   'cursorAgentIds',
   'worktree',
+  'worktreeChoice',
+  'deferredWorktree',
+  'gitBranch',
+  'automation',
   'importedSession',
 ]
+
+/** Strip display projection provenance that only main may grant after review. */
+export function withoutMainOwnedMessageFields(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const { promptRepresentation: _promptRepresentation, ...withoutRepresentation } = payload
+  const attachmentValue = payload['attachments']
+  if (!Array.isArray(attachmentValue)) return withoutRepresentation
+  const attachments = expectArray(attachmentValue)
+  return {
+    ...withoutRepresentation,
+    attachments: attachments.map((attachment) => {
+      if (!isRecord(attachment)) return attachment
+      const { projection: _projection, ...rendererFields } = attachment
+      return rendererFields
+    }),
+  }
+}
 
 /** `payload` without the fields only main may write. */
 export function withoutMainOwnedThreadFields(
@@ -27,4 +54,20 @@ export function withoutMainOwnedThreadFields(
   return Object.fromEntries(
     Object.entries(payload).filter(([key]) => !MAIN_OWNED_THREAD_FIELDS.includes(key)),
   )
+}
+
+/** Renderer-created threads cannot mint projection provenance in first messages. */
+export function withoutMainOwnedThreadCreateFields(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const rendererFields = withoutMainOwnedThreadFields(payload)
+  const messageValue = rendererFields['messages']
+  if (!Array.isArray(messageValue)) return rendererFields
+  const messages = expectArray(messageValue)
+  return {
+    ...rendererFields,
+    messages: messages.map((message) =>
+      isRecord(message) ? withoutMainOwnedMessageFields(message) : message,
+    ),
+  }
 }

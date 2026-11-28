@@ -40,6 +40,7 @@ import { dismissReviewFinding, dismissReviewReport, startReview } from './review
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { optionalRecord } from '@shared/unknown-value.ts'
+import { deleteQueuedMessage } from './message-queue.ts'
 import { startProposedThread } from './thread-proposals.ts'
 import {
   createThread,
@@ -1969,4 +1970,36 @@ test('afterPendingThreadPersistence waits for a create the same write starts', a
   assert.deepEqual(ran, [['t1']], 'runs once the create has landed')
   unsubscribe()
   autosave.detach()
+})
+
+test('queued deletion flushes held metadata through autosave before main admission', async () => {
+  __resetPersistenceForTest()
+  const value = thread('queued-delete-flush', {
+    messages: [userMsg('queued')],
+    pendingMessages: [{ messageId: 'queued', payload: { content: 'hi' }, createdAt: 1 }],
+  })
+  await seedPersistedThread('p', value)
+  const store = createStore({ activeProjectId: 'p', threads: [value] })
+  const { api, calls } = fakeApi()
+  let deleted = false
+  api.threads.deleteQueuedMessage = async (projectId, threadId, messageId): Promise<void> => {
+    assert.deepEqual([projectId, threadId, messageId], ['p', value.id, 'queued'])
+    const last = calls.metas.at(-1)
+    assert.ok(last)
+    const patch = expectRecord(last.patch)
+    assert.deepEqual(patch['pendingMessages'], [
+      { messageId: 'queued', payload: { content: 'hi' }, createdAt: 1, autoDispatch: false },
+    ])
+    deleted = true
+  }
+  const autosave = attachAutosave(store, api)
+  try {
+    await deleteQueuedMessage(store, api, value.id, 'queued')
+    assert.equal(deleted, true)
+    assert.deepEqual(store.getState().threads[0]?.messages, [])
+    await autosave.flush()
+  } finally {
+    autosave.detach()
+    __resetPersistenceForTest()
+  }
 })

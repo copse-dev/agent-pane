@@ -1,4 +1,5 @@
 import { SshThreadRefused } from '@shared/ssh-thread-refused.ts'
+import type { ReviewedTurn } from '../turn-host/reviewed-turn.ts'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import type { SshConnection } from '../ssh-workspace/connection-manager.ts'
@@ -154,6 +155,7 @@ export class SshTurnHosts {
     project: SeededProject,
     threadId: string,
     payload: string,
+    reviewed: ReviewedTurn,
     needs: TurnNeeds,
   ): Promise<TurnPlacement> {
     if (this.running.has(threadId) || this.heldThere.has(threadId))
@@ -169,7 +171,7 @@ export class SshTurnHosts {
     }
     this.running.set(threadId, thread)
     try {
-      return await this.runOnHost(thread, project, threadId, payload, needs)
+      return await this.runOnHost(thread, project, threadId, payload, reviewed, needs)
     } finally {
       this.running.delete(threadId)
     }
@@ -262,6 +264,7 @@ export class SshTurnHosts {
     project: SeededProject,
     threadId: string,
     payload: string,
+    reviewed: ReviewedTurn,
     needs: TurnNeeds,
   ): Promise<TurnPlacement> {
     const { hostId } = thread
@@ -296,7 +299,7 @@ export class SshTurnHosts {
     thread.link = host.link
     const unfollow = this.deps.follow(host.link, threadId)
     try {
-      const placement = await host.link.run(project.id, threadId, payload, needs)
+      const placement = await host.link.run(project.id, threadId, payload, reviewed, needs)
       // The worker took the thread by itself since it was given it (a wake):
       // the app must not run it too.
       if (placement === 'app' && (await this.held(hostId, host.node, project.id, threadId)))

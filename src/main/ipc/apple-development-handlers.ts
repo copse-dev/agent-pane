@@ -1,4 +1,5 @@
-import { ipcMain, type BrowserWindow } from 'electron'
+import { ipcMain, type BrowserWindow, type WebContents } from 'electron'
+import { realpath } from 'node:fs/promises'
 import { z } from 'zod'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import {
@@ -19,6 +20,26 @@ import { reloadMcpServers } from '../services/mcp/mcp-registry.ts'
 import { getThreadMeta } from '../services/thread-store.ts'
 import { getProjectRoot } from '../services/workspace.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
+import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
+import { confirmNativeAction } from '../services/native-human-confirmation.ts'
+
+async function confirmAppleHostAction(
+  sender: WebContents,
+  projectId: string,
+  threadId: string,
+  action: string,
+): Promise<void> {
+  const root = await realpath((await resolveThreadExecutionContext(projectId, threadId)).root)
+  const confirmed = await confirmNativeAction(sender, {
+    title: 'Run Apple tooling outside the sandbox?',
+    detail: `${action}\n\nCheckout: ${JSON.stringify(root)}\n\nXcode may run project build scripts with your account's access.`,
+    approveLabel: 'Continue',
+  })
+  if (!confirmed) throw new Error('Apple Development operation was not confirmed')
+  if ((await realpath((await resolveThreadExecutionContext(projectId, threadId)).root)) !== root) {
+    throw new Error('The Apple Development checkout changed during confirmation')
+  }
+}
 
 export function registerAppleDevelopmentHandlers(win: BrowserWindow, registry: ToolRegistry): void {
   // Apple Development first-party plugin. Renderer requests carry only project/thread
@@ -79,6 +100,9 @@ export function registerAppleDevelopmentHandlers(win: BrowserWindow, registry: T
         z.tuple([zProjectId, zThreadId, z.boolean()]),
         [rawProjectId, rawThreadId, rawEnrolled],
       )
+      if (enrolled) {
+        await confirmAppleHostAction(event.sender, projectId, threadId, 'Enroll this project')
+      }
       const controller = new AbortController()
       const state = await getAppleDevelopmentService().setEnrolled(
         appleInvocation(projectId, threadId, controller.signal),
@@ -97,6 +121,12 @@ export function registerAppleDevelopmentHandlers(win: BrowserWindow, registry: T
         z.tuple([zProjectId, zThreadId, z.boolean()]),
         [rawProjectId, rawThreadId, rawIncludeMetadata],
       )
+      await confirmAppleHostAction(
+        event.sender,
+        projectId,
+        threadId,
+        `Discover Xcode targets${includeMetadata ? ' and metadata' : ''}`,
+      )
       const controller = new AbortController()
       return getAppleDevelopmentService().discover(
         appleInvocation(projectId, threadId, controller.signal),
@@ -111,6 +141,12 @@ export function registerAppleDevelopmentHandlers(win: BrowserWindow, registry: T
       const [projectId, threadId, input] = parseIpcArgs(
         z.tuple([zProjectId, zThreadId, appleConfigureInputSchema]),
         [rawProjectId, rawThreadId, rawInput],
+      )
+      await confirmAppleHostAction(
+        event.sender,
+        projectId,
+        threadId,
+        `Configure ${JSON.stringify(input.candidateId)} scheme ${JSON.stringify(input.schemeId)}`,
       )
       const controller = new AbortController()
       return getAppleDevelopmentService().configure(
@@ -133,6 +169,12 @@ export function registerAppleDevelopmentHandlers(win: BrowserWindow, registry: T
         z.tuple([zProjectId, zThreadId, zNonEmptyString.max(512), zNonEmptyString.max(256)]),
         [rawProjectId, rawThreadId, rawCandidateId, rawSchemeId],
       )
+      await confirmAppleHostAction(
+        event.sender,
+        projectId,
+        threadId,
+        `Find destinations for ${JSON.stringify(candidateId)} scheme ${JSON.stringify(schemeId)}`,
+      )
       const controller = new AbortController()
       return getAppleDevelopmentService().destinations(
         appleInvocation(projectId, threadId, controller.signal),
@@ -148,6 +190,12 @@ export function registerAppleDevelopmentHandlers(win: BrowserWindow, registry: T
       const [projectId, threadId, input] = parseIpcArgs(
         z.tuple([zProjectId, zThreadId, appleExecuteInputSchema]),
         [rawProjectId, rawThreadId, rawInput],
+      )
+      await confirmAppleHostAction(
+        event.sender,
+        projectId,
+        threadId,
+        `${input.action} the configured Xcode target${input.testFilter ? ` (filter: ${JSON.stringify(input.testFilter)})` : ''}`,
       )
       const controller = new AbortController()
       return getAppleDevelopmentService().execute(

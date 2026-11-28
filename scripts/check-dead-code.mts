@@ -32,6 +32,10 @@ const ALLOWED_UNLINKED: Record<string, string> = {
     'esbuild entry that scripts/run-thread-container.mts bundles by path (pnpm run thread:container)',
   'src/main/services/container-runtime/worker-entry-harbor.ts':
     'benchmark-only esbuild entry that scripts/build-harbor-container.mts bundles by path into dist-test/ (never dist/)',
+  'src/preload/protected-prompt.ts':
+    'standalone protected-prompt BrowserWindow preload entry bundled by scripts/build.mts and loaded by path',
+  'src/renderer/protected-prompt.ts':
+    'standalone protected-prompt BrowserWindow renderer entry bundled by scripts/build.mts and loaded from its HTML page',
 }
 
 // Product modules intentionally exercised only by tests/scripts. Prefer wiring

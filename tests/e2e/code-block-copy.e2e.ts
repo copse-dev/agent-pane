@@ -5,6 +5,7 @@ import { resetUserData, seedCodeBlockCopyFixture } from './helpers/seed-config.t
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { acceptProtectedPrompt } from './helpers/composer.ts'
 
 describe('code block actions', () => {
   before(async () => {
@@ -90,6 +91,7 @@ describe('code block actions', () => {
         timeoutMsg: 'the run never reported its exit',
       },
     )
+    await acceptProtectedPrompt()
     await expect(runButton).toHaveAttribute('data-run-state', 'succeeded')
     await expect(output.$('summary')).toHaveText('Output · exit 0')
     await expect(output.$('.code-block-output-text')).toHaveText(expect.stringContaining('424242'))

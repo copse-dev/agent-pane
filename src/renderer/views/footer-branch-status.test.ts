@@ -317,6 +317,47 @@ describe('footer branch status', () => {
       assert.equal(document.querySelector('.toast-error'), null)
     })
 
+    it('warns before the first message when the checkout is already prepared', async () => {
+      const prepared = {
+        ...thread('copse/thread-branch'),
+        worktreeChoice: 'worktree' as const,
+        worktree: {
+          path: '/worktrees/project-1/thread-1',
+          branch: 'copse/thread-branch',
+          baseBranch: 'main',
+          baseCommit: 'abc1234',
+          createdAt: 2,
+          seededFromDirtyProject: false,
+        },
+      }
+      const store = createStore({
+        workspaceRoot: '/repo',
+        activeProjectId: 'project-1',
+        activeThreadId: prepared.id,
+        threads: [prepared],
+      })
+      const host = mountDetached(
+        {
+          branchStatus: async () => {
+            throw new Error('Thread worktree is on its base branch')
+          },
+          worktreeAttachment: async () => ({
+            state: 'on-base-branch',
+            branch: 'copse/thread-branch',
+            baseBranch: 'main',
+          }),
+        },
+        store,
+      )
+      await settle()
+
+      const picker = qsRequired(host, '.branch-picker')
+      const trigger = qsRequired(host, '.footer-branch-status')
+      assert.equal(picker.classList.contains('is-picker-mode'), false)
+      assert.ok(trigger.classList.contains('is-detached'))
+      assert.equal(trigger.querySelector('.footer-branch-label')?.textContent, prepared.gitBranch)
+    })
+
     it('offers a reattach that puts the checkout back on its branch', async () => {
       let attached = false
       const reattachCalls: string[] = []

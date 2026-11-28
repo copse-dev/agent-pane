@@ -121,6 +121,68 @@ describe('branch CI snapshots', () => {
 })
 
 describe('branch CI automations', () => {
+  it('rejects an edit when the inherited worktree limit or resolved repository changes during review', async (t) => {
+    storageSet(STORAGE_KEY, [])
+    const root = await mkdtemp(join(tmpdir(), 'copse-branch-ci-'))
+    const supervisor = new TaskSupervisor({
+      store: new FileSupervisedTaskStore({ COPSE_WORKSPACE_DIR: root }),
+    })
+    let repository = 'github.com/owner/repo'
+    const service = createBranchCiAutomationService({
+      now: () => 1_000,
+      isPluginEnabled: () => true,
+      repositoryForProject: () => Promise.resolve(repository),
+      snapshot: () => Promise.resolve({ headSha: SHA_A, runs: [] }),
+      loadProjectThreadMetas: () => Promise.resolve([]),
+      getProjectThread: () => Promise.resolve(null),
+      createProjectThread: () => Promise.resolve(),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
+      supervisor: () => supervisor,
+      inboxStore: new FileEventInboxStore({ COPSE_WORKSPACE_DIR: root }),
+    })
+    t.after(async () => {
+      service.stop()
+      await supervisor.shutdown()
+      await rm(root, { recursive: true, force: true })
+    })
+    const original = await service.upsert('project-a', {
+      name: 'Investigate CI',
+      branch: 'main',
+      prompt: 'Investigate',
+      model: 'gpt-test',
+      enabled: true,
+      maxLiveWorktrees: 3,
+    })
+    const edit = {
+      id: original.id,
+      name: 'Renamed',
+      branch: 'main',
+      prompt: 'Investigate',
+      model: 'gpt-test',
+      enabled: true,
+    }
+    const reviewed = await service.previewUpsert('project-a', edit)
+    assert.equal(reviewed.maxLiveWorktrees, 3)
+    await service.upsert('project-a', {
+      ...edit,
+      branch: 'release',
+      maxLiveWorktrees: 'unlimited',
+    })
+    await assert.rejects(
+      () => service.upsert('project-a', edit, reviewed),
+      /changed during confirmation/,
+    )
+    assert.equal(service.list('project-a')[0]?.name, 'Renamed')
+    assert.equal(service.list('project-a')[0]?.maxLiveWorktrees, 'unlimited')
+    const sameLimit = { ...edit, branch: 'release' }
+    const reviewedTrigger = await service.previewUpsert('project-a', sameLimit)
+    repository = 'github.com/other/repo'
+    await assert.rejects(
+      () => service.upsert('project-a', sameLimit, reviewedTrigger),
+      /changed during confirmation/,
+    )
+  })
+
   it('previews and saves a full page of compact current-head runs, then admits an older run rerun today', async (t) => {
     storageSet(STORAGE_KEY, [])
     const root = await mkdtemp(join(tmpdir(), 'copse-branch-ci-'))

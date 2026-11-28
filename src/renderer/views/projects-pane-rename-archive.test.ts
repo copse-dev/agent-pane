@@ -409,7 +409,7 @@ describe('projects pane thread rename + archive (component)', () => {
     assert.equal(store.getState().activeThreadId, 't3')
   })
 
-  it('the vertical-dot button opens the same menu without switching threads; Delete removes its thread', () => {
+  it('the vertical-dot button opens the same menu without switching threads; Delete removes its thread', async () => {
     const store = createStore({
       projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
       activeProjectId: 'a',
@@ -418,11 +418,7 @@ describe('projects pane thread rename + archive (component)', () => {
       threads: [thread('t1', 'Keep me'), thread('t2', 'Delete me')],
       activeThreadId: 't1',
     })
-    const cleared: string[][] = []
     const api = makeApi()
-    api.agent.clearHistory = async (projectId, threadId): Promise<void> => {
-      cleared.push([projectId, threadId])
-    }
     mount(store, api)
     const row = rowFor('Delete me')
     const button = row.querySelector<HTMLButtonElement>('.chat-menu-btn')
@@ -444,7 +440,6 @@ describe('projects pane thread rename + archive (component)', () => {
     ])
     assert.equal(store.getState().activeThreadId, 't1')
     assert.equal(store.getState().threads.length, 2)
-    assert.deepEqual(cleared, [])
     dismissContextMenu()
     row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
     assert.deepEqual(labels(), buttonLabels)
@@ -457,14 +452,13 @@ describe('projects pane thread rename + archive (component)', () => {
     assert.ok(deleteItem)
     assert.equal(deleteItem.disabled, false)
     deleteItem.click()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
     assert.equal(document.querySelector('.context-menu'), null)
     assert.deepEqual(
       store.getState().threads.map((item) => item.id),
       ['t1'],
     )
     assert.equal(store.getState().activeThreadId, 't1')
-    assert.deepEqual(cleared, [['a', 't2']])
-
     rowFor('Keep me').querySelector<HTMLButtonElement>('.chat-menu-btn')?.click()
     const lastDeleteItem = Array.from(
       document.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
@@ -473,7 +467,6 @@ describe('projects pane thread rename + archive (component)', () => {
     assert.equal(lastDeleteItem.disabled, true)
     lastDeleteItem.click()
     assert.equal(store.getState().threads.length, 1)
-    assert.deepEqual(cleared, [['a', 't2']])
   })
 
   it('keeps same-thread history editing inside the Fork menu', () => {

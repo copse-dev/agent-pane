@@ -13,10 +13,15 @@ import { resolvePathWithinRoot, resolveSshHostForWorkspaceRoot } from '../servic
 import { assertMainFrameSender, IpcValidationError, parseIpcArgs } from './ipc-guards.ts'
 import { threadPathArgs } from './thread-path-args.ts'
 import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
+import { confirmNativeAction } from '../services/native-human-confirmation.ts'
+import {
+  externalLinkConfirmationDetail,
+  openExternalWithConsent,
+} from '../services/external-link-consent.ts'
 import { authorizeBrowserPartitionPreview } from '../windows/browser-web-contents.ts'
 
 export function registerShellHandlers(win: BrowserWindow): void {
-  ipcMain.handle('shell:open-external', (event, url: unknown) => {
+  ipcMain.handle('shell:open-external', async (event, url: unknown) => {
     assertMainFrameSender(event, win)
     const href = parseIpcArgs(z.url().max(2048), [url])
     if (!href.startsWith('http://') && !href.startsWith('https://')) {
@@ -25,7 +30,17 @@ export function registerShellHandlers(win: BrowserWindow): void {
     if (isStaticPreviewUrl(href)) {
       throw new IpcValidationError('Workspace previews open inside Copse')
     }
-    return shell.openExternal(href)
+    const opened = await openExternalWithConsent(
+      href,
+      (review) =>
+        confirmNativeAction(event.sender, {
+          title: 'Open external website?',
+          detail: externalLinkConfirmationDetail(review),
+          approveLabel: 'Open link',
+        }),
+      (reviewedHref) => shell.openExternal(reviewedHref),
+    )
+    if (!opened) throw new IpcValidationError('External link was not confirmed')
   })
   ipcMain.handle('browser:workspace-file-url', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)

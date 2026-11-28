@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { acceptProtectedPrompt, setComposerValue, submitComposer } from './helpers/composer.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { E2E_SCREENSHOT_DIR, parkPointer, saveAppScreenshot } from './helpers/screenshot.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
@@ -220,10 +220,11 @@ describe('switching threads during first-message checkout', () => {
     await expect($('.submit-btn')).toBeEnabled()
     assert.equal(await $('.submit-btn').getText(), 'Send')
     await setComposerValue(OTHER_PROMPT)
-    await $('.submit-btn').click()
+    await submitComposer()
 
     console.info('[checkout-switch] releasing the held checkout')
     writeFileSync(checkoutHoldSentinel, '')
+    await acceptProtectedPrompt()
     await browser.waitUntil(
       async () =>
         browser.execute(

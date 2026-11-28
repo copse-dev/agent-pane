@@ -120,6 +120,7 @@ export function createRemoteChatFixture(): (
           access: 'control',
           sessionId,
           runId: null,
+          plan: null,
           decisions: pendingApproval
             ? [
                 {

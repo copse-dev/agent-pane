@@ -24,6 +24,7 @@ import type { ApprovalRequest, ApprovalResponse } from '../approval.ts'
 import type { QueueEntry } from '../diff-queue.ts'
 import type { ProfileStoreChange } from '../turn-worker/read-only-profile-store.ts'
 import type { SshPromptRequest, SshPromptResponse } from '../ssh-workspace/ssh-prompt.ts'
+import { reviewedTurnSchema, type ReviewedTurn } from './reviewed-turn.ts'
 import {
   workerCapabilitiesSchema,
   type WorkerCapabilities,
@@ -43,7 +44,9 @@ import {
  *   version, and only turns the host said it can run; a host of another
  *   version finishes what it has and retires.
  * - `dispatch` starts a turn: the same project, thread and raw payload the
- *   window sends main on `agent:run`. The host answers `accepted` once the
+ *   window sends main on `agent:run`, with what main's protected review
+ *   decided (`reviewed-turn.ts`): the approved prompt, the history and plan
+ *   frozen before review, and the bubble acceptance may keep. The host answers `accepted` once the
  *   thread is claimed, or `refused` with a reason, then `ended` when the turn
  *   is over. A refused turn runs in the app as before.
  * - `attach` joins the stream: every chunk and snapshot of every thread the host
@@ -91,7 +94,14 @@ export type AppToHost =
       /** Only asking: a host of another version does not retire for it. */
       probe?: boolean | undefined
     }
-  | { t: 'dispatch'; id: string; projectId: string; threadId: string; payload: string }
+  | {
+      t: 'dispatch'
+      id: string
+      projectId: string
+      threadId: string
+      payload: string
+      reviewed: ReviewedTurn
+    }
   | { t: 'attach' }
   | { t: 'stop'; threadId: string; reason?: 'quit' | undefined }
   /** A quit that keeps no turns: stop every turn the host runs, then say `stopped-all`. */
@@ -270,6 +280,8 @@ export const appToHostSchema = z.discriminatedUnion('t', [
     threadId: id,
     // The raw `agent:run` payload; the host parses it as main does.
     payload: z.string(),
+    // What main's protected review decided; the host runs no human prompt without it.
+    reviewed: reviewedTurnSchema,
   }),
   z.object({ t: z.literal('attach') }),
   z.object({ t: z.literal('stop'), threadId: id, reason: z.literal('quit').optional() }),

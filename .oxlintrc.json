@@ -409,6 +409,7 @@
         "src/main/services/close-confirm.ts",
         "src/main/services/update-prompt.ts",
         "src/main/services/user-alerts-electron.ts",
+        "src/main/services/native-human-confirmation.ts",
         "src/main/services/plugins/plugin-browser-panel.ts",
         "src/main/services/ssh-workspace/ssh-workspace-ipc.ts",
         "src/main/services/diagnostics/perf-ipc.ts"
@@ -452,6 +453,7 @@
         "src/main/services/close-confirm.ts",
         "src/main/services/update-prompt.ts",
         "src/main/services/user-alerts-electron.ts",
+        "src/main/services/native-human-confirmation.ts",
         "src/main/services/plugins/plugin-browser-panel.ts",
         "src/main/services/ssh-workspace/ssh-workspace-ipc.ts",
         "src/main/services/diagnostics/perf-ipc.ts"

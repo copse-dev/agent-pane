@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import type { Thread } from '../../src/shared/types/index.ts'
 import { parkPointer, saveAppScreenshot } from './helpers/screenshot.ts'
-import { composerText, setComposerValue } from './helpers/composer.ts'
+import { composerText, setComposerValue, submitComposer } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { acceptanceWakeTurn, readTranscriptNotices } from './helpers/acceptance-wake.ts'
 import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
@@ -181,7 +181,7 @@ describe('Activity after an admitted machine continuation', function () {
       ],
     })
     await setComposerValue('Prepare the project update for acceptance.')
-    await $('.submit-btn').click()
+    await submitComposer()
     await expectAssistantReply(proposed)
     await waitForAgentIdle(30_000)
     await waitForActiveThreadTitle()
@@ -291,7 +291,7 @@ describe('Activity after an admitted machine continuation', function () {
       turns: [{ user: prompt, responses: [{ text: reply }] }],
     })
     await setComposerValue(prompt)
-    await $('.submit-btn').click()
+    await submitComposer()
     await expectAssistantReply(reply)
     await scenario.waitForComplete()
     await scenario.assertComplete()

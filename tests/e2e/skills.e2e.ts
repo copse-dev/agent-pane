@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import {
   resetUserData,
   seedEmptyProject,
@@ -98,7 +98,7 @@ describe('skills', () => {
       ],
     })
     await setComposerValue('/demo-skill validate skills support')
-    await $('.submit-btn').click()
+    await submitComposer()
     await $('.msg-user').waitForExist({ timeout: 30_000 })
     await browser.waitUntil(
       async () =>
@@ -151,7 +151,7 @@ describe('skills', () => {
       ],
     })
     await setComposerValue('/acme.tools:qualified-review review the parser change')
-    await $('.submit-btn').click()
+    await submitComposer()
     // Send lists skills and reads Git state before it dispatches the run, and
     // the Stop button only appears once the run starts. An idle check straight
     // after the click can pass before the turn begins, so wait for the model

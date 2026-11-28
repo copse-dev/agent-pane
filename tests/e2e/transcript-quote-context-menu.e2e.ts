@@ -9,7 +9,7 @@ import {
   prepareChatMessageScreenshot,
   saveAppScreenshot,
 } from './helpers/screenshot.ts'
-import { composerText, setComposerValue } from './helpers/composer.ts'
+import { acceptProtectedPrompt, composerText, setComposerValue } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 
 const MENU_SHOT = 'transcript-quote-context-menu.png'
@@ -126,6 +126,74 @@ async function expectReplyCaret(expectedText: string): Promise<void> {
       }, expectedText),
     { timeout: 5_000, timeoutMsg: 'expected a focused caret after the quote and blank separator' },
   )
+}
+
+/** Click the visible user message outside the reply, rather than its possibly covered center. */
+async function clickOutsideReply(): Promise<void> {
+  const point = await browser.execute(() => {
+    const target = document.querySelector('[data-message-id="msg-user-quote"] .message-body')
+    const popup = document.querySelector('.transcript-selection-quote')
+    const list = document.querySelector('.messages-list')
+    if (!target || !popup || !list)
+      throw new Error('Outside-click target, reply or transcript missing')
+    const targetRect = target.getBoundingClientRect()
+    const popupRect = popup.getBoundingClientRect()
+    const viewport = list.getBoundingClientRect()
+    const left = Math.max(targetRect.left, viewport.left, 0) + 4
+    const right = Math.min(targetRect.right, viewport.right, window.innerWidth) - 4
+    const top = Math.max(targetRect.top, viewport.top, 0) + 4
+    const bottom = Math.min(targetRect.bottom, viewport.bottom, window.innerHeight) - 4
+    const points = [
+      { x: Math.ceil(left), y: Math.ceil(top) },
+      { x: Math.floor(right), y: Math.ceil(top) },
+      { x: Math.ceil(left), y: Math.floor(bottom) },
+      { x: Math.floor(right), y: Math.floor(bottom) },
+    ]
+    const hit = points.find(({ x, y }) => {
+      if (left > right || top > bottom) return false
+      if (
+        x >= popupRect.left &&
+        x <= popupRect.right &&
+        y >= popupRect.top &&
+        y <= popupRect.bottom
+      )
+        return false
+      const element = document.elementFromPoint(x, y)
+      return element !== null && target.contains(element) && !popup.contains(element)
+    })
+    if (!hit) throw new Error('No visible user-message point outside the reply popup')
+    return {
+      ...hit,
+      target: [targetRect.x, targetRect.y, targetRect.width, targetRect.height],
+      popup: [popupRect.x, popupRect.y, popupRect.width, popupRect.height],
+      viewport: [viewport.x, viewport.y, viewport.width, viewport.height],
+    }
+  })
+  console.info('Transcript outside-click geometry', JSON.stringify(point))
+  await browser.action('pointer').move({ x: point.x, y: point.y }).down().up().perform()
+}
+
+// Review only the prompt dispatched by this explicit human action.
+async function reviewHumanPrompt(action: () => Promise<void>, expectedText: string): Promise<void> {
+  const mainHandle = await browser.getWindowHandle()
+  const handlesBefore = await browser.getWindowHandles()
+  const threadId = await $('.chat-row.selected').getAttribute('data-thread-id')
+  if (!threadId) throw new Error('The human prompt must target the selected thread')
+  const threadTitle = await $('.chat-row.selected .chat-title').getText()
+  await action()
+  await browser.waitUntil(
+    async () =>
+      (await browser.getWindowHandles()).some((handle) => !handlesBefore.includes(handle)),
+    { timeout: 15_000, timeoutMsg: 'Expected this human action to open protected review' },
+  )
+  const reviewHandle = (await browser.getWindowHandles()).find(
+    (handle) => !handlesBefore.includes(handle),
+  )
+  if (!reviewHandle) throw new Error('The human prompt review window is missing')
+  await browser.switchToWindow(reviewHandle)
+  await expect($('#protected-prompt-text')).toHaveValue(expectedText)
+  await expect($('#protected-prompt-thread')).toHaveText(`${threadTitle} — ${threadId}`)
+  await acceptProtectedPrompt(mainHandle, handlesBefore)
 }
 
 describe('transcript selection: quote into the reply', () => {
@@ -342,6 +410,7 @@ describe('transcript selection: quote into the reply', () => {
   })
 
   it('dismisses the inline action on Escape and selection collapse', async () => {
+    await prepareChatMessageScreenshot()
     await dragSelectText(SELECTED_PHRASE)
     const action = $('.transcript-selection-quote')
     await action.waitForDisplayed({ timeout: 5_000 })
@@ -349,17 +418,18 @@ describe('transcript selection: quote into the reply', () => {
     await action.waitForDisplayed({ reverse: true, timeout: 5_000 })
     await dragSelectText(SELECTED_PHRASE)
     await action.waitForDisplayed({ timeout: 5_000 })
-    await $('[data-message-id="msg-user-quote"] .message-body').click()
+    await clickOutsideReply()
     await action.waitForDisplayed({ reverse: true, timeout: 5_000 })
   })
 
   it('keeps a typed reply open until Escape or deleting its text', async () => {
+    await prepareChatMessageScreenshot()
     await dragSelectText(SELECTED_PHRASE)
     const popup = $('.transcript-selection-quote')
     const reply = $('.transcript-selection-reply')
     await popup.waitForDisplayed({ timeout: 5_000 })
     await browser.keys('Keep this reply while I check the conversation.')
-    await $('[data-message-id="msg-user-quote"] .message-body').click()
+    await clickOutsideReply()
     expect(await popup.isDisplayed()).toBe(true)
     expect(await reply.getValue()).toBe('Keep this reply while I check the conversation.')
     await dragSelectText('feature flag', SELECTED_PHRASE)
@@ -445,7 +515,13 @@ describe('transcript selection: quote into the reply', () => {
     }
   })
 
-  it('sends the selected quote and reply immediately with the platform shortcut', async () => {
+  it('sends the selected quote and reply immediately with the platform shortcut', async function () {
+    this.timeout(60_000)
+    // Earlier selection cases deliberately leave transient focus/range state in
+    // this renderer. Start the native protected-entry assertion in a fresh
+    // renderer session so its window handoff is the only pending interaction.
+    await browser.reloadSession()
+    await $('.chat-row.selected').waitForExist({ timeout: 30_000 })
     await setComposerValue('')
     await installMockScenario({
       title: 'Reply to selected transcript text',
@@ -460,7 +536,9 @@ describe('transcript selection: quote into the reply', () => {
     await $('.transcript-selection-reply').waitForDisplayed({ timeout: 5_000 })
     await browser.keys('Send this reply now.')
     expect(await $('.transcript-selection-reply').getValue()).toBe('Send this reply now.')
-    await browser.keys([process.platform === 'darwin' ? 'Meta' : 'Control', 'Enter'])
+    await reviewHumanPrompt(async () => {
+      await browser.keys([process.platform === 'darwin' ? 'Meta' : 'Control', 'Enter'])
+    }, `> ${SELECTED_PHRASE}\n\nSend this reply now.`)
     await browser.waitUntil(
       async () =>
         browser.execute(() =>

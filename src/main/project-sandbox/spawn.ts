@@ -150,6 +150,8 @@ export async function spawnInProjectSandbox(
     unsandboxed?: boolean
     /** Refuse fallback if authorization depended on local OS containment. */
     requireSandbox?: boolean
+    /** Subscribe synchronously to a local child before Node emits spawn/error/output. */
+    onChildCreated?: (child: ChildProcess) => void
     sandboxConfig?: Partial<SandboxRuntimeConfig>
     executionTarget?: ExecutionTarget
   } & Pick<SpawnOptionsWithoutStdio, 'stdio'>,
@@ -163,6 +165,9 @@ export async function spawnInProjectSandbox(
       'This command requires an active local project sandbox. Request authorization again.',
     )
   }
+  if (isSshExecutionTarget(target) && opts.onChildCreated) {
+    throw new Error('Cannot subscribe to a remote child before spawn')
+  }
   const execution = await runtimeFor(target, 'internal').exec({
     command: { kind: 'argv', executable, args },
     cwd: opts.cwd,
@@ -172,6 +177,7 @@ export async function spawnInProjectSandbox(
     local: {
       sandbox: opts.unsandboxed !== true,
       ...(opts.requireSandbox ? { requireSandbox: SANDBOX_BECAME_UNAVAILABLE } : {}),
+      ...(opts.onChildCreated ? { onChildCreated: opts.onChildCreated } : {}),
       plan: () => ({ config: opts.sandboxConfig ?? workspaceSandboxOverlay(opts.cwd) }),
     },
   })

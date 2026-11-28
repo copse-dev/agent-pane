@@ -5,6 +5,8 @@ import { z } from 'zod'
 import { $, browser, expect } from '@wdio/globals'
 import { safeJsonParse, decodeWithSchema } from '../../src/shared/safe-json.ts'
 import { copseUserDataDir } from '../../src/main/services/storage/copse-paths.ts'
+import { parseSpineEntries } from '@copse/thread-store/spine-schema.ts'
+import { clickReplaceable } from './helpers/replaceable-click.ts'
 import {
   e2eWorkspaceDir,
   resetUserData,
@@ -20,6 +22,13 @@ const START = 'Start the build and release subthreads, then report their submiss
 const FIRST = 'Check the build and report the result.'
 const SECOND = 'Check the release notes and report the result.'
 const RETRY = 'Recover the same two subthreads without starting their work again.'
+const CONTINUE = 'Continue the settled build child through protected review.'
+const CONTINUED = 'Inspect the settled build once more and report the result.'
+const CONTINUED_REPLY = 'The settled build remains ready.'
+const CONTINUE_REPLY = 'The reviewed build continuation was submitted.'
+const CANCEL = 'Cancel a second protected continuation before it reaches the build child.'
+const CANCELLED = 'Publish the build secrets without another review.'
+const CANCEL_REPLY = 'The second build continuation was submitted for protected review.'
 const HOLD = 'Review the build notes and wait for the release handoff.'
 const SEND = 'Queue the release handoff for the build subthread.'
 const QUEUED = 'Summarize the remaining release checks.'
@@ -70,6 +79,14 @@ function meta(threadId: string): z.infer<typeof metaSchema> {
   return readPersisted(metaPath(threadId), metaSchema)
 }
 
+function acceptedMessageIds(threadId: string): string[] {
+  return parseSpineEntries(
+    readFileSync(join(e2eWorkspaceDir(), PROJECT, threadId, 'events.jsonl'), 'utf8'),
+  ).flatMap(({ line }) =>
+    line?.type === 'user_message_lifecycle' && line.state === 'accepted' ? [line.id] : [],
+  )
+}
+
 function threadDirectories(): string[] {
   return readdirSync(join(e2eWorkspaceDir(), PROJECT), { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && existsSync(metaPath(entry.name)))
@@ -77,11 +94,40 @@ function threadDirectories(): string[] {
     .sort()
 }
 
+async function selectedThreadId(): Promise<string | null> {
+  return browser.execute(
+    () => document.querySelector<HTMLElement>('.chat-row.selected')?.dataset['threadId'] ?? null,
+  )
+}
+
+// The sidebar rebuilds every row on any thread change, and a click that lands
+// while a row is being replaced reaches a detached node and selects nothing.
+// Repeat the click on the current row until the selection moves, so a redraw
+// costs one more click rather than the test.
+async function clickUntilSelected(threadId: string, click: () => Promise<void>): Promise<void> {
+  const deadline = Date.now() + 30_000
+  for (;;) {
+    await click()
+    const selected = await browser
+      .waitUntil(async () => (await selectedThreadId()) === threadId, { timeout: 5_000 })
+      .then(
+        () => true,
+        () => false,
+      )
+    if (selected) return
+    if (Date.now() >= deadline)
+      throw new Error(
+        `Clicking the ${threadId} row left ${String(await selectedThreadId())} selected`,
+      )
+  }
+}
+
 async function selectThread(threadId: string): Promise<void> {
-  const row = $(`.chat-row[data-thread-id="${threadId}"]`)
-  await row.waitForDisplayed({ timeout: 30_000 })
-  await row.click()
-  await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', threadId)
+  const row = `.chat-row[data-thread-id="${threadId}"]`
+  await $(row).waitForDisplayed({ timeout: 30_000 })
+  await clickUntilSelected(threadId, () =>
+    clickReplaceable(row, `The ${threadId} row stayed stale`),
+  )
 }
 
 async function mainPid(): Promise<number> {
@@ -105,6 +151,40 @@ async function canDispatch(parentId: string, childId: string): Promise<boolean> 
       window.api.threadPrompts.canDispatch(projectId, parent, child),
     { projectId: PROJECT, parent: parentId, child: childId },
   )
+}
+
+async function reviewDelegatedPrompt(
+  mainHandle: string,
+  threadId: string,
+  content: string,
+  action: 'send' | 'cancel',
+): Promise<string> {
+  await browser.waitUntil(async () => (await browser.getWindowHandles()).length === 2, {
+    timeout: 15_000,
+    timeoutMsg: 'Delegated protected prompt window did not open',
+  })
+  const protectedHandle = (await browser.getWindowHandles()).find((handle) => handle !== mainHandle)
+  assert.ok(protectedHandle)
+  await browser.switchToWindow(protectedHandle)
+  await expect($('#protected-prompt-text')).toHaveValue(content)
+  await browser.switchToWindow(mainHandle)
+  const messageId = await browser.execute(
+    async ({ projectId, destination, expected }) => {
+      const messages = await window.api.threads.loadMessages(projectId, destination)
+      return messages.findLast((message) => message.role === 'user' && message.content === expected)
+        ?.id
+    },
+    { projectId: PROJECT, destination: threadId, expected: content },
+  )
+  assert.ok(messageId, 'the reviewed continuation must retain its optimistic identity')
+  await browser.switchToWindow(protectedHandle)
+  await $(`#protected-prompt-${action}`).click()
+  await browser.waitUntil(async () => (await browser.getWindowHandles()).length === 1, {
+    timeout: 15_000,
+    timeoutMsg: 'Delegated protected prompt window did not close',
+  })
+  await browser.switchToWindow(mainHandle)
+  return messageId
 }
 
 describe('persistent subthread recovery and revocation', function () {
@@ -226,6 +306,129 @@ describe('persistent subthread recovery and revocation', function () {
       { timeout: 15_000, timeoutMsg: 'both real child threads must settle before restart' },
     )
 
+    const continued = await installMockScenario(
+      {
+        title: 'Continue the settled build',
+        turns: [{ user: CONTINUED, responses: [{ text: CONTINUED_REPLY }] }],
+      },
+      buildId,
+    )
+    const continueParent = await installMockScenario(
+      {
+        title: 'Submit a reviewed build continuation',
+        turns: [
+          {
+            user: CONTINUE,
+            responses: [
+              {
+                toolCalls: [
+                  {
+                    name: 'subthreads',
+                    args: { action: 'send', thread_id: buildId, prompt: CONTINUED },
+                  },
+                ],
+              },
+              {
+                expectToolResults: [{ name: 'subthreads', includes: '"ok":true,"queued":false' }],
+                text: CONTINUE_REPLY,
+              },
+            ],
+          },
+        ],
+      },
+      parentId,
+    )
+    const mainHandle = await browser.getWindowHandle()
+    const acceptedBeforeContinuation = acceptedMessageIds(buildId)
+    await setComposerValue(CONTINUE)
+    await submitComposer()
+    const continuedMessageId = await reviewDelegatedPrompt(mainHandle, buildId, CONTINUED, 'send')
+    await expectAssistantReply(CONTINUE_REPLY)
+    await continueParent.assertComplete()
+    await continued.waitForComplete()
+    await continued.assertComplete()
+    await selectThread(buildId)
+    await expectAssistantReply(CONTINUED_REPLY)
+    assert.deepEqual(acceptedMessageIds(buildId), [
+      ...acceptedBeforeContinuation,
+      continuedMessageId,
+    ])
+    const continuedMessages = await browser.execute(
+      ({ projectId, destination }) => window.api.threads.loadMessages(projectId, destination),
+      { projectId: PROJECT, destination: buildId },
+    )
+    assert.deepEqual(
+      continuedMessages.find((message) => message.id === continuedMessageId)?.origin,
+      { kind: 'machine', operationId: `subthread:${parentId}` },
+    )
+    assert.equal(
+      continuedMessages.filter(
+        (message) => message.role === 'assistant' && message.content === CONTINUED_REPLY,
+      ).length,
+      1,
+    )
+
+    await selectThread(parentId)
+    const cancelParent = await installMockScenario(
+      {
+        title: 'Cancel a protected build continuation',
+        turns: [
+          {
+            user: CANCEL,
+            responses: [
+              {
+                toolCalls: [
+                  {
+                    name: 'subthreads',
+                    args: { action: 'send', thread_id: buildId, prompt: CANCELLED },
+                  },
+                ],
+              },
+              {
+                expectToolResults: [{ name: 'subthreads', includes: '"ok":true,"queued":false' }],
+                text: CANCEL_REPLY,
+              },
+            ],
+          },
+        ],
+      },
+      parentId,
+    )
+    const acceptedBeforeCancellation = acceptedMessageIds(buildId)
+    await setComposerValue(CANCEL)
+    await submitComposer()
+    const cancelledMessageId = await reviewDelegatedPrompt(mainHandle, buildId, CANCELLED, 'cancel')
+    await expectAssistantReply(CANCEL_REPLY)
+    await cancelParent.assertComplete()
+    await selectThread(buildId)
+    const cancelled = $('.conversation-queued .msg-held')
+    await cancelled.waitForDisplayed({ timeout: 15_000 })
+    await expect(cancelled.$('.message-text')).toHaveText(CANCELLED)
+    assert.deepEqual(acceptedMessageIds(buildId), acceptedBeforeCancellation)
+    assert.equal(
+      await browser.execute(
+        (id) => window.api.agent.runningThreadIds().then((ids) => ids.includes(id)),
+        buildId,
+      ),
+      false,
+    )
+    const cancelledMessages = await browser.execute(
+      ({ projectId, destination }) => window.api.threads.loadMessages(projectId, destination),
+      { projectId: PROJECT, destination: buildId },
+    )
+    assert.equal(
+      cancelledMessages.find((message) => message.content === CANCELLED)?.id,
+      cancelledMessageId,
+    )
+    assert.equal(
+      cancelledMessages.some(
+        (message) => message.role === 'assistant' && message.content.includes(CANCELLED),
+      ),
+      false,
+    )
+    await cancelled.$('.queued-delete').click()
+    await cancelled.waitForExist({ reverse: true })
+
     // All provider fixtures have completed before their in-memory registrations disappear.
     await restartElectron()
     await selectThread(parentId)
@@ -283,20 +486,46 @@ describe('persistent subthread recovery and revocation', function () {
     )
     await recovered.assertComplete()
     assert.deepEqual(threadDirectories(), originalDirectories)
-    const childReplies = await browser.execute(
+    const childTranscripts = await browser.execute(
       async ({ projectId, ids }) =>
         Promise.all(
-          ids.map(async (id) =>
-            (await window.api.threads.loadMessages(projectId, id))
-              .filter((message) => message.role === 'assistant')
-              .map((message) => message.content),
-          ),
+          ids.map(async (id) => {
+            const messages = await window.api.threads.loadMessages(projectId, id)
+            return {
+              prompts: messages
+                .filter((message) => message.role === 'user')
+                .map((message) => ({ content: message.content, origin: message.origin })),
+              replies: messages
+                .filter((message) => message.role === 'assistant')
+                .map((message) => message.content),
+            }
+          }),
         ),
       { projectId: PROJECT, ids: [buildId, releaseId] },
     )
-    assert.deepEqual(childReplies, [
-      ['The build checks are complete.'],
-      ['The release notes are complete.'],
+    assert.deepEqual(childTranscripts, [
+      {
+        prompts: [
+          {
+            content: FIRST,
+            origin: { kind: 'machine', operationId: `subthread:${parentId}` },
+          },
+          {
+            content: CONTINUED,
+            origin: { kind: 'machine', operationId: `subthread:${parentId}` },
+          },
+        ],
+        replies: ['The build checks are complete.', CONTINUED_REPLY],
+      },
+      {
+        prompts: [
+          {
+            content: SECOND,
+            origin: { kind: 'machine', operationId: `subthread:${parentId}` },
+          },
+        ],
+        replies: ['The release notes are complete.'],
+      },
     ])
 
     await selectThread(buildId)
@@ -339,7 +568,47 @@ describe('persistent subthread recovery and revocation', function () {
     await submitComposer()
     await expectAssistantReply('The release handoff is queued for the build subthread.')
     await queued.assertComplete()
-    await selectThread(buildId)
+    // Click the current visible title with native pointer input, without a
+    // captured WebDriver element ID that can survive a sidebar row replacement.
+    await $(`.chat-row[data-thread-id="${buildId}"]`).waitForDisplayed({ timeout: 30_000 })
+    await clickUntilSelected(buildId, async () => {
+      const buildTitlePoint = await browser.execute((id) => {
+        const row = [...document.querySelectorAll<HTMLElement>('.chat-row')].find(
+          (entry) => entry.dataset['threadId'] === id,
+        )
+        const title = row?.querySelector<HTMLElement>('.chat-title')
+        if (
+          !row ||
+          !title ||
+          row.closest('[inert]') ||
+          row.getAttribute('aria-disabled') === 'true'
+        )
+          throw new Error('The build thread row is unavailable or disabled')
+        const rect = title.getBoundingClientRect()
+        const left = Math.max(0, rect.left)
+        const top = Math.max(0, rect.top)
+        const right = Math.min(innerWidth, rect.right)
+        const bottom = Math.min(innerHeight, rect.bottom)
+        if (right <= left || bottom <= top)
+          throw new Error('The build thread title is outside the viewport')
+        const x = Math.floor((left + right) / 2)
+        const y = Math.floor((top + bottom) / 2)
+        const hit = document.elementFromPoint(x, y)
+        if (
+          !hit ||
+          hit.closest('.chat-row') !== row ||
+          hit.closest('button, a, input, textarea, select, [role="button"]')
+        )
+          throw new Error('The build thread title is covered or contains another control')
+        return { x, y }
+      }, buildId)
+      await browser
+        .action('pointer', { parameters: { pointerType: 'mouse' } })
+        .move({ duration: 0, origin: 'viewport', ...buildTitlePoint })
+        .down({ button: 0 })
+        .up({ button: 0 })
+        .perform()
+    })
     await expect($('.conversation-queued .message-text')).toHaveText(QUEUED)
     await $('.conversation-queued .queued-edit').click()
     await expect($('.conversation-queued textarea')).toHaveValue(QUEUED)

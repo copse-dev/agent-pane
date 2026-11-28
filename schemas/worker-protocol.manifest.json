@@ -25,6 +25,7 @@
           "id",
           "payload",
           "projectId",
+          "reviewed",
           "threadId"
         ],
         "hello": [

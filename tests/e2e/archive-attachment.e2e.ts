@@ -1,11 +1,18 @@
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
-import { mkdirSync, mkdtempSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
+import { z } from 'zod'
+import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
+import {
+  e2eWorkspaceDir,
+  resetUserData,
+  seedE2eViewport,
+  seedEmptyProject,
+} from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
 /**
@@ -61,6 +68,29 @@ async function dropArchiveOnComposer(name: string, bytes: number[]): Promise<voi
   )
 }
 
+async function ensureArchiveDraft(): Promise<void> {
+  if (!(await $('.attachment-chips .archive-chip').isExisting())) {
+    await setComposerValue('what is in this bundle?')
+    await dropArchiveOnComposer(ARCHIVE_NAME, EMPTY_ZIP)
+    await $('.attachment-chips .archive-chip').waitForDisplayed({ timeout: 10_000 })
+  }
+  const threadId = await $('.chat-row.selected').getAttribute('data-thread-id')
+  if (!threadId) throw new Error('Missing selected thread id')
+  const metaPath = join(e2eWorkspaceDir(), PROJECT_ID, threadId, 'meta.json')
+  const metadataSchema = z.object({ draftPrompt: z.string().optional() })
+  await browser.waitUntil(
+    () => {
+      if (!existsSync(metaPath)) return false
+      const metadata = safeJsonParse(
+        readFileSync(metaPath, 'utf8'),
+        decodeWithSchema(metadataSchema),
+      )
+      return metadata?.draftPrompt === 'what is in this bundle?'
+    },
+    { timeout: 10_000, timeoutMsg: 'expected the archive draft to persist before switching' },
+  )
+}
+
 describe('Attaching an archive to the chat', () => {
   let temporaryRoot = ''
   let workspaceRoot = ''
@@ -105,6 +135,7 @@ describe('Attaching an archive to the chat', () => {
   })
 
   it('keeps the unsent archive with its draft while switching threads', async () => {
+    await ensureArchiveDraft()
     const originalThreadId = await $('.chat-row.selected').getAttribute('data-thread-id')
     if (!originalThreadId) throw new Error('Missing selected thread id')
     await $('.project-new-thread-btn').click()
@@ -121,6 +152,7 @@ describe('Attaching an archive to the chat', () => {
   })
 
   it('sends the archive as a path reference and renders a transcript chip', async () => {
+    await ensureArchiveDraft()
     await installMockScenario({
       title: 'Inspect the attached archive',
       turns: [
@@ -134,7 +166,7 @@ describe('Attaching an archive to the chat', () => {
         },
       ],
     })
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const sentChip =
       '.messages-list .msg-user .transcript-attachment-chip.transcript-attachment-archive'

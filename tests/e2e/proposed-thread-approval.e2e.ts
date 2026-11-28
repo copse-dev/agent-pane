@@ -6,6 +6,7 @@ import {
   seedThreadProposalFixture,
 } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { acceptProtectedPrompt } from './helpers/composer.ts'
 
 // Accepting a `propose_thread` card starts the new thread in the background and
 // leaves the user on the thread that offered it (#4112). An approval the new
@@ -45,6 +46,7 @@ describe('an approval from a thread started from a proposal', () => {
       null,
     )
     await $('.thread-proposal-start').click()
+    await acceptProtectedPrompt()
 
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })

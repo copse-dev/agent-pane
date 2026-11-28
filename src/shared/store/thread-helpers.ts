@@ -182,6 +182,8 @@ export interface CreateThreadOptions {
    * click does not navigate anywhere.
    */
   activate?: boolean
+  /** Main-reserved identity for a remotely requested new thread. */
+  id?: string
 }
 
 export function createThread(
@@ -190,7 +192,9 @@ export function createThread(
   options?: CreateThreadOptions,
 ): string {
   const activate = options?.activate ?? true
-  const id = randomUUID()
+  const id = options?.id ?? randomUUID()
+  if (store.getState().threads.some((thread) => thread.id === id))
+    throw new Error('Thread identity is already in use')
   const defaultModel = store.getState().settings?.model
   const threads = [
     {
@@ -491,6 +495,7 @@ export function addMessage(
     origin?: MessageOrigin
     startingCommit?: string
     dirty?: boolean
+    promptRepresentation?: Message['promptRepresentation']
     /** An id minted elsewhere — main's transcript writer — so both copies agree. */
     id?: string
   },
@@ -508,6 +513,9 @@ export function addMessage(
     ...(opts?.origin !== undefined ? { origin: opts.origin } : {}),
     ...(opts?.startingCommit !== undefined ? { startingCommit: opts.startingCommit } : {}),
     ...(opts?.dirty !== undefined ? { dirty: opts.dirty } : {}),
+    ...(opts?.promptRepresentation !== undefined
+      ? { promptRepresentation: opts.promptRepresentation }
+      : {}),
     toolCalls: [],
     createdAt: Date.now(),
   }
@@ -732,6 +740,43 @@ export function setMessageContent(store: AppStore, messageId: string, content: s
     m.content = content
   })
   store.emit('message_token', messageId, content)
+}
+
+/** Replace the canonical user prompt that a protected entry window reviewed. */
+export function setMessagePromptContent(
+  store: AppStore,
+  threadId: string,
+  messageId: string,
+  content: string,
+  images: string[] | undefined,
+  attachments?: TranscriptAttachment[],
+  promptRepresentation?: Message['promptRepresentation'],
+): void {
+  const existing = getThreadById(store, threadId)?.messages.find(
+    (candidate) => candidate.id === messageId,
+  )
+  if (!existing) return
+  const message: Message = { ...existing, content }
+  if (images === undefined) delete message.images
+  else message.images = images
+  // Attachment chips describe the pre-review composer expansion. Main passes
+  // them back only after an unchanged protected review; an edited review
+  // omits them so the transcript cannot claim context that was not sent.
+  if (attachments === undefined) delete message.attachments
+  else message.attachments = attachments.map((attachment) => ({ ...attachment }))
+  if (promptRepresentation === undefined) delete message.promptRepresentation
+  else message.promptRepresentation = promptRepresentation
+  // A protected review replaces an already rendered user row. Unlike streamed
+  // assistant tokens, that row has no incremental token painter. Replace its
+  // identity so transcript reconciliation sees the change even while running.
+  patchThreadAnywhere(store, threadId, (thread) => ({
+    ...thread,
+    messages: thread.messages.map((candidate) =>
+      candidate.id === messageId ? message : candidate,
+    ),
+  }))
+  store.emit('message_token', messageId, content)
+  store.emit('threads_changed')
 }
 
 export function addMessageCanvasArtefact(

@@ -2,7 +2,7 @@ import '../../../tests/setup-dom.ts'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createStore } from '@shared/store/store.ts'
-import type { ForkedHistoryResult } from '@shared/types'
+import type { ForkedHistoryResult, Thread } from '@shared/types'
 import type { ThreadBacklink } from '@shared/threads/thread-links.ts'
 import type { DecisionEvent } from '@shared/threads/decision-log.ts'
 import type { ContextPermissionSnapshot } from '@shared/types/context-permissions.ts'
@@ -270,8 +270,13 @@ test('the mounted pane renders the active thread, uses one header, and starts a 
       ...base.threads,
       backlinks: (): Promise<ThreadBacklink[]> =>
         Promise.resolve([{ threadId: 'other', title: 'Mentions this' }]),
-      fork: (...args: [string, string, string, string?]): Promise<ForkedHistoryResult> => {
-        forks.push(args.map(String))
+      fork: (
+        projectId: string,
+        source: string,
+        target: Thread,
+        through?: string,
+      ): Promise<ForkedHistoryResult> => {
+        forks.push([projectId, source, target.id, String(through)])
         return Promise.resolve({ source: 'rebuilt', messageCount: 2 })
       },
     },

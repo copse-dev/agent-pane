@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { acceptProtectedPrompt, setComposerValue } from './helpers/composer.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
@@ -38,6 +38,7 @@ describe('composer pills in light theme', () => {
     await $('.submit-btn').click()
     await $('.composer-dirty-warning').waitForDisplayed({ timeout: 15_000 })
     await $('.composer-dirty-send-btn').click()
+    await acceptProtectedPrompt()
     await $('.msg-user').waitForDisplayed({ timeout: 15_000 })
     await $('.msg-assistant .message-text').waitForDisplayed({ timeout: 20_000 })
     await waitForAgentIdle(20_000)

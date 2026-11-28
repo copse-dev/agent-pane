@@ -175,6 +175,7 @@ import {
   isReplayableOpaqueLocalExecution,
 } from './shell-scope.ts'
 import { getAutomationService } from '../automations/automation-service.ts'
+import { hasAutomationGrantScope } from './automation-grant-scope.ts'
 import { getGithubRepoSlug } from '../github/git-service.ts'
 
 const SANDBOX_REPLAY_LABEL =
@@ -854,6 +855,7 @@ interface AutomationPermissionTarget {
 function automationPermissionTarget(
   permission: AutomationPermission,
 ): AutomationPermissionTarget | null {
+  if (!hasAutomationGrantScope()) return null
   const context = getThreadExecutionContext()
   if (!context?.automation) return null
   const preference = getAutomationService().permissionPreferenceForThread(

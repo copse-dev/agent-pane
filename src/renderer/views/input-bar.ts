@@ -2543,9 +2543,16 @@ export function mountInputBar(
     const attachments: TranscriptAttachment[] = [
       ...inlineChips.flatMap((chip): TranscriptAttachment[] => {
         if (chip.kind === 'paste') {
-          return [{ kind: 'paste', label: chip.block.label, content: chip.block.content }]
+          return [
+            {
+              kind: 'paste',
+              label: chip.block.label,
+              content: chip.block.content,
+              placement: 'inline',
+            },
+          ]
         }
-        return [{ kind: 'thread', label: chip.thread.label }]
+        return [{ kind: 'thread', label: chip.thread.label, placement: 'inline' }]
       }),
       ...attachedFiles.map((file) => ({
         kind: 'file' as const,

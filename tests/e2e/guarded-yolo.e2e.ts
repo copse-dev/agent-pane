@@ -17,7 +17,7 @@ import {
   waitForSettledLayout,
 } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-guarded-yolo-project'
@@ -50,12 +50,29 @@ async function enableGuardedYolo(captureWarning = false): Promise<void> {
   await expect(banner).toHaveAttribute('data-phase', 'armed')
 }
 
+async function activateGuardedYolo(): Promise<void> {
+  await enableGuardedYolo()
+  await prepareMockToolTurn(
+    'Show the current working directory to activate this thread’s guarded mode.',
+    { name: 'run_shell', args: { command: 'pwd' } },
+    'Guarded mode is active for this thread.',
+  )
+  await submitComposer()
+  await expectAssistantReply('Guarded mode is active for this thread.')
+  await waitForAgentIdle()
+  await expect($('.guarded-yolo-banner')).toHaveAttribute('data-phase', 'active')
+  await expect($('#approval-dialog')).not.toBeDisplayed()
+}
+
 // These confirmations and hard denials must execute in CI. #1680 retains the
 // historical session-death investigation; a skip is not compensating coverage.
 describe('Guarded YOLO shell mode', function () {
   this.timeout(120_000)
-  before(async () => {
+  before(() => {
     workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-guarded-yolo-'))
+  })
+
+  beforeEach(async () => {
     resetUserData()
     seedEmptyProject(workspaceRoot, PROJECT_ID, {
       subagentsEnabled: false,
@@ -63,6 +80,9 @@ describe('Guarded YOLO shell mode', function () {
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await $('.project-new-thread-btn').click()
+    await expect($('.msg-user')).not.toExist()
+    await expect($('.guarded-yolo-banner')).not.toBeDisplayed()
   })
 
   afterEach(async () => {
@@ -85,7 +105,7 @@ describe('Guarded YOLO shell mode', function () {
       { delayMs: 3000, toolCalls: [{ name: 'run_shell', args: { command: 'cat /etc/hosts' } }] },
       { text: 'The host mappings are shown in the command output.' },
     ])
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const banner = await $('.guarded-yolo-banner').getElement()
     await expect(banner).toHaveAttribute('data-phase', 'active', { wait: 10_000 })
@@ -104,7 +124,7 @@ describe('Guarded YOLO shell mode', function () {
       { delayMs: 1000, toolCalls: [{ name: 'run_shell', args: { command: 'pwd' } }] },
       { text: 'The working directory is shown in the command output.' },
     ])
-    await $('.submit-btn').click()
+    await submitComposer()
     await expect(banner).toHaveAttribute('data-phase', 'active', { wait: 10_000 })
     await waitForAgentIdle()
     await expect(banner).toHaveAttribute('data-phase', 'active')
@@ -112,6 +132,7 @@ describe('Guarded YOLO shell mode', function () {
   })
 
   it('keeps a non-bypassable confirmation for bounded destructive work', async () => {
+    await activateGuardedYolo()
     const banner = await $('.guarded-yolo-banner').getElement()
     await expect(banner).toHaveAttribute('data-phase', 'active')
     await prepareMockToolTurn(
@@ -119,7 +140,7 @@ describe('Guarded YOLO shell mode', function () {
       { name: 'run_shell', args: { command: 'rm -rf tests/e2e/.bounded-delete-missing' } },
       'The directory removal was declined.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const dialog = await $('#approval-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 30_000 })
@@ -141,6 +162,7 @@ describe('Guarded YOLO shell mode', function () {
   })
 
   it('asks once before running anything as another user', async () => {
+    await activateGuardedYolo()
     const banner = await $('.guarded-yolo-banner').getElement()
     await expect(banner).toHaveAttribute('data-phase', 'active')
     await prepareMockToolTurn(
@@ -148,7 +170,7 @@ describe('Guarded YOLO shell mode', function () {
       { name: 'run_shell', args: { command: 'sudo apt-get install -y curl' } },
       'The install was declined.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const dialog = await $('#approval-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 30_000 })
@@ -164,6 +186,7 @@ describe('Guarded YOLO shell mode', function () {
   })
 
   it('runs uncertain script code only after one-time consent', async () => {
+    await activateGuardedYolo()
     const marker = join(workspaceRoot, 'consent-marker.txt')
     writeFileSync(
       join(workspaceRoot, 'shutdown-report.mts'),
@@ -192,7 +215,7 @@ describe('Guarded YOLO shell mode', function () {
     })
     const submitCommand = async (): Promise<void> => {
       await setComposerValue(prompt)
-      await $('.submit-btn').click()
+      await submitComposer()
       await $('#approval-dialog').waitForDisplayed({ timeout: 30_000 })
     }
 
@@ -228,13 +251,19 @@ describe('Guarded YOLO shell mode', function () {
   })
 
   it('hard-denies catastrophic deletion without offering approval', async () => {
+    await activateGuardedYolo()
     await expect($('.guarded-yolo-banner')).toHaveAttribute('data-phase', 'active')
+    const selectedThreadId = await $('.chat-row.selected').getAttribute('data-thread-id')
+    if (!selectedThreadId) throw new Error('Expected the active Guarded YOLO thread')
+    const activationTitle =
+      'Show the current working directory to activate this thread’s guarded mode'
+    await expect($('.chat-row.selected .chat-title')).toHaveText(activationTitle)
     await prepareMockToolTurn(
       'Remove the root filesystem.',
       { name: 'run_shell', args: { command: 'rm -rf /' } },
       'The destructive command was blocked.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     // Idle can still describe the previous turn until the new tool is rendered.
     await browser.waitUntil(
       async () => {
@@ -270,7 +299,8 @@ describe('Guarded YOLO shell mode', function () {
     expect(await failedTool.getText()).toContain('Guarded YOLO harm gate')
     const toolId = await failedTool.getAttribute('data-tool-id')
     if (!toolId) throw new Error('Missing failed tool id')
-    await expect($('.chat-row.selected .chat-title')).toHaveText('Remove the root filesystem')
+    await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', selectedThreadId)
+    await expect($('.chat-row.selected .chat-title')).toHaveText(activationTitle)
     await expect($('.guarded-yolo-banner')).toBeDisplayed()
     await expect($('.guarded-yolo-banner')).toHaveAttribute('data-phase', 'active')
     expect(await failedTool.getText()).toContain('Did not start')

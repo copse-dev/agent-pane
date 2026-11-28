@@ -7,17 +7,32 @@ import { readWorktreePreparationPlan } from '../../src/main/services/worktree-pr
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
+import { submitComposer } from './helpers/composer.ts'
+import { waitForAgentIdle } from './helpers.ts'
 
 const root = join(tmpdir(), 'copse-e2e', 'python-preparation-approval')
+
+function writeRequirements(): void {
+  writeFileSync(
+    join(root, 'requirements.lock'),
+    `example-package==1.2.3 --hash=sha256:${'a'.repeat(64)}\n`,
+  )
+}
+
 describe('automatic Python preparation approval', () => {
-  before(async () => {
+  before(() => {
     removeE2eTree(root)
     mkdirSync(root, { recursive: true })
-    writeFileSync(
-      join(root, 'pyproject.toml'),
-      '[project]\nname="ordinary-python-app"\nversion="0.1.0"\nrequires-python=">=3.11"\ndependencies=[]\n',
-    )
-    writeFileSync(join(root, 'uv.lock'), 'version = 1\nrevision = 3\n')
+  })
+  beforeEach(async () => {
+    for (const input of [
+      'pyproject.toml',
+      'uv.lock',
+      'requirements.lock',
+      '.python-version',
+      '.copse/worktree-preparation.json',
+    ])
+      rmSync(join(root, input), { force: true })
     resetUserData()
     seedEmptyProject(root, 'e2e-python-preparation', {
       subagentsEnabled: false,
@@ -25,19 +40,29 @@ describe('automatic Python preparation approval', () => {
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await $('.project-new-thread-btn').click()
+    await expect($('.msg-user')).not.toExist()
+  })
+  afterEach(async () => {
+    await waitForAgentIdle()
   })
   after(() => {
     resetUserData()
     removeE2eTree(root)
   })
   it('shows the locked uv command and repository-code warning without a declaration', async () => {
+    writeFileSync(
+      join(root, 'pyproject.toml'),
+      '[project]\nname="ordinary-python-app"\nversion="0.1.0"\nrequires-python=">=3.11"\ndependencies=[]\n',
+    )
+    writeFileSync(join(root, 'uv.lock'), 'version = 1\nrevision = 3\n')
     const planFingerprint = readWorktreePreparationPlan(root).fingerprint
     await prepareMockToolTurn(
       'Prepare this worktree using its locked dependencies.',
       { name: 'prepare_worktree', args: { planFingerprint, offline: true } },
       'The worktree preparation request was declined.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
     await expect(dialog.$('.approval-heading')).toHaveText('Prepare this worktree?')
@@ -55,19 +80,14 @@ describe('automatic Python preparation approval', () => {
   })
 
   it('shows exact hash and wheel-only protections for automatic pip preparation', async () => {
-    rmSync(join(root, 'uv.lock'))
-    rmSync(join(root, 'pyproject.toml'))
-    writeFileSync(
-      join(root, 'requirements.lock'),
-      `example-package==1.2.3 --hash=sha256:${'a'.repeat(64)}\n`,
-    )
+    writeRequirements()
     const planFingerprint = readWorktreePreparationPlan(root).fingerprint
     await prepareMockToolTurn(
       'Prepare this hash-locked Python worktree.',
       { name: 'prepare_worktree', args: { planFingerprint, offline: true } },
       'The worktree preparation request was declined.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
     const body = await dialog.$('.approval-body').getText()
@@ -82,6 +102,9 @@ describe('automatic Python preparation approval', () => {
   })
 
   it('shows an explicit installed-uv requirements plan with its exact project interpreter', async () => {
+    writeRequirements()
+    writeFileSync(join(root, '.python-version'), '3.9\n')
+    mkdirSync(join(root, 'vendor'), { recursive: true })
     mkdirSync(join(root, '.copse'), { recursive: true })
     writeFileSync(
       join(root, '.copse/worktree-preparation.json'),
@@ -139,7 +162,7 @@ describe('automatic Python preparation approval', () => {
       { name: 'prepare_worktree', args: { planFingerprint, offline: true } },
       'The worktree preparation request was declined.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
     const body = await dialog.$('.approval-body').getText()

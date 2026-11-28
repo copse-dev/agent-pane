@@ -140,6 +140,37 @@ describe('the sandbox wrapper shell environment', { skip: process.platform === '
   })
 })
 
+describe('local child subscription refusals', () => {
+  const remote: ExecutionTarget = { kind: 'ssh', hostId: 'never-connect', remoteRoot: '/repo' }
+
+  it('refuses a remote child observer before starting any SSH execution', async () => {
+    let observed = false
+    await assert.rejects(
+      spawnInProjectSandbox('never-launch', [], {
+        cwd: '/repo',
+        executionTarget: remote,
+        onChildCreated: () => {
+          observed = true
+        },
+      }),
+      /Cannot subscribe to a remote child before spawn/,
+    )
+    assert.equal(observed, false)
+  })
+
+  it('keeps the required local sandbox refusal ahead of a remote observer', async () => {
+    await assert.rejects(
+      spawnInProjectSandbox('never-launch', [], {
+        cwd: '/repo',
+        executionTarget: remote,
+        requireSandbox: true,
+        onChildCreated: () => assert.fail('no remote child may be created'),
+      }),
+      /requires an active local project sandbox/,
+    )
+  })
+})
+
 describe('spawn environment overrides', () => {
   it('overlays caller variables without dropping the scrubbed base environment', async () => {
     const script =
