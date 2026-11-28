@@ -16,11 +16,12 @@ function createNodeModules(): string {
     writeFileSync(join(root, ...path, 'binary'), 'native fixture')
   }
   mkdirSync(join(root, '@anthropic-ai', 'sandbox-runtime', 'vendor', 'java-proxy-agent'))
+  mkdirSync(join(root, '@anthropic-ai', 'sandbox-runtime', 'vendor', 'seccomp'))
   return root
 }
 
 describe('pruneForeignMacosPayloads', () => {
-  it('removes Windows and Linux payloads while keeping every macOS prebuild', () => {
+  it('removes Windows payloads while keeping every macOS prebuild and the SSH host helpers', () => {
     const root = createNodeModules()
 
     pruneForeignMacosPayloads(root, 'arm64')
@@ -30,8 +31,9 @@ describe('pruneForeignMacosPayloads', () => {
       'darwin-x64',
     ])
     for (const path of FOREIGN_PAYLOADS) assert.equal(existsSync(join(root, ...path)), false)
-    assert.deepEqual(readdirSync(join(root, '@anthropic-ai', 'sandbox-runtime', 'vendor')), [
+    assert.deepEqual(readdirSync(join(root, '@anthropic-ai', 'sandbox-runtime', 'vendor')).sort(), [
       'java-proxy-agent',
+      'seccomp',
     ])
     assert.doesNotThrow(() => {
       pruneForeignMacosPayloads(root, 'x64')

@@ -122,6 +122,26 @@ Two choices need deciding before building:
 _Exit gate:_ start a turn on an SSH thread, close the laptop for ten minutes, reopen it, and
 find the turn finished once with its transcript complete.
 
+_State._ R3 is built in five steps:
+
+1. **The worker on the host (done).**
+   - The turn host is bundled self-contained as `dist/main/ssh-worker.cjs`, with the
+     sandbox runtime packed beside it and the OS keychain stubbed out, so it runs on
+     the host's own Node (22.13 or later).
+   - `src/main/services/ssh-worker/` checks that Node, asks once per app run, uploads
+     the build when the host lacks it (to `~/.copse/worker/<build>/`, hash-checked and
+     renamed into place whole), starts it detached and forwards a local unix socket to
+     the one it serves over the ControlMaster.
+   - `tests/e2e/ssh-worker-start.e2e.ts` runs this against the fake SSH host and gets
+     the worker's hello over the forward.
+   - Nothing sends it turns yet.
+2. **The inference relay** over the forward.
+3. **SSH thread turns run on the host**, with the thread store there. The store moves to
+   a profile that outlives builds (step 1 keeps one per build), and old builds are removed
+   once no worker runs from them.
+4. **The opt-in key lease.**
+5. **The exit gate** as an e2e.
+
 ### R4. External coding agents inside the worker
 
 _Unlocks:_ Claude Code, Codex and other ACP agents survive a quit and, on SSH, the laptop

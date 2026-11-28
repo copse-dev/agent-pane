@@ -373,7 +373,8 @@ export class OpenSshTransport implements SshTransport {
   private connected = false
   private readonly host: SshWorkspaceHost
   private readonly controlPath: string
-  private readonly forwards = new Map<number, SshForwardSpec>()
+  /** Open forwards by local port, or by local socket path. */
+  private readonly forwards = new Map<number | string, SshForwardSpec>()
 
   constructor(host: SshWorkspaceHost, controlPath = controlSocketPath(host.id)) {
     this.host = host
@@ -516,6 +517,31 @@ export class OpenSshTransport implements SshTransport {
       await this.runForwardControl('cancel', spec)
     } finally {
       this.forwards.delete(localPort)
+    }
+  }
+
+  async openSocketForward(localPath: string, remotePath: string): Promise<void> {
+    if (!supportsControlMaster()) {
+      throw new Error('SSH socket forwarding requires ControlMaster support on this platform')
+    }
+    if (!this.connected) throw new Error('SSH transport is not connected')
+    await this.closeSocketForward(localPath)
+    // A socket file left by an earlier forward would make the bind fail.
+    await rm(localPath, { force: true })
+    await mkdir(dirname(localPath), { recursive: true, mode: 0o700 })
+    const spec = { localSocket: localPath, remoteSocket: remotePath }
+    await this.runForwardControl('forward', spec)
+    this.forwards.set(localPath, spec)
+  }
+
+  async closeSocketForward(localPath: string): Promise<void> {
+    const spec = this.forwards.get(localPath)
+    if (!spec) return
+    try {
+      await this.runForwardControl('cancel', spec)
+    } finally {
+      this.forwards.delete(localPath)
+      await rm(localPath, { force: true })
     }
   }
 
