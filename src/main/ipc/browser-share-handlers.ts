@@ -12,6 +12,11 @@ import {
   exportBrowserPagePdf,
 } from '../services/browser/browser-share.ts'
 import { BrowserRecordingService } from '../services/browser/browser-recording.ts'
+import {
+  cancelBrowserElementPick,
+  pickBrowserElement,
+  syncBrowserDesignMarkers,
+} from '../services/browser/design-mode.ts'
 import { assertMainFrameSender, IpcValidationError, parseIpcArgs } from './ipc-guards.ts'
 
 export function registerBrowserShareHandlers(win: BrowserWindow): void {
@@ -75,6 +80,20 @@ export function registerBrowserShareHandlers(win: BrowserWindow): void {
   ipcMain.handle('browser:scroll-position', async (event, rawId: unknown) => {
     return await captureBrowserScrollPosition(interactiveBrowserContents(event, rawId))
   })
+
+  // Design mode: the user picks page elements to send to the agent.
+  ipcMain.handle('browser:design-pick', async (event, rawId: unknown, rawTheme: unknown) => {
+    return await pickBrowserElement(interactiveBrowserContents(event, rawId), rawTheme)
+  })
+  ipcMain.handle('browser:design-cancel', async (event, rawId: unknown) => {
+    await cancelBrowserElementPick(interactiveBrowserContents(event, rawId))
+  })
+  ipcMain.handle(
+    'browser:design-markers',
+    async (event, rawId: unknown, rawIds: unknown, rawTheme: unknown) => {
+      await syncBrowserDesignMarkers(interactiveBrowserContents(event, rawId), rawIds, rawTheme)
+    },
+  )
 
   ipcMain.handle('browser:export-pdf', async (event, rawId: unknown) => {
     const contents = interactiveBrowserContents(event, rawId)

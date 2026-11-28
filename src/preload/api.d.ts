@@ -151,6 +151,7 @@ import type {
 } from '@shared/types/container-run.ts'
 import type { PluginBrowserTabRequest } from '@shared/types/plugin-browser.ts'
 import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
+import type { DesignPickResult, DesignTheme } from '@shared/browser-design-mode.ts'
 import type {
   VncConnection,
   VncDiscoveryHost,
@@ -327,6 +328,16 @@ export interface ApiClient {
      * user scrolls so marks track the content.
      */
     scrollPosition: (webContentsId: number) => Promise<{ x: number; y: number } | null>
+    /**
+     * Design mode: wait for the user to click one element in the tab and
+     * report it (markup, computed style, crop, source location when the page
+     * exposes one). Absent on hosts without a main-process guest (demo/site).
+     */
+    designPick?: (webContentsId: number, theme: DesignTheme) => Promise<DesignPickResult>
+    /** End an in-flight {@link designPick}; it resolves `cancelled`. */
+    designCancel?: (webContentsId: number) => Promise<void>
+    /** Outline the pinned elements (by `pickId`, in tray order); `[]` clears. */
+    designMarkers?: (webContentsId: number, pickIds: number[], theme: DesignTheme) => Promise<void>
     /** Print the tab to a PDF the user picks; resolves null when cancelled. */
     exportPdf: (webContentsId: number) => Promise<string | null>
     /** Download the current live browser page as HTML. */

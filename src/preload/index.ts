@@ -222,6 +222,15 @@ const api: ApiClient = {
     },
     scrollPosition: (webContentsId: number) =>
       ipcRenderer.invoke('browser:scroll-position', webContentsId),
+    designPick: (webContentsId: number, theme: { accent: string; onAccent: string }) =>
+      ipcRenderer.invoke('browser:design-pick', webContentsId, theme),
+    designCancel: (webContentsId: number) =>
+      ipcRenderer.invoke('browser:design-cancel', webContentsId),
+    designMarkers: (
+      webContentsId: number,
+      pickIds: number[],
+      theme: { accent: string; onAccent: string },
+    ) => ipcRenderer.invoke('browser:design-markers', webContentsId, pickIds, theme),
     exportPdf: (webContentsId: number) => ipcRenderer.invoke('browser:export-pdf', webContentsId),
     exportPage: (webContentsId: number) => ipcRenderer.invoke('browser:export-page', webContentsId),
     exportArtefact: (artefact: { title: string; mimeType: string; body: string }) =>
