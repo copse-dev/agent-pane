@@ -611,6 +611,27 @@ function formatAcpAuthError(
 export type ProviderAccessFailure = 'auth' | 'credit'
 
 /**
+ * OpenAI's SDK keeps the body's `code`/`type` on the error and puts only the
+ * body's `message` in `err.message`, so {@link parseProviderError} never sees
+ * them there.
+ */
+function hasSdkInsufficientQuotaCode(err: unknown): boolean {
+  return (
+    isRecord(err) && (err['code'] === 'insufficient_quota' || err['type'] === 'insufficient_quota')
+  )
+}
+
+/**
+ * HTTP 429, from the message's leading status, the SDK error's `status`, or —
+ * for an SSE error frame, which has no HTTP status — OpenRouter's `code`.
+ */
+function isRateLimitStatus(err: unknown, parsedStatus: number | undefined): boolean {
+  if (parsedStatus === 429) return true
+  if (!isRecord(err)) return false
+  return err['status'] === 429 || err['code'] === 429 || err['code'] === '429'
+}
+
+/**
  * Classify a provider failure as a credentials or billing problem — the two
  * cases where re-running the turn on a subscription-billed agent would actually
  * help. Everything else (rate limits, overload, network, bad request) is either
@@ -620,6 +641,11 @@ export type ProviderAccessFailure = 'auth' | 'credit'
  * Anthropic reports an exhausted balance three different ways depending on the
  * account: `402`, a `403` typed `billing_error`, and a `400 invalid_request_error`
  * whose message names the credit balance — all three are `credit`.
+ *
+ * A `429` is `credit` only with OpenAI's structured `insufficient_quota` code.
+ * Its text cannot decide: OpenAI's exhausted balance and Gemini's per-minute
+ * free-tier limit (`RESOURCE_EXHAUSTED`) both say "check your plan and billing
+ * details", and the second clears on its own.
  */
 export function classifyProviderAccessFailure(err: unknown): ProviderAccessFailure | null {
   const { status, type, code, message } = parseProviderError(err)
@@ -629,8 +655,10 @@ export function classifyProviderAccessFailure(err: unknown): ProviderAccessFailu
     status === 402 ||
     code === 'insufficient_quota' ||
     type === 'insufficient_quota' ||
+    hasSdkInsufficientQuotaCode(err) ||
     type === 'billing_error' ||
-    /credit balance is too low|billing|out of credit/i.test(detail)
+    (!isRateLimitStatus(err, status) &&
+      /credit balance is too low|billing|out of credit/i.test(detail))
   )
     return 'credit'
 

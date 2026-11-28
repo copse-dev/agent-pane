@@ -7,9 +7,12 @@ import {
   ADVISOR_PROVIDER_OPTIONS,
   createAdvisorRunner,
   resolveAdvisorModelForGating,
+  type AdvisorRunner,
   type AdvisorRunnerDeps,
 } from './advisor-runner.ts'
 import type { AdvisorRunnerContext } from './advisor-runner-context.ts'
+import { RequestError } from '@agentclientprotocol/sdk'
+import { ToolCircuitBreaker } from './tool-circuit-breaker.ts'
 import {
   DEFAULT_ADVISOR_MAX_TOKENS,
   MAX_ADVISOR_TRANSCRIPT_CHARS,
@@ -108,6 +111,9 @@ function deps(
       return Promise.resolve(provider)
     },
     runAcpPrompt: () => Promise.reject(new Error('ACP not expected in this test')),
+    breaker: new ToolCircuitBreaker(),
+    currentThreadId: () => null,
+    isLocalServer: (model) => model.startsWith('lmstudio:'),
   }
 }
 
@@ -269,6 +275,103 @@ describe('advisor runner', () => {
     assert.equal(call.agentId, 'claude-code')
     controller.abort()
     assert.equal(call.signal.aborted, true)
+  })
+})
+
+describe('advisor circuit breaker', () => {
+  /** An ACP advisor whose agent's login has expired: every consult is refused. */
+  function signedOutAcp(
+    recorded: Recorded,
+    breaker: ToolCircuitBreaker,
+    threadId = 't1',
+  ): { run: AdvisorRunner; consults: () => number } {
+    let consults = 0
+    const run = createAdvisorRunner(context(recorded, [{ role: 'user', content: 'Task' }]), {
+      ...deps(recorded, answeringProvider(recorded), 'acp:codex'),
+      breaker,
+      currentThreadId: () => threadId,
+      runAcpPrompt: () => {
+        consults++
+        return Promise.reject(new RequestError(-32000, 'Authentication required'))
+      },
+    })
+    return { run, consults: () => consults }
+  }
+
+  it('consults an always-unauthenticated advisor once per thread, then fails fast', async () => {
+    const recorded = fresh()
+    const breaker = new ToolCircuitBreaker()
+    const { run, consults } = signedOutAcp(recorded, breaker)
+    const errors: string[] = []
+    for (let i = 0; i < 5; i++) {
+      await run(new AbortController().signal).then(
+        () => assert.fail('a signed-out advisor must not return advice'),
+        (err: unknown) => errors.push(err instanceof Error ? err.message : String(err)),
+      )
+    }
+    assert.equal(consults(), 1)
+    assert.equal(errors.length, 5)
+    for (const message of errors) {
+      // Actionable for the user, and an explicit stop for the executor.
+      assert.match(message, /The advisor is unavailable for up to 15 minutes/)
+      assert.match(message, /`acp:codex` needs you to sign in/)
+      assert.match(message, /Advisor role in Settings → Models/)
+      assert.match(message, /Do not call the advisor tool again/)
+    }
+    assert.equal(recorded.chunks.length, 0, 'a failed consult reports no advisor usage')
+  })
+
+  it('scopes the trip to the thread and re-arms when the advisor selection changes', async () => {
+    const breaker = new ToolCircuitBreaker()
+    const first = signedOutAcp(fresh(), breaker, 't1')
+    await assert.rejects(first.run(new AbortController().signal))
+    await assert.rejects(first.run(new AbortController().signal))
+    assert.equal(first.consults(), 1)
+    // Another thread pays its own single probe.
+    const other = signedOutAcp(fresh(), breaker, 't2')
+    await assert.rejects(other.run(new AbortController().signal))
+    assert.equal(other.consults(), 1)
+    // The user picks a different advisor model: the trip no longer applies.
+    assert.equal(breaker.get('t1', 'advisor', 'claude-opus-4-8'), null)
+  })
+
+  it('does not trip on a transient failure', async () => {
+    const recorded = fresh()
+    const breaker = new ToolCircuitBreaker()
+    let consults = 0
+    const run = createAdvisorRunner(context(recorded, [{ role: 'user', content: 'Task' }]), {
+      ...deps(recorded, answeringProvider(recorded), 'acp:codex'),
+      breaker,
+      currentThreadId: () => 't1',
+      runAcpPrompt: () => {
+        consults++
+        return Promise.reject(new Error('API Error: 529 Overloaded'))
+      },
+    })
+    await assert.rejects(run(new AbortController().signal), /Overloaded/)
+    await assert.rejects(run(new AbortController().signal), /Overloaded/)
+    assert.equal(consults, 2)
+    assert.equal(breaker.get('t1', 'advisor', 'auto:best-intellect'), null)
+  })
+
+  it('names LM Studio when a local advisor server is not running', async () => {
+    const recorded = fresh()
+    const breaker = new ToolCircuitBreaker()
+    // What the OpenAI SDK's APIConnectionError reports when nothing listens.
+    const refusing: LLMProvider = {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        await Promise.reject(new Error('Connection error.'))
+        yield { type: 'done' as const }
+      },
+    }
+    const run = createAdvisorRunner(context(recorded, [{ role: 'user', content: 'Task' }]), {
+      ...deps(recorded, refusing, 'lmstudio:qwen/qwen3.6-35b-a3b'),
+      breaker,
+      currentThreadId: () => 't1',
+    })
+    await assert.rejects(run(new AbortController().signal), /is LM Studio running/)
+    await assert.rejects(run(new AbortController().signal), /is LM Studio running/)
+    assert.equal(recorded.builds.length, 1, 'the second call never reached the provider')
   })
 })
 

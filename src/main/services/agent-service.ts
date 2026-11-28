@@ -199,7 +199,12 @@ import { applyArchiveToolAvailability, getThreadArchives } from './archive/threa
 import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
 import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 import { runWithCiInvestigatorContext } from './ci-investigator-runner.ts'
-import { resolveAdvisorModelForGating, resolveAdvisorModelId } from './advisor-runner.ts'
+import {
+  isAdvisorWithdrawn,
+  resolveAdvisorModelForGating,
+  resolveAdvisorModelId,
+} from './advisor-runner.ts'
+import { toolCircuitBreaker } from './tool-circuit-breaker.ts'
 import { runWithAdvisorContext } from './advisor-runner-context.ts'
 import { createSkillActivationTurn, runWithSkillActivationTurn } from './skills/skill-activation.ts'
 import { advisorAddsLift } from './advisor-strategy.ts'
@@ -463,10 +468,16 @@ function parentTools(
   // the executor (same model, or a confidently weaker annotated pairing) — it
   // would only spend tokens for no lift. Conservative: cross-scale/unannotated
   // pairings keep it (see advisorAddsLift). No-op unless the tool is registered.
+  //
+  // Also hide it once its circuit breaker is open for this thread (the advisor
+  // failed unrecoverably — sign-in needed, local server down). Withdrawn here,
+  // at the turn boundary, rather than mid-turn: changing the toolset inside a
+  // turn would invalidate the prompt cache on every following step, while the
+  // in-turn calls already fail instantly with an actionable stop message.
   if (
     advisorModel !== null &&
     tools.some((t) => t.name === 'advisor') &&
-    !advisorAddsLift(executorModel, advisorModel)
+    (!advisorAddsLift(executorModel, advisorModel) || isAdvisorWithdrawn(threadId))
   ) {
     tools = tools.filter((t) => t.name !== 'advisor')
   }
@@ -2007,7 +2018,16 @@ async function runAgentWithInlineCanvas(
     // dynamic selector like `auto:…`), so the renderer can stamp both onto the
     // assistant message.
     sendChunk({ type: 'turn_parameters', model, parameters: turnParameters, requestedModel })
-    const subagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
+    // A route whose model already failed unrecoverably in this thread (LM Studio
+    // not running, sign-in needed) is skipped until its selection changes or the
+    // breaker's cooldown lapses: exploration then runs on the parent model, the
+    // same fallback as when no local route resolves (see tool-circuit-breaker.ts).
+    const configuredSubagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
+    const subagentRoute =
+      configuredSubagentRoute &&
+      toolCircuitBreaker.get(threadId, 'explore', configuredSubagentRoute.selection)
+        ? null
+        : configuredSubagentRoute
     const exploreUsageModel = subagentRoute?.usageModel ?? model
     // Local routing was asked for (cloud parent + setting on) but no local
     // route resolved (LM Studio down / no model): the fallback to the cloud
@@ -2511,6 +2531,21 @@ async function runAgentWithInlineCanvas(
                 onChunk: sendChunk,
                 usageModel: exploreUsageModel,
                 localFallback: subagentLocalFallback,
+                ...(subagentRoute
+                  ? {
+                      route: {
+                        threadId,
+                        selection: subagentRoute.selection,
+                        localServer: !isBillableModel(subagentRoute.usageModel),
+                        fallback: {
+                          provider,
+                          contextWindow,
+                          toolSchemaReserve,
+                          usageModel: model,
+                        },
+                      },
+                    }
+                  : {}),
               },
               () => registry.execute(name, args, signal),
             )
