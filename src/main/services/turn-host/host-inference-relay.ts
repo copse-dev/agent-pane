@@ -137,11 +137,14 @@ export class HostInferenceRelay {
       const value = ready()
       if (value !== undefined) return value
       const { promise, resolve, reject } = Promise.withResolvers<undefined>()
-      const abort = (): void => {
-        reject(signal?.reason instanceof Error ? signal.reason : new Error('Cancelled'))
-      }
       const wake = (): void => {
         resolve(undefined)
+      }
+      const abort = (): void => {
+        // Gone at once, not in the finally a microtask later: a release in
+        // between would otherwise spend its wake-up on this dead waiter.
+        waiters.delete(wake)
+        reject(signal?.reason instanceof Error ? signal.reason : new Error('Cancelled'))
       }
       signal?.addEventListener('abort', abort, { once: true })
       waiters.add(wake)
