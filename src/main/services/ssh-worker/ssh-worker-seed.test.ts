@@ -351,6 +351,31 @@ describe('what the worker on an SSH host is given', () => {
     await assert.rejects(seedSshWorker(connection, host, input), /went on both/)
   })
 
+  it('keeps as refused only the prompt the host refused, not one before it', async () => {
+    const host = node('home-refused-one')
+    const synced = '{"n":1}\n'
+    const local = localThread('t12', { 'meta.json': meta('t12'), 'events.jsonl': synced })
+    const remote = remoteThreadDir(host, 'p1', 't12')
+    const input = { settings: {}, project: PROJECT, threadId: 't12' }
+    const { connection } = localHost()
+    await seedSshWorker(connection, host, input)
+    const line = (id: string): string => `${JSON.stringify(userLine(id))}\n`
+
+    // A prompt that ran here, cut off, then one the host refused.
+    const lease = { heartbeatAt: Date.now(), ttlMs: 30_000, pid: process.pid }
+    writeFileSync(join(remote, 'writer.lease.1'), JSON.stringify(lease))
+    writeFileSync(join(local, 'events.jsonl'), synced + line('ran') + line('refused'))
+    await assert.rejects(seedSshWorker(connection, host, input), /still running/)
+
+    writeFileSync(join(remote, 'writer.lease.1'), JSON.stringify({ ...lease, releasedAt: 1 }))
+    writeFileSync(join(remote, 'events.jsonl'), `${synced}{"n":"wake"}\n`)
+    writeFileSync(
+      join(local, 'events.jsonl'),
+      synced + line('ran') + line('refused') + line('next'),
+    )
+    await assert.rejects(seedSshWorker(connection, host, input), /went on both/)
+  })
+
   it('reads a sync mark from before its length was kept', async () => {
     const host = node('home-old-mark')
     const synced = '{"n":1}\n{"n":2}\n'

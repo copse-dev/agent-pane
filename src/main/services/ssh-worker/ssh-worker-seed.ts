@@ -233,6 +233,13 @@ function promptIds(events: Buffer, from: number): string[] {
     .flatMap((line) => (line?.type === 'message' && line.role === 'user' ? [line.id] : []))
 }
 
+/** {@link markRefused}, whose failure must not stop the refusal it goes with. */
+async function markRefusedOrLog(dir: string, threadId: string): Promise<void> {
+  await markRefused(dir, threadId).catch((error: unknown) => {
+    console.warn(`[ssh-worker] could not keep ${threadId}'s refused prompt: ${String(error)}`)
+  })
+}
+
 /**
  * The host would not take the thread while its turn ran there: the prompts
  * added here since the sync are kept as refused, so once that turn ends they
@@ -244,7 +251,11 @@ async function markRefused(dir: string, threadId: string): Promise<void> {
   if (mark === null || events === null) return
   const shared = sharedLength(events, mark)
   if (shared === null) return
-  const refused = [...new Set([...mark.refused, ...promptIds(events, shared)])]
+  // The prompt being sent now, which the store wrote before asking for the
+  // turn; an earlier one may have run here.
+  const refusedNow = promptIds(events, shared).at(-1)
+  if (refusedNow === undefined) return
+  const refused = [...new Set([...mark.refused, refusedNow])]
   await writeMark(dir, threadId, { hash: mark.hash, size: shared, refused })
 }
 
@@ -366,7 +377,7 @@ export async function seedSshWorker(
   const local = threadDirectoryPath(projectId, threadId)
   const there = await hostThreadState(connection, node, projectId, threadId, WHOLE)
   if (there.held) {
-    await markRefused(local, threadId)
+    await markRefusedOrLog(local, threadId)
     throw new SshThreadRefused(SSH_THREAD_BUSY)
   }
   if (there.size >= 0) {
@@ -409,7 +420,7 @@ export async function seedSshWorker(
     timeoutMs: 600_000,
   })
   if (copied.code === THREAD_HELD_EXIT) {
-    await markRefused(local, threadId)
+    await markRefusedOrLog(local, threadId)
     throw new SshThreadRefused(SSH_THREAD_BUSY)
   }
   if (copied.code !== 0)
@@ -483,7 +494,13 @@ export async function pullThreadMirror(
     }
     // The host's events are what both copies now share; prompts kept here
     // are this copy's to send.
-    if (hostEvents !== undefined) await writeSyncMark(dir, threadId, hostEvents.data)
+    if (hostEvents !== undefined)
+      await writeMark(dir, threadId, {
+        hash: sha256(hostEvents.data),
+        size: hostEvents.data.length,
+        // Until they reach the host, the kept prompts are still refused ones.
+        refused: prompts === null ? [] : (keepPrompts?.refused ?? []),
+      })
   })
   return true
 }
