@@ -16,7 +16,10 @@ Default to the cheapest layer that can actually fail on the bug:
    `data-*` attrs, store wiring, markdown output. The renderer is vanilla
    DOM/TS over a store, so most "does the UI do X" questions answer here without
    a browser engine. See `src/renderer/views/new-thread-keeps-panel.test.ts` for
-   the canonical shape.
+   the canonical shape. Call the unmount a `mount*` function returns once the
+   test is done: a view left mounted keeps its timers, and one pending timer
+   holds the test file's process open (a mounted conversation kept eleven files
+   alive 30 s each after their last test).
 3. **Browser geometry** (`tests/demo/*.demo.ts`, WebdriverIO + plain Chrome) — real layout and
    computed styles over deterministic in-memory state, without Electron lifecycle cost.
 4. **E2E** (`tests/e2e/*.e2e.ts`, WebdriverIO + real Electron) — only the

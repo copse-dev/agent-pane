@@ -13,6 +13,11 @@ import { DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/continuation-bud
 import { mountConversation } from './conversation.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 
+// A mounted conversation keeps timers of its own (the environment-setup offer
+// re-checks 30 s after a thread status change), so one left mounted holds this
+// file's test process open until they fire. Unmount each view after its test.
+const unmounts: (() => void)[] = []
+
 // C2 held-state UI (decisions 5 & 16). A hook-originated message downgraded to
 // held renders with a distinct "Held" badge and a "Release" action (not the plain
 // "Send now" of a normal queued item); clicking Release un-holds it and submits.
@@ -51,6 +56,7 @@ function fakeApi(): ApiClient & { runs: Array<[string, string]>; aborts: string[
 }
 
 afterEach(() => {
+  for (const unmount of unmounts.splice(0)) unmount()
   document.body.replaceChildren()
 })
 
@@ -61,7 +67,7 @@ describe('held queued message (component)', () => {
     const threadId = createThread(store)
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, api)
+    unmounts.push(mountConversation(host, store, api))
     store.setState({
       threads: store.getState().threads.map((t) => ({ ...t, crossThreadPromptsUsed: 5 })),
     })
@@ -85,7 +91,7 @@ describe('held queued message (component)', () => {
     const threadId = createThread(store)
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, api)
+    unmounts.push(mountConversation(host, store, api))
 
     const messageId = addMessage(store, threadId, 'user', 'late hook follow-up')
     enqueueUserMessage(store, threadId, {
@@ -118,7 +124,7 @@ describe('held queued message (component)', () => {
     const threadId = createThread(store)
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, api)
+    unmounts.push(mountConversation(host, store, api))
 
     const messageId = addMessage(store, threadId, 'user', 'release me')
     enqueueUserMessage(store, threadId, {
@@ -157,7 +163,7 @@ describe('held queued message (component)', () => {
     const threadId = createThread(store)
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, api)
+    unmounts.push(mountConversation(host, store, api))
 
     // Exhaust the budget, then a hook follow-up arrives and the queue drains.
     store.setState({
