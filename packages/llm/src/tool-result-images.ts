@@ -59,8 +59,9 @@ export function toolResultContentBlocks(
  * model re-runs the tool or follows an explicit durable reference in the text
  * instead of replaying stale base64.
  *
- * Returns the same array when nothing carries images, so the common case does
- * no copying.
+ * Always returns a new array, so a caller can keep it as a snapshot while the
+ * original grows. When nothing carries images it holds the same message
+ * objects, so the common case copies no message.
  */
 export function stripToolResultImages(messages: readonly LLMMessage[]): LLMMessage[] {
   const hasImages = messages.some(

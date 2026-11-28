@@ -24,7 +24,7 @@ export function externalSessionImportDeps(): ExternalSessionImportDeps {
     },
     claudeThreadConfigDir: acpAgentConfigDir,
     saveHistory: (projectId, threadId, history) => saveAgentHistory(projectId, threadId, history),
-    saveBinding: (projectId, threadId, binding) =>
+    saveBinding: async (projectId, threadId, binding) =>
       saveAcpSessionBinding(projectId, threadId, {
         v: 1,
         agentId: binding.agentId,
@@ -35,7 +35,7 @@ export function externalSessionImportDeps(): ExternalSessionImportDeps {
         agentConfigGeneration: 0,
         createdBy: 'external',
         lastAttachedAt: Date.now(),
-        transcriptCheckpoint: checkpointAcpHistory(binding.history),
+        transcriptCheckpoint: await checkpointAcpHistory(binding.history),
         ...(binding.sharedFile ? { sharedSessionFile: binding.sharedFile } : {}),
       }),
   }

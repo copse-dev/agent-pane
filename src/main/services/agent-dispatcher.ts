@@ -353,6 +353,12 @@ function createHistoryCheckpointWriter(
 /** Main-process authority for starting primary agent turns and committing provider history. */
 export class AgentDispatcher {
   private readonly histories = new Map<string, LLMMessage[]>()
+  /**
+   * Loads still in flight, so callers that miss {@link histories} together (a
+   * context estimate and a dispatch at launch, say) share one read and parse of
+   * the sidecar rather than each loading a file that can be tens of megabytes.
+   */
+  private readonly historyLoads = new Map<string, Promise<LLMMessage[]>>()
   private readonly active = new Map<string, Promise<unknown>>()
   private readonly deleting = new Set<string>()
   private readonly editingHistory = new Set<string>()
@@ -584,27 +590,52 @@ export class AgentDispatcher {
     await Promise.allSettled(pending)
   }
 
-  async history(projectId: string, threadId: string): Promise<LLMMessage[]> {
+  history(projectId: string, threadId: string): Promise<LLMMessage[]> {
     const key = dispatchKey(projectId, threadId)
-    let messages = this.histories.get(key)
-    if (!messages) {
-      messages = await this.dependencies.loadHistory(projectId, threadId)
-      // An empty sidecar means either a genuinely fresh thread or a run that
-      // died before it could commit one. Only the transcript can tell the two
-      // apart, and only in the second case does it have anything to give back —
-      // so ask it rather than starting a thread with visible history from zero.
-      if (messages.length === 0) {
-        messages = await this.dependencies.recoverHistory(projectId, threadId)
-      }
-      this.histories.set(key, messages)
-    }
-    return messages
+    const cached = this.histories.get(key)
+    if (cached) return Promise.resolve(cached)
+    const inFlight = this.historyLoads.get(key)
+    if (inFlight) return inFlight
+    const load = this.loadOrRecoverHistory(projectId, threadId).then(
+      (messages) => {
+        if (this.historyLoads.get(key) !== load) return messages
+        this.historyLoads.delete(key)
+        // A checkpoint committed while the file was being read is newer than
+        // what the read found.
+        const current = this.histories.get(key)
+        if (current) return current
+        this.histories.set(key, messages)
+        return messages
+      },
+      (error: unknown) => {
+        if (this.historyLoads.get(key) === load) this.historyLoads.delete(key)
+        throw error
+      },
+    )
+    this.historyLoads.set(key, load)
+    return load
+  }
+
+  private async loadOrRecoverHistory(projectId: string, threadId: string): Promise<LLMMessage[]> {
+    const messages = await this.dependencies.loadHistory(projectId, threadId)
+    // An empty sidecar means either a genuinely fresh thread or a run that
+    // died before it could commit one. Only the transcript can tell the two
+    // apart, and only in the second case does it have anything to give back —
+    // so ask it rather than starting a thread with visible history from zero.
+    if (messages.length > 0) return messages
+    return this.dependencies.recoverHistory(projectId, threadId)
   }
 
   forgetHistory(projectId: string, threadId: string): void {
     const key = dispatchKey(projectId, threadId)
-    this.histories.delete(key)
+    this.dropCachedHistory(key)
     this.epochs.delete(key)
+  }
+
+  private dropCachedHistory(key: string): void {
+    this.histories.delete(key)
+    // A load already reading the old file must not cache what it finds.
+    this.historyLoads.delete(key)
   }
 
   private async observeRendererEpoch(key: string, request: AgentDispatchRequest): Promise<void> {
@@ -923,10 +954,16 @@ export class AgentDispatcher {
   ): Promise<TurnOutcome | undefined> {
     const { projectId, threadId, payload } = request
     // Context estimates can cache an empty history before the outgoing prompt
-    // is saved. Rebuild against the now-persisted transcript at dispatch, rather
-    // than treating that earlier empty projection as authoritative forever.
+    // is saved, or still be loading one. Rebuild against the now-persisted
+    // transcript at dispatch, rather than treating that earlier empty
+    // projection as authoritative forever.
     if (this.histories.get(key)?.length === 0) this.histories.delete(key)
-    const priorMessages = await this.history(projectId, threadId)
+    const loadStartedEarlier = this.historyLoads.has(key)
+    let priorMessages = await this.history(projectId, threadId)
+    if (loadStartedEarlier && priorMessages.length === 0) {
+      this.histories.delete(key)
+      priorMessages = await this.history(projectId, threadId)
+    }
     const executionContext = await this.dependencies.prepareExecutionContext(
       projectId,
       threadId,
@@ -1024,7 +1061,7 @@ export class AgentDispatcher {
     }
     if (fenced()) {
       // The new holder's history is the thread's now; this cache is not.
-      this.histories.delete(key)
+      this.dropCachedHistory(key)
       throw new WriterLeaseLostError(threadId)
     }
     try {
@@ -1035,7 +1072,7 @@ export class AgentDispatcher {
       // The final write can fail after a successful checkpoint. Forget the
       // cache so the next turn reloads the authoritative sidecar rather than
       // reusing an uncommitted final snapshot.
-      this.histories.delete(key)
+      this.dropCachedHistory(key)
       throw error
     }
   }
