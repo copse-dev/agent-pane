@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { spawn, spawnSync } from 'node:child_process'
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
@@ -9,6 +18,8 @@ import {
   installDir,
   nodeIsRecentEnough,
   parseRemoteNode,
+  profileDir,
+  pruneArgv,
   startArgv,
   unpackArgv,
   type RemoteNode,
@@ -88,15 +99,50 @@ describe('the host side of the SSH worker', () => {
     // Writes its ready file as the turn host does, then leaves.
     writeFileSync(
       join(dir, 'ssh-worker.cjs'),
-      'const a = process.argv; require("fs").writeFileSync(a[a.indexOf("--ready-file") + 1], "/run/w.sock\\n")',
+      'const a = process.argv; const fs = require("fs"); fs.writeFileSync(a[a.indexOf("--ready-file") + 1], "/run/w.sock\\n"); fs.mkdirSync(a[a.indexOf("--user-data") + 1]); fs.writeFileSync(a[a.indexOf("--user-data") + 1] + "/seen", process.env.COPSE_DIR)',
     )
     const started = run(startArgv(node, dir, '1.2.3'))
     assert.equal(started.code, 0, started.stderr)
     assert.equal(started.stdout.trim(), '/run/w.sock')
+    // Every build serves the one profile the host keeps, made private.
+    assert.equal(
+      readFileSync(join(profileDir(node), 'user-data', 'seen'), 'utf8'),
+      profileDir(node),
+    )
+    assert.equal(statSync(profileDir(node)).mode & 0o777, 0o700)
 
     writeFileSync(join(dir, 'ssh-worker.cjs'), 'console.error("cannot start"); process.exit(1)')
     const died = run(startArgv(node, dir, '1.2.3'))
     assert.equal(died.code, 1)
     assert.match(died.stderr, /cannot start/)
+  })
+
+  it('removes the builds no worker runs from, and keeps the profile', async () => {
+    const home = join(scratch, 'prune')
+    const workers = join(home, '.copse', 'worker')
+    const keep = 'a'.repeat(16)
+    const old = 'b'.repeat(16)
+    const busy = 'c'.repeat(16)
+    const fresh = 'e'.repeat(16)
+    const hourAgo = new Date(Date.now() - 3_600_000)
+    for (const name of [keep, old, busy, fresh, 'profile', `${'d'.repeat(16)}.part-999999999`]) {
+      mkdirSync(join(workers, name), { recursive: true })
+      // Only the fresh build was uploaded just now.
+      if (name !== fresh) utimesSync(join(workers, name), hourAgo, hourAgo)
+    }
+    // A worker of the busy build, as `ps` shows one: its bundle by full path.
+    const running = spawn(process.execPath, [
+      '-e',
+      'setInterval(() => {}, 1000)',
+      join(workers, busy, 'ssh-worker.cjs'),
+    ])
+    try {
+      await new Promise((resolve) => running.once('spawn', resolve))
+      const pruned = run(pruneArgv({ ...node, home }, keep))
+      assert.equal(pruned.code, 0, pruned.stderr)
+      assert.deepEqual(readdirSync(workers).sort(), [keep, busy, fresh, 'profile'].sort())
+    } finally {
+      running.kill()
+    }
   })
 })

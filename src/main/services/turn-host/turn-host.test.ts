@@ -349,6 +349,20 @@ describe('TurnHost', { timeout: 30_000 }, () => {
     plain.dispose()
   })
 
+  it('stays for an app of another version that only asks', () => {
+    let idle = 0
+    const { host: turnHost } = host({
+      onIdle: () => {
+        idle += 1
+      },
+    })
+    const peer = app()
+    turnHost.handle({ t: 'hello', version: '9.9.9', protocol: 3, probe: true }, peer.client)
+    assert.ok(peer.sent.some((m) => m.t === 'hello'))
+    assert.equal(idle, 0)
+    turnHost.dispose()
+  })
+
   it('runs nothing for an app of another version, and retires', async () => {
     await saveProjectThread('p1', idleThread('c'))
     let idle = 0

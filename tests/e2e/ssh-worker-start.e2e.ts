@@ -118,8 +118,11 @@ describe('Copse worker on an SSH host', () => {
     workerPid = started.hello.pid
     assert.deepEqual(started.hello.capabilities.roles, ['turns'])
 
-    // One install, named by the build, holding the bundle and the runtime it loads.
-    const installs = readdirSync(join(remoteHome, '.copse', 'worker'))
+    // One install, named by the build, holding the bundle and the runtime it
+    // loads, beside the profile every build shares.
+    const entries = readdirSync(join(remoteHome, '.copse', 'worker'))
+    assert.ok(entries.includes('profile'))
+    const installs = entries.filter((name) => name !== 'profile')
     assert.equal(installs.length, 1)
     const dir = join(remoteHome, '.copse', 'worker', installs[0] ?? '')
     assert.ok(existsSync(join(dir, 'ssh-worker.cjs')))
