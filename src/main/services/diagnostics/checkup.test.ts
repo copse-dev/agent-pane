@@ -18,6 +18,12 @@ const gitOk = spawnSync('git', ['--version']).status === 0
 describe('runCheckup with two roots at once', { skip: !gitOk }, () => {
   const repos = { alpha: '', beta: '', window: '' }
   let restoreWorkspace: (() => void) | undefined
+  // The checkup also reads the profile (the renderer crash log, for one). A
+  // developer machine's real `~/.copse` would leak rows such as "3 window
+  // crashes" into the report, so point the profile at an empty directory.
+  let profile = ''
+  const previousCopseDir = process.env['COPSE_DIR']
+  const previousUserData = process.env['COPSE_PANEL_USER_DATA']
 
   async function makeRepo(name: string): Promise<string> {
     const root = await realpath(await mkdtemp(join(tmpdir(), `copse-checkup-${name}-`)))
@@ -42,6 +48,9 @@ describe('runCheckup with two roots at once', { skip: !gitOk }, () => {
   }
 
   before(async () => {
+    profile = await mkdtemp(join(tmpdir(), 'copse-checkup-profile-'))
+    process.env['COPSE_DIR'] = profile
+    delete process.env['COPSE_PANEL_USER_DATA']
     repos.alpha = await makeRepo('alpha')
     repos.beta = await makeRepo('beta')
     repos.window = await makeRepo('window')
@@ -52,7 +61,12 @@ describe('runCheckup with two roots at once', { skip: !gitOk }, () => {
   after(async () => {
     restoreWorkspace?.()
     setGitAvailableForTest(null)
-    for (const root of Object.values(repos)) await rm(root, { recursive: true, force: true })
+    if (previousCopseDir === undefined) delete process.env['COPSE_DIR']
+    else process.env['COPSE_DIR'] = previousCopseDir
+    if (previousUserData !== undefined) process.env['COPSE_PANEL_USER_DATA'] = previousUserData
+    for (const root of [...Object.values(repos), profile]) {
+      if (root !== '') await rm(root, { recursive: true, force: true })
+    }
   })
 
   const workspaceDetail = async (root: string | null): Promise<string> => {
@@ -68,7 +82,8 @@ describe('runCheckup with two roots at once', { skip: !gitOk }, () => {
     assert.match(alpha, new RegExp(`${repos.alpha} — .*git branch alpha-branch`))
     assert.match(beta, new RegExp(`${repos.beta} — .*git branch beta-branch`))
     for (const detail of [alpha, beta]) {
-      assert.doesNotMatch(detail, /window/)
+      assert.ok(!detail.includes(repos.window), detail)
+      assert.doesNotMatch(detail, /window-branch/)
     }
   })
 })

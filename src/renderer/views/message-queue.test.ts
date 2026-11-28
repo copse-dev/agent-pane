@@ -8,6 +8,11 @@ import { drainMessageQueue, enqueueUserMessage } from '../controller/message-que
 import { mountConversation } from './conversation.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 
+// A mounted conversation keeps timers of its own (the environment-setup offer
+// re-checks 30 s after a thread status change), so one left mounted holds this
+// file's test process open until they fire. Unmount each view after its test.
+const unmounts: (() => void)[] = []
+
 // Component port of tests/e2e/message-queue.e2e.ts. A follow-up queued while the
 // agent runs renders in the pinned panel, then — once the turn finishes and the
 // queue drains — moves inline after the completed turn in FIFO order with the
@@ -41,6 +46,7 @@ function fakeApi(): ApiClient & { runs: Array<[string, string]> } {
 }
 
 afterEach(() => {
+  for (const unmount of unmounts.splice(0)) unmount()
   document.body.replaceChildren()
 })
 
@@ -52,7 +58,7 @@ describe('message queue (component)', () => {
     setThreadStatus(store, threadId, 'running')
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, api)
+    unmounts.push(mountConversation(host, store, api))
 
     // The running turn: the user's first prompt and the assistant's reply.
     addMessage(store, threadId, 'user', 'first prompt')
