@@ -1,3 +1,4 @@
+import type { HostInferenceRelay } from './host-inference-relay.ts'
 import { randomUUID } from 'node:crypto'
 import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
 import type { StreamChunk } from '@shared/types'
@@ -6,6 +7,7 @@ import { AgentTurnBusyError } from '@shared/agent-turn-busy.ts'
 import {
   AgentDispatcher,
   defaultAgentDispatcherDependencies,
+  type AgentDispatchRequest,
   type AgentDispatcherDependencies,
 } from '../agent-dispatcher.ts'
 import { abortAgent } from '../agent-service.ts'
@@ -15,6 +17,7 @@ import { runWithStagedDiffResolver } from '../diff-queue.ts'
 import { runWithSshPromptHandler } from '../ssh-workspace/ssh-prompt.ts'
 import { getSetting } from '../storage/settings.ts'
 import {
+  acceptReviewedUserMessage,
   appendMessage,
   placeMessageAfter,
   getProjectThread,
@@ -54,6 +57,7 @@ import {
   type TurnHostClient,
 } from './turn-host-protocol.ts'
 import { NO_CAPABILITIES, type WorkerCapabilities } from '../worker-protocol/worker-capabilities.ts'
+import type { ReviewedTurn } from './reviewed-turn.ts'
 
 /**
  * The resident turn host (`docs/plans/local-turn-worker.md`, "Every turn in a
@@ -95,10 +99,17 @@ export interface TurnHostDependencies {
    * claim their responses here. Throws what the scenario store throws.
    */
   testScenario?: (op: TestScenarioOp) => TestScenarioStatus | undefined
+  /**
+   * Model calls made by the attached app, for a worker that holds no keys
+   * (`host-inference-relay.ts`). A host on the app's own machine has none.
+   */
+  inferenceRelay?: HostInferenceRelay
 }
 
 interface ClientState {
   version: string | null
+  /** It only asked which version serves here. */
+  probe: boolean
 }
 
 export class TurnHost {
@@ -224,10 +235,11 @@ export class TurnHost {
   handle(message: AppToHost, client: TurnHostClient): void {
     switch (message.t) {
       case 'hello':
-        this.clients.set(client, { version: message.version })
+        this.clients.set(client, { version: message.version, probe: message.probe === true })
         // An app of another version means an update was installed: finish the
-        // turns here and make way for a host of the app's own version.
-        if (message.version !== this.deps.version && !this.retiring) {
+        // turns here and make way for a host of the app's own version. An app
+        // that is only asking which version serves here changes nothing.
+        if (message.version !== this.deps.version && message.probe !== true && !this.retiring) {
           this.deps.log(`an app of version ${message.version} attached: retiring`)
           this.retire()
         }
@@ -239,9 +251,14 @@ export class TurnHost {
           capabilities: this.deps.capabilities?.() ?? NO_CAPABILITIES,
         })
         return
-      case 'attach':
-        this.attach(client)
+      case 'attach': {
+        // Only an app that said which version it is, and is not only asking
+        // that, sees this host's turns.
+        const state = this.clients.get(client)
+        if (state !== undefined && !state.probe) this.attach(client)
+        else this.deps.log('an app asked to attach without saying hello first: ignored')
         return
+      }
       case 'stop':
         this.stop(message.threadId, message.reason)
         return
@@ -304,6 +321,12 @@ export class TurnHost {
       case 'test-scenario':
         client.send({ t: 'test-scenario-result', id: message.id, ...this.testScenario(message.op) })
         return
+      case 'infer-chunk':
+      case 'infer-end':
+      case 'infer-error':
+      case 'infer-alive':
+        this.deps.inferenceRelay?.receive(message, client)
+        return
     }
   }
 
@@ -348,6 +371,8 @@ export class TurnHost {
     if (this.running.has(turnKey) || this.claimed.has(turnKey)) return 'stale'
     const stopped = new AbortController()
     this.running.set(turnKey, { projectId, threadId, stopped })
+    // No app sent this turn: its calls go to whichever is attached.
+    this.deps.inferenceRelay?.placed(threadId, null)
     this.armIdle()
     this.deps.log(`thread ${threadId}: background command finished, waking its turn`)
     this.broadcastTo({ t: 'taken', projectId, threadId })
@@ -480,7 +505,8 @@ export class TurnHost {
   }
 
   /** An attached app's line closed. */
-  left(): void {
+  left(client?: TurnHostClient): void {
+    if (client !== undefined) this.deps.inferenceRelay?.left(client)
     this.joined = Math.max(0, this.joined - 1)
     this.armIdle()
   }
@@ -493,6 +519,11 @@ export class TurnHost {
       this.attachedClients.add(client)
       this.joined += 1
       this.armIdle()
+      // Model calls go only to an app of this host's version, never to one
+      // that only asked which version serves here.
+      const state = this.clients.get(client)
+      if (state?.version === this.deps.version && !state.probe)
+        this.deps.inferenceRelay?.attach(client)
     }
     const byProject = new Map<string, string[]>()
     for (const turn of this.running.values()) {
@@ -588,6 +619,8 @@ export class TurnHost {
     const turnKey = key(projectId, threadId)
     const stopped = new AbortController()
     this.running.set(turnKey, { projectId, threadId, stopped })
+    // The turn's model calls go to the app that sent it while it is attached.
+    this.deps.inferenceRelay?.placed(threadId, client)
     this.armIdle()
     this.deps.log(`thread ${threadId}: turn starting`)
     const turn = { accepted: false }
@@ -603,7 +636,7 @@ export class TurnHost {
     const settled = Promise.withResolvers<undefined>()
     try {
       await this.withPrompts(projectId, threadId, stopped.signal, () =>
-        this.dispatcher.dispatch({ projectId, threadId, payload }),
+        this.dispatcher.dispatch(reviewedRequest(projectId, threadId, payload, message.reviewed)),
       )
       accept()
       this.settling.set(turnKey, settled.promise)
@@ -627,6 +660,7 @@ export class TurnHost {
     } finally {
       this.claimed.delete(turnKey)
       this.running.delete(turnKey)
+      this.deps.inferenceRelay?.placed(threadId, null)
       if (this.settling.get(turnKey) === settled.promise) this.settling.delete(turnKey)
       settled.resolve(undefined)
       this.armIdle()
@@ -713,4 +747,44 @@ function hostProcessRoots(): HostProcessRoot[] {
       }),
     ),
   ]
+}
+
+/**
+ * The turn main's protected review approved, as the dispatcher runs it in
+ * process: the approved prompt, the history and plan frozen before review,
+ * and acceptance of the prompt once this host owns the thread. Main already
+ * claimed the optimistic bubble's one-use receipt, so acceptance keeps that
+ * bubble when the transcript still holds it unaccepted.
+ */
+export function reviewedRequest(
+  projectId: string,
+  threadId: string,
+  payload: ReturnType<typeof parseAgentRunPayload>,
+  reviewed: ReviewedTurn,
+): AgentDispatchRequest {
+  const optimisticMessageId = reviewed.optimisticMessageId
+  return {
+    projectId,
+    threadId,
+    payload: { ...payload, userContent: reviewed.content },
+    protectedHistory: reviewed.history,
+    protectedPlan: reviewed.plan,
+    protectedHumanStart: {
+      content: reviewed.content,
+      ...(reviewed.preserveOptimisticDisplay === true
+        ? { preserveOptimisticDisplay: true as const }
+        : {}),
+      ...(reviewed.preserveOptimisticDisplay === true && reviewed.attachments !== undefined
+        ? { attachments: reviewed.attachments }
+        : {}),
+      acceptMessageId: () =>
+        acceptReviewedUserMessage(
+          projectId,
+          threadId,
+          optimisticMessageId !== undefined
+            ? { messageId: optimisticMessageId, claim: () => true }
+            : undefined,
+        ),
+    },
+  }
 }

@@ -185,4 +185,18 @@ export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
     external: ['@anthropic-ai/sandbox-runtime', './xhr-sync-worker.js'],
     alias: { 'node-pty': 'src/main/services/container-runtime/node-pty-stub.cjs' },
   },
+  // The turn host as it runs on an SSH workspace host
+  // (docs/plans/harness-worker-roadmap.md, R3): uploaded there and run by the
+  // host's own Node, where the app's node_modules and natives do not exist.
+  // Bundled self-contained like the container worker above, for the same
+  // reasons and with the same two exceptions.
+  {
+    entry: 'src/main/services/turn-host/turn-host-entry.ts',
+    outfile: 'dist/main/ssh-worker.cjs',
+    external: ['@anthropic-ai/sandbox-runtime', './xhr-sync-worker.js'],
+    alias: {
+      'node-pty': 'src/main/services/container-runtime/node-pty-stub.cjs',
+      '@napi-rs/keyring': 'src/main/services/ssh-worker/keyring-stub.cjs',
+    },
+  },
 ]

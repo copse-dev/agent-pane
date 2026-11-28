@@ -15,6 +15,11 @@ import { mountConversation } from './conversation.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { qsRequired } from '../dom/helpers.ts'
 
+// A mounted conversation keeps timers of its own (the environment-setup offer
+// re-checks 30 s after a thread status change), so one left mounted holds this
+// file's test process open until they fire. Unmount each view after its test.
+const unmounts: (() => void)[] = []
+
 // The conversation view renders disclosure state from its disclosure model
 // (disclosure-model.ts), not from the previous DOM. These tests drive the
 // mounted view through tool-status churn and full rebuilds and assert that an
@@ -40,7 +45,7 @@ function mount(): { store: ReturnType<typeof createStore>; threadId: string; mes
   const messageId = addMessage(store, threadId, 'assistant', '')
   const host = document.createElement('div')
   document.body.append(host)
-  mountConversation(host, store, fakeApi())
+  unmounts.push(mountConversation(host, store, fakeApi()))
   return { store, threadId, messageId }
 }
 
@@ -60,6 +65,7 @@ function rebuild(store: ReturnType<typeof createStore>, threadId: string): void 
 }
 
 afterEach(() => {
+  for (const unmount of unmounts.splice(0)) unmount()
   document.body.replaceChildren()
 })
 

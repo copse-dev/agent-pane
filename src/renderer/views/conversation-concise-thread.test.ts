@@ -13,6 +13,11 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 
+// A mounted conversation keeps timers of its own (the environment-setup offer
+// re-checks 30 s after a thread status change), so one left mounted holds this
+// file's test process open until they fire. Unmount each view after its test.
+const unmounts: (() => void)[] = []
+
 function fakeApi(): ApiClient {
   const base = createFakeApi()
   return {
@@ -22,6 +27,7 @@ function fakeApi(): ApiClient {
 }
 
 afterEach(() => {
+  for (const unmount of unmounts.splice(0)) unmount()
   document.body.replaceChildren()
 })
 
@@ -65,7 +71,7 @@ describe('concise thread view in the conversation', () => {
     const store = seedCapableTurn(false)
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, fakeApi())
+    unmounts.push(mountConversation(host, store, fakeApi()))
 
     assert.deepEqual(conciseClasses(), [[], []])
   })
@@ -74,7 +80,7 @@ describe('concise thread view in the conversation', () => {
     const store = seedCapableTurn(true)
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, fakeApi())
+    unmounts.push(mountConversation(host, store, fakeApi()))
 
     assert.deepEqual(conciseClasses(), [['msg-concise', 'msg-concise-steps'], ['msg-concise']])
   })
@@ -83,7 +89,7 @@ describe('concise thread view in the conversation', () => {
     const store = seedCapableTurn(false)
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, fakeApi())
+    unmounts.push(mountConversation(host, store, fakeApi()))
 
     store.setState({ conciseThreadsEnabled: true })
     store.emit('settings_changed')
@@ -103,7 +109,7 @@ describe('concise thread view in the conversation', () => {
     async function mount(store: ReturnType<typeof createStore>): Promise<void> {
       const host = document.createElement('div')
       document.body.append(host)
-      mountConversation(host, store, fakeApi())
+      unmounts.push(mountConversation(host, store, fakeApi()))
       await flush()
     }
 
@@ -258,7 +264,7 @@ describe('concise thread view in the conversation', () => {
       const store = seedModelSwitch()
       const host = document.createElement('div')
       document.body.append(host)
-      mountConversation(host, store, fakeApi())
+      unmounts.push(mountConversation(host, store, fakeApi()))
 
       const labelled = [...document.querySelectorAll<HTMLElement>('.msg-assistant')].map(
         (msgEl) => msgEl.querySelector('.message-model')?.textContent ?? '',

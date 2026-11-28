@@ -91,6 +91,8 @@ export const PROMPT_CAUSES = [
   'acp-remote-env',
   /** Uploading and running Copse's bundled file watcher on an SSH workspace host. */
   'ssh-watcher-install',
+  /** Uploading and starting the Copse worker that runs a thread's turns on an SSH host. */
+  'ssh-worker-install',
   /**
    * Launching a host GUI app (macOS Launch Services) from the agent. The
    * process must leave the sandbox to reach the window server, so a container
@@ -179,6 +181,7 @@ const CONTAINMENT: Readonly<Record<PromptCause, PromptCauseContainment>> = {
   // Runs a binary on a user-chosen remote host; a local container changes
   // nothing about that, same as acp-remote-env.
   'ssh-watcher-install': 'kept',
+  'ssh-worker-install': 'kept',
   // A GUI launch is an authorization for a visible host app — the window
   // server is outside any guest, so a container never removes this ask.
   'gui-app-launch': 'kept',
@@ -223,6 +226,7 @@ const LABELS: Readonly<Record<PromptCause, string>> = {
   'acp-package-setup': 'Coding agent package setup',
   'acp-remote-env': 'Forwarding coding agent environment to a remote host',
   'ssh-watcher-install': 'Installing the file watcher on an SSH host',
+  'ssh-worker-install': 'Installing the Copse worker on an SSH host',
   'gui-app-launch': 'Launch a host GUI app',
   'desktop-app-control': 'Operate a Mac app',
   'mode-arming': 'Arming a mode (user-initiated, not an interruption)',

@@ -17,6 +17,7 @@ import { load } from 'js-yaml'
 import { z } from 'zod'
 import { parseScreenshotManifest } from './lib/screenshot-manifest.mts'
 import { readShardWeights } from './test-oracle.mts'
+import { CHECK_LOCAL_GATES } from './check-local.mts'
 import {
   RELEASE_ARTIFACT_RETENTION_DAYS,
   publishedArtifactNames,
@@ -1112,13 +1113,8 @@ describe('ci.yml workflow invariants', () => {
     const scripts = z
       .object({ scripts: z.record(z.string(), z.string()) })
       .parse(JSON.parse(readFileSync(resolve('package.json'), 'utf8'))).scripts
-    const checkLocal = scripts['check:local']
-    assert.ok(checkLocal, 'expected a check:local script')
-    const members = checkLocal.split('&&').map((part) => {
-      const name = part.trim().match(/^pnpm run (\S+)$/)?.[1]
-      assert.ok(name, `check:local member is not \`pnpm run <name>\`: ${part.trim()}`)
-      return name
-    })
+    // scripts/check-local.mts runs these package scripts (in parallel parts).
+    const members = [...CHECK_LOCAL_GATES]
     const precheck = jobBlock('precheck')
     const missing = members.filter((name) => {
       if (precheck.includes(`npm run ${name}\n`)) return false

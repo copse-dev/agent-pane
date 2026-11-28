@@ -54,8 +54,6 @@ const ALLOWED_SUPPORT_ONLY: Record<string, string> = {
   'src/main/services/acp/acp-protocol-negotiate.ts': 'ACP v2 readiness prototype',
   'src/main/services/acp/acp-support-matrix.ts': 'manual ACP capability report formatter',
   'src/main/services/acp/acp-v2-session-adapter.ts': 'ACP v2 readiness prototype',
-  'src/main/services/turn-host/turn-needs.ts':
-    'what the turn host needs for a turn; unwired while protected-review prompts stay in main (#4325 follow-up hands the host reviewed requests)',
   'src/main/services/container-runtime/resolved-provider-fetch.ts':
     'per-run transport of the thread:container CLI entry (cli.ts), bundled by scripts/run-thread-container.mts',
   'src/main/services/container-runtime/cli-provider.ts':

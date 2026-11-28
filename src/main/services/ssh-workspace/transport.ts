@@ -29,6 +29,13 @@ export interface SshTransport {
   checkAlive(): Promise<boolean>
   openForward(remotePort: number): Promise<{ localPort: number }>
   closeForward(localPort: number): Promise<void>
+  /**
+   * Forward a local unix socket at `localPath` to the one at `remotePath` on
+   * the host, over the existing connection. Replaces whatever is at
+   * `localPath`.
+   */
+  openSocketForward(localPath: string, remotePath: string): Promise<void>
+  closeSocketForward(localPath: string): Promise<void>
   /** Stream a remote file directly to local disk without the command-output cap. */
   fetchFile(remotePath: string, localPath: string, options?: SshExecOptions): Promise<void>
   /** Read a remote file size before transferring its bytes. */
