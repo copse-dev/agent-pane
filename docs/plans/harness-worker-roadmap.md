@@ -149,9 +149,19 @@ _State._ R3 is built in five steps:
    provider status does not cross the line, model calls that bypass `buildProvider` are
    not relayed, and the app makes a call for any model it can build (no allow-list).
 3. **SSH thread turns run on the host**, with the thread store there and a mirror kept on
-   the laptop (the user's choice, 2026-11-28). The store moves to
-   a profile that outlives builds (step 1 keeps one per build), and old builds are removed
-   once no worker runs from them.
+   the laptop (the user's choice, 2026-11-28). In parts:
+   - **A profile that outlives builds (done).** Every build serves
+     `~/.copse/worker/profile/`. A worker of an older build that still serves it is told
+     to retire by the app's hello, and the start is retried until this build's answers.
+     Builds no running process was started from are then removed.
+   - **The thread on the host.** The app gives the worker the SSH project as a project of
+     its own, rooted at the remote path, with the settings a turn reads, and the thread's
+     history the first time; the worker's turns then run their tools on the host directly.
+   - **Turns go there.** With the host's worker up, an SSH thread's prompt goes to a
+     `TurnHostLink` for that host, the app follows the turn as it follows a local host
+     turn, and copies the transcript into the laptop's store as it lands. The app makes
+     calls only for the models its own settings name, and checks a remote turn's pid
+     with the worker, not locally.
 4. **The opt-in key lease.**
 5. **The exit gate** as an e2e.
 

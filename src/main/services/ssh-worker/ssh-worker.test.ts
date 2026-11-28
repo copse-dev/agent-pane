@@ -3,11 +3,13 @@ import { beforeEach, describe, it } from 'node:test'
 import type { SshExecResult } from '@shared/types/ssh-workspace.ts'
 import type { SshConnection } from '../ssh-workspace/connection-manager.ts'
 import { FakeSshTransport } from '../ssh-workspace/fake-ssh-transport.ts'
+import { NO_CAPABILITIES } from '../worker-protocol/worker-capabilities.ts'
 import { packArchive, packageFromArchive } from './ssh-worker-package.ts'
 import {
   forgetSshWorkerApprovals,
   startSshWorker,
   type SshWorkerDependencies,
+  type SshWorkerHello,
 } from './ssh-worker.ts'
 
 const NODE = '{"version":"24.1.0","execPath":"/usr/bin/node","home":"/home/me"}'
@@ -25,7 +27,12 @@ async function host(answers: Record<string, Partial<SshExecResult>>): Promise<Ho
   await transport.connect()
   const ran: string[] = []
   const answer = (argv: string[]): SshExecResult => {
-    const key = argv[0] === '/usr/bin/node' ? 'unpack' : (argv[0] ?? '')
+    const key =
+      argv[0] === '/usr/bin/node'
+        ? argv[2]?.includes('execFileSync')
+          ? 'prune'
+          : 'unpack'
+        : (argv[0] ?? '')
     ran.push(key)
     return { stdout: '', stderr: '', code: 0, ...answers[key] }
   }
@@ -41,9 +48,13 @@ async function host(answers: Record<string, Partial<SshExecResult>>): Promise<Ho
   }
 }
 
+const HELLO: SshWorkerHello = { version: '1.2.3', pid: 42, capabilities: NO_CAPABILITIES }
+
 function deps(connection: SshConnection, approve = true): SshWorkerDependencies {
   return {
     version: '1.2.3',
+    hello: () => Promise.resolve(HELLO),
+    retireWaitMs: 0,
     userDataPath: '/profile',
     connection: () => connection,
     approve: () => Promise.resolve(approve),
@@ -68,7 +79,8 @@ describe('starting the worker on an SSH host', () => {
     const started = await startSshWorker('dev', deps(connection))
     assert.ok(started.ok)
     assert.equal(started.uploaded, true)
-    assert.deepEqual(ran, ['node', 'test', 'unpack', 'sh'])
+    assert.deepEqual(ran, ['node', 'test', 'unpack', 'sh', 'prune'])
+    assert.deepEqual(started.hello, HELLO)
     assert.equal(
       transport.socketForwards.get(started.localSocket),
       '/home/me/.copse/worker/x/profile/run/turn-host.sock',
@@ -83,7 +95,7 @@ describe('starting the worker on an SSH host', () => {
     const started = await startSshWorker('dev', deps(connection))
     assert.ok(started.ok)
     assert.equal(started.uploaded, false)
-    assert.deepEqual(ran, ['node', 'test', 'sh'])
+    assert.deepEqual(ran, ['node', 'test', 'sh', 'prune'])
   })
 
   it('touches nothing on the host when the user declines', async () => {
@@ -112,7 +124,7 @@ describe('starting the worker on an SSH host', () => {
     ])
     assert.equal(first, second)
     assert.equal(asked, 1)
-    assert.deepEqual(ran, ['node', 'test', 'sh'])
+    assert.deepEqual(ran, ['node', 'test', 'sh', 'prune'])
   })
 
   it('remembers a refusal for the rest of the run', async () => {
@@ -163,5 +175,45 @@ describe('starting the worker on an SSH host', () => {
     const started = await startSshWorker('dev', deps(connection))
     assert.ok(!started.ok)
     assert.match(started.reason, /Cannot find module x/)
+  })
+
+  it('lets a worker of an older build retire, then starts this one', async () => {
+    const { connection, transport, ran } = await host({
+      node: { stdout: NODE },
+      sh: { stdout: '/run/w.sock\n' },
+    })
+    const versions = ['1.2.2', '1.2.3']
+    const started = await startSshWorker('dev', {
+      ...deps(connection),
+      hello: () => Promise.resolve({ ...HELLO, version: versions.shift() ?? '' }),
+    })
+    assert.ok(started.ok)
+    assert.equal(started.hello.version, '1.2.3')
+    assert.deepEqual(ran, ['node', 'test', 'sh', 'sh', 'prune'])
+    assert.equal(transport.socketForwards.size, 1)
+  })
+
+  it('gives up on a worker of another build that keeps running', async () => {
+    const { connection, transport, ran } = await host({
+      node: { stdout: NODE },
+      sh: { stdout: '/run/w.sock\n' },
+    })
+    const started = await startSshWorker('dev', {
+      ...deps(connection),
+      hello: () => Promise.resolve({ ...HELLO, version: '1.2.2' }),
+    })
+    assert.ok(!started.ok)
+    assert.match(started.reason, /1\.2\.2 .*still finishing its turns/)
+    assert.ok(!ran.includes('prune'))
+    assert.equal(transport.socketForwards.size, 0)
+  })
+
+  it('fails when the worker does not answer on the forward', async () => {
+    const { connection } = await host({ node: { stdout: NODE }, sh: { stdout: '/run/w.sock\n' } })
+    const started = await startSshWorker('dev', {
+      ...deps(connection),
+      hello: () => Promise.resolve(null),
+    })
+    assert.deepEqual(started, { ok: false, reason: 'the worker did not answer' })
   })
 })

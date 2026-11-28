@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises'
 import { localSocketPath } from '../local-socket.ts'
 import type { SshConnection } from '../ssh-workspace/connection-manager.ts'
 import { getSshConnectionManager } from '../ssh-workspace/connection-manager.ts'
@@ -19,8 +20,10 @@ import {
   nodeIsRecentEnough,
   parseRemoteNode,
   probeNodeArgv,
+  pruneArgv,
   startArgv,
   unpackArgv,
+  type RemoteNode,
 } from './ssh-worker-remote.ts'
 
 /**
@@ -43,11 +46,30 @@ export interface SshWorkerDependencies {
   approve: (hostLabel: string) => Promise<boolean>
   /** This build's worker, packed (`ssh-worker-package.ts`). */
   workerPackage: () => Promise<SshWorkerPackage>
+  /** Say hello to the worker on the forward (tests answer for it). */
+  hello?: (localSocket: string) => Promise<SshWorkerHello | null>
+  /** How long to give a worker of another version to retire (tests shorten it). */
+  retireWaitMs?: number
+}
+
+export interface SshWorkerHello {
+  version: string
+  pid: number
+  capabilities: WorkerCapabilities
 }
 
 export type SshWorkerStart =
-  | { ok: true; localSocket: string; remoteSocket: string; uploaded: boolean }
+  | {
+      ok: true
+      localSocket: string
+      remoteSocket: string
+      uploaded: boolean
+      hello: SshWorkerHello
+    }
   | { ok: false; reason: string }
+
+/** Starts to try while a worker of another version retires. */
+const START_ATTEMPTS = 5
 
 let cachedPackage: Promise<SshWorkerPackage> | null = null
 
@@ -134,20 +156,47 @@ async function startOnce(hostId: string, deps: SshWorkerDependencies): Promise<S
       return { ok: false, reason: `the upload failed: ${tail(unpack.stderr) || 'no output'}` }
   }
 
-  const started = await connection.execArgv(startArgv(node, dir, deps.version), {
-    timeoutMs: 60_000,
-  })
-  const remoteSocket = started.stdout.trim().split('\n').at(-1) ?? ''
-  if (started.code !== 0 || !remoteSocket.startsWith('/'))
-    return { ok: false, reason: `the worker did not start: ${tail(started.stderr) || 'no output'}` }
-
+  const say =
+    deps.hello ??
+    ((socket: string): Promise<SshWorkerHello | null> => sshWorkerHello(socket, deps.version))
   const localSocket = localSocketPath(deps.userDataPath, 'ssh-worker', hostId)
-  try {
-    await connection.transport.openSocketForward(localSocket, remoteSocket)
-  } catch (error) {
-    return { ok: false, reason: `could not reach the worker: ${String(error)}` }
+  // Every build shares the host's profile, so a worker of an older build may
+  // already serve it. Our hello tells it to retire: it finishes its turns and
+  // exits, and a later start brings up this build's.
+  for (let attempt = 1; ; attempt++) {
+    const started = await connection.execArgv(startArgv(node, dir, deps.version), {
+      timeoutMs: 60_000,
+    })
+    const remoteSocket = started.stdout.trim().split('\n').at(-1) ?? ''
+    if (started.code !== 0 || !remoteSocket.startsWith('/'))
+      return {
+        ok: false,
+        reason: `the worker did not start: ${tail(started.stderr) || 'no output'}`,
+      }
+    try {
+      await connection.transport.openSocketForward(localSocket, remoteSocket)
+    } catch (error) {
+      return { ok: false, reason: `could not reach the worker: ${String(error)}` }
+    }
+    const hello = await say(localSocket)
+    if (hello?.version === deps.version) {
+      await prune(connection, node, worker.id)
+      return { ok: true, localSocket, remoteSocket, uploaded, hello }
+    }
+    await connection.transport.closeSocketForward(localSocket)
+    if (hello === null) return { ok: false, reason: 'the worker did not answer' }
+    if (attempt >= START_ATTEMPTS)
+      return {
+        ok: false,
+        reason: `a worker of version ${hello.version} on the host is still finishing its turns`,
+      }
+    await delay(deps.retireWaitMs ?? 2_000)
   }
-  return { ok: true, localSocket, remoteSocket, uploaded }
+}
+
+/** Remove the builds no worker runs from; a failure here costs only disk. */
+async function prune(connection: SshConnection, node: RemoteNode, keep: string): Promise<void> {
+  await connection.execArgv(pruneArgv(node, keep), { timeoutMs: 60_000 }).catch(() => undefined)
 }
 
 export async function stopSshWorkerForward(
@@ -163,7 +212,7 @@ export async function stopSshWorkerForward(
 export async function sshWorkerHello(
   localSocket: string,
   version: string,
-): Promise<{ version: string; pid: number; capabilities: WorkerCapabilities } | null> {
+): Promise<SshWorkerHello | null> {
   const hello = Promise.withResolvers<Extract<HostToApp, { t: 'hello' }> | null>()
   const line = await connectTurnHost(
     localSocket,

@@ -18,7 +18,6 @@ import { approveRemoteWatcherInstall } from '../services/ssh-workspace/remote-wa
 import { formatRemoteWatcherInstallApproval } from '../services/ssh-workspace/remote-native-watcher.ts'
 import {
   defaultSshWorkerDependencies,
-  sshWorkerHello,
   startSshWorker,
   stopSshWorkerForward,
 } from '../services/ssh-worker/ssh-worker.ts'
@@ -215,12 +214,8 @@ export function registerTestScenarioHandlers(win: BrowserWindow): void {
       const hostId = parseIpcArgs(z.string().min(1).max(256), [rawHostId])
       const deps = defaultSshWorkerDependencies(app.getVersion(), app.getPath('userData'))
       const started = await startSshWorker(hostId, deps)
-      if (!started.ok) return started
-      try {
-        return { ...started, hello: await sshWorkerHello(started.localSocket, deps.version) }
-      } finally {
-        await stopSshWorkerForward(hostId, deps)
-      }
+      if (started.ok) await stopSshWorkerForward(hostId, deps)
+      return started
     })
     ipcMain.handle('test:requestRemoteWatcherInstallApproval', (event) => {
       assertMainFrameSender(event, win)
