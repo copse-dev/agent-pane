@@ -96,21 +96,31 @@ function isPrivateEndpoint(path: string): boolean {
 export const MAX_LINE_CHARS = 128 * 1024 * 1024
 
 function readLines(socket: Socket, onLine: (line: string) => void): void {
-  let buffered = ''
+  // The pieces of the line so far: each chunk is scanned once, so a long line
+  // costs its length, not its length times its chunks.
+  let parts: string[] = []
+  let length = 0
   socket.setEncoding('utf8')
   socket.on('data', (data: string) => {
-    buffered += data
+    let start = 0
     for (;;) {
-      const end = buffered.indexOf('\n')
-      if (end < 0 || end > MAX_LINE_CHARS) {
-        if (buffered.length > MAX_LINE_CHARS) {
-          buffered = ''
-          socket.destroy()
-        }
+      const end = data.indexOf('\n', start)
+      const piece = data.slice(start, end < 0 ? undefined : end)
+      length += piece.length
+      if (length > MAX_LINE_CHARS) {
+        parts = []
+        length = 0
+        socket.destroy()
         return
       }
-      const line = buffered.slice(0, end)
-      buffered = buffered.slice(end + 1)
+      if (end < 0) {
+        if (piece.length > 0) parts.push(piece)
+        return
+      }
+      const line = parts.length === 0 ? piece : parts.join('') + piece
+      parts = []
+      length = 0
+      start = end + 1
       if (line.length > 0) onLine(line)
     }
   })

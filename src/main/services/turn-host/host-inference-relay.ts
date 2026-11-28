@@ -6,6 +6,7 @@ import type {
   LLMTool,
   ProviderStreamChunk,
 } from '@copse/llm/wire-types.ts'
+import { getActiveRunThread } from '../active-run-identity.ts'
 import type { BuildProviderOptions } from '../providers/provider-selection.ts'
 import { MAX_LINE_CHARS } from '../local-socket.ts'
 import {
@@ -25,8 +26,11 @@ import {
  * streams the reply back as `infer-chunk`, then `infer-end` or `infer-error`.
  * A Stop sends `infer-cancel`.
  *
- * One app makes each call, the one that attached last, so no call is paid for
- * twice. With no app attached a call waits for one: a turn pauses while the
+ * Each call names the thread whose turn makes it, and a call outside a turn is
+ * refused: the app answers only for turns it can account for. One app makes
+ * each call, so none is paid for twice: the one that sent the turn while it is
+ * attached, else the one of this version that attached last (the app came
+ * back on a new line, or the worker started the turn by itself). With no app attached a call waits for one: a turn pauses while the
  * laptop sleeps and carries on when it wakes. An app that goes away during a
  * reply fails that call, as a dropped connection to a provider would, and so
  * does a reply that goes quiet for {@link QUIET_LIMIT_MS} (the app says
@@ -64,6 +68,8 @@ function relayedOptions(options: LLMStreamOptions | undefined): RelayedStreamOpt
 export class HostInferenceRelay {
   /** Attached apps, latest last. */
   private readonly apps: TurnHostClient[] = []
+  /** The app that sent each thread's turn. */
+  private readonly placers = new Map<string, TurnHostClient>()
   private readonly calls = new Map<string, OpenCall>()
   private readonly appWaiters = new Set<() => void>()
   /** Calls holding a slot, and the calls waiting for one. */
@@ -84,10 +90,18 @@ export class HostInferenceRelay {
     for (const wake of waiters) wake()
   }
 
+  /** `client` sent the turn that runs `threadId` now; null when no app did. */
+  placed(threadId: string, client: TurnHostClient | null): void {
+    if (client === null) this.placers.delete(threadId)
+    else this.placers.set(threadId, client)
+  }
+
   /** An app's line closed: its calls fail, and later ones go to another app. */
   left(client: TurnHostClient): void {
     const index = this.apps.indexOf(client)
     if (index !== -1) this.apps.splice(index, 1)
+    for (const [threadId, placer] of this.placers)
+      if (placer === client) this.placers.delete(threadId)
     for (const [id, call] of this.calls)
       if (call.client === client) {
         this.calls.delete(id)
@@ -122,7 +136,10 @@ export class HostInferenceRelay {
   provider(model: string, promptCacheKey?: string, opts: BuildProviderOptions = {}): LLMProvider {
     return {
       stream: (messages, tools, signal, options) =>
-        this.stream({ model, promptCacheKey, opts, messages, tools, options }, signal),
+        this.stream(
+          { threadId: getActiveRunThread(), model, promptCacheKey, opts, messages, tools, options },
+          signal,
+        ),
     }
   }
 
@@ -157,6 +174,11 @@ export class HostInferenceRelay {
     }
   }
 
+  private appFor(threadId: string): TurnHostClient | undefined {
+    const placer = this.placers.get(threadId)
+    return placer !== undefined && this.apps.includes(placer) ? placer : this.apps.at(-1)
+  }
+
   private takeSlot(): true | undefined {
     if (this.open >= MAX_OPEN_INFERENCES) return undefined
     this.open++
@@ -174,6 +196,7 @@ export class HostInferenceRelay {
 
   private async *stream(
     call: {
+      threadId: string | null
       model: string
       promptCacheKey: string | undefined
       opts: BuildProviderOptions
@@ -183,11 +206,13 @@ export class HostInferenceRelay {
     },
     signal: AbortSignal | undefined,
   ): AsyncIterable<ProviderStreamChunk> {
+    const { threadId } = call
+    if (threadId === null) throw new Error('A model call outside a turn cannot be sent to the app.')
     // Taken where it is checked: a check and a later take would let every
     // caller waiting in the same tick through.
     await this.waitFor(() => this.takeSlot(), this.slotWaiters, signal)
     try {
-      yield* this.relay(call, signal)
+      yield* this.relay({ ...call, threadId }, signal)
     } finally {
       this.release()
     }
@@ -195,6 +220,7 @@ export class HostInferenceRelay {
 
   private async *relay(
     call: {
+      threadId: string
       model: string
       promptCacheKey: string | undefined
       opts: BuildProviderOptions
@@ -204,7 +230,7 @@ export class HostInferenceRelay {
     },
     signal: AbortSignal | undefined,
   ): AsyncIterable<ProviderStreamChunk> {
-    const client = await this.waitFor(() => this.apps.at(-1), this.appWaiters, signal)
+    const client = await this.waitFor(() => this.appFor(call.threadId), this.appWaiters, signal)
     const id = this.createId()
     if (this.calls.has(id)) throw new Error('A model call with this id is already open.')
     const queue: ProviderStreamChunk[] = []
@@ -253,6 +279,7 @@ export class HostInferenceRelay {
     const request: HostInferRequest = {
       t: 'infer',
       id,
+      threadId: call.threadId,
       model: call.model,
       ...(call.promptCacheKey === undefined ? {} : { promptCacheKey: call.promptCacheKey }),
       providerOptions: {
