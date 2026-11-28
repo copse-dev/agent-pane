@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it, mock } from 'node:test'
-import { runShellOnce } from './foreground-shell-process.ts'
+import { listForegroundShellProcesses, runShellOnce } from './foreground-shell-process.ts'
 import {
   getBackgroundProcessLogs,
   listBackgroundProcesses,
@@ -248,12 +248,34 @@ describe('explicit foreground shell yield', () => {
 
   it('fails adoption by stopping the original command rather than losing it', async () => {
     dispose()
-    await assert.rejects(
-      run('node bounded.cjs', 1_500, { yieldAfterMs: 100 }),
-      /supervisor is unavailable/,
-    )
-    const pid = Number(readFileSync(join(root, 'pid.txt'), 'utf8'))
-    await waitUntil(() => !isPidAlive(pid))
+    // Take the pid from the live foreground-shell list rather than from the
+    // child's pid.txt: under full-suite load Node can take longer than the
+    // 100 ms yield to boot, and the failed adoption then stops the command
+    // before it writes the file. The list entry is added when the shell spawns
+    // and removed when the yield fires, and a 1 ms interval always runs before
+    // the 100 ms yield timer, so the capture cannot miss it.
+    let shellPid: number | undefined
+    const capture = setInterval(() => {
+      shellPid ??= listForegroundShellProcesses().find(
+        (shell) => shell.threadId === OWNER.threadId,
+      )?.pid
+    }, 1)
+    try {
+      await assert.rejects(
+        run('node bounded.cjs', 1_500, { yieldAfterMs: 100 }),
+        /supervisor is unavailable/,
+      )
+    } finally {
+      clearInterval(capture)
+    }
+    assert.ok(shellPid !== undefined && shellPid > 0, 'the command must have been started')
+    const leader = shellPid
+    // The command runs as its own process group; stopping it ends the whole group.
+    await waitUntil(() => !isPidAlive(leader) && !isPidAlive(-leader))
+    if (existsSync(join(root, 'pid.txt'))) {
+      const childPid = Number(readFileSync(join(root, 'pid.txt'), 'utf8'))
+      await waitUntil(() => !isPidAlive(childPid))
+    }
     assert.deepEqual(listBackgroundProcesses(OWNER), [])
     assert.equal(existsSync(join(root, 'finished.txt')), false)
   })

@@ -18,6 +18,7 @@ it('publishes the completed coverage-phase report after nested runners finish', 
       'scripts/lib/tracked-test-tree.mts',
       'scripts/lib/review-test-reporter.mts',
       'scripts/lib/test-event-names.mts',
+      'scripts/lib/test-concurrency.mts',
     ]) {
       await copyFile(join(process.cwd(), file), join(fixture, file))
     }

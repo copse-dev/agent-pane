@@ -65,12 +65,13 @@ const sharedAlias = {
  * A standalone bundle's own `external`/`alias` on top of the shared options,
  * with repo-relative alias targets made absolute for esbuild.
  */
-function standaloneOverrides(entry: string): {
+function standaloneOverrides(outfile: string): {
   external?: string[]
   alias: Record<string, string>
   logOverride?: Record<string, 'silent' | 'warning' | 'error'>
 } {
-  const bundle = STANDALONE_MAIN_BUNDLES.find((candidate) => candidate.entry === entry)
+  // By output: two bundles may share an entry (the turn host and the SSH worker).
+  const bundle = STANDALONE_MAIN_BUNDLES.find((candidate) => candidate.outfile === outfile)
   const alias = Object.fromEntries(
     Object.entries(bundle?.alias ?? {}).map(([from, to]) => [from, resolve(to)]),
   )
@@ -242,7 +243,7 @@ if (!isDemo) {
       ...nodeOpts,
       entryPoints: [entry],
       outfile,
-      ...standaloneOverrides(entry),
+      ...standaloneOverrides(outfile),
     })
     assertParses(outfile)
     if (manifest) {

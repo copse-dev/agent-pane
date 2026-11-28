@@ -9,7 +9,11 @@ import { requestSshPrompt } from '../ssh-workspace/ssh-prompt.ts'
 import { deleteSetting, setSetting } from '../storage/settings.ts'
 import { storageDelete, storageSet } from '../storage/storage.ts'
 import type { ProfileStoreChange } from '../turn-worker/read-only-profile-store.ts'
+import { redactSecrets } from '@copse/llm/redact-secrets.ts'
+import { knownSecrets } from '../classifiers/classifier-service.ts'
 import { isPidAlive } from '../exec/subprocess-kill.ts'
+import { appInference } from './app-inference.ts'
+import { admitted, type HostAdmission } from './host-admission.ts'
 import { readHostDispatchRecord } from './host-dispatch-record.ts'
 import { TurnHostLink, type TurnHostLinkDependencies } from './turn-host-link.ts'
 import {
@@ -91,20 +95,46 @@ function startHost(deps: TurnHostLaunchDependencies): void {
   deps.log(`[turn-host] started pid ${String(child.pid ?? 'unknown')}`)
 }
 
+/** Settle a thread left running interrupted, so Continue is the user's call. */
+export async function settleInterrupted(projectId: string, threadId: string): Promise<void> {
+  const meta = (await loadProjectThreadMetas(projectId)).find((m) => m.id === threadId)
+  if (meta?.status !== 'running') return
+  await updateMeta(projectId, threadId, { status: 'idle', interruptedTurnAt: Date.now() })
+}
+
 /** The link to the profile's host, wired to its stores. */
-export function createTurnHostLink(deps: TurnHostLaunchDependencies): TurnHostLink {
+export function createTurnHostLink(
+  deps: TurnHostLaunchDependencies,
+  /** A host elsewhere (an SSH host's worker) replaces how it is reached. */
+  elsewhere: Partial<
+    Pick<
+      TurnHostLinkDependencies,
+      | 'connect'
+      | 'readRecord'
+      | 'isAlive'
+      | 'onThreadTaken'
+      | 'applyStoreWrite'
+      | 'sendThreadPrompt'
+      | 'callTaskSupervisor'
+      | 'askSsh'
+    >
+  > & {
+    /**
+     * What the host may act for. Left out, anything; an SSH host only for a
+     * turn this app sent it.
+     */
+    admits?: HostAdmission
+  } = {},
+): TurnHostLink {
   const socketPath = turnHostSocketPath(deps.userDataPath)
-  return new TurnHostLink({
+  const { admits, ...replaced } = elsewhere
+  const linkDeps: TurnHostLinkDependencies = {
     version: deps.appVersion,
     connect: (onMessage, onClose) => connectTurnHost(socketPath, onMessage, onClose),
     readRecord: (projectId, threadId) =>
       readHostDispatchRecord(threadDirectoryPath(projectId, threadId)),
     isAlive: isPidAlive,
-    settleUncertain: async (projectId, threadId): Promise<void> => {
-      const meta = (await loadProjectThreadMetas(projectId)).find((m) => m.id === threadId)
-      if (meta?.status !== 'running') return
-      await updateMeta(projectId, threadId, { status: 'idle', interruptedTurnAt: Date.now() })
-    },
+    settleUncertain: settleInterrupted,
     // Filed under the host turn's thread, so it shows on that thread and on
     // the user's other devices as an in-process turn's prompt does.
     askUser: async ({ projectId, threadId, request }, signal): Promise<HostApprovalAnswer> => {
@@ -138,6 +168,9 @@ export function createTurnHostLink(deps: TurnHostLaunchDependencies): TurnHostLi
       applyHostStoreWrite(store, changes, deps.log)
     },
     onThreadTaken: deps.onThreadTaken,
+    // Only a worker without keys asks; the profile's own host has them.
+    infer: appInference,
+    redact: (text) => redactSecrets(text, knownSecrets()),
     ...(deps.onShellOutput ? { onShellOutput: deps.onShellOutput } : {}),
     ...(deps.onInstructionActivation
       ? { onInstructionActivation: deps.onInstructionActivation }
@@ -146,7 +179,9 @@ export function createTurnHostLink(deps: TurnHostLaunchDependencies): TurnHostLi
     ...(deps.callTaskSupervisor ? { callTaskSupervisor: deps.callTaskSupervisor } : {}),
     ...(deps.onUnfollowedChunk ? { onUnfollowedChunk: deps.onUnfollowedChunk } : {}),
     log: deps.log,
-  })
+    ...replaced,
+  }
+  return new TurnHostLink(admits === undefined ? linkDeps : admitted(linkDeps, admits))
 }
 
 /**

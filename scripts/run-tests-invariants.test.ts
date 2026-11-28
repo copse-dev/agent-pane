@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
+import {
+  CI_TEST_FILE_CONCURRENCY,
+  MAX_LOCAL_TEST_FILE_CONCURRENCY,
+} from './lib/test-concurrency.mts'
 
 const runner = readFileSync(new URL('./run-tests.mts', import.meta.url), 'utf8')
 
@@ -25,11 +29,12 @@ describe('unit test runner build contract', () => {
   })
 
   it('bounds file concurrency so subprocess-heavy suites keep their safety deadlines', () => {
-    assert.match(
-      runner,
-      /const TEST_FILE_CONCURRENCY = process\.env\['COPSE_THREAD_CONTAINER_E2E'\] === 'apple' \? 1 : 4/,
-    )
+    // CI's four and the local cap live in lib/test-concurrency.mts, whose own
+    // test pins them; the runner must take its count from there.
+    assert.match(runner, /const TEST_FILE_CONCURRENCY = testFileConcurrency\(\)/)
     assert.match(runner, /--test-concurrency=\$\{String\(TEST_FILE_CONCURRENCY\)\}/)
+    assert.equal(CI_TEST_FILE_CONCURRENCY, 4)
+    assert.equal(MAX_LOCAL_TEST_FILE_CONCURRENCY, 8)
   })
 
   it('preserves module-relative paths before modules enter shared chunks', () => {

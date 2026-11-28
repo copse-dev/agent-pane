@@ -122,6 +122,103 @@ Two choices need deciding before building:
 _Exit gate:_ start a turn on an SSH thread, close the laptop for ten minutes, reopen it, and
 find the turn finished once with its transcript complete.
 
+_State._ R3 is built in five steps:
+
+1. **The worker on the host (done).**
+   - The turn host is bundled self-contained as `dist/main/ssh-worker.cjs`, with the
+     sandbox runtime packed beside it and the OS keychain stubbed out, so it runs on
+     the host's own Node (22.13 or later).
+   - `src/main/services/ssh-worker/` checks that Node, asks once per app run, uploads
+     the build when the host lacks it (to `~/.copse/worker/<build>/`, hash-checked and
+     renamed into place whole), starts it detached and forwards a local unix socket to
+     the one it serves over the ControlMaster.
+   - `tests/e2e/ssh-worker-start.e2e.ts` runs this against the fake SSH host and gets
+     the worker's hello over the forward.
+   - Nothing sends it turns yet.
+2. **The inference relay (done).** The worker starts with `--relay-inference`, so every
+   model call it makes (`buildProvider`) goes over the line as `infer` to the app that
+   attached last, which builds the provider with its own keys and streams the reply back
+   (`turn-host/host-inference-relay.ts`, `turn-host/app-inference.ts`; turn host
+   protocol 3). With no app attached a call waits for one, so a turn pauses while the
+   laptop sleeps; an app that goes away mid-reply, or goes quiet for 10 minutes (it says
+   `infer-alive` each minute while it works), fails that call. The worker keeps at most
+   8 calls open and holds the rest; a call too large for the line fails before it is
+   sent. The app answers only a host of its own version that said hello on that line,
+   and redacts known keys from any error it sends back.
+   Each call names the thread whose turn makes it (protocol 4); a call outside a turn is
+   not sent. A call goes to the app that sent the turn while that app is attached, else
+   to the latest app of the worker's own version: one that only asked the version, or
+   never said hello, gets no calls and no turns. The line reader scans each chunk once,
+   so a long call costs its length.
+   Still open: a relayed provider carries no compaction identity, an error's provider
+   status does not cross the line, and model calls that bypass `buildProvider` are not relayed.
+3. **SSH thread turns run on the host**, with the thread store there and a mirror kept on
+   the laptop (the user's choice, 2026-11-28). In parts:
+   - **A profile that outlives builds (done).** Every build serves
+     `~/.copse/worker/profile/`, which is the worker's `COPSE_DIR`. The app first only
+     asks which version serves it (a `probe` hello). A worker of a newer Copse is left
+     alone, and the user is told to update. One of an older Copse is told to retire, and
+     the start is retried until this build's answers; its turns wait for an app of its own
+     version, which an update leaves none of, so after five tries they are stopped. Builds
+     no running process was started from, and not uploaded in the last ten minutes, are
+     then removed. Two builds that share a version number (developer builds) count as
+     one.
+   - **The thread on the host, and turns go there (done, behind Experimental).** With
+     "Run each turn in a background process" (Experimental, Background turn host) on, an SSH project's prompt starts its host's
+     worker (`ssh-worker/ssh-turn-hosts.ts`), which gets the project as its own, rooted at
+     the remote path with no SSH host, so its tools run there directly, and the settings
+     the renderer may write, which hold no keys, less those naming other machines or
+     carrying an agent's environment (`ssh-worker-seed.ts`). Before each turn the host
+     is given the laptop's copy of the thread's history, after the laptop takes the
+     host's when the host has more (a turn the worker ran by itself); so a turn the app
+     ran while the host was unreachable is kept. The turn streams to the window over the
+     forward, and once it ends the laptop's copy is brought up to the host's through the
+     thread store. A copy back that still shows the turn running is settled interrupted.
+     A second prompt for a thread running there is refused rather than run in the app,
+     and so is one while a turn holds the thread's lease there, or when the two copies
+     went apart (the user forks it); so the copies never fork silently. A line that
+     drops mid-turn waits for the host's lease before the copy back. Stop reaches the
+     host, even while the thread is still being given to it. The copy back keeps what
+     is the laptop's in the thread's meta: a queued prompt, a draft, links, a rename,
+     and anything naming the laptop's worktrees or agents. Nothing the worker sends
+     changes the laptop's settings or projects, prompts another thread, records a process
+     on the laptop, or answers its SSH logins. A turn the worker cannot take runs in the
+     app as before.
+   - **What the app answers for the host (done).** The app answers a host's model call
+     only for a turn it sent that host, on that turn's model or one of the role models
+     its settings name, within 40M estimated tokens a turn (what each call sends and the
+     most it may get back) and four hours. Questions,
+     diff reviews and instruction notices are answered only for that turn's thread and
+     project; a question cannot offer workspace trust, and shell output the host sends is
+     dropped. A worker that says it cannot run the turn (`turnCannotRunOn`) is given
+     nothing of the thread. Commands there still ask the user each time (the worker is
+     started with `--commands-unsandboxed`, so it never runs one unasked), and background
+     commands are refused with a message saying to run them in the foreground. A thread
+     the host still holds after its line went stays running in the list; Stop reaches it
+     there, and quitting the app stops every SSH turn. A refused prompt shows why in a
+     toast and keeps a queued prompt queued, and a delegated prompt for a thread running
+     there is refused. The copy back keeps the laptop's model choices, and the host's
+     copy can only raise the thread's usage counts. The two copies are matched by a sync mark
+     (`ssh-host-sync.json`): the side that moved since the last copy wins, and both moving
+     is refused as a fork.
+   - **Still open in step 3:**
+     - a turn the worker starts by itself (a wake) is seen at the thread's next turn, not
+       live, and a line that reconnects mid-turn does not stream the rest of it;
+     - a lost line cannot check the worker's pid, so such a turn is left to the user
+       (Continue) rather than guessed;
+     - a prompt refused because the host is running a turn it started by itself is
+       still in the laptop's copy, so once that turn ends the two copies have both moved
+       and the thread is refused as forked until the user forks it;
+     - a thread the host holds after its line went shows running until Stop reaches the
+       host, or the app restarts;
+     - each turn copies the whole thread history both ways, not only what changed;
+     - a thread deleted on the laptop stays in the host's store;
+     - commands on the host run unconfined once the user allows them, as an SSH thread's
+       do today, and background commands do not run there;
+     - there is no e2e of a whole turn yet (step 5).
+4. **The opt-in key lease.**
+5. **The exit gate** as an e2e.
+
 ### R4. External coding agents inside the worker
 
 _Unlocks:_ Claude Code, Codex and other ACP agents survive a quit and, on SSH, the laptop

@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { z } from 'zod'
 import { registerAllowedWorkspaceRoot } from '../services/workspace.ts'
 import {
@@ -16,6 +16,11 @@ import {
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import { approveRemoteWatcherInstall } from '../services/ssh-workspace/remote-watcher-install-approval.ts'
 import { formatRemoteWatcherInstallApproval } from '../services/ssh-workspace/remote-native-watcher.ts'
+import {
+  defaultSshWorkerDependencies,
+  startSshWorker,
+  stopSshWorkerForward,
+} from '../services/ssh-worker/ssh-worker.ts'
 import {
   requestCloseConfirmation,
   setCloseConfirmContainerRuns,
@@ -201,6 +206,16 @@ export function registerTestScenarioHandlers(win: BrowserWindow): void {
       return requestAcpPackageInstallApproval(
         scenario === 'upgrade' ? [upgrade] : [{ agent: codex, action: 'install' }],
       )
+    })
+    // Start the worker on an SSH host and say hello over the forward
+    // (docs/plans/harness-worker-roadmap.md, R3) until SSH turns run there.
+    ipcMain.handle('test:startSshWorker', async (event, rawHostId: unknown) => {
+      assertMainFrameSender(event, win)
+      const hostId = parseIpcArgs(z.string().min(1).max(256), [rawHostId])
+      const deps = defaultSshWorkerDependencies(app.getVersion(), app.getPath('userData'))
+      const started = await startSshWorker(hostId, deps)
+      if (started.ok) await stopSshWorkerForward(hostId, deps)
+      return started
     })
     ipcMain.handle('test:requestRemoteWatcherInstallApproval', (event) => {
       assertMainFrameSender(event, win)

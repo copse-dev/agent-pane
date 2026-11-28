@@ -8,6 +8,8 @@ declare global {
     __copseMonaco?: typeof monaco
     __copseE2e?: ScenarioBridge
     __closeConfirmAnswers?: boolean[]
+    /** What the last `startSshWorker` call answered, once it has. */
+    __sshWorkerStart?: unknown
     __pageJumps?: number[]
     __multiWindowIpc?: { changes: string[]; statusPushes: number }
     __toolDisclosureTrace?: { transitions: string[] }

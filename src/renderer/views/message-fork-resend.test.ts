@@ -10,6 +10,11 @@ import { mountConversation } from './conversation.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { dismissContextMenu } from '../dom/context-menu.ts'
 
+// A mounted conversation keeps timers of its own (the environment-setup offer
+// re-checks 30 s after a thread status change), so one left mounted holds this
+// file's test process open until they fire. Unmount each view after its test.
+const unmounts: (() => void)[] = []
+
 // Component-level cover for the per-prompt actions on a user bubble. The pure
 // transforms are unit-tested (shared/store/fork-thread.test.ts,
 // main/services/thread-fork.test.ts) and the controllers in
@@ -58,7 +63,7 @@ function mountConversationWithHistory(): {
   const threadId = createThread(store)
   const host = document.createElement('div')
   document.body.append(host)
-  mountConversation(host, store, api)
+  unmounts.push(mountConversation(host, store, api))
   addMessage(store, threadId, 'user', 'First question')
   addMessage(store, threadId, 'assistant', 'First answer')
   addMessage(store, threadId, 'user', 'Second question')
@@ -71,6 +76,7 @@ function userBubbles(): HTMLElement[] {
 }
 
 afterEach(() => {
+  for (const unmount of unmounts.splice(0)) unmount()
   dismissContextMenu()
   document.body.replaceChildren()
 })
@@ -192,7 +198,7 @@ describe('per-prompt fork + resend actions (component)', () => {
     setThreadStatus(store, threadId, 'running')
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, api)
+    unmounts.push(mountConversation(host, store, api))
     const messageId = addMessage(store, threadId, 'user', 'Queued follow-up')
     enqueueUserMessage(store, threadId, {
       messageId,

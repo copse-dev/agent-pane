@@ -13,6 +13,11 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 
+// A mounted conversation keeps timers of its own (the environment-setup offer
+// re-checks 30 s after a thread status change), so one left mounted holds this
+// file's test process open until they fire. Unmount each view after its test.
+const unmounts: (() => void)[] = []
+
 // When content above the bottom shrinks (a finished turn's disclosures
 // compacting), the browser clamps scrollTop down to the new bottom and fires a
 // scroll event. That is not the reader scrolling up: they are still at the
@@ -36,6 +41,7 @@ const CLIENT_HEIGHT = 300
 const ROW_HEIGHT = 80
 
 afterEach(() => {
+  for (const unmount of unmounts.splice(0)) unmount()
   document.body.replaceChildren()
 })
 
@@ -86,7 +92,7 @@ function mountAtBottom(): {
   }
   const host = document.createElement('div')
   document.body.append(host)
-  mountConversation(host, store, fakeApi())
+  unmounts.push(mountConversation(host, store, fakeApi()))
   const list = host.querySelector<HTMLElement>('.messages-list')
   assert.ok(list, 'expected the mounted conversation to render its messages list')
   const geometry = installGeometry(list)
@@ -158,7 +164,7 @@ describe('transcript bottom pinning', () => {
     addMessage(store, threadId, 'assistant', 'Image description')
     const host = document.createElement('div')
     document.body.append(host)
-    mountConversation(host, store, fakeApi())
+    unmounts.push(mountConversation(host, store, fakeApi()))
     const list = host.querySelector<HTMLElement>('.messages-list')
     const prompt = [...host.querySelectorAll<HTMLElement>('.msg-user')].at(-1)
     const previous = prompt?.previousElementSibling

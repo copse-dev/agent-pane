@@ -3462,6 +3462,28 @@ export function clearThreadWorktree(projectId: string, threadId: string): Promis
   })
 }
 
+/**
+ * Replace a thread's files with a copy kept on another machine (an SSH host's
+ * worker runs the thread's turns there), in the project's write order, so no
+ * write here interleaves with it and every cache and index sees the copy.
+ */
+export function adoptThreadFiles(
+  projectId: string,
+  threadId: string,
+  write: (threadDir: string) => Promise<void>,
+): Promise<void> {
+  return runStoreWrite(projectId, async () => {
+    const dir = threadDir(projectId, threadId)
+    markIndexSourceWrite(join(dir, META_FILE))
+    try {
+      await write(dir)
+    } finally {
+      invalidateKnownMessageIds(dir)
+      refreshCatalogLine(projectId, threadId)
+    }
+  })
+}
+
 export function deleteProjectThread(projectId: string, threadId: string): Promise<void> {
   return runStoreWrite(projectId, () => {
     const dir = threadDir(projectId, threadId)

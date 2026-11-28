@@ -405,6 +405,43 @@ export function truncateToolOutput(
   return acc.toString()
 }
 
+/**
+ * Text gathered chunk by chunk, capped as {@link appendFlatCapped} caps it, in
+ * time linear in what arrives: within the cap the chunks are only kept, and
+ * joined once at the end.
+ */
+export class FlatCappedText {
+  private parts: string[] = []
+  private bytes = 0
+  /** The text so far once it passed the cap, truncated. */
+  private over: string | null = null
+  private readonly maxBytes: number
+
+  constructor(maxBytes: number) {
+    this.maxBytes = maxBytes
+  }
+
+  append(chunk: string): void {
+    if (chunk === '') return
+    if (this.over !== null) {
+      this.over = appendFlatCapped(this.over, chunk, this.maxBytes)
+      return
+    }
+    const size = utf8ByteLength(chunk)
+    if (this.bytes + size <= this.maxBytes) {
+      this.parts.push(chunk)
+      this.bytes += size
+      return
+    }
+    this.over = appendFlatCapped(this.parts.join(''), chunk, this.maxBytes)
+    this.parts = []
+  }
+
+  text(): string {
+    return this.over ?? this.parts.join('')
+  }
+}
+
 /** Append to a string field without exceeding max UTF-8 bytes (head/tail truncation). */
 export function appendFlatCapped(target: string, chunk: string, maxBytes: number): string {
   const combined = target + chunk

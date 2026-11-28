@@ -5,7 +5,16 @@
  * `ELECTRON_RUN_AS_NODE=1`, detached, so it outlives the app. Nothing here may
  * import `electron`.
  *
- *   turn-host.js --user-data <dir> [--app-version <v>] [--packaged]
+ *   turn-host.js --user-data <dir> [--app-version <v>] [--packaged] [--ready-file <path>]
+ *                [--relay-inference] [--commands-unsandboxed]
+ *
+ * With `--relay-inference` (a worker on an SSH host) every model call is made
+ * by the attached app with its own keys (`host-inference-relay.ts`), and with
+ * `--commands-unsandboxed` its commands are judged as an SSH project's are.
+ *
+ * With `--ready-file`, it writes the socket path it serves (or that another
+ * host already serves) there once a client can connect: a starter on another
+ * machine reads it rather than working the path out for itself.
  *
  * It boots the profile read-only, as the per-turn worker does (decision 4),
  * boots the agent runtime once, and serves the profile's turn-host line until
@@ -14,6 +23,7 @@
  * Exit codes: 0 it went idle or retired; 2 another host already serves the
  * profile; 1 it could not start.
  */
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import type { ProfileStoreChange } from '../turn-worker/read-only-profile-store.ts'
@@ -21,6 +31,7 @@ import { installReadOnlyProfile } from '../turn-worker/worker-profile.ts'
 import { quietWorkerEnvironment } from '../turn-worker/worker-environment.ts'
 import { connectTurnHost, turnHostSocketPath } from './turn-host-protocol.ts'
 import type { TurnHostDependencies } from './turn-host.ts'
+import { HostInferenceRelay } from './host-inference-relay.ts'
 
 function log(line: string): void {
   process.stderr.write(`[turn-host ${new Date().toISOString()}] ${line}\n`)
@@ -33,6 +44,10 @@ async function main(): Promise<number> {
       'user-data': { type: 'string' },
       'app-version': { type: 'string' },
       packaged: { type: 'boolean', default: false },
+      'ready-file': { type: 'string' },
+      // On another machine: model calls go to the attached app, which holds the keys.
+      'relay-inference': { type: 'boolean', default: false },
+      'commands-unsandboxed': { type: 'boolean', default: false },
     },
     strict: true,
   })
@@ -50,8 +65,13 @@ async function main(): Promise<number> {
     () => undefined,
     () => undefined,
   )
+  const readyFile = values['ready-file']
+  const ready = (): void => {
+    if (readyFile !== undefined) writeFileSync(readyFile, `${socketPath}\n`, { mode: 0o600 })
+  }
   if (existing) {
     existing.close()
+    ready()
     log('another host already serves this profile')
     return 2
   }
@@ -110,6 +130,19 @@ async function main(): Promise<number> {
     })
   }
   runtime.teardownOnSignals()
+  // A worker on an SSH host judges its commands as the app judges an SSH
+  // project's (docs/shell-permissions.md, "SSH workspaces"): no sandbox, so
+  // ordinary commands ask first, whatever the host's own sandbox could do.
+  if (values['commands-unsandboxed']) {
+    const { setProjectSandboxEnabled } = await import('../../project-sandbox/enabled.ts')
+    setProjectSandboxEnabled(false)
+  }
+
+  const relay = values['relay-inference'] ? new HostInferenceRelay() : undefined
+  if (relay !== undefined) {
+    const { setInferenceRelay } = await import('../providers/provider-selection.ts')
+    setInferenceRelay((model, promptCacheKey, opts) => relay.provider(model, promptCacheKey, opts))
+  }
 
   const done = Promise.withResolvers<undefined>()
   const host = new TurnHost({
@@ -117,6 +150,7 @@ async function main(): Promise<number> {
     log,
     version,
     capabilities: turnHostCapabilities,
+    ...(relay === undefined ? {} : { inferenceRelay: relay }),
     onIdle: (): void => {
       done.resolve(undefined)
     },
@@ -165,11 +199,12 @@ async function main(): Promise<number> {
     (message, client) => {
       host.handle(message, client)
     },
-    () => {
-      host.left()
+    (client) => {
+      host.left(client)
     },
   )
   host.bindBroadcast(server.broadcast)
+  ready()
   log(`serving ${socketPath} (version ${version}, pid ${String(process.pid)})`)
 
   try {

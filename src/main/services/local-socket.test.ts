@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync } from 'node:fs'
+import { createConnection } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
@@ -132,5 +133,37 @@ describe('local socket long-profile fallback', { skip: process.platform === 'win
       serveLocalLine<Ping, Ping>(path, ping, () => undefined),
       /not a directory/,
     )
+  })
+})
+
+describe('local socket lines', { skip: process.platform === 'win32' }, () => {
+  it('reads a line sent in many pieces, and lines that share one', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ls-lines-'))
+    const note = z.object({ t: z.literal('note'), text: z.string() })
+    const received: string[] = []
+    const path = localSocketPath(dir, 'turn', 'lines')
+    const server = await serveLocalLine<z.infer<typeof note>, Ping>(path, note, (message) => {
+      received.push(message.text)
+    })
+    try {
+      const socket = createConnection(path)
+      await new Promise<void>((resolve) => socket.once('connect', resolve))
+      const long = 'x'.repeat(4 * 1024 * 1024)
+      const line = JSON.stringify({ t: 'note', text: long })
+      for (let at = 0; at < line.length; at += 64 * 1024)
+        socket.write(line.slice(at, at + 64 * 1024))
+      socket.write('\n{"t":"note","text":"a"}\n{"t":"note",')
+      socket.write('"text":"b"}\n')
+      await until(() => received.length === 3)
+      assert.deepEqual(
+        received.map((text) => text.length),
+        [long.length, 1, 1],
+      )
+      assert.deepEqual(received.slice(1), ['a', 'b'])
+      socket.destroy()
+    } finally {
+      await server.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

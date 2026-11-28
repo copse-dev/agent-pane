@@ -88,16 +88,39 @@ function isPrivateEndpoint(path: string): boolean {
   }
 }
 
+/**
+ * The longest line a peer may send. A peer that sends more without a newline
+ * is not speaking the protocol, and holding it all would only grow memory, so
+ * its connection is closed.
+ */
+export const MAX_LINE_CHARS = 128 * 1024 * 1024
+
 function readLines(socket: Socket, onLine: (line: string) => void): void {
-  let buffered = ''
+  // The pieces of the line so far: each chunk is scanned once, so a long line
+  // costs its length, not its length times its chunks.
+  let parts: string[] = []
+  let length = 0
   socket.setEncoding('utf8')
   socket.on('data', (data: string) => {
-    buffered += data
+    let start = 0
     for (;;) {
-      const end = buffered.indexOf('\n')
-      if (end < 0) return
-      const line = buffered.slice(0, end)
-      buffered = buffered.slice(end + 1)
+      const end = data.indexOf('\n', start)
+      const piece = data.slice(start, end < 0 ? undefined : end)
+      length += piece.length
+      if (length > MAX_LINE_CHARS) {
+        parts = []
+        length = 0
+        socket.destroy()
+        return
+      }
+      if (end < 0) {
+        if (piece.length > 0) parts.push(piece)
+        return
+      }
+      const line = parts.length === 0 ? piece : parts.join('') + piece
+      parts = []
+      length = 0
+      start = end + 1
       if (line.length > 0) onLine(line)
     }
   })
@@ -128,7 +151,7 @@ export async function serveLocalLine<In, Out>(
   inbound: z.ZodType<In>,
   onMessage: (message: In, client: LocalLineClient<Out>) => void,
   /** A joined peer's line closed. */
-  onLeave?: () => void,
+  onLeave?: (client: LocalLineClient<Out>) => void,
 ): Promise<LocalLineServer<Out>> {
   const clients = new Set<Socket>()
   // Every connection, joined or not: `server.close` waits for all of them.
@@ -150,7 +173,7 @@ export async function serveLocalLine<In, Out>(
     })
     const leave = (): void => {
       sockets.delete(socket)
-      if (clients.delete(socket)) onLeave?.()
+      if (clients.delete(socket)) onLeave?.(client)
     }
     socket.on('close', leave)
     socket.on('error', leave)

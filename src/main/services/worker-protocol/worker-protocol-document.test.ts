@@ -31,7 +31,9 @@ describe('worker protocol document', () => {
   it('has every role open with hello both ways, the worker saying what it can run', () => {
     for (const role of WORKER_ROLES) {
       const { clientToWorker, workerToClient } = manifest.roles[role]
-      assert.deepEqual(clientToWorker['hello'], ['protocol', 'version'], role)
+      // Anything past the protocol and version is optional (a turn host's probe).
+      const required = (clientToWorker['hello'] ?? []).filter((field) => !field.endsWith('?'))
+      assert.deepEqual(required, ['protocol', 'version'], role)
       const hello = workerToClient['hello'] ?? []
       for (const field of ['pid', 'protocol', 'version'])
         assert.ok(hello.includes(field), `${role} hello has ${field}`)

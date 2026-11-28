@@ -177,6 +177,17 @@ import { senderProjectId } from './ipc/sender-project-root.ts'
 import { diffAcceptancePrompt, setDiffAcceptanceHandler } from './services/diff-acceptance-wake.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
 import { setRemoteWatcherInstallApprover } from './services/ssh-workspace/remote-watcher-install-approval.ts'
+import { storageGet } from './services/storage/storage.ts'
+import { setSshWorkerInstallApprover } from './services/ssh-worker/ssh-worker-install-approval.ts'
+import { SSH_THREAD_BUSY } from './services/ssh-worker/ssh-worker-seed.ts'
+import { turnNeeds } from './services/turn-host/turn-needs.ts'
+import type { ReviewedTurn } from './services/turn-host/reviewed-turn.ts'
+import { SshThreadRefused } from '@shared/ssh-thread-refused.ts'
+import {
+  createSshTurnHosts,
+  sshProjectOf,
+  type SshTurnHosts,
+} from './services/ssh-worker/ssh-turn-hosts.ts'
 import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-watcher.ts'
 import {
   reapOversizedGortexDaemon,
@@ -1088,6 +1099,11 @@ app
       }
       const link = createTurnHostLink(launch)
       turnHostLink = link
+      // An SSH project's turns run on its host's worker, which keeps the
+      // thread there (docs/plans/harness-worker-roadmap.md, R3 step 3).
+      sshTurnHosts = createSshTurnHosts(launch, (message) => {
+        foreignTurnDependencies.deliver?.(message)
+      })
       // The host re-reads the profile before its next turn once the app wrote
       // it; one notice for every write made in the same tick.
       let profileNoticePending = false
@@ -1181,6 +1197,16 @@ app
         body,
         type: 'shell',
         cause: 'ssh-watcher-install',
+        allowRemember: false,
+      })
+      return approved
+    })
+    setSshWorkerInstallApprover(async ({ title, body }) => {
+      const { approved } = await requestApproval({
+        title,
+        body,
+        type: 'shell',
+        cause: 'ssh-worker-install',
         allowRemember: false,
       })
       return approved
@@ -1519,6 +1545,60 @@ app
       },
     )
 
+    /**
+     * Run a human prompt protected review approved on the SSH project's host,
+     * or in the turn host, when one takes it. False when neither ran it, so
+     * the caller runs it here as before. A schedule run is checked against
+     * the app's own run record, and a thread the app is already running
+     * stays here, so the copy here and the host's never go apart.
+     */
+    const runReviewedTurnInHost = async (
+      projectId: string,
+      threadId: string,
+      rawPrompt: string,
+      payload: ReturnType<typeof parseAgentRunPayload>,
+      reviewed: ReviewedTurn,
+    ): Promise<boolean> => {
+      if (payload.automationRun === true) return false
+      const onSshHost =
+        sshTurnHosts && !listRunningThreadIds().includes(threadId)
+          ? sshProjectOf(storageGet('projects'), projectId)
+          : null
+      const ranOnSshHost =
+        onSshHost !== null && sshTurnHosts
+          ? (await sshTurnHosts.run(
+              onSshHost.hostId,
+              onSshHost.project,
+              threadId,
+              rawPrompt,
+              reviewed,
+              // The host runs its own commands, which the app does not confine.
+              { ...(await turnNeeds(projectId, threadId, payload.model)), sandbox: false },
+            )) === 'host'
+          : false
+      const ranInHost =
+        ranOnSshHost ||
+        (turnHostLink?.ready === true
+          ? (await turnHostLink.run(
+              projectId,
+              threadId,
+              rawPrompt,
+              reviewed,
+              await turnNeeds(projectId, threadId, payload.model),
+            )) === 'host'
+          : false)
+      // The host gives the thread's lease back before its last transcript
+      // write lands, so the follower's repaint at the release can still read
+      // the turn as running. `ended` comes after that write: paint it again.
+      if (ranInHost) {
+        agentDispatcher.forgetHistory(projectId, threadId)
+        await foreignTurnDependencies.repaint({ projectId, threadId }).catch((error: unknown) => {
+          console.warn('[turn-host] could not repaint a finished host turn:', error)
+        })
+      }
+      return ranInHost
+    }
+
     ipcMain.handle(
       'agent:run',
       async (
@@ -1547,10 +1627,13 @@ app
         const mobilePromptGrantId = parseIpcArgs(z.uuid().optional(), [mobilePromptGrantArg])
         // A delegated prompt's authority is decided here, not by the renderer's
         // pre-check: a revoke can land between that check and this invoke.
-        // Every prompt here passes protected review, and the turn runs in this
-        // process with the reviewed payload and its claims. The experimental turn
-        // host (#4560) takes the renderer's raw payload, so it is not used for
-        // these turns yet: follow-up is to hand it the reviewed request instead.
+        // Every prompt here passes protected review. An ordinary human prompt
+        // then runs on the SSH project's host or in the turn host when one takes
+        // it, with what review decided (`reviewed-turn.ts`); phone, delegated
+        // and schedule prompts keep their claims in this process.
+        // A delegated prompt runs here, so not while an SSH host runs the thread.
+        if (delegation && sshTurnHosts?.runningThreadIds().includes(threadId) === true)
+          throw new SshThreadRefused(SSH_THREAD_BUSY)
         if (mobilePromptGrantId !== undefined) {
           if (delegation) throw new IpcValidationError('Mobile prompts cannot delegate a subthread')
           const grant = mobilePromptGrants.consume(mobilePromptGrantId, {
@@ -1916,43 +1999,55 @@ app
               optimistic !== undefined &&
               protectedPromptSubmissionIsUnchanged(payload.userContent, submission)
             const { automationRun: _automationRun, ...ordinaryPayload } = payload
-            await agentDispatcher.dispatch({
-              projectId,
-              threadId,
-              payload: { ...ordinaryPayload, userContent: reviewedContent },
-              protectedHistory: protectedInputs.history,
-              protectedPlan: protectedInputs.plan,
-              protectedHumanStart: {
-                content: reviewedContent,
-                ...(preserveOptimisticDisplay ? { preserveOptimisticDisplay: true as const } : {}),
-                ...(preserveOptimisticDisplay && optimistic.attachments !== undefined
-                  ? {
-                      attachments: reviewedTranscriptAttachments(
-                        optimistic.attachments,
-                        optimistic.content,
-                        payload.userContent,
-                      ),
-                    }
-                  : {}),
-                acceptMessageId: () =>
-                  acceptReviewedUserMessage(
-                    projectId,
-                    threadId,
-                    optimistic
-                      ? {
-                          messageId: optimistic.id,
-                          claim: (): boolean =>
-                            consumeProtectedPromptMessageAppend(
-                              senderId,
-                              projectId,
-                              threadId,
-                              optimistic.id,
-                            ),
-                        }
-                      : undefined,
-                  ),
-              },
+            const attachments =
+              preserveOptimisticDisplay && optimistic.attachments !== undefined
+                ? reviewedTranscriptAttachments(
+                    optimistic.attachments,
+                    optimistic.content,
+                    payload.userContent,
+                  )
+                : undefined
+            // The bubble's one-use append receipt, claimed once: a host that
+            // refuses the turn leaves the claim for the in-process run below.
+            let optimisticClaim: boolean | undefined
+            const claimOptimistic = (): boolean => {
+              optimisticClaim ??=
+                optimistic !== undefined &&
+                consumeProtectedPromptMessageAppend(senderId, projectId, threadId, optimistic.id)
+              return optimisticClaim
+            }
+            const ranInHost = await runReviewedTurnInHost(projectId, threadId, rawPrompt, payload, {
+              content: reviewedContent,
+              history: protectedInputs.history,
+              plan: protectedInputs.plan,
+              ...(optimistic !== undefined && claimOptimistic()
+                ? { optimisticMessageId: optimistic.id }
+                : {}),
+              ...(preserveOptimisticDisplay ? { preserveOptimisticDisplay: true as const } : {}),
+              ...(attachments !== undefined ? { attachments } : {}),
             })
+            if (!ranInHost) {
+              await agentDispatcher.dispatch({
+                projectId,
+                threadId,
+                payload: { ...ordinaryPayload, userContent: reviewedContent },
+                protectedHistory: protectedInputs.history,
+                protectedPlan: protectedInputs.plan,
+                protectedHumanStart: {
+                  content: reviewedContent,
+                  ...(preserveOptimisticDisplay
+                    ? { preserveOptimisticDisplay: true as const }
+                    : {}),
+                  ...(attachments !== undefined ? { attachments } : {}),
+                  acceptMessageId: () =>
+                    acceptReviewedUserMessage(
+                      projectId,
+                      threadId,
+                      optimistic ? { messageId: optimistic.id, claim: claimOptimistic } : undefined,
+                    ),
+                },
+              })
+            }
           }
         }
         await parkCompletedPullRequestWorktree(projectId, threadId).catch((error: unknown) => {
@@ -2118,11 +2213,8 @@ app
       transcriptWriter.noteUserAbort(threadId, reason ?? 'stop')
       abortAgent(threadId, reason)
       // A turn a worker or the turn host runs stops there.
-      if (
-        !foreignTurns.requestStop(threadId) &&
-        turnHostLink?.runningThreadIds().includes(threadId)
-      )
-        turnHostLink.stop(threadId)
+      if (foreignTurns.requestStop(threadId) || sshTurnHosts?.stop(threadId) === true) return
+      if (turnHostLink?.runningThreadIds().includes(threadId)) turnHostLink.stop(threadId)
     })
 
     ipcMain.handle(
@@ -2186,7 +2278,8 @@ app
     ipcMain.handle('agent:running-thread-ids', async (event) => {
       assertMainFrameSender(event, win)
       const foreign = await foreignTurns.discover()
-      return [...new Set([...listRunningThreadIds(), ...foreign])]
+      const onSshHosts = sshTurnHosts?.runningThreadIds() ?? []
+      return [...new Set([...listRunningThreadIds(), ...foreign, ...onSshHosts])]
     })
 
     // Re-run just the post-turn review for a thread — the retry action on a
@@ -2466,6 +2559,8 @@ let listActiveTurns: (() => HandOffTarget[]) | undefined
 let stopFollowingForeignTurns: (() => void) | undefined
 /** The line to the resident turn host, when `turnsRunInHost` is on. */
 let turnHostLink: TurnHostLink | undefined
+/** SSH projects' turn hosts, when `turnsRunInHost` is on. */
+let sshTurnHosts: SshTurnHosts | undefined
 
 /**
  * Start a turn worker for each turn this quit cut off, so it continues now
@@ -2501,10 +2596,14 @@ async function cleanupBeforeQuit(): Promise<void> {
   // A stopped host turn ends as a quit-interrupted one (Retry on the next
   // launch); the quit waits for its commands to drain, as for in-process turns.
   const hostLink = turnHostLink
-  const hostTurnsStopped =
+  const hostTurnsStopped = Promise.all([
     hostLink && (!quitHandsOff || quitInstallsUpdate())
       ? hostLink.stopAllForQuit(HOST_TURN_QUIT_DRAIN_MS)
-      : Promise.resolve()
+      : undefined,
+    // An SSH host's turns cannot go on without this app to make their model
+    // calls: every quit stops them.
+    sshTurnHosts?.stopAllForQuit(HOST_TURN_QUIT_DRAIN_MS),
+  ])
   stopFollowingForeignTurns?.()
   const transcriptDrain = interruptTurnTranscripts?.()
   // Host-side default-branch fetches run in their own process group and would

@@ -19,6 +19,11 @@ import { createFakeApi } from '../fake-api.test-support.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { ACP_CANCELLED_TOOL_CALL_RESULT } from '@shared/tools/tool-interruption.ts'
 
+// A mounted conversation keeps timers of its own (the environment-setup offer
+// re-checks 30 s after a thread status change), so one left mounted holds this
+// file's test process open until they fire. Unmount each view after its test.
+const unmounts: (() => void)[] = []
+
 // Cross-message tool runs in the conversation VIEW. The derivation and the
 // display-item shapes are covered in src/shared/tools/{tool-runs,tool-display}
 // .test.ts; this file asserts what a thread with the recorded topology actually
@@ -35,7 +40,7 @@ function fakeApi(): ApiClient {
 function mount(store: ReturnType<typeof createStore>): HTMLElement {
   const host = document.createElement('div')
   document.body.append(host)
-  mountConversation(host, store, fakeApi())
+  unmounts.push(mountConversation(host, store, fakeApi()))
   return host
 }
 
@@ -81,6 +86,7 @@ function seedRun(): { store: ReturnType<typeof createStore>; threadId: string; i
 }
 
 afterEach(() => {
+  for (const unmount of unmounts.splice(0)) unmount()
   document.body.replaceChildren()
 })
 
