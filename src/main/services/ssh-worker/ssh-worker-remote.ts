@@ -161,11 +161,14 @@ cd "$dir" || exit 1
 mkdir -p "$profile" && chmod 700 "$profile" || exit 1
 # The worker outlives this connection: it must not hold a forwarded agent.
 unset SSH_AUTH_SOCK
+# Its threads and worktrees live in the profile, whatever the host's own
+# environment points Copse at.
+unset COPSE_WORKSPACE_DIR COPSE_WORKTREES_DIR
 if command -v setsid >/dev/null 2>&1; then detach=setsid; else detach=; fi
 # The bundle by its full path, so \`ps\` shows which build a worker runs.
 # The profile is the worker's whole Copse directory: threads, worktrees and
 # caches land there, apart from any Copse the host's user runs themselves.
-COPSE_DIR="$profile" $detach nohup "$node" "$dir/${SSH_WORKER_BUNDLE}" --user-data "$profile/user-data" --app-version "$version" --ready-file "$ready" --relay-inference >"$dir/worker.log" 2>&1 </dev/null &
+COPSE_DIR="$profile" $detach nohup "$node" "$dir/${SSH_WORKER_BUNDLE}" --user-data "$profile/user-data" --app-version "$version" --ready-file "$ready" --relay-inference --commands-unsandboxed >"$dir/worker.log" 2>&1 </dev/null &
 pid=$!
 tries=0
 while [ ! -s "$ready" ]; do

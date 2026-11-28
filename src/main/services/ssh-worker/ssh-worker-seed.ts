@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, open, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
+import { SshThreadRefused } from '@shared/ssh-thread-refused.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { z } from 'zod'
 import type { SshConnection } from '../ssh-workspace/connection-manager.ts'
@@ -10,6 +11,7 @@ import {
   isSecretSettingKey,
   securitySettingsSchema,
 } from '../storage/settings-writable.ts'
+import { parseThreadMetaValue } from '@copse/thread-store/thread-boundary.ts'
 import { adoptThreadFiles, threadDirectoryPath } from '../thread-store.ts'
 import {
   packArchive,
@@ -167,12 +169,6 @@ async function writeSyncMark(dir: string, threadId: string, eventsHash: string):
   await writeFile(`${file}.tmp`, JSON.stringify({ threadId, eventsHash }))
   await rename(`${file}.tmp`, file)
 }
-
-/**
- * The thread cannot be given to the host: a turn runs it there, or it went on
- * here and there apart. The prompt is refused rather than run in the app.
- */
-export class SshThreadRefused extends Error {}
 
 /** A turn runs the thread on the host. */
 export const SSH_THREAD_BUSY =
@@ -333,7 +329,8 @@ export async function pullThreadMirror(
   await adoptThreadFiles(projectId, threadId, async (dir) => {
     const here = await readLocalMeta(dir)
     for (const entry of entries) {
-      const data = entry.path === 'meta.json' ? mergedMeta(entry.data, here, seeded) : entry.data
+      const data =
+        entry.path === 'meta.json' ? mergedMeta(entry.data, here, seeded, threadId) : entry.data
       const file = join(dir, ...entry.path.split('/'))
       await mkdir(dirname(file), { recursive: true })
       const part = `${file}.mirror-${String(process.pid)}`
@@ -379,16 +376,23 @@ function mergedMeta(
   hostData: Buffer,
   here: Record<string, unknown> | null,
   seeded: SeededThread,
+  threadId: string,
 ): Buffer {
   const host = safeJsonParse(hostData.toString('utf8'))
   if (!isRecord(host)) throw new Error("the host's copy of the thread has a damaged meta.json")
   const merged = Object.fromEntries(
     Object.entries(host).filter(([field]) => !LAPTOP_META_FIELDS.has(field)),
   )
-  if (here === null) return Buffer.from(JSON.stringify(merged))
-  for (const field of LAPTOP_META_FIELDS)
-    if (Object.hasOwn(here, field)) merged[field] = here[field]
-  if (here['title'] !== seeded.title && typeof here['title'] === 'string')
-    merged['title'] = here['title']
+  if (here !== null) {
+    for (const field of LAPTOP_META_FIELDS)
+      if (Object.hasOwn(here, field)) merged[field] = here[field]
+    if (here['title'] !== seeded.title && typeof here['title'] === 'string')
+      merged['title'] = here['title']
+  }
+  // The thread is the one this copy is for, whatever the host's file says.
+  merged['id'] = threadId
+  // A meta the store would not read would drop the thread from its list.
+  if (parseThreadMetaValue(merged) === null)
+    throw new Error("the host's copy of the thread has a meta.json this app cannot read")
   return Buffer.from(JSON.stringify(merged))
 }

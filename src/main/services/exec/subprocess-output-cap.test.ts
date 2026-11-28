@@ -1,6 +1,8 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  appendFlatCapped,
+  FlatCappedText,
   CappedOutputAccumulator,
   COMMAND_OUTPUT_TRUNCATED_MARKER,
   evidenceRank,
@@ -269,5 +271,20 @@ describe('evidenceRank', () => {
     assert.equal(evidenceRank('compiled 12 files'), null)
     assert.equal(evidenceRank('0 failed, 12 passed'), null)
     assert.equal(evidenceRank('   '), null)
+  })
+})
+
+describe('FlatCappedText', () => {
+  it('gathers chunks into what appending them one by one gives, within the cap and past it', () => {
+    for (const cap of [64, 10]) {
+      const chunks = ['héllo ', 'wörld ', '', 'and more text past a small cap']
+      const text = new FlatCappedText(cap)
+      let flat = ''
+      for (const chunk of chunks) {
+        text.append(chunk)
+        flat = appendFlatCapped(flat, chunk, cap)
+      }
+      assert.equal(text.text(), flat, `cap ${String(cap)}`)
+    }
   })
 })

@@ -6,10 +6,11 @@
  * import `electron`.
  *
  *   turn-host.js --user-data <dir> [--app-version <v>] [--packaged] [--ready-file <path>]
- *                [--relay-inference]
+ *                [--relay-inference] [--commands-unsandboxed]
  *
  * With `--relay-inference` (a worker on an SSH host) every model call is made
- * by the attached app with its own keys (`host-inference-relay.ts`).
+ * by the attached app with its own keys (`host-inference-relay.ts`), and with
+ * `--commands-unsandboxed` its commands are judged as an SSH project's are.
  *
  * With `--ready-file`, it writes the socket path it serves (or that another
  * host already serves) there once a client can connect: a starter on another
@@ -46,6 +47,7 @@ async function main(): Promise<number> {
       'ready-file': { type: 'string' },
       // On another machine: model calls go to the attached app, which holds the keys.
       'relay-inference': { type: 'boolean', default: false },
+      'commands-unsandboxed': { type: 'boolean', default: false },
     },
     strict: true,
   })
@@ -128,6 +130,13 @@ async function main(): Promise<number> {
     })
   }
   runtime.teardownOnSignals()
+  // A worker on an SSH host judges its commands as the app judges an SSH
+  // project's (docs/shell-permissions.md, "SSH workspaces"): no sandbox, so
+  // ordinary commands ask first, whatever the host's own sandbox could do.
+  if (values['commands-unsandboxed']) {
+    const { setProjectSandboxEnabled } = await import('../../project-sandbox/enabled.ts')
+    setProjectSandboxEnabled(false)
+  }
 
   const relay = values['relay-inference'] ? new HostInferenceRelay() : undefined
   if (relay !== undefined) {

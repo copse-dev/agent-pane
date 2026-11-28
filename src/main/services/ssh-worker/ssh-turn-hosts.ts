@@ -1,3 +1,4 @@
+import { SshThreadRefused } from '@shared/ssh-thread-refused.ts'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import type { SshConnection } from '../ssh-workspace/connection-manager.ts'
@@ -14,14 +15,17 @@ import type {
   TurnHostLinkDependencies,
   TurnPlacement,
 } from '../turn-host/turn-host-link.ts'
-import { connectTurnHost } from '../turn-host/turn-host-protocol.ts'
-import type { TurnNeeds } from '../worker-protocol/worker-capabilities.ts'
+import { connectTurnHost, type HostInferRequest } from '../turn-host/turn-host-protocol.ts'
+import {
+  turnCannotRunOn,
+  type TurnNeeds,
+  type WorkerCapabilities,
+} from '../worker-protocol/worker-capabilities.ts'
 import {
   hostThreadState,
   pullThreadMirror,
   seedSshWorker,
   SSH_THREAD_BUSY,
-  SshThreadRefused,
   type SeededProject,
   type SeededThread,
 } from './ssh-worker-seed.ts'
@@ -58,24 +62,32 @@ export interface SshTurnHostDependencies {
    */
   settleRunning: (projectId: string, threadId: string) => Promise<void>
   wait: (ms: number) => Promise<void>
+  now: () => number
   log: (line: string) => void
 }
 
 /** What a run needs of its host's link. */
 export type SshTurnHostLink = Pick<
   TurnHostLink,
-  'ensureConnected' | 'profileChanged' | 'run' | 'close' | 'subscribe' | 'stop'
+  'ensureConnected' | 'profileChanged' | 'run' | 'close' | 'subscribe' | 'stop' | 'stopAllForQuit'
 >
 
 interface Host {
   link: SshTurnHostLink
   node: RemoteNode
+  /** What the worker said it can run, when it started. */
+  capabilities: WorkerCapabilities
 }
 
 /** A thread whose turn this app gave a host, from its seeding to its copy back. */
 interface RunningThread {
   hostId: string
   projectId: string
+  startedAt: number
+  /** The models this turn may have the app call: its own and the settings' role models. */
+  models: Set<string>
+  /** Tokens its model calls have sent, as estimated from their size. */
+  spent: number
   /** Set once the host has the thread; before, a stop is only noted. */
   link: SshTurnHostLink | null
   stopped: boolean
@@ -83,6 +95,25 @@ interface RunningThread {
 
 /** How often the app looks again at a thread a turn still holds on its host. */
 const HELD_RECHECK_MS = 15_000
+/**
+ * How long one turn on a host may have the app make its model calls, and wait
+ * for the host to let go of the thread. Past it the host's calls are refused,
+ * as a container run's are past its time limit.
+ */
+const TURN_WALL_CLOCK_MS = 4 * 60 * 60_000
+/** The most one host turn's calls may send, estimated at four characters a token. */
+const TURN_TOKEN_BUDGET = 40_000_000
+/** Settings that name a model a turn may call for one of its roles. */
+const ROLE_MODEL_SETTINGS = [
+  'model',
+  'localDefaultModel',
+  'smallTasksModel',
+  'subagentModel',
+  'advisorModel',
+  'orchestrationWorkerModel',
+  'safetyModel',
+  'reviewModel',
+]
 /** How many looks in a row may fail (about five minutes) before the app stops waiting. */
 const HELD_UNREAD_LIMIT = 20
 
@@ -90,6 +121,13 @@ export class SshTurnHosts {
   private readonly hosts = new Map<string, Promise<Host | null>>()
 
   private readonly running = new Map<string, RunningThread>()
+
+  /**
+   * Threads a turn still held on its host when the app stopped waiting for it
+   * (the host went out of reach, or the wait ran out): still running as far
+   * as the window knows, so Stop can reach them when the host is back.
+   */
+  private readonly heldThere = new Map<string, { hostId: string; projectId: string }>()
 
   private readonly deps: SshTurnHostDependencies
 
@@ -109,8 +147,17 @@ export class SshTurnHosts {
     payload: string,
     needs: TurnNeeds,
   ): Promise<TurnPlacement> {
-    if (this.running.has(threadId)) throw new SshThreadRefused(SSH_THREAD_BUSY)
-    const thread: RunningThread = { hostId, projectId: project.id, link: null, stopped: false }
+    if (this.running.has(threadId) || this.heldThere.has(threadId))
+      throw new SshThreadRefused(SSH_THREAD_BUSY)
+    const thread: RunningThread = {
+      hostId,
+      projectId: project.id,
+      startedAt: this.deps.now(),
+      models: new Set(needs.model === undefined ? [] : [needs.model]),
+      spent: 0,
+      link: null,
+      stopped: false,
+    }
     this.running.set(threadId, thread)
     try {
       return await this.runOnHost(thread, project, threadId, payload, needs)
@@ -121,27 +168,72 @@ export class SshTurnHosts {
 
   /** Threads whose turn runs on an SSH host now. */
   runningThreadIds(): string[] {
-    return [...this.running.keys()]
+    return [...this.running.keys(), ...this.heldThere.keys()]
   }
 
-  /** Whether a host may act for this thread (null: for any of its turns). */
-  admits(hostId: string, threadId: string | null, projectId?: string): boolean {
-    if (threadId !== null) {
-      const thread = this.running.get(threadId)
-      return (
-        thread?.hostId === hostId && (projectId === undefined || thread.projectId === projectId)
-      )
-    }
-    return [...this.running.values()].some((thread) => thread.hostId === hostId)
+  /** Whether a host may act for this thread now: a turn of it this app sent there. */
+  admits(hostId: string, threadId: string, projectId?: string): boolean {
+    const thread = this.running.get(threadId)
+    return thread?.hostId === hostId && (projectId === undefined || thread.projectId === projectId)
+  }
+
+  /**
+   * Why the app does not make this model call for a host, or null when it
+   * does: only for a turn this app sent it, for a model that turn uses,
+   * within the turn's time and token budget.
+   */
+  refuseCall(hostId: string, request: HostInferRequest): string | null {
+    const thread = this.running.get(request.threadId)
+    if (thread?.hostId !== hostId) return 'This app sent that host no turn of this thread.'
+    if (!thread.models.has(request.model))
+      return `This turn does not use ${request.model}, so the app does not call it for the host.`
+    if (this.deps.now() - thread.startedAt > TURN_WALL_CLOCK_MS)
+      return 'This turn has run past its time limit on the host.'
+    const tokens = Math.ceil(JSON.stringify(request.messages).length / 4)
+    if (thread.spent + tokens > TURN_TOKEN_BUDGET)
+      return 'This turn has spent its token budget on the host.'
+    thread.spent += tokens
+    return null
   }
 
   /** Stop a thread's turn on its host; false when none runs there. */
   stop(threadId: string): boolean {
+    const held = this.heldThere.get(threadId)
+    if (held !== undefined) {
+      void this.stopHeld(threadId, held.hostId, held.projectId)
+      return true
+    }
     const thread = this.running.get(threadId)
     if (thread === undefined) return false
     thread.stopped = true
     thread.link?.stop(threadId)
     return true
+  }
+
+  /**
+   * Stop every SSH turn for a quit: with the app gone their model calls have
+   * no one to make them, so they would only wait. Each ends interrupted.
+   */
+  async stopAllForQuit(timeoutMs: number): Promise<void> {
+    const hosts = await Promise.all([...this.hosts.values()])
+    await Promise.all(
+      hosts.map((host) =>
+        host === null ? Promise.resolve() : host.link.stopAllForQuit(timeoutMs),
+      ),
+    )
+  }
+
+  /** Reach the host again to stop a turn it held, then bring the thread back. */
+  private async stopHeld(threadId: string, hostId: string, projectId: string): Promise<void> {
+    const host = await this.host(hostId)
+    if (host === null) {
+      this.deps.log(`[ssh-worker] ${hostId} is out of reach; ${threadId} keeps running there`)
+      return
+    }
+    host.link.stop(threadId)
+    if (!(await this.whileHeld(hostId, host.node, projectId, threadId, this.deps.now()))) return
+    await this.mirror(hostId, host.node, projectId, threadId, {})
+    this.heldThere.delete(threadId)
   }
 
   private async runOnHost(
@@ -155,13 +247,20 @@ export class SshTurnHosts {
     const host = await this.host(hostId)
     const connection = this.deps.connection(hostId)
     if (host === null || connection === null) return 'app'
+    // Before the thread goes there: a turn the worker cannot run stays here.
+    const cannot = turnCannotRunOn(host.capabilities, needs)
+    if (cannot !== null) {
+      this.deps.log(`[ssh-worker] ${threadId} runs in the app: ${cannot}`)
+      return 'app'
+    }
     let seeded: SeededThread
     try {
-      seeded = await seedSshWorker(connection, host.node, {
-        settings: await this.deps.settings(),
-        project,
-        threadId,
-      })
+      const settings = await this.deps.settings()
+      for (const key of ROLE_MODEL_SETTINGS) {
+        const model = settings[key]
+        if (typeof model === 'string' && model !== '') thread.models.add(model)
+      }
+      seeded = await seedSshWorker(connection, host.node, { settings, project, threadId })
     } catch (error) {
       if (error instanceof SshThreadRefused) throw error
       this.deps.log(`[ssh-worker] ${threadId} runs in the app: ${String(error)}`)
@@ -183,8 +282,9 @@ export class SshTurnHosts {
         throw new SshThreadRefused(SSH_THREAD_BUSY)
       if (placement === 'host') {
         // A line that dropped ends the run here while the turn goes on there.
-        await this.whileHeld(hostId, host.node, project.id, threadId)
-        await this.mirror(hostId, host.node, project.id, threadId, seeded)
+        if (await this.whileHeld(hostId, host.node, project.id, threadId, thread.startedAt))
+          await this.mirror(hostId, host.node, project.id, threadId, seeded)
+        else this.heldThere.set(threadId, { hostId, projectId: project.id })
       }
       return placement
     } finally {
@@ -212,27 +312,30 @@ export class SshTurnHosts {
 
   /**
    * Wait while a turn on the host still holds the thread, so Stop still
-   * reaches it. A host that cannot be read is tried again for a while; the
-   * next prompt is refused while it is held anyway.
+   * reaches it. A host that cannot be read is tried again for a while.
+   * Resolves whether the host let go; false when the app stopped waiting.
    */
   private async whileHeld(
     hostId: string,
     node: RemoteNode,
     projectId: string,
     threadId: string,
-  ): Promise<void> {
+    startedAt: number,
+  ): Promise<boolean> {
     let unread = 0
-    while (unread < HELD_UNREAD_LIMIT) {
+    for (;;) {
       const connection = this.deps.connection(hostId)
-      if (connection === null) return
+      if (connection === null) return false
       const state = await hostThreadState(connection, node, projectId, threadId).catch(
         (error: unknown) => {
           this.deps.log(`[ssh-worker] could not look at ${threadId} on the host: ${String(error)}`)
           return null
         },
       )
-      if (state !== null && !state.held) return
+      if (state !== null && !state.held) return true
       unread = state === null ? unread + 1 : 0
+      if (unread >= HELD_UNREAD_LIMIT || this.deps.now() - startedAt > TURN_WALL_CLOCK_MS)
+        return false
       await this.deps.wait(HELD_RECHECK_MS)
     }
   }
@@ -284,7 +387,7 @@ export class SshTurnHosts {
       this.deps.log(`[ssh-worker] turns on ${hostId} run in the app: ${started.reason}`)
       return null
     }
-    const { localSocket, node } = started
+    const { localSocket, node, hello } = started
     const link = this.deps.link(hostId, {
       connect: (onMessage, onClose) => connectTurnHost(localSocket, onMessage, onClose),
       readRecord: async (projectId, threadId) => {
@@ -300,7 +403,7 @@ export class SshTurnHosts {
       // checked from here, so an uncertain turn is left to the user.
       isAlive: () => true,
     })
-    return { link, node }
+    return { link, node, capabilities: hello.capabilities }
   }
 }
 
@@ -345,7 +448,10 @@ export function createSshTurnHosts(
       createTurnHostLink(launch, {
         ...elsewhere,
         // Prompts, model calls and late output only for a turn this app gave it.
-        admits: (threadId, projectId) => turnHosts.admits(hostId, threadId, projectId),
+        admits: {
+          thread: (threadId, projectId) => turnHosts.admits(hostId, threadId, projectId),
+          call: (request) => turnHosts.refuseCall(hostId, request),
+        },
         // The host is another machine: nothing it sends changes this one's
         // settings or projects, starts a turn of another thread, records a
         // process here, or answers for this computer's SSH logins.
@@ -358,7 +464,10 @@ export function createSshTurnHosts(
             error: 'A turn on an SSH host cannot send prompts to other threads yet.',
           }),
         callTaskSupervisor: () =>
-          Promise.resolve({ error: 'A turn on an SSH host keeps its processes there.' }),
+          Promise.resolve({
+            error:
+              'Background commands do not run on an SSH host yet, so this one was stopped. Run it in the foreground instead.',
+          }),
         askSsh: () => Promise.resolve({ value: '' }),
         // A turn the worker starts itself is seen at the thread's next turn.
         onThreadTaken: (_projectId, threadId): void => {
@@ -374,6 +483,7 @@ export function createSshTurnHosts(
     },
     settleRunning: settleInterrupted,
     wait: (ms) => delay(ms),
+    now: Date.now,
     log: launch.log,
   })
   return turnHosts

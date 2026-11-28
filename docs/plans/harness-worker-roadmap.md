@@ -150,9 +150,7 @@ _State._ R3 is built in five steps:
    to the latest app of the worker's own version: one that only asked the version, or
    never said hello, gets no calls and no turns. The line reader scans each chunk once,
    so a long call costs its length.
-   Still open, for step 3: the app side answers a call only for a turn it sent that
-   host, for that turn's models, within a budget and a time limit (with SSH turns); a
-   relayed provider carries no compaction identity, an error's provider status does not
+   Still open: a relayed provider carries no compaction identity, an error's provider status does not
    cross the line, and model calls that bypass `buildProvider` are not relayed.
 3. **SSH thread turns run on the host**, with the thread store there and a mirror kept on
    the laptop (the user's choice, 2026-11-28). In parts:
@@ -166,7 +164,7 @@ _State._ R3 is built in five steps:
      then removed. Two builds that share a version number (developer builds) count as
      one.
    - **The thread on the host, and turns go there (done, behind Experimental).** With
-     "Run every turn in a background worker" on, an SSH project's prompt starts its host's
+     "Run each turn in a background process" (Experimental, Background turn host) on, an SSH project's prompt starts its host's
      worker (`ssh-worker/ssh-turn-hosts.ts`), which gets the project as its own, rooted at
      the remote path with no SSH host, so its tools run there directly, and the settings
      the renderer may write, which hold no keys, less those naming other machines or
@@ -186,11 +184,30 @@ _State._ R3 is built in five steps:
      changes the laptop's settings or projects, prompts another thread, records a process
      on the laptop, or answers its SSH logins. A turn the worker cannot take runs in the
      app as before.
-   - **Still open in step 3:** a turn the worker starts by itself (a wake) is seen at the
-     thread's next turn, not live, and a line that reconnects mid-turn does not stream
-     the rest of it; a lost line cannot check the worker's pid, so such a
-     turn is left to the user (Continue) rather than guessed; the app makes calls for any
-     model it can build; and there is no e2e of a whole turn yet (step 5).
+   - **What the app answers for the host (done).** The app answers a host's model call
+     only for a turn it sent that host, on that turn's model or one of the role models
+     its settings name, within 40M estimated tokens and four hours a turn. Questions,
+     diff reviews and instruction notices are answered only for that turn's thread and
+     project; a question cannot offer workspace trust, and shell output the host sends is
+     dropped. A worker that says it cannot run the turn (`turnCannotRunOn`) is given
+     nothing of the thread. Commands there still ask the user each time (the worker is
+     started with `--commands-unsandboxed`, so it never runs one unasked), and background
+     commands are refused with a message saying to run them in the foreground. A thread
+     the host still holds after its line went stays running in the list; Stop reaches it
+     there, and quitting the app stops every SSH turn. A refused prompt shows why in a
+     toast and keeps a queued prompt queued. The two copies are matched by a sync mark
+     (`ssh-host-sync.json`): the side that moved since the last copy wins, and both moving
+     is refused as a fork.
+   - **Still open in step 3:**
+     - a turn the worker starts by itself (a wake) is seen at the thread's next turn, not
+       live, and a line that reconnects mid-turn does not stream the rest of it;
+     - a lost line cannot check the worker's pid, so such a turn is left to the user
+       (Continue) rather than guessed;
+     - each turn copies the whole thread history both ways, not only what changed;
+     - a thread deleted on the laptop stays in the host's store;
+     - commands on the host run unconfined once the user allows them, as an SSH thread's
+       do today, and background commands do not run there;
+     - there is no e2e of a whole turn yet (step 5).
 4. **The opt-in key lease.**
 5. **The exit gate** as an e2e.
 

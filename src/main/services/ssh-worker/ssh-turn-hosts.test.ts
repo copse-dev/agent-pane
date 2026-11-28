@@ -4,7 +4,10 @@ import type { SshExecResult } from '@shared/types/ssh-workspace.ts'
 import type { SshConnection } from '../ssh-workspace/connection-manager.ts'
 import { FakeSshTransport } from '../ssh-workspace/fake-ssh-transport.ts'
 import type { TurnPlacement } from '../turn-host/turn-host-link.ts'
-import { NO_CAPABILITIES } from '../worker-protocol/worker-capabilities.ts'
+import type { HostInferRequest } from '../turn-host/turn-host-protocol.ts'
+import { NO_CAPABILITIES, type WorkerCapabilities } from '../worker-protocol/worker-capabilities.ts'
+
+const TURNS: WorkerCapabilities = { ...NO_CAPABILITIES, roles: ['turns'] }
 import {
   SshTurnHosts,
   sshProjectOf,
@@ -16,8 +19,26 @@ const NODE = { version: '24.1.0', execPath: '/usr/bin/node', home: '/home/me' }
 const PROJECT = { id: 'p1', name: 'Site', path: '/srv/site' }
 const NEEDS = { model: 'm', pluginRuntimes: false, sandbox: false }
 
+/** The time the hosts see, which a test moves on. */
+const clock = { now: 1_000 }
+
+function call(threadId: string, model: string, text = 'hi'): HostInferRequest {
+  return {
+    t: 'infer',
+    id: 'c1',
+    threadId,
+    model,
+    providerOptions: {},
+    messages: [{ role: 'user', content: text }],
+    tools: [],
+  }
+}
+
 /** A host whose commands all succeed; what ran, by what it was for. */
-function connection(failSeed = false): { connection: SshConnection; ran: string[] } {
+function connection(
+  failSeed = false,
+  held: () => boolean = () => false,
+): { connection: SshConnection; ran: string[] } {
   const ran: string[] = []
   return {
     ran,
@@ -35,7 +56,10 @@ function connection(failSeed = false): { connection: SshConnection; ran: string[
               : (argv[0] ?? '')
         ran.push(kind)
         return Promise.resolve({
-          stdout: kind === 'state' ? '{"size":-1,"prefixHash":"","held":false}\n' : '',
+          stdout:
+            kind === 'state'
+              ? `${JSON.stringify({ size: -1, prefixHash: '', held: held() })}\n`
+              : '',
           stderr: failSeed && kind === 'stores' ? 'disk full' : '',
           code: failSeed && kind === 'stores' ? 1 : 0,
         })
@@ -50,12 +74,20 @@ function hosts(
   placement: TurnPlacement | Promise<TurnPlacement>,
   started = true,
   onRun?: () => void,
-  settings: Promise<Record<string, unknown>> = Promise.resolve({ model: 'm' }),
+  settings: Promise<Record<string, unknown>> = Promise.resolve({
+    model: 'm',
+    smallTasksModel: 'small',
+  }),
+  capabilities: WorkerCapabilities = TURNS,
 ): { hosts: SshTurnHosts; events: string[] } {
   const events: string[] = []
   const link: SshTurnHostLink = {
     stop: (threadId): void => {
       events.push(`stop ${threadId}`)
+    },
+    stopAllForQuit: (): Promise<void> => {
+      events.push('stop-all')
+      return Promise.resolve()
     },
     ensureConnected: (): Promise<boolean> => Promise.resolve(true),
     profileChanged: (): void => {
@@ -80,7 +112,7 @@ function hosts(
               localSocket: '/l.sock',
               remoteSocket: '/r.sock',
               uploaded: false,
-              hello: { version: '1', pid: 1, capabilities: NO_CAPABILITIES },
+              hello: { version: '1', pid: 1, capabilities },
               node: NODE,
             }
           : { ok: false, reason: 'the user kept turns on this computer' },
@@ -97,6 +129,7 @@ function hosts(
       return Promise.resolve()
     },
     wait: () => Promise.resolve(),
+    now: () => clock.now,
     log: () => undefined,
   }
   return { hosts: new SshTurnHosts(deps), events }
@@ -126,8 +159,21 @@ describe("an SSH thread's turns on its host", () => {
     assert.equal(turnHosts.stop('t1'), true)
     assert.equal(turnHosts.stop('t2'), false)
     assert.ok(events.includes('stop t1'))
-    assert.ok(turnHosts.admits('dev', 't1') && turnHosts.admits('dev', null))
-    assert.ok(!turnHosts.admits('dev', 't2') && !turnHosts.admits('other', null))
+    assert.ok(turnHosts.admits('dev', 't1') && turnHosts.admits('dev', 't1', 'p1'))
+    assert.ok(!turnHosts.admits('dev', 't2') && !turnHosts.admits('other', 't1'))
+    assert.ok(!turnHosts.admits('dev', 't1', 'p2'))
+    // The turn's model, and a role model from the settings, are called for it.
+    assert.equal(turnHosts.refuseCall('dev', call('t1', 'm')), null)
+    assert.equal(turnHosts.refuseCall('dev', call('t1', 'small')), null)
+    assert.match(turnHosts.refuseCall('dev', call('t1', 'other-model')) ?? '', /does not use/)
+    assert.match(turnHosts.refuseCall('dev', call('t2', 'm')) ?? '', /no turn/)
+    assert.match(turnHosts.refuseCall('other', call('t1', 'm')) ?? '', /no turn/)
+    assert.match(
+      turnHosts.refuseCall('dev', call('t1', 'm', 'x'.repeat(200_000_000))) ?? '',
+      /token budget/,
+    )
+    clock.now += 5 * 60 * 60_000
+    assert.match(turnHosts.refuseCall('dev', call('t1', 'm')) ?? '', /time limit/)
     ended.resolve('host')
     assert.equal(await first, 'host')
     assert.deepEqual(turnHosts.runningThreadIds(), [])
@@ -148,6 +194,13 @@ describe("an SSH thread's turns on its host", () => {
     const full = hosts(connection(true).connection, 'host')
     assert.equal(await full.hosts.run('dev', PROJECT, 't1', '{}', NEEDS), 'app')
     assert.ok(!full.events.includes('run'))
+
+    // A worker that says it runs no turns is given nothing of the thread.
+    const { connection: conn, ran } = connection()
+    const unable = hosts(conn, 'host', true, undefined, undefined, NO_CAPABILITIES)
+    assert.equal(await unable.hosts.run('dev', PROJECT, 't1', '{}', NEEDS), 'app')
+    assert.deepEqual(ran, [])
+    assert.ok(!unable.events.includes('run'))
   })
 
   it('runs nothing on the host for a turn stopped while it was given the thread', async () => {
@@ -160,6 +213,42 @@ describe("an SSH thread's turns on its host", () => {
     assert.equal(await run, 'host')
     assert.ok(!events.includes('run'))
     assert.ok(events.includes('settle t1'))
+  })
+
+  it('keeps a turn the host still holds running here, and stops it there', async () => {
+    // From the turn on, the host holds the thread and cannot be read, until
+    // the app stops looking (twenty failed reads in a row).
+    const looks = { held: false, unreadable: false }
+    const base = connection(false, () => looks.held)
+    const conn: SshConnection = {
+      ...base.connection,
+      execArgv: (argv, options) =>
+        looks.unreadable && (argv[2] ?? '').includes('prefixHash')
+          ? Promise.resolve({ code: 1, stdout: '', stderr: 'gone' })
+          : base.connection.execArgv(argv, options),
+    }
+    const { hosts: turnHosts, events } = hosts(conn, 'host', true, () => {
+      looks.held = true
+      looks.unreadable = true
+    })
+    assert.equal(await turnHosts.run('dev', PROJECT, 't1', '{}', NEEDS), 'host')
+    assert.deepEqual(turnHosts.runningThreadIds(), ['t1'])
+    assert.ok(!events.includes('settle t1'))
+    await assert.rejects(turnHosts.run('dev', PROJECT, 't1', '{}', NEEDS), /still running/)
+
+    // The host is back: Stop reaches it, and once it lets go the thread comes back.
+    looks.unreadable = false
+    looks.held = false
+    assert.equal(turnHosts.stop('t1'), true)
+    while (turnHosts.runningThreadIds().length > 0)
+      await new Promise<void>((resolve) => {
+        queueMicrotask(resolve)
+      })
+    assert.ok(events.includes('stop t1'))
+    assert.equal(events.at(-1), 'settle t1')
+
+    await turnHosts.stopAllForQuit(10)
+    assert.equal(events.at(-1), 'stop-all')
   })
 
   it('finds the SSH host of a project, and none for a local or missing one', () => {

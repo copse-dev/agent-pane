@@ -1949,10 +1949,14 @@ async function cleanupBeforeQuit(): Promise<void> {
   // A stopped host turn ends as a quit-interrupted one (Retry on the next
   // launch); the quit waits for its commands to drain, as for in-process turns.
   const hostLink = turnHostLink
-  const hostTurnsStopped =
+  const hostTurnsStopped = Promise.all([
     hostLink && (!quitHandsOff || quitInstallsUpdate())
       ? hostLink.stopAllForQuit(HOST_TURN_QUIT_DRAIN_MS)
-      : Promise.resolve()
+      : undefined,
+    // An SSH host's turns cannot go on without this app to make their model
+    // calls: every quit stops them.
+    sshTurnHosts?.stopAllForQuit(HOST_TURN_QUIT_DRAIN_MS),
+  ])
   stopFollowingForeignTurns?.()
   const transcriptDrain = interruptTurnTranscripts?.()
   // Host-side default-branch fetches run in their own process group and would

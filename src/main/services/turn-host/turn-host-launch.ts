@@ -1,4 +1,3 @@
-import type { ProviderStreamChunk } from '@copse/llm/wire-types.ts'
 import { spawn, type SpawnOptions } from 'node:child_process'
 import { mkdirSync, openSync } from 'node:fs'
 import { join } from 'node:path'
@@ -14,6 +13,7 @@ import { redactSecrets } from '@copse/llm/redact-secrets.ts'
 import { knownSecrets } from '../classifiers/classifier-service.ts'
 import { isPidAlive } from '../exec/subprocess-kill.ts'
 import { appInference } from './app-inference.ts'
+import { admitted, type HostAdmission } from './host-admission.ts'
 import { readHostDispatchRecord } from './host-dispatch-record.ts'
 import { TurnHostLink, type TurnHostLinkDependencies } from './turn-host-link.ts'
 import {
@@ -95,7 +95,6 @@ function startHost(deps: TurnHostLaunchDependencies): void {
   deps.log(`[turn-host] started pid ${String(child.pid ?? 'unknown')}`)
 }
 
-/** The link to the profile's host, wired to its stores. */
 /** Settle a thread left running interrupted, so Continue is the user's call. */
 export async function settleInterrupted(projectId: string, threadId: string): Promise<void> {
   const meta = (await loadProjectThreadMetas(projectId)).find((m) => m.id === threadId)
@@ -103,6 +102,7 @@ export async function settleInterrupted(projectId: string, threadId: string): Pr
   await updateMeta(projectId, threadId, { status: 'idle', interruptedTurnAt: Date.now() })
 }
 
+/** The link to the profile's host, wired to its stores. */
 export function createTurnHostLink(
   deps: TurnHostLaunchDependencies,
   /** A host elsewhere (an SSH host's worker) replaces how it is reached. */
@@ -120,11 +120,10 @@ export function createTurnHostLink(
     >
   > & {
     /**
-     * Whether the host may act for this thread now (null: for no thread in
-     * particular, a model call). Left out, it may for any; an SSH host only
-     * for a turn this app sent it.
+     * What the host may act for. Left out, anything; an SSH host only for a
+     * turn this app sent it.
      */
-    admits?: (threadId: string | null, projectId?: string) => boolean
+    admits?: HostAdmission
   } = {},
 ): TurnHostLink {
   const socketPath = turnHostSocketPath(deps.userDataPath)
@@ -183,57 +182,6 @@ export function createTurnHostLink(
     ...replaced,
   }
   return new TurnHostLink(admits === undefined ? linkDeps : admitted(linkDeps, admits))
-}
-
-const refused = (): Error => new Error('This host has no turn of that thread from this app.')
-
-/** A link's handlers that act only for threads `admits` lets the host act for. */
-function admitted(
-  deps: TurnHostLinkDependencies,
-  admits: (threadId: string | null, projectId?: string) => boolean,
-): TurnHostLinkDependencies {
-  const { askUser, askQuestions, reviewDiff, infer, onUnfollowedChunk, onInstructionActivation } =
-    deps
-  const gated: TurnHostLinkDependencies = {
-    ...deps,
-    ...(askUser && {
-      askUser: (prompt, signal) =>
-        admits(prompt.threadId, prompt.projectId)
-          ? askUser(prompt, signal)
-          : Promise.reject(refused()),
-    }),
-    ...(askQuestions && {
-      askQuestions: (prompt, signal) =>
-        admits(prompt.threadId, prompt.projectId)
-          ? askQuestions(prompt, signal)
-          : Promise.resolve(null),
-    }),
-    ...(reviewDiff && {
-      reviewDiff: (prompt, signal) =>
-        admits(prompt.threadId, prompt.projectId)
-          ? reviewDiff(prompt, signal)
-          : Promise.resolve(false),
-    }),
-    ...(infer && {
-      infer: (request, signal): AsyncIterable<ProviderStreamChunk> => {
-        if (!admits(null)) throw refused()
-        return infer(request, signal)
-      },
-    }),
-    ...(onUnfollowedChunk && {
-      onUnfollowedChunk: (message): void => {
-        if (admits(message.threadId)) onUnfollowedChunk(message)
-      },
-    }),
-    ...(onInstructionActivation && {
-      onInstructionActivation: (projectKey, threadId, names): void => {
-        if (admits(threadId)) onInstructionActivation(projectKey, threadId, names)
-      },
-    }),
-  }
-  // Output for the app's own task pane: a host's processes stay there.
-  delete gated.onShellOutput
-  return gated
 }
 
 /**
