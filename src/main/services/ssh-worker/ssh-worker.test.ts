@@ -177,33 +177,76 @@ describe('starting the worker on an SSH host', () => {
     assert.match(started.reason, /Cannot find module x/)
   })
 
+  /** A host whose worker answers each probe with the next of `versions`. */
+  function workers(versions: (string | null)[]): {
+    hello: NonNullable<SshWorkerDependencies['hello']>
+    stopTurns: () => Promise<void>
+    retired: () => number
+    stopped: () => number
+  } {
+    let retired = 0
+    let stopped = 0
+    let last: string | null = null
+    return {
+      hello: (_socket, probe): Promise<SshWorkerHello | null> => {
+        if (!probe) {
+          retired++
+          return Promise.resolve(last === null ? null : { ...HELLO, version: last })
+        }
+        last = versions.length > 1 ? (versions.shift() ?? null) : (versions[0] ?? null)
+        return Promise.resolve(last === null ? null : { ...HELLO, version: last })
+      },
+      stopTurns: (): Promise<void> => {
+        stopped++
+        return Promise.resolve()
+      },
+      retired: () => retired,
+      stopped: () => stopped,
+    }
+  }
+
   it('lets a worker of an older build retire, then starts this one', async () => {
     const { connection, transport, ran } = await host({
       node: { stdout: NODE },
       sh: { stdout: '/run/w.sock\n' },
     })
-    const versions = ['1.2.2', '1.2.3']
-    const started = await startSshWorker('dev', {
-      ...deps(connection),
-      hello: () => Promise.resolve({ ...HELLO, version: versions.shift() ?? '' }),
-    })
+    // The old worker exits between a start and its hello once.
+    const worker = workers(['1.2.2', null, '1.2.3'])
+    const started = await startSshWorker('dev', { ...deps(connection), ...worker })
     assert.ok(started.ok)
     assert.equal(started.hello.version, '1.2.3')
-    assert.deepEqual(ran, ['node', 'test', 'sh', 'sh', 'prune'])
+    assert.equal(worker.retired(), 1)
+    assert.equal(worker.stopped(), 0)
+    assert.deepEqual(ran, ['node', 'test', 'sh', 'sh', 'sh', 'prune'])
     assert.equal(transport.socketForwards.size, 1)
   })
 
-  it('gives up on a worker of another build that keeps running', async () => {
+  it('leaves a worker of a newer Copse alone', async () => {
     const { connection, transport, ran } = await host({
       node: { stdout: NODE },
       sh: { stdout: '/run/w.sock\n' },
     })
-    const started = await startSshWorker('dev', {
-      ...deps(connection),
-      hello: () => Promise.resolve({ ...HELLO, version: '1.2.2' }),
-    })
+    const worker = workers(['1.3.0'])
+    const started = await startSshWorker('dev', { ...deps(connection), ...worker })
     assert.ok(!started.ok)
-    assert.match(started.reason, /1\.2\.2 .*still finishing its turns/)
+    assert.match(started.reason, /newer Copse \(1\.3\.0\); update Copse/)
+    assert.equal(worker.retired(), 0)
+    assert.deepEqual(ran, ['node', 'test', 'sh'])
+    assert.equal(transport.socketForwards.size, 0)
+  })
+
+  it("stops an older worker's turns when it does not make way, then gives up", async () => {
+    const { connection, transport, ran } = await host({
+      node: { stdout: NODE },
+      sh: { stdout: '/run/w.sock\n' },
+    })
+    const worker = workers(['1.2.2'])
+    const started = await startSshWorker('dev', { ...deps(connection), ...worker })
+    assert.ok(!started.ok)
+    assert.match(started.reason, /1\.2\.2 on the host did not make way/)
+    assert.equal(worker.retired(), 1)
+    assert.equal(worker.stopped(), 1)
+    assert.equal(ran.filter((key) => key === 'sh').length, 10)
     assert.ok(!ran.includes('prune'))
     assert.equal(transport.socketForwards.size, 0)
   })

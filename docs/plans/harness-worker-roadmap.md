@@ -151,9 +151,14 @@ _State._ R3 is built in five steps:
 3. **SSH thread turns run on the host**, with the thread store there and a mirror kept on
    the laptop (the user's choice, 2026-11-28). In parts:
    - **A profile that outlives builds (done).** Every build serves
-     `~/.copse/worker/profile/`. A worker of an older build that still serves it is told
-     to retire by the app's hello, and the start is retried until this build's answers.
-     Builds no running process was started from are then removed.
+     `~/.copse/worker/profile/`, which is the worker's `COPSE_DIR`. The app first only
+     asks which version serves it (a `probe` hello). A worker of a newer Copse is left
+     alone, and the user is told to update. One of an older Copse is told to retire, and
+     the start is retried until this build's answers; its turns wait for an app of its own
+     version, which an update leaves none of, so after five tries they are stopped. Builds
+     no running process was started from, and not uploaded in the last ten minutes, are
+     then removed. Two builds that share a version number (developer builds) count as
+     one.
    - **The thread on the host.** The app gives the worker the SSH project as a project of
      its own, rooted at the remote path, with the settings a turn reads, and the thread's
      history the first time; the worker's turns then run their tools on the host directly.

@@ -230,8 +230,9 @@ export class TurnHost {
       case 'hello':
         this.clients.set(client, { version: message.version })
         // An app of another version means an update was installed: finish the
-        // turns here and make way for a host of the app's own version.
-        if (message.version !== this.deps.version && !this.retiring) {
+        // turns here and make way for a host of the app's own version. An app
+        // that is only asking which version serves here changes nothing.
+        if (message.version !== this.deps.version && message.probe !== true && !this.retiring) {
           this.deps.log(`an app of version ${message.version} attached: retiring`)
           this.retire()
         }

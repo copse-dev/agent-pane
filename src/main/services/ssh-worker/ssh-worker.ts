@@ -1,4 +1,5 @@
 import { setTimeout as delay } from 'node:timers/promises'
+import { compare, valid } from 'semver'
 import { localSocketPath } from '../local-socket.ts'
 import type { SshConnection } from '../ssh-workspace/connection-manager.ts'
 import { getSshConnectionManager } from '../ssh-workspace/connection-manager.ts'
@@ -46,8 +47,13 @@ export interface SshWorkerDependencies {
   approve: (hostLabel: string) => Promise<boolean>
   /** This build's worker, packed (`ssh-worker-package.ts`). */
   workerPackage: () => Promise<SshWorkerPackage>
-  /** Say hello to the worker on the forward (tests answer for it). */
-  hello?: (localSocket: string) => Promise<SshWorkerHello | null>
+  /**
+   * Say hello to the worker on the forward (tests answer for it). A probe
+   * only asks its version; a full hello retires a worker of another version.
+   */
+  hello?: (localSocket: string, probe: boolean) => Promise<SshWorkerHello | null>
+  /** Stop every turn the worker on the forward runs (tests answer for it). */
+  stopTurns?: (localSocket: string) => Promise<void>
   /** How long to give a worker of another version to retire (tests shorten it). */
   retireWaitMs?: number
 }
@@ -68,8 +74,16 @@ export type SshWorkerStart =
     }
   | { ok: false; reason: string }
 
-/** Starts to try while a worker of another version retires. */
+/**
+ * Starts to try while a worker of an older build retires. After these its turns
+ * are stopped, and as many again are tried.
+ */
 const START_ATTEMPTS = 5
+
+/** Whether `version` is a newer Copse than `than`; unknown versions are not. */
+function newer(version: string, than: string): boolean {
+  return valid(version) !== null && valid(than) !== null && compare(version, than) > 0
+}
 
 let cachedPackage: Promise<SshWorkerPackage> | null = null
 
@@ -158,11 +172,18 @@ async function startOnce(hostId: string, deps: SshWorkerDependencies): Promise<S
 
   const say =
     deps.hello ??
-    ((socket: string): Promise<SshWorkerHello | null> => sshWorkerHello(socket, deps.version))
+    ((socket: string, probe: boolean): Promise<SshWorkerHello | null> =>
+      sshWorkerHello(socket, deps.version, probe))
+  const stopTurns =
+    deps.stopTurns ?? ((socket: string): Promise<void> => stopSshWorkerTurns(socket, deps.version))
   const localSocket = localSocketPath(deps.userDataPath, 'ssh-worker', hostId)
-  // Every build shares the host's profile, so a worker of an older build may
-  // already serve it. Our hello tells it to retire: it finishes its turns and
-  // exits, and a later start brings up this build's.
+  // Every build shares the host's profile, so a worker of another build may
+  // already serve it. One of a newer Copse is left alone: this app is the one
+  // to update. One of an older Copse is told to retire: it finishes its turns
+  // and exits, and a later start brings up this build's. Its turns wait for an
+  // app of its own version, which an update leaves none of, so if it is still
+  // running after a while they are stopped.
+  let retiring = false
   for (let attempt = 1; ; attempt++) {
     const started = await connection.execArgv(startArgv(node, dir, deps.version), {
       timeoutMs: 60_000,
@@ -178,17 +199,31 @@ async function startOnce(hostId: string, deps: SshWorkerDependencies): Promise<S
     } catch (error) {
       return { ok: false, reason: `could not reach the worker: ${String(error)}` }
     }
-    const hello = await say(localSocket)
+    const hello = await say(localSocket, true)
     if (hello?.version === deps.version) {
       await prune(connection, node, worker.id)
       return { ok: true, localSocket, remoteSocket, uploaded, hello }
     }
-    await connection.transport.closeSocketForward(localSocket)
-    if (hello === null) return { ok: false, reason: 'the worker did not answer' }
-    if (attempt >= START_ATTEMPTS)
+    if (hello !== null && newer(hello.version, deps.version)) {
+      await connection.transport.closeSocketForward(localSocket)
       return {
         ok: false,
-        reason: `a worker of version ${hello.version} on the host is still finishing its turns`,
+        reason: `the host runs the worker of a newer Copse (${hello.version}); update Copse to run turns there`,
+      }
+    }
+    if (hello !== null && !retiring) {
+      await say(localSocket, false)
+      retiring = true
+    } else if (hello !== null && attempt === START_ATTEMPTS) {
+      await stopTurns(localSocket)
+    }
+    await connection.transport.closeSocketForward(localSocket)
+    // A retiring worker can exit between the start and the hello: try again.
+    if (hello === null && !retiring) return { ok: false, reason: 'the worker did not answer' }
+    if (attempt >= 2 * START_ATTEMPTS)
+      return {
+        ok: false,
+        reason: `a worker of version ${hello?.version ?? 'unknown'} on the host did not make way`,
       }
     await delay(deps.retireWaitMs ?? 2_000)
   }
@@ -212,6 +247,7 @@ export async function stopSshWorkerForward(
 export async function sshWorkerHello(
   localSocket: string,
   version: string,
+  probe = false,
 ): Promise<SshWorkerHello | null> {
   const hello = Promise.withResolvers<Extract<HostToApp, { t: 'hello' }> | null>()
   const line = await connectTurnHost(
@@ -225,7 +261,7 @@ export async function sshWorkerHello(
   )
   if (line === null) return null
   try {
-    line.send({ t: 'hello', version, protocol: TURN_HOST_PROTOCOL })
+    line.send({ t: 'hello', version, protocol: TURN_HOST_PROTOCOL, ...(probe ? { probe } : {}) })
     // A worker answers hello at once; one that does not is not one.
     const timer = setTimeout(() => {
       hello.resolve(null)
@@ -239,6 +275,35 @@ export async function sshWorkerHello(
       capabilities: answer.capabilities ?? NO_CAPABILITIES,
     }
   } finally {
+    line.close()
+  }
+}
+
+/**
+ * Stop every turn the worker on the forward runs, and wait (up to a minute)
+ * until none does.
+ */
+async function stopSshWorkerTurns(localSocket: string, version: string): Promise<void> {
+  const stopped = Promise.withResolvers<undefined>()
+  const line = await connectTurnHost(
+    localSocket,
+    (message) => {
+      if (message.t === 'stopped-all') stopped.resolve(undefined)
+    },
+    () => {
+      stopped.resolve(undefined)
+    },
+  )
+  if (line === null) return
+  const timer = setTimeout(() => {
+    stopped.resolve(undefined)
+  }, 60_000)
+  try {
+    line.send({ t: 'hello', version, protocol: TURN_HOST_PROTOCOL, probe: true })
+    line.send({ t: 'stop-all', reason: 'quit' })
+    await stopped.promise
+  } finally {
+    clearTimeout(timer)
     line.close()
   }
 }

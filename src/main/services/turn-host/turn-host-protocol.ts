@@ -84,7 +84,13 @@ import {
 export const TURN_HOST_PROTOCOL = 3
 
 export type AppToHost =
-  | { t: 'hello'; version: string; protocol: number }
+  | {
+      t: 'hello'
+      version: string
+      protocol: number
+      /** Only asking: a host of another version does not retire for it. */
+      probe?: boolean | undefined
+    }
   | { t: 'dispatch'; id: string; projectId: string; threadId: string; payload: string }
   | { t: 'attach' }
   | { t: 'stop'; threadId: string; reason?: 'quit' | undefined }
@@ -249,7 +255,12 @@ export type HostToApp =
 const id = z.string().min(1).max(256)
 
 export const appToHostSchema = z.discriminatedUnion('t', [
-  z.object({ t: z.literal('hello'), version: z.string().max(128), protocol: z.number().int() }),
+  z.object({
+    t: z.literal('hello'),
+    version: z.string().max(128),
+    protocol: z.number().int(),
+    probe: z.boolean().optional(),
+  }),
   z.object({
     t: z.literal('dispatch'),
     id,

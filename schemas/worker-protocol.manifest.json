@@ -28,6 +28,7 @@
           "threadId"
         ],
         "hello": [
+          "probe?",
           "protocol",
           "version"
         ],

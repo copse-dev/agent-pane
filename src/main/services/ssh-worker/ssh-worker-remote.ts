@@ -188,8 +188,9 @@ export function startArgv(node: RemoteNode, dir: string, version: string): strin
 }
 
 /**
- * Remove every build but `keep` that no running process was started from,
- * and the half-written uploads of uploads that are no longer running. Prints
+ * Remove every build but `keep` that no running process was started from and
+ * that was not uploaded in the last ten minutes, and the half-written uploads
+ * of uploads that are no longer running. Prints
  * what it removed, one per line.
  */
 const PRUNE_JS = `
@@ -197,7 +198,10 @@ const fs = require('fs'), path = require('path'), { execFileSync } = require('ch
 const [home, keep] = process.argv.slice(1)
 let running = ''
 try {
-  running = execFileSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8' })
+  running = execFileSync('ps', ['-axo', 'pid=,command='], {
+    encoding: 'utf8',
+    maxBuffer: 256 * 1024 * 1024,
+  })
 } catch {
   process.exit(0)
 }
@@ -208,6 +212,8 @@ for (const name of fs.readdirSync(home)) {
   const build = /^[0-9a-f]{16}$/.test(name) && name !== keep
   if (part ? alive(Number(part[2])) : !build) continue
   if (!part && running.includes(dir + '/')) continue
+  // Another app may have just uploaded it and not started it yet.
+  if (!part && Date.now() - fs.statSync(dir).mtimeMs < 10 * 60 * 1000) continue
   fs.rmSync(dir, { recursive: true, force: true })
   console.log(name)
 }

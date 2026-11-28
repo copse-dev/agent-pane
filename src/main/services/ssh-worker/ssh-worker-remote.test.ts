@@ -7,6 +7,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -122,8 +123,13 @@ describe('the host side of the SSH worker', () => {
     const keep = 'a'.repeat(16)
     const old = 'b'.repeat(16)
     const busy = 'c'.repeat(16)
-    for (const name of [keep, old, busy, 'profile', `${'d'.repeat(16)}.part-999999999`])
+    const fresh = 'e'.repeat(16)
+    const hourAgo = new Date(Date.now() - 3_600_000)
+    for (const name of [keep, old, busy, fresh, 'profile', `${'d'.repeat(16)}.part-999999999`]) {
       mkdirSync(join(workers, name), { recursive: true })
+      // Only the fresh build was uploaded just now.
+      if (name !== fresh) utimesSync(join(workers, name), hourAgo, hourAgo)
+    }
     // A worker of the busy build, as `ps` shows one: its bundle by full path.
     const running = spawn(process.execPath, [
       '-e',
@@ -134,7 +140,7 @@ describe('the host side of the SSH worker', () => {
       await new Promise((resolve) => running.once('spawn', resolve))
       const pruned = run(pruneArgv({ ...node, home }, keep))
       assert.equal(pruned.code, 0, pruned.stderr)
-      assert.deepEqual(readdirSync(workers).sort(), [keep, busy, 'profile'].sort())
+      assert.deepEqual(readdirSync(workers).sort(), [keep, busy, fresh, 'profile'].sort())
     } finally {
       running.kill()
     }
