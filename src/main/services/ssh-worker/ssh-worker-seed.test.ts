@@ -364,7 +364,8 @@ describe('what the worker on an SSH host is given', () => {
       join(local, 'ssh-host-sync.json'),
       JSON.stringify({ threadId: 't11', eventsHash: hash }),
     )
-    const prompt = `${JSON.stringify(userLine('m1'))}\n`
+    // Stuck as forked: the refused prompt, and one refused as a fork since.
+    const prompt = `${JSON.stringify(userLine('m1'))}\n${JSON.stringify(userLine('m2'))}\n`
     writeFileSync(join(remote, 'events.jsonl'), `${synced}{"n":3}\n`)
     writeFileSync(join(local, 'events.jsonl'), synced + prompt)
     await seedSshWorker(connection, host, input)

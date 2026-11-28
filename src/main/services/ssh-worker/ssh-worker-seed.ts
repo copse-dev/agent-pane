@@ -266,7 +266,10 @@ function unrunPrompts(events: Buffer, mark: SyncMark, shared: number): Buffer | 
   // The prompt being sent now, and those the host refused; a prompt that is
   // neither may have run here, cut off before any answer, so it is a fork.
   const last = prompts.at(-1)
-  const unrun = (id: string): boolean => id === last || mark.refused.includes(id)
+  // A mark from before refusals were kept cannot tell: a thread stuck as
+  // forked before then takes every prompt it holds.
+  const unrun = (id: string): boolean =>
+    id === last || mark.refused.includes(id) || mark.size === undefined
   for (const line of lines) {
     const prompt = line?.type === 'message' && line.role === 'user' && unrun(line.id)
     if (!prompt && line?.type !== 'model_selected') return null
