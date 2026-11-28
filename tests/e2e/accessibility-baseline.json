@@ -27,10 +27,6 @@
       "label-content-name-mismatch": {
         "count": 3,
         "tracker": "https://github.com/copse-dev/agent-pane/issues/1369"
-      },
-      "target-size": {
-        "count": 2,
-        "tracker": "https://github.com/copse-dev/agent-pane/issues/1369"
       }
     },
     "transcript-dark": {
