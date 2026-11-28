@@ -88,6 +88,13 @@ function isPrivateEndpoint(path: string): boolean {
   }
 }
 
+/**
+ * The longest line a peer may send. A peer that sends more without a newline
+ * is not speaking the protocol, and holding it all would only grow memory, so
+ * its connection is closed.
+ */
+const MAX_LINE_CHARS = 128 * 1024 * 1024
+
 function readLines(socket: Socket, onLine: (line: string) => void): void {
   let buffered = ''
   socket.setEncoding('utf8')
@@ -95,7 +102,13 @@ function readLines(socket: Socket, onLine: (line: string) => void): void {
     buffered += data
     for (;;) {
       const end = buffered.indexOf('\n')
-      if (end < 0) return
+      if (end < 0 || end > MAX_LINE_CHARS) {
+        if (buffered.length > MAX_LINE_CHARS) {
+          buffered = ''
+          socket.destroy()
+        }
+        return
+      }
       const line = buffered.slice(0, end)
       buffered = buffered.slice(end + 1)
       if (line.length > 0) onLine(line)

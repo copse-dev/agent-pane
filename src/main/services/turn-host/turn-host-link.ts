@@ -114,6 +114,8 @@ export interface TurnHostLinkDependencies {
    * Left out, the call fails: only a worker on another machine asks.
    */
   infer?: (request: HostInferRequest, signal: AbortSignal) => AsyncIterable<ProviderStreamChunk>
+  /** Hide secrets in an error before it goes back to a worker. */
+  redact?: (text: string) => string
   log?: (line: string) => void
   createId?: () => string
 }
@@ -124,6 +126,9 @@ type PromptKinds = {
 
 /** How many answered prompts the link remembers, to answer a replay the same way. */
 const ANSWERED_LIMIT = 256
+
+/** The model calls one host may have open in this app at once. */
+const MAX_INFERENCES = 8
 
 /** A host answers hello at once; one that does not in this time is not one. */
 const HELLO_TIMEOUT_MS = 10_000
@@ -616,14 +621,28 @@ export class TurnHostLink {
   /** Make a worker's model call and stream the reply back on the same line. */
   private async infer(request: HostInferRequest): Promise<void> {
     const connection = this.connection
-    const controller = new AbortController()
-    this.inferences.set(request.id, controller)
     const reply = (message: AppToHost): void => {
       if (this.connection === connection) connection?.send(message)
     }
+    // Only a host of this build that said hello on this line spends this app's
+    // keys, on a few calls at a time, each once.
+    const refusal = !this.ready
+      ? 'This app makes model calls only for a worker of its own version.'
+      : this.inferences.has(request.id)
+        ? 'A model call with this id is already open.'
+        : this.inferences.size >= MAX_INFERENCES
+          ? 'Too many model calls are open at once; try again.'
+          : this.deps.infer === undefined
+            ? 'This app makes no model calls for a worker.'
+            : null
+    const infer = this.deps.infer
+    if (refusal !== null || infer === undefined) {
+      reply({ t: 'infer-error', id: request.id, error: refusal ?? 'Refused.' })
+      return
+    }
+    const controller = new AbortController()
+    this.inferences.set(request.id, controller)
     try {
-      const infer = this.deps.infer
-      if (infer === undefined) throw new Error('This app makes no model calls for a worker.')
       for await (const chunk of infer(request, controller.signal)) {
         if (controller.signal.aborted) return
         reply({ t: 'infer-chunk', id: request.id, chunk })
@@ -632,7 +651,9 @@ export class TurnHostLink {
     } catch (error) {
       if (!controller.signal.aborted) {
         const text = error instanceof Error ? error.message : String(error)
-        reply({ t: 'infer-error', id: request.id, error: text.slice(0, 8_000) })
+        // The worker's host may not be the user's: no key leaves in an error.
+        const redact = this.deps.redact ?? ((value: string): string => value)
+        reply({ t: 'infer-error', id: request.id, error: redact(text).slice(0, 8_000) })
       }
     } finally {
       this.inferences.delete(request.id)

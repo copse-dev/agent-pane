@@ -140,9 +140,14 @@ _State._ R3 is built in five steps:
    attached last, which builds the provider with its own keys and streams the reply back
    (`turn-host/host-inference-relay.ts`, `turn-host/app-inference.ts`; turn host
    protocol 3). With no app attached a call waits for one, so a turn pauses while the
-   laptop sleeps; an app that goes away mid-reply fails that call. A relayed provider
-   carries no compaction identity yet.
-3. **SSH thread turns run on the host**, with the thread store there. The store moves to
+   laptop sleeps; an app that goes away mid-reply, or goes quiet for 10 minutes, fails
+   that call. The app answers only a host of its own version that said hello on that
+   line, at most 8 calls at once, and redacts known keys from any error it sends back.
+   Still open, for step 3: a relayed provider carries no compaction identity, an error's
+   provider status does not cross the line, model calls that bypass `buildProvider` are
+   not relayed, and the app makes a call for any model it can build (no allow-list).
+3. **SSH thread turns run on the host**, with the thread store there and a mirror kept on
+   the laptop (the user's choice, 2026-11-28). The store moves to
    a profile that outlives builds (step 1 keeps one per build), and old builds are removed
    once no worker runs from them.
 4. **The opt-in key lease.**

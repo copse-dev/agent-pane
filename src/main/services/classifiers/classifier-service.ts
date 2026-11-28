@@ -267,7 +267,8 @@ function credentialScope(profile: ClassifierProfile): string {
       ])
 }
 
-function knownSecrets(): string[] {
+/** Every model key this app knows, to redact from text that leaves it. */
+export function knownSecrets(): string[] {
   const slugs = new Set([
     ...Object.keys(PROVIDER_ENV_VARS),
     ...getResolvedExtraProviders().map((provider) => provider.id),

@@ -403,6 +403,33 @@ export const HOST_CHECKED_SHAPES: ReadonlyMap<z.core.$ZodType, z.ZodType> = new 
 
 // Chunks and snapshots come from this user's own host, written by the same
 // code that writes them in-process; the envelope is checked, the payload is not.
+/**
+ * A worker's model call. Both ends check it: the worker before it sends, so a
+ * call too big for the line fails at once instead of being dropped, and the
+ * app before it spends anything on it. The messages are those a container
+ * run's guest may send (`host-inference-wire.ts`), with room for a long thread.
+ */
+export const hostInferRequestSchema = z.object({
+  t: z.literal('infer'),
+  id,
+  model: z.string().min(1).max(512),
+  promptCacheKey: z.string().max(512).optional(),
+  providerOptions: z.object({
+    reasoning: z.enum(REASONING_LEVELS).optional(),
+    maxReasoning: z.enum(REASONING_LEVELS).optional(),
+    maxOutputTokens: z.number().int().positive().max(10_000_000).optional(),
+  }),
+  messages: z.array(inferenceRequestSchema.shape.messages.element).max(20_000),
+  tools: z.array(inferenceRequestSchema.shape.tools.element).max(2_000),
+  options: z
+    .object({
+      toolChoice: z.object({ name: z.string().max(256) }).optional(),
+      compactAtTokens: z.number().int().positive().optional(),
+      suppressReasoning: z.boolean().optional(),
+    })
+    .optional(),
+})
+
 export const hostToAppSchema = z.discriminatedUnion('t', [
   z.object({
     t: z.literal('hello'),
@@ -530,28 +557,7 @@ export const hostToAppSchema = z.discriminatedUnion('t', [
       .max(10_000),
   }),
   z.object({ t: z.literal('stopped-all') }),
-  // A worker's model call: the app checks it as a container run's guest call
-  // is checked (`host-inference-wire.ts`) before it spends anything on it.
-  z.object({
-    t: z.literal('infer'),
-    id,
-    model: z.string().min(1).max(512),
-    promptCacheKey: z.string().max(512).optional(),
-    providerOptions: z.object({
-      reasoning: z.enum(REASONING_LEVELS).optional(),
-      maxReasoning: z.enum(REASONING_LEVELS).optional(),
-      maxOutputTokens: z.number().int().positive().max(10_000_000).optional(),
-    }),
-    messages: inferenceRequestSchema.shape.messages,
-    tools: inferenceRequestSchema.shape.tools,
-    options: z
-      .object({
-        toolChoice: z.object({ name: z.string().max(256) }).optional(),
-        compactAtTokens: z.number().int().positive().optional(),
-        suppressReasoning: z.boolean().optional(),
-      })
-      .optional(),
-  }),
+  hostInferRequestSchema,
   z.object({ t: z.literal('infer-cancel'), id }),
   z.object({ t: z.literal('taken'), projectId: id, threadId: id }),
   z.object({ t: z.literal('approval-cancel'), id }),

@@ -22,6 +22,7 @@ type Infer = (request: HostInferRequest, signal: AbortSignal) => AsyncIterable<P
 async function joined(
   relay: HostInferenceRelay,
   infer: Infer,
+  hostVersion = VERSION,
 ): Promise<{ app: TurnHostClient; toApp: HostToApp[]; drop: () => void }> {
   const toApp: HostToApp[] = []
   let deliver: (message: HostToApp) => void = () => undefined
@@ -47,7 +48,7 @@ async function joined(
           if (!open) return
           if (message.t === 'hello')
             queueMicrotask(() => {
-              onMessage({ t: 'hello', version: VERSION, protocol: 3, pid: 1 })
+              onMessage({ t: 'hello', version: hostVersion, protocol: 3, pid: 1 })
             })
           else if (message.t === 'attach') relay.attach(app)
           else if (
@@ -55,7 +56,7 @@ async function joined(
             message.t === 'infer-end' ||
             message.t === 'infer-error'
           )
-            relay.receive(message)
+            relay.receive(message, app)
         },
         close: (): void => undefined,
       })
@@ -65,7 +66,7 @@ async function joined(
     settleUncertain: (): Promise<void> => Promise.resolve(),
     infer,
   })
-  assert.equal(await link.ensureConnected(), true)
+  assert.equal(await link.ensureConnected(), hostVersion === VERSION)
   return {
     app,
     toApp,
@@ -173,5 +174,77 @@ describe("a worker's model calls, made by the app", () => {
     const call = collect(relay.provider('m'), controller.signal)
     controller.abort(new Error('Stopped'))
     await assert.rejects(call, /Stopped/)
+  })
+
+  it('fails a call whose app stopped answering without closing the line', async () => {
+    const relay = new HostInferenceRelay({ quietLimitMs: 20 })
+    const { toApp } = await joined(relay, async function* (_request, signal) {
+      yield { type: 'text', text: 'partial' }
+      await new Promise((resolve) => {
+        signal.addEventListener('abort', resolve, { once: true })
+      })
+    })
+    await assert.rejects(collect(relay.provider('m')), /stopped answering/)
+    assert.ok(toApp.some((message) => message.t === 'infer-cancel'))
+  })
+
+  it('fails at once a call too big for the line, sending nothing', async () => {
+    const relay = new HostInferenceRelay()
+    const { toApp } = await joined(relay, async function* () {
+      await Promise.resolve()
+      yield { type: 'text', text: 'never' }
+    })
+    const tools = Array.from({ length: 2_001 }, (_, index) => ({
+      name: `t${String(index)}`,
+      description: '',
+      parameters: {},
+    }))
+    const call = (async (): Promise<void> => {
+      for await (const _chunk of relay.provider('m').stream([], tools)) {
+        // never reached
+      }
+    })()
+    await assert.rejects(call, /cannot be sent to the app/)
+    assert.equal(toApp.length, 0)
+  })
+
+  it('ignores a reply from an app the call did not go to', async () => {
+    const relay = new HostInferenceRelay({ createId: (): string => 'call-1', quietLimitMs: 50 })
+    const other: TurnHostClient = {
+      join: (): undefined => undefined,
+      send: (): undefined => undefined,
+    }
+    await joined(relay, async function* (_request, signal) {
+      relay.receive(
+        { t: 'infer-chunk', id: 'call-1', chunk: { type: 'text', text: 'forged' } },
+        other,
+      )
+      relay.receive({ t: 'infer-end', id: 'call-1' }, other)
+      yield { type: 'text', text: 'real' }
+      await new Promise((resolve) => {
+        signal.addEventListener('abort', resolve, { once: true })
+      })
+    })
+    const chunks: ProviderStreamChunk[] = []
+    await assert.rejects(async (): Promise<void> => {
+      for await (const chunk of relay.provider('m').stream([], [])) chunks.push(chunk)
+    }, /stopped answering/)
+    assert.deepEqual(chunks, [{ type: 'text', text: 'real' }])
+  })
+
+  it('an app spends nothing for a worker of another version', async () => {
+    const relay = new HostInferenceRelay()
+    let asked = 0
+    await joined(
+      relay,
+      async function* () {
+        asked++
+        await Promise.resolve()
+        yield { type: 'text', text: 'paid' }
+      },
+      '0.9.0',
+    )
+    await assert.rejects(collect(relay.provider('m')), /only for a worker of its own version/)
+    assert.equal(asked, 0)
   })
 })
