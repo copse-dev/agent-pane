@@ -141,9 +141,14 @@ describe('local socket lines', { skip: process.platform === 'win32' }, () => {
     const dir = mkdtempSync(join(tmpdir(), 'ls-lines-'))
     const note = z.object({ t: z.literal('note'), text: z.string() })
     const received: string[] = []
+    // Wait for the third line itself: a 4 MiB line can take more event-loop
+    // turns to drain than a turn-counting wait allows on a slow runner.
+    let allThree = (): void => {}
+    const third = new Promise<void>((resolve) => (allThree = resolve))
     const path = localSocketPath(dir, 'turn', 'lines')
     const server = await serveLocalLine<z.infer<typeof note>, Ping>(path, note, (message) => {
       received.push(message.text)
+      if (received.length === 3) allThree()
     })
     try {
       const socket = createConnection(path)
@@ -154,7 +159,7 @@ describe('local socket lines', { skip: process.platform === 'win32' }, () => {
         socket.write(line.slice(at, at + 64 * 1024))
       socket.write('\n{"t":"note","text":"a"}\n{"t":"note",')
       socket.write('"text":"b"}\n')
-      await until(() => received.length === 3)
+      await third
       assert.deepEqual(
         received.map((text) => text.length),
         [long.length, 1, 1],
