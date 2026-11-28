@@ -17,6 +17,7 @@ import { load } from 'js-yaml'
 import { z } from 'zod'
 import { parseScreenshotManifest } from './lib/screenshot-manifest.mts'
 import { readShardWeights } from './test-oracle.mts'
+import { CI_PENDING_STEP, RELEASE_PREFLIGHT_JOB } from './release-dispatch.mts'
 import {
   RELEASE_ARTIFACT_RETENTION_DAYS,
   publishedArtifactNames,
@@ -1451,30 +1452,38 @@ describe('release-cut.yml workflow invariants', () => {
     assert.ok(guard >= 0 && create > guard, 'the existing-tag check must precede tag creation')
   })
 
-  it('starts the signed build by dispatch, because a GITHUB_TOKEN tag raises no push event', () => {
-    // `push: tags` on release-mac.yml cannot fire for a tag this token created,
-    // so dropping the dispatch would silently cut tags nothing ever publishes.
-    assert.match(workflow, /createWorkflowDispatch/)
-    assert.match(workflow, /workflow_id: 'release-mac\.yml'/)
+  it('hands the cut commit to Release dispatch instead of starting the build itself', () => {
+    // Release dispatch is the one place that starts the build, one evaluation
+    // per commit at a time. A cut and CI's completion that both dispatched the
+    // build directly could each see no run yet and build the tag twice. A
+    // GITHUB_TOKEN dispatch fires where a GITHUB_TOKEN tag push would not.
+    const handOver = workflow.slice(
+      workflow.indexOf('- name: Hand the release commit to Release dispatch'),
+    )
+    assert.match(handOver, /^ {8}if: steps\.tag\.outputs\.tag != ''$/m)
+    assert.match(handOver, /workflow_id: 'release-dispatch\.yml'/)
+    assert.match(handOver, /ref: context\.payload\.repository\.default_branch/)
+    assert.match(handOver, /inputs: \{ sha: process\.env\.RELEASE_SHA \}/)
+    assert.match(handOver, /RELEASE_SHA: \$\{\{ steps\.target\.outputs\.sha \}\}/)
+    assert.doesNotMatch(
+      workflow,
+      /release-mac\.yml'|import\(|startRelease|verify-release-validation|sleep /,
+    )
     assert.match(workflow, /^ {2}actions: write/m)
     assert.match(workflow, /^ {2}contents: write/m)
   })
 
-  it('recovers when tag creation succeeded but dispatch did not', () => {
-    // The tag is immutable release state. If createRef succeeds and dispatch
-    // transiently fails, a rerun must not strand that version behind the
-    // ordinary existing-tag no-op. Running the signed build at the tag gives its
-    // workflow run the release SHA, which also makes duplicate detection exact.
+  it('recovers when tag creation succeeded but the hand-over did not', () => {
+    // The tag is immutable release state. If createRef succeeds and the job
+    // then fails, a rerun must not strand that version behind the ordinary
+    // existing-tag no-op: a tag at this exact commit continues to the hand-over.
     assert.match(workflow, /existing\.data\.object\.sha !== sha/)
-    assert.match(workflow, /listWorkflowRuns\(\{/)
-    assert.match(workflow, /head_sha: sha/)
-    assert.match(workflow, /ref: tag/)
     const sameCommitGuard = workflow.indexOf('existing.data.object.sha !== sha')
-    const existingRunLookup = workflow.indexOf('listWorkflowRuns')
-    const dispatch = workflow.indexOf('createWorkflowDispatch')
+    const output = workflow.indexOf("core.setOutput('tag', tag)")
+    const handOver = workflow.indexOf("workflow_id: 'release-dispatch.yml'")
     assert.ok(
-      sameCommitGuard >= 0 && existingRunLookup > sameCommitGuard && dispatch > existingRunLookup,
-      'an exact-tag rerun must check for an existing release run before dispatching',
+      sameCommitGuard >= 0 && output > sameCommitGuard && handOver > output,
+      'a tag at the release commit, new or existing, must reach the hand-over',
     )
   })
 
@@ -1493,6 +1502,108 @@ describe('release-cut.yml workflow invariants', () => {
       workflow,
       /if \[ -z "\$existing" \] \|\| \[ "\$existing" = "\$RELEASE_SHA" \]; then\n\s+node scripts\/release-notes\.mts "\$version"/,
     )
+  })
+})
+
+describe('release-dispatch.yml workflow invariants', () => {
+  const workflow = readFileSync(resolve('.github/workflows/release-dispatch.yml'), 'utf8')
+
+  it('starts from CI completion on release commits and hand-pushed tags', () => {
+    assert.match(
+      workflow,
+      /^ {2}workflow_run:\n {4}workflows: \[CI\]\n {4}types: \[completed\]\n {4}branches: \[release, 'v\*'\]$/m,
+    )
+    const ci = readFileSync(resolve('.github/workflows/ci.yml'), 'utf8')
+    assert.match(ci, /^name: CI$/m, 'workflow_run matches the CI workflow by name')
+    const push = ci.slice(ci.indexOf('\n  push:\n'), ci.indexOf('\n  pull_request:\n'))
+    assert.match(push, /^ {4}branches: \[release, main\]$/m)
+    assert.match(push, /^ {4}tags: \['v\*'\]$/m)
+  })
+
+  it("acts only on this repository's push runs, whatever their conclusion", () => {
+    // A failed run must still reach preflight so the failure issue opens.
+    assert.match(workflow, /github\.event\.workflow_run\.event == 'push'/)
+    assert.match(
+      workflow,
+      /github\.event\.workflow_run\.head_repository\.full_name == github\.repository/,
+    )
+    assert.doesNotMatch(workflow, /workflow_run\.conclusion/)
+  })
+
+  it('serialises the cut hand-over and CI completion per commit', () => {
+    // Both triggers share one concurrency group per commit, so two evaluations
+    // of one commit never run at once; the dispatch record then covers a run
+    // list that has not caught up (scripts/release-dispatch.test.ts).
+    assert.match(
+      workflow,
+      /^ {2}workflow_dispatch:\n {4}inputs:\n {6}sha:\n(?: {8}.*\n)*? {8}required: true\n {8}type: string$/m,
+    )
+    assert.match(
+      workflow,
+      /^ {2}group: release-dispatch-\$\{\{ github\.event\.workflow_run\.head_sha \|\| inputs\.sha \}\}\n {2}cancel-in-progress: false$/m,
+    )
+    // Every reader of the commit takes it from the same expression.
+    const shas = workflow.match(/RELEASE_SHA: .*/g) ?? []
+    assert.equal(shas.length, 2)
+    for (const sha of shas) {
+      assert.equal(sha, 'RELEASE_SHA: ${{ github.event.workflow_run.head_sha || inputs.sha }}')
+    }
+    // A hand-over runs the default branch's scripts, as workflow_run does.
+    assert.match(
+      workflow,
+      /\(github\.event_name == 'workflow_dispatch' &&\n\s+github\.ref == format\('refs\/heads\/\{0\}', github\.event\.repository\.default_branch\)\) \|\|\n\s+\(github\.event_name == 'workflow_run' &&/,
+    )
+  })
+
+  it('runs trusted default-branch scripts with read, dispatch and status permissions only', () => {
+    const dispatch = workflow.slice(
+      workflow.indexOf('\n  dispatch:\n'),
+      workflow.indexOf('\n  report-failure:\n'),
+    )
+    assert.match(workflow, /^permissions: \{\}$/m)
+    assert.match(dispatch, /^ {6}actions: write/m)
+    assert.match(dispatch, /^ {6}contents: read/m)
+    assert.match(dispatch, /^ {6}statuses: write/m)
+    assert.doesNotMatch(dispatch, /contents: write|issues: write/)
+    assert.doesNotMatch(workflow, /contents: write|secrets\./)
+    assert.match(dispatch, /ref: \$\{\{ github\.workflow_sha \}\}/)
+    assert.match(dispatch, /persist-credentials: false/)
+    for (const path of ['scripts/release-dispatch.mts', 'scripts/lib/safe-json.mts']) {
+      assert.ok(dispatch.includes(`            ${path}\n`), path)
+    }
+  })
+
+  it('starts the build only for a tag at this commit and only once CI has finished', () => {
+    const tag = workflow.indexOf('await releaseTagAt(')
+    const empty = workflow.indexOf('if (tag === null) return;')
+    const output = workflow.indexOf("core.setOutput('tag', tag);")
+    const start = workflow.indexOf('await startReleaseWhenCiFinished(')
+    assert.ok(tag >= 0 && empty > tag && output > empty && start > output)
+    assert.doesNotMatch(workflow, /verify-release-validation|startReleaseBuild\(|sleep /)
+    // The event's SHA reaches the scripts through the environment only.
+    const scripts = workflow.split('script: |\n').slice(1)
+    assert.equal(scripts.length, 1)
+    for (const script of scripts) {
+      const lines = script.split('\n')
+      const end = lines.findIndex((line) => line.trim() !== '' && !line.startsWith(' '.repeat(12)))
+      const body = lines.slice(0, end === -1 ? lines.length : end).join('\n')
+      assert.match(body, /startReleaseWhenCiFinished/)
+      assert.doesNotMatch(body, /\$\{\{/)
+    }
+  })
+
+  it('opens an issue when a dispatch fails, from a job that holds only issue access', () => {
+    // For an ordinary promotion this is the only thing that starts the build,
+    // so a failed run must not be silent.
+    const report = workflow.slice(workflow.indexOf('\n  report-failure:\n'))
+    assert.match(report, /^ {4}needs: dispatch\n {4}if: failure\(\)$/m)
+    assert.match(report, /^ {4}permissions:\n {6}issues: write\n {4}steps:/m)
+    assert.match(report, /TAG: \$\{\{ needs\.dispatch\.outputs\.tag \}\}/)
+    assert.match(workflow, /^ {6}tag: \$\{\{ steps\.release\.outputs\.tag \}\}$/m)
+    assert.match(report, /title="Release dispatch failed for \$subject"/)
+    assert.match(report, /gh issue create --repo "\$GITHUB_REPOSITORY" .*--label area:release/)
+    // Event values reach the shell through the environment only.
+    assert.doesNotMatch(report.slice(report.indexOf('run: |')), /\$\{\{/)
   })
 })
 
@@ -1609,6 +1720,39 @@ describe('release-bump.yml workflow invariants', () => {
 
 describe('release-mac.yml workflow invariants', () => {
   const workflow = readFileSync(resolve('.github/workflows/release-mac.yml'), 'utf8')
+
+  it('starts by dispatch once CI finished and reads the evidence once', () => {
+    // A tag trigger would start before CI finished; release-dispatch.yml and
+    // release-cut.yml dispatch it after. Nothing here waits for CI.
+    assert.match(workflow, /^on:\n {2}workflow_dispatch:\n/m)
+    assert.doesNotMatch(workflow, /^ {2}push:/m)
+    assert.doesNotMatch(workflow, /sleep |seq 1 180/)
+    const evidence = workflow.slice(
+      workflow.indexOf('bash scripts/verify-release-validation.sh "$release_sha"'),
+      workflow.indexOf('- name: Preserve the validation used for packaging'),
+    )
+    assert.match(
+      evidence,
+      /if \[ "\$result" = 75 \]; then\n +echo "ci_pending=true" >> "\$GITHUB_OUTPUT"\n +exit 0\n +fi\n +exit "\$result"\n/,
+    )
+  })
+
+  it('stops a dispatch made before CI finished in the step release-dispatch recognises', () => {
+    // An early manual dispatch made no release decision. release-dispatch.mts
+    // finds this step by name in the run's jobs and does not count the run, so
+    // CI's completion still starts the build; the step name is the contract.
+    assert.equal(RELEASE_PREFLIGHT_JOB, 'preflight')
+    assert.match(workflow, /^ {2}preflight:\n/m)
+    const step = workflow.slice(
+      workflow.indexOf(`- name: '${CI_PENDING_STEP}'`),
+      workflow.indexOf('- name: Preserve the validation used for packaging'),
+    )
+    assert.ok(step.length > 0, 'the stop step must sit between the evidence read and the upload')
+    assert.match(step, /^ {8}if: steps\.release\.outputs\.ci_pending == 'true'$/m)
+    assert.match(step, /\n {10}exit 1\n/)
+    assert.doesNotMatch(step.slice(step.indexOf('run: |')), /\$\{\{/)
+    assert.match(workflow, /^ {6}ci_pending: \$\{\{ steps\.release\.outputs\.ci_pending \}\}$/m)
+  })
 
   it('requires the tagged commit to be reachable from release, not trunk', () => {
     // A promotion merge is a commit ON `release` and is not reachable from
@@ -1730,7 +1874,8 @@ describe('release-mac.yml workflow invariants', () => {
     const report = workflow.slice(workflow.indexOf('\n  report-failure:'))
     assert.match(
       report,
-      /needs: \[preflight, verify-clean-release-build, build-test, assemble\]\n {4}if: failure\(\)/,
+      /needs: \[preflight, verify-clean-release-build, build-test, assemble\]\n(?: {4}#.*\n)* {4}if: failure\(\) && needs\.preflight\.outputs\.ci_pending != 'true'\n/,
+      'a run stopped because CI had not finished is not a failed release',
     )
     assert.match(report, /^ {6}issues: write$/m)
     assert.doesNotMatch(report, /contents: write/)

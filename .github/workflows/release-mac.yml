@@ -7,6 +7,12 @@ name: Release (macOS)
 # separate manual workflow so the owner can review the immutable Actions
 # artifacts and publish those exact bytes to the public binary repository
 # without racing an automatic publisher.
+#
+# Started by dispatch only, once CI for the tagged commit has finished:
+# release-dispatch.yml does it from CI's completion, release-cut.yml when CI had
+# already finished. A hand-pushed `v*` tag runs CI at the tag, and that run's
+# completion starts this workflow the same way. A tag trigger here would start
+# before CI finished and fail on pending evidence.
 on:
   workflow_dispatch:
     inputs:
@@ -14,8 +20,6 @@ on:
         description: Existing v<package-version> tag to publish
         required: true
         type: string
-  push:
-    tags: ['v*']
 
 permissions:
   contents: read
@@ -36,11 +40,12 @@ jobs:
       release_type: ${{ steps.release.outputs.release_type }}
       tag: ${{ steps.release.outputs.tag }}
       update_channel: ${{ steps.release.outputs.update_channel }}
+      # `true` when this run was dispatched before CI for the commit finished.
+      ci_pending: ${{ steps.release.outputs.ci_pending }}
     steps:
       # First step in the whole workflow, before the checkout and long before
       # the mac runner: an unset signing secret is the likeliest reason a first
-      # release fails, and discovering it after preflight's CI wait would cost
-      # an hour and a half to learn nothing about the release itself.
+      # release fails, and it says nothing about the release itself.
       - name: Require signing and notarization credentials
         env:
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
@@ -118,16 +123,26 @@ jobs:
           echo "update_channel=$update_channel" >> "$GITHUB_OUTPUT"
 
           # Only the CI workflow's explicit full-release gate is sufficient.
-          # Missing/in-progress evidence may finish; failed evidence stops now.
-          for attempt in $(seq 1 180); do
-            result=0
-            bash scripts/verify-release-validation.sh "$release_sha" > release-validation.json || result=$?
-            if [ "$result" = 0 ]; then exit 0; fi
-            if [ "$result" != 75 ]; then exit "$result"; fi
-            echo "Waiting for full release validation ($attempt/180)"
-            sleep 30
-          done
-          echo "Timed out waiting for full release validation on $release_sha"
+          # This run normally starts once CI for the commit has finished, so the
+          # evidence is read once. Pending evidence means it was dispatched too
+          # early: that is not a release decision, so it stops in the next step.
+          result=0
+          bash scripts/verify-release-validation.sh "$release_sha" > release-validation.json || result=$?
+          if [ "$result" = 75 ]; then
+            echo "ci_pending=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          exit "$result"
+      # A run stopped here never reached a validation decision, so it does not
+      # use up the commit's one automatic Release (macOS) run: release-dispatch
+      # still starts the build when CI finishes. scripts/release-dispatch.mts
+      # recognises this step by its exact name (CI_PENDING_STEP).
+      - name: 'Stop: CI for the tagged commit has not finished'
+        if: steps.release.outputs.ci_pending == 'true'
+        env:
+          RELEASE_SHA: ${{ steps.release.outputs.release_sha }}
+        run: |
+          echo "::error::CI for $RELEASE_SHA has not finished. Release dispatch starts Release (macOS) when it does; this run does not count as the commit's release."
           exit 1
       - name: Preserve the validation used for packaging
         uses: actions/upload-artifact@v7
@@ -462,7 +477,9 @@ jobs:
   # failure is seen; a retry that fails again comments on it.
   report-failure:
     needs: [preflight, verify-clean-release-build, build-test, assemble]
-    if: failure()
+    # A run stopped because CI had not finished is not a failed release: CI's
+    # completion still starts the build through release-dispatch.yml.
+    if: failure() && needs.preflight.outputs.ci_pending != 'true'
     runs-on: ubuntu-24.04
     permissions:
       issues: write

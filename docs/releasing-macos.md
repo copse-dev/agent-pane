@@ -147,10 +147,21 @@ Monday. Publishing is the only routine manual step:
    `main` commit the run read, so later merges to `main` do not restart its CI;
    a dispatch fast-forwards it to the current `main`.
 3. [`Cut release tag`](../.github/workflows/release-cut.yml) sees the new
-   version on `release`, creates `v<version>` at that exact commit, and starts
-   `Release (macOS)`. A promotion whose version is already tagged is a no-op, so
-   ordinary promotions cut nothing.
-4. `Release (macOS)` re-checks the tag, the version match, reachability from
+   version on `release`, creates `v<version>` at that exact commit and hands the
+   commit to `Release dispatch`. A promotion whose version is already tagged is
+   a no-op, so ordinary promotions cut nothing.
+4. [`Release dispatch`](../.github/workflows/release-dispatch.yml) is the only
+   thing that starts `Release (macOS)` automatically. It evaluates the commit
+   when `Cut release tag` hands it over and again when the commit's CI
+   finishes, and starts the build at the tag once CI has finished. Nothing
+   waits for CI: the CI run's completion is the trigger. Both triggers share one
+   concurrency group per commit, and each dispatch leaves a `Release dispatch`
+   commit status naming the CI run attempt it acted on, so a cut that coincides
+   with CI's completion still dispatches once. A commit gets one
+   `Release (macOS)` run automatically, not counting a run that stopped because
+   CI had not finished; a failed CI run still starts it, so the failure is
+   reported (see [Failed releases](#failed-releases)).
+5. `Release (macOS)` re-checks the tag, the version match, reachability from
    `release`, and the tagged commit's exact `Full release validation` check — it will not
    accept a branch-tip, merge-ref, or unrelated successful run. It then builds,
    signs, notarizes, staples, verifies, and smoke-tests the package, then uploads
@@ -158,7 +169,7 @@ Monday. Publishing is the only routine manual step:
    artifact containing the combined feeds, checksums, and notes generated from
    the `## <version>` section of `CHANGELOG.md`. It does not create a GitHub
    Release.
-5. Review and install-test the artifact for each architecture. When accepted,
+6. Review and install-test the artifact for each architecture. When accepted,
    manually dispatch `Publish release artifacts` with the tag and successful
    `Release (macOS)` run ID, within 30 days of that run, before its artifacts
    expire ([publication window](#publication-window)). The publisher verifies
@@ -174,12 +185,12 @@ Monday. Publishing is the only routine manual step:
    signed build, immutable Actions artifact, and published SHA256 manifest are
    the integrity chain available on this GitHub Team plan. Publishing is what
    lets the next Monday's bump proceed.
-6. Review the published GitHub Release notes and add known issues before
+7. Review the published GitHub Release notes and add known issues before
    announcing the release.
 
 From bump to signed artifacts takes about a day: the bump merges on Monday,
-that day's promotion runs the full tier, and the signed build waits for the
-tagged commit's `Full release validation` before its roughly hour-long packaging run.
+that day's promotion runs the full tier, and the signed build starts when the
+tagged commit's CI, including `Full release validation`, finishes.
 
 ### Publication window
 
@@ -354,6 +365,12 @@ A failed `Release (macOS)` run opens an `area:release` issue named
 `Release (macOS) failed for <tag>`, or comments on it if a retry fails too.
 Close it once a later release is published.
 
+A failed `Release dispatch` run opens `Release dispatch failed for <tag>` (or
+for the commit, when the tag lookup itself failed). It means the build may never
+have started, not that it failed: re-run the failed run once the cause, usually
+a GitHub API error, has cleared. It reads current state, so it starts the build
+at most once and does nothing for a commit that releases nothing.
+
 The weekly bump waits for the current version to be published, which a failed
 version never will be. To abandon it once the fix has merged, dispatch
 `Bump release version` with the next version (for example `0.1.0-beta.12` past a
@@ -370,7 +387,13 @@ Dispatch it from the tag itself (choose the tag under "Use workflow from", or
 `gh workflow run release-mac.yml --ref <tag> -f tag=<tag>`). A dispatch run
 records the commit of the ref it ran from, and `Publish release artifacts`
 accepts only a run of the tag's commit, so a rebuild dispatched from `main`
-can never be published.
+can never be published. It also reads CI evidence once rather than waiting. A
+run dispatched before the tagged commit's CI has finished stops at preflight
+(`Stop: CI for the tagged commit has not finished`) without opening the
+release-failure issue, and it does not count as the commit's release run: CI's
+completion still starts the build through `Release dispatch`. A hand-pushed
+`v*` tag needs no dispatch: CI runs at the tag, and its completion starts the
+build the same way.
 
 Private-repository artifact attestation requires GitHub Enterprise Cloud and
 this organization is on Team. While the source remains private, both workflows
@@ -464,7 +487,8 @@ or turn advisory evaluations into required gates.
 
 Packaging resolves evidence through the CI workflow's push runs for the tag SHA,
 checks repository/workflow/event provenance, and pins the successful run attempt.
-It waits for pending evidence and fails on failed or unavailable completed evidence.
+It is started only once that CI has finished, reads the evidence once, and fails on
+pending, failed or unavailable evidence.
 Publishing revalidates the same run and attempt before writing to the public release
 repository. A later rerun changes the record and requires packaging again; publication
 cannot silently substitute the new run. If Actions evidence expires before publication,
