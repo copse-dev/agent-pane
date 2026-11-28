@@ -296,16 +296,39 @@ describe('what the worker on an SSH host is given', () => {
     // The host's file names another thread, and plants a worktree here.
     writeFileSync(
       join(remote, 'meta.json'),
-      meta('t-other', { title: 'Auto', worktree: { path: '/planted' }, updatedAt: 2 }),
+      meta('t-other', {
+        title: 'Auto',
+        worktree: { path: '/planted' },
+        updatedAt: 2,
+        // It picks a model, and winds back what the thread used.
+        model: 'pricey',
+        continuationUsed: -1000,
+        crossThreadPromptCounts: { a: 0, b: 3 },
+      }),
     )
     writeFileSync(join(remote, 'events.jsonl'), '{"n":1}\n')
     const local = localThread('t8', {
-      'meta.json': meta('t8', { title: 'Renamed', status: 'running', draftPrompt: 'hi' }),
+      'meta.json': meta('t8', {
+        title: 'Renamed',
+        status: 'running',
+        draftPrompt: 'hi',
+        model: 'm',
+        crossThreadPromptCounts: { a: 2 },
+      }),
     })
     await pullThreadMirror(localHost().connection, host, 'p1', 't8', { title: 'Before' })
     assert.deepEqual(
       JSON.parse(readFileSync(join(local, 'meta.json'), 'utf8')),
-      JSON.parse(meta('t8', { title: 'Renamed', draftPrompt: 'hi', updatedAt: 2 })),
+      JSON.parse(
+        meta('t8', {
+          title: 'Renamed',
+          draftPrompt: 'hi',
+          updatedAt: 2,
+          model: 'm',
+          continuationUsed: 0,
+          crossThreadPromptCounts: { a: 2, b: 3 },
+        }),
+      ),
     )
 
     // A meta the store could not read is not taken.

@@ -395,9 +395,10 @@ export class SshTurnHosts {
     return host.then(async (opened) => {
       if (opened === null) return null
       if (await opened.link.ensureConnected()) return opened
-      // The forward or the worker went away: start it again next time.
-      this.hosts.delete(hostId)
-      this.opened.delete(hostId)
+      // The forward or the worker went away: start it again next time, unless
+      // another turn already did.
+      if (this.hosts.get(hostId) === host) this.hosts.delete(hostId)
+      if (this.opened.get(hostId) === opened) this.opened.delete(hostId)
       opened.link.close()
       return null
     })

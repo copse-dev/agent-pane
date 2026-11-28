@@ -377,6 +377,26 @@ const LAPTOP_META_FIELDS = new Set([
 
 /** Counts of what the thread used, which the host's copy may only raise. */
 const LAPTOP_COUNT_FIELDS = ['continuationUsed', 'crossThreadPromptsUsed']
+/** The same, counted per scope. */
+const LAPTOP_COUNT_RECORDS = ['crossThreadPromptCounts']
+
+/** The higher of two counts, where only a finite number above this computer's (0 if none) counts. */
+function raisedCount(mine: unknown, theirs: unknown): number {
+  const base = typeof mine === 'number' && Number.isFinite(mine) ? mine : 0
+  return typeof theirs === 'number' && Number.isFinite(theirs) && theirs > base ? theirs : base
+}
+
+/** Each scope's count raised as {@link raisedCount} raises one; scopes only this computer has stay. */
+function raisedCounts(mine: unknown, theirs: unknown): Record<string, number> {
+  const here = isRecord(mine) ? mine : {}
+  const there = isRecord(theirs) ? theirs : {}
+  return Object.fromEntries(
+    [...new Set([...Object.keys(here), ...Object.keys(there)])].map((scope) => [
+      scope,
+      raisedCount(here[scope], there[scope]),
+    ]),
+  )
+}
 
 /** The host's meta with this computer's own fields kept. */
 function mergedMeta(
@@ -393,12 +413,12 @@ function mergedMeta(
   if (here !== null) {
     for (const field of LAPTOP_META_FIELDS)
       if (Object.hasOwn(here, field)) merged[field] = here[field]
-    for (const field of LAPTOP_COUNT_FIELDS) {
-      const mine = here[field]
-      const theirs = merged[field]
-      if (typeof mine === 'number' && !(typeof theirs === 'number' && theirs > mine))
-        merged[field] = mine
-    }
+    for (const field of LAPTOP_COUNT_FIELDS)
+      if (Object.hasOwn(here, field) || Object.hasOwn(merged, field))
+        merged[field] = raisedCount(here[field], merged[field])
+    for (const field of LAPTOP_COUNT_RECORDS)
+      if (Object.hasOwn(here, field) || Object.hasOwn(merged, field))
+        merged[field] = raisedCounts(here[field], merged[field])
     if (here['title'] !== seeded.title && typeof here['title'] === 'string')
       merged['title'] = here['title']
   }
