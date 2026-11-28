@@ -39,6 +39,18 @@ function node(home: string): RemoteNode {
 }
 
 /** A thread's `meta.json` as the store writes one. */
+/** A user's prompt as `events.jsonl` holds it. */
+function userLine(id: string): Record<string, unknown> {
+  return {
+    v: 1,
+    type: 'message',
+    id,
+    role: 'user',
+    content: { ref: `messages/${id}.md`, sha256: 'x' },
+    toolCalls: [],
+  }
+}
+
 function meta(id: string, fields: Record<string, unknown> = {}): string {
   return JSON.stringify({
     id,
@@ -282,6 +294,23 @@ describe('what the worker on an SSH host is given', () => {
       readFileSync(join(local, 'events.jsonl'), 'utf8'),
       '{"n":1}\n{"n":"edited"}\n{"n":3}\n',
     )
+
+    // A prompt refused here while the host ran a turn of its own: the host's
+    // turn comes here, and the prompt after it goes there.
+    const synced = '{"n":1}\n{"n":"edited"}\n{"n":3}\n'
+    const prompt = `${JSON.stringify(userLine('m9'))}\n`
+    writeFileSync(join(remote, 'events.jsonl'), `${synced}{"n":4}\n`)
+    writeFileSync(join(local, 'events.jsonl'), synced + prompt)
+    await seedSshWorker(connection, host, input)
+    const joined = `${synced}{"n":4}\n${prompt}`
+    assert.equal(readFileSync(join(local, 'events.jsonl'), 'utf8'), joined)
+    assert.equal(readFileSync(join(remote, 'events.jsonl'), 'utf8'), joined)
+
+    // Anything else added here while the host moved is a fork.
+    writeFileSync(join(remote, 'events.jsonl'), `${joined}{"n":5}\n`)
+    writeFileSync(join(local, 'events.jsonl'), `${joined}{"n":"answer"}\n`)
+    await assert.rejects(seedSshWorker(connection, host, input), /went on both/)
+    writeFileSync(join(local, 'events.jsonl'), joined)
 
     // Both moved: refused.
     writeFileSync(join(remote, 'events.jsonl'), '{"n":"host"}\n')
