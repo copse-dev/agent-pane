@@ -246,10 +246,14 @@ export class TurnHost {
           capabilities: this.deps.capabilities?.() ?? NO_CAPABILITIES,
         })
         return
-      case 'attach':
-        // Only an app that said which version it is sees this host's turns.
-        if (this.clients.has(client)) this.attach(client)
+      case 'attach': {
+        // Only an app that said which version it is, and is not only asking
+        // that, sees this host's turns.
+        const state = this.clients.get(client)
+        if (state !== undefined && !state.probe) this.attach(client)
+        else this.deps.log('an app asked to attach without saying hello first: ignored')
         return
+      }
       case 'stop':
         this.stop(message.threadId, message.reason)
         return
@@ -651,6 +655,7 @@ export class TurnHost {
     } finally {
       this.claimed.delete(turnKey)
       this.running.delete(turnKey)
+      this.deps.inferenceRelay?.placed(threadId, null)
       if (this.settling.get(turnKey) === settled.promise) this.settling.delete(turnKey)
       settled.resolve(undefined)
       this.armIdle()

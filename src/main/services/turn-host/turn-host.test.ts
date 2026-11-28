@@ -133,7 +133,7 @@ function ended(sent: HostToApp[], id: string): boolean {
 }
 
 describe('TurnHost', { timeout: 30_000 }, () => {
-  it("gives its turns' model calls only to an app of its version that said hello", () => {
+  it('gives its turns only to an app that said hello, and their calls only to one of its version', () => {
     const attached: TurnHostClient[] = []
     const relay = new HostInferenceRelay()
     relay.attach = (client): void => {
@@ -151,8 +151,9 @@ describe('TurnHost', { timeout: 30_000 }, () => {
     const current = app()
     turnHost.handle({ t: 'hello', version: VERSION, protocol: 4 }, current.client)
     turnHost.handle({ t: 'attach' }, current.client)
-    // An app that never said hello is not attached at all.
+    // An app that never said hello, or only asked the version, is not attached at all.
     assert.equal(silentApp.joined(), false)
+    assert.equal(prober.joined(), false)
     assert.deepEqual(attached, [current.client])
   })
 
