@@ -165,11 +165,11 @@ export class HostInferenceRelay {
 
   private release(): void {
     this.open--
-    const [next] = this.slotWaiters
-    if (next !== undefined) {
-      this.slotWaiters.delete(next)
-      next()
-    }
+    // Every waiter, not one: each takes a slot only if one is free, and a
+    // single wake-up could be spent on a waiter stopped before it ran.
+    const waiters = [...this.slotWaiters]
+    this.slotWaiters.clear()
+    for (const wake of waiters) wake()
   }
 
   private async *stream(
